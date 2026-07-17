@@ -154,11 +154,18 @@ export const STAR_VERTEX_SHADER = `
 
   uniform float uTime;
   uniform float uSpeed;
+  uniform vec3 uCameraOffset;
+  uniform float uParallaxFactor;
 
   varying float vAlpha;
 
   void main() {
-    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    vec3 pos = position;
+    // GPU-based parallax: shift positions based on camera movement
+    pos.x -= uCameraOffset.x * uParallaxFactor * 0.01;
+    pos.y -= uCameraOffset.y * uParallaxFactor * 0.01;
+
+    vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
     gl_PointSize = size * (200.0 / -mvPosition.z);
     gl_Position = projectionMatrix * mvPosition;
 

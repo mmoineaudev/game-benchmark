@@ -104,25 +104,28 @@ class HUD {
 
   showGameOver(score, highScore) {
     const gameOverEl = document.getElementById('game-over');
-    const finalScoreEl = document.getElementById('final-score');
-    const highScoreEl = document.getElementById('high-score');
-    const restartPromptEl = document.getElementById('restart-prompt');
+    const goScoreEl = document.getElementById('go-score');
+    const goDistEl = document.getElementById('go-distance');
+    const goHighEl = document.getElementById('go-highscore');
 
-    if (gameOverEl && finalScoreEl && highScoreEl) {
-      gameOverEl.style.display = 'flex';
-      finalScoreEl.textContent = score.toLocaleString();
-      highScoreEl.textContent = highScore.toLocaleString();
+    if (gameOverEl) {
+      gameOverEl.classList.add('active');
     }
-
-    if (restartPromptEl) {
-      restartPromptEl.textContent = 'Press ENTER or SPACE to restart';
+    if (goScoreEl) {
+      goScoreEl.textContent = `Score: ${score.toLocaleString()}`;
+    }
+    if (goDistEl) {
+      goDistEl.textContent = `Distance: ${Math.floor(GameState.distance).toLocaleString()} units`;
+    }
+    if (goHighEl) {
+      goHighEl.textContent = `High Score: ${highScore.toLocaleString()}`;
     }
   }
 
   hideGameOver() {
     const gameOverEl = document.getElementById('game-over');
     if (gameOverEl) {
-      gameOverEl.style.display = 'none';
+      gameOverEl.classList.remove('active');
     }
   }
 }

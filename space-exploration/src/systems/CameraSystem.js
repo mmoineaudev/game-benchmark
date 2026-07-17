@@ -44,8 +44,9 @@ class CameraSystem {
       this._offset.clone().applyQuaternion(shipObject.quaternion)
     );
 
-    // Damped follow
-    this._currentPos.lerp(this._targetPos, Math.min(1, Constants.CAMERA.DAMPING_SPEED * dt));
+    // Damped follow (exponential interpolation)
+    const lerpFactor = Math.min(1, 1 - Math.pow(0.01, Constants.CAMERA.DAMPING_SPEED * dt));
+    this._currentPos.lerp(this._targetPos, lerpFactor);
 
     // Camera shake
     if (this._shakeAmount > 0.001) {

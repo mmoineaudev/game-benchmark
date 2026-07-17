@@ -18,6 +18,8 @@ class ParticleSystem {
     for (let i = 0; i < Constants.PARTICLE.EXHAUST_POOL; i++) {
       this._pool.push(this._createExhaustParticle());
     }
+    // Pre-create a shared geometry for sparks (reused)
+    this._sparkGeo = new THREE.BufferGeometry();
   }
 
   _createExhaustParticle() {
@@ -108,6 +110,7 @@ class ParticleSystem {
     const positions = new Float32Array(count * 3);
     const lifetimes = new Float32Array(count);
     const maxLifes = new Float32Array(count);
+    const velocities = new Float32Array(count * 3);
 
     for (let i = 0; i < count; i++) {
       positions[i * 3] = position.x;
@@ -115,11 +118,20 @@ class ParticleSystem {
       positions[i * 3 + 2] = position.z;
       lifetimes[i] = 0;
       maxLifes[i] = maxLife * (0.5 + Math.random() * 0.5);
+
+      // Expand outward from explosion center
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      const speed = 20 + Math.random() * 40 * sizeTier;
+      velocities[i * 3] = Math.sin(phi) * Math.cos(theta) * speed;
+      velocities[i * 3 + 1] = Math.sin(phi) * Math.sin(theta) * speed;
+      velocities[i * 3 + 2] = Math.cos(phi) * speed;
     }
 
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geo.setAttribute('life', new THREE.BufferAttribute(lifetimes, 1));
     geo.setAttribute('maxLife', new THREE.BufferAttribute(maxLifes, 1));
+    geo.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
 
     const mat = new THREE.ShaderMaterial({
       uniforms: {
@@ -129,11 +141,12 @@ class ParticleSystem {
       vertexShader: `
         attribute float life;
         attribute float maxLife;
+        attribute vec3 velocity;
         varying float vLife;
         void main() {
           vLife = life / maxLife;
           vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
-          gl_PointSize = mix(6.0, 1.0, vLife) * (200.0 / -mvPos.z);
+          gl_PointSize = mix(6.0, 1.0, vLife) * (200.0 / max(-mvPos.z, 1.0));
           gl_Position = projectionMatrix * mvPos;
         }
       `,
@@ -142,7 +155,7 @@ class ParticleSystem {
         uniform vec3 uEndColor;
         varying float vLife;
         void main() {
-          vec2 c = gl_PointCoord - 0.5;
+          vec2 c = gl_PointCoord - vec2(0.5);
           float d = length(c);
           if (d > 0.5) discard;
           float glow = exp(-d * 6.0);
@@ -157,7 +170,14 @@ class ParticleSystem {
     });
 
     const points = new THREE.Points(geo, mat);
-    points.userData = { _type: 'explosion', _lifetimes: lifetimes, _maxLifes: maxLifes, _maxLife };
+    points.userData = {
+      _type: 'explosion',
+      _lifetimes: lifetimes,
+      _maxLifes: maxLifes,
+      _maxLife,
+      _velocities: velocities,
+      _origin: position.clone(),
+    };
     this.scene.add(points);
     this._explosionPool.push(points);
 
@@ -247,6 +267,7 @@ class ParticleSystem {
       const p = this._explosionPool[i];
       const lives = p.userData._lifetimes;
       const maxLives = p.userData._maxLifes;
+      const vel = p.userData._velocities;
       let allDead = true;
       const posAttr = p.geometry.getAttribute('position');
 
@@ -254,10 +275,14 @@ class ParticleSystem {
         lives[j] += dt;
         if (lives[j] < maxLives[j]) {
           allDead = false;
-          // Particles expand outward from origin
-          posAttr.setX(j, posAttr.getX(j) + (Math.random() - 0.5) * dt * 3);
-          posAttr.setY(j, posAttr.getY(j) + (Math.random() - 0.5) * dt * 3);
-          posAttr.setZ(j, posAttr.getZ(j) + (Math.random() - 0.5) * dt * 3);
+          // Expand outward using stored velocities
+          posAttr.setX(j, posAttr.getX(j) + vel[j * 3] * dt);
+          posAttr.setY(j, posAttr.getY(j) + vel[j * 3 + 1] * dt);
+          posAttr.setZ(j, posAttr.getZ(j) + vel[j * 3 + 2] * dt);
+          // Slight drag on particles
+          vel[j * 3] *= 0.98;
+          vel[j * 3 + 1] *= 0.98;
+          vel[j * 3 + 2] *= 0.98;
         }
       }
 

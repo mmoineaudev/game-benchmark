@@ -243,6 +243,10 @@ class Game {
     // --- Camera ---
     this.cameraSystem.update(this.playerShip.mesh, this._delta);
 
+    // --- Engine Rumble ---
+    const speedRatio = this.playerShip.mesh.userData.velocity.length() / Constants.SHIP.MAX_SPEED;
+    this.audio.updateEngine(isThrusting, speedRatio);
+
     // --- Weapon ---
     if (this.input.shouldFire()) {
       this._attemptFire();
@@ -250,7 +254,6 @@ class Game {
     this.weapon.update(this._delta, this.particles);
 
     // --- Starfield ---
-    const speedRatio = this.playerShip.mesh.userData.velocity.length() / Constants.SHIP.MAX_SPEED;
     this.starfield.update(this.playerShip.mesh.position, speedRatio, this._delta);
 
     // --- Chunk/World ---
@@ -325,7 +328,7 @@ class Game {
     this.postProcessing.updateFilmGrain(GameState.game.time);
 
     // --- Score HUD ---
-    GameState.addDistance(this._delta * 10); // Distance per time unit
+    // Distance is tracked in PhysicsSystem based on actual position delta
 
     // --- Game Over check ---
     if (GameState.health <= 0 && GameState.isAlive) {
@@ -354,13 +357,19 @@ class Game {
    * Restart the game
    */
   _restart() {
-    // Clean up
+    // Stop the loop
+    this._isRunning = false;
+
+    // Hide game over screen
+    this.hud.hideGameOver();
+
+    // Clean up all systems
     this.playerShip.destroy();
     this.weapon.clear();
     this.particles.destroy();
     this.starfield.destroy();
     this.chunkManager.destroy();
-    this.postProcessing.composer.dispose();
+    this.postProcessing.composer?.dispose();
 
     // Clear scene
     this.scene.clear();
@@ -370,9 +379,14 @@ class Game {
     GameState.restart();
     this.score.reset();
     this._projectileHitsProcessed.clear();
+    this._lastTime = performance.now();
 
-    // Re-initialize (without re-adding event listeners)
+    // Re-initialize all systems
     this._initSystems();
+
+    // Restart the loop
+    this._isRunning = true;
+    this._animate();
   }
 
   /**

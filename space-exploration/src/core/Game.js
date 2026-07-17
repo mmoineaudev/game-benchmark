@@ -227,7 +227,7 @@ class Game {
     GameState.game.time += this._delta;
 
     // --- Input ---
-    const thrusting = this.input.shouldFire() || 
+    const thrusting = this.input.shouldFire() ||
                       this.input.isPressed(Constants.INPUT.FORWARD);
 
     // --- Player Physics ---

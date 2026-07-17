@@ -1,9 +1,8 @@
 // ============================================================
-// AudioSystem — Web Audio API wrapper, spatial audio
+// AudioSystem — Web Audio API wrapper, handles autoplay policy
 // ============================================================
 import * as THREE from 'three';
 import Constants from '../core/Constants.js';
-import GameState from '../core/GameState.js';
 
 class AudioSystem {
   constructor() {
@@ -13,104 +12,74 @@ class AudioSystem {
     this._engineFilter = null;
     this._engineGain = null;
     this._isInitialized = false;
-    this._pendingInit = false;
+    this._isMuted = false;
   }
 
   init() {
-    // Audio context is created on first user interaction
-    this._pendingInit = true;
-    
-    const initAudio = () => {
+    // AudioContext must be created in response to a user gesture.
+    // We register handlers but don't create the context until one fires.
+    const initOnce = () => {
       if (this._isInitialized) return;
       try {
-        this._ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return;
+        this._ctx = new Ctx();
         this._masterGain = this._ctx.createGain();
         this._masterGain.gain.value = 0.3;
         this._masterGain.connect(this._ctx.destination);
-        
         this._setupEngineSound();
         this._isInitialized = true;
-        this._pendingInit = false;
-        
-        window.removeEventListener('click', initAudio);
-        window.removeEventListener('keydown', initAudio);
+        // Remove listeners after successful init
+        this._removeInitListeners();
       } catch (e) {
-        console.warn('Audio not available:', e);
+        console.warn('[Audio] Failed to initialize:', e.message);
       }
     };
 
-    window.addEventListener('click', initAudio, { once: false });
-    window.addEventListener('keydown', initAudio, { once: false });
+    this._initClickHandler = () => initOnce();
+    this._initKeyHandler = (e) => {
+      // Only init on non-modifier keys
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+      initOnce();
+    };
+
+    window.addEventListener('click', this._initClickHandler, { once: false });
+    window.addEventListener('keydown', this._initKeyHandler);
   }
 
-  _ensureContext() {
-    if (!this._isInitialized) {
-      if (this._pendingInit) {
-        try {
-          this._ctx = new (window.AudioContext || window.webkitAudioContext)();
-          this._masterGain = this._ctx.createGain();
-          this._masterGain.gain.value = 0.3;
-          this._masterGain.connect(this._ctx.destination);
-          this._setupEngineSound();
-          this._isInitialized = true;
-          this._pendingInit = false;
-          window.removeEventListener('click', () => {});
-          window.removeEventListener('keydown', () => {});
-        } catch (e) {
-          console.warn('Audio not available:', e);
-          return false;
-        }
-      }
-    }
-    return this._isInitialized;
-  }
-
-  _setupEngineSound() {
-    // Engine rumble — low freq sawtooth + low-pass filter
-    this._engineOsc = this._ctx.createOscillator();
-    this._engineOsc.type = 'sawtooth';
-    this._engineOsc.frequency.value = Constants.AUDIO.ENGINE_FREQ_MIN;
-
-    this._engineFilter = this._ctx.createBiquadFilter();
-    this._engineFilter.type = 'lowpass';
-    this._engineFilter.frequency.value = 200;
-    this._engineFilter.Q.value = 1;
-
-    this._engineGain = this._ctx.createGain();
-    this._engineGain.gain.value = 0.15;
-
-    this._engineOsc.connect(this._engineFilter);
-    this._engineFilter.connect(this._engineGain);
-    this._engineGain.connect(this._masterGain);
-    this._engineOsc.start();
+  _removeInitListeners() {
+    window.removeEventListener('click', this._initClickHandler);
+    window.removeEventListener('keydown', this._initKeyHandler);
   }
 
   /**
-   * Update engine sound based on thrust
+   * Resume AudioContext if suspended (autoplay policy)
    */
-  updateEngine(thrusting, speedRatio) {
-    if (!this._ensureContext() || !this._engineOsc) return;
-
-    const now = this._ctx.currentTime;
-    const freq = Constants.AUDIO.ENGINE_FREQ_MIN + speedRatio * (Constants.AUDIO.ENGINE_FREQ_MAX - Constants.AUDIO.ENGINE_FREQ_MIN);
-    const vol = thrusting ? 0.12 + speedRatio * 0.15 : 0.05;
-
-    this._engineOsc.frequency.setTargetAtTime(freq, now, 0.1);
-    this._engineGain.gain.setTargetAtTime(vol, now, 0.1);
+  async _resumeContext() {
+    if (!this._ctx) return false;
+    if (this._ctx.state === 'running') return true;
+    try {
+      await this._ctx.resume();
+      return true;
+    } catch (e) {
+      return false;
+    }
   }
 
   /**
    * Play laser shot
    */
   playLaser() {
-    if (!this._ensureContext()) return;
+    if (!this._isInitialized || this._isMuted) return;
+    if (this._ctx.state !== 'running') return;
 
     const osc = this._ctx.createOscillator();
+    const gain = this._ctx.createGain();
+
     osc.type = 'sawtooth';
     osc.frequency.setValueAtTime(Constants.AUDIO.LASER_FREQ_START, this._ctx.currentTime);
     osc.frequency.exponentialRampToValueAtTime(Constants.AUDIO.LASER_FREQ_END, this._ctx.currentTime + 0.1);
 
-    const gain = this._ctx.createGain();
     gain.gain.setValueAtTime(0.08, this._ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, this._ctx.currentTime + 0.1);
 
@@ -124,9 +93,9 @@ class AudioSystem {
    * Play explosion
    */
   playExplosion(size = 1) {
-    if (!this._ensureContext()) return;
+    if (!this._isInitialized || this._isMuted) return;
+    if (this._ctx.state !== 'running') return;
 
-    // Noise burst
     const bufferSize = this._ctx.sampleRate * 0.5;
     const buffer = this._ctx.createBuffer(1, bufferSize, this._ctx.sampleRate);
     const data = buffer.getChannelData(0);
@@ -155,7 +124,8 @@ class AudioSystem {
    * Play collision hit
    */
   playCollision() {
-    if (!this._ensureContext()) return;
+    if (!this._isInitialized || this._isMuted) return;
+    if (this._ctx.state !== 'running') return;
 
     const bufferSize = this._ctx.sampleRate * 0.4;
     const buffer = this._ctx.createBuffer(1, bufferSize, this._ctx.sampleRate);
@@ -185,7 +155,8 @@ class AudioSystem {
    * Play warning beeps
    */
   playWarning() {
-    if (!this._ensureContext()) return;
+    if (!this._isInitialized || this._isMuted) return;
+    if (this._ctx.state !== 'running') return;
 
     for (let i = 0; i < Constants.AUDIO.WARNING_BEIPS; i++) {
       const osc = this._ctx.createOscillator();
@@ -205,7 +176,63 @@ class AudioSystem {
     }
   }
 
+  /**
+   * Update engine rumble sound
+   */
+  updateEngine(thrusting, speedRatio) {
+    if (!this._isInitialized || this._isMuted) return;
+    if (this._ctx.state !== 'running') return;
+    if (!this._engineOsc) return;
+
+    const now = this._ctx.currentTime;
+    const freq = Constants.AUDIO.ENGINE_FREQ_MIN + speedRatio * (Constants.AUDIO.ENGINE_FREQ_MAX - Constants.AUDIO.ENGINE_FREQ_MIN);
+    const vol = thrusting ? 0.12 + speedRatio * 0.15 : 0.05;
+
+    this._engineOsc.frequency.setTargetAtTime(freq, now, 0.1);
+    this._engineGain.gain.setTargetAtTime(this._isMuted ? 0 : vol, now, 0.1);
+  }
+
+  /**
+   * Set mute state
+   */
+  toggleMute() {
+    this._isMuted = !this._isMuted;
+    if (this._engineGain) {
+      const now = this._ctx?.currentTime || 0;
+      this._engineGain.gain.setTargetAtTime(this._isMuted ? 0 : 0.15, now, 0.05);
+    }
+    if (this._masterGain) {
+      const now = this._ctx?.currentTime || 0;
+      this._masterGain.gain.setTargetAtTime(this._isMuted ? 0 : 0.3, now, 0.05);
+    }
+  }
+
+  get isMuted() {
+    return this._isMuted;
+  }
+
+  _setupEngineSound() {
+    // Engine rumble — low freq sawtooth + low-pass filter
+    this._engineOsc = this._ctx.createOscillator();
+    this._engineOsc.type = 'sawtooth';
+    this._engineOsc.frequency.value = Constants.AUDIO.ENGINE_FREQ_MIN;
+
+    this._engineFilter = this._ctx.createBiquadFilter();
+    this._engineFilter.type = 'lowpass';
+    this._engineFilter.frequency.value = 200;
+    this._engineFilter.Q.value = 1;
+
+    this._engineGain = this._ctx.createGain();
+    this._engineGain.gain.value = 0.15;
+
+    this._engineOsc.connect(this._engineFilter);
+    this._engineFilter.connect(this._engineGain);
+    this._engineGain.connect(this._masterGain);
+    this._engineOsc.start();
+  }
+
   destroy() {
+    this._removeInitListeners();
     if (this._engineOsc) {
       try { this._engineOsc.stop(); } catch (e) {}
     }
@@ -213,6 +240,7 @@ class AudioSystem {
       try { this._ctx.close(); } catch (e) {}
     }
     this._isInitialized = false;
+    this._isMuted = false;
   }
 }
 

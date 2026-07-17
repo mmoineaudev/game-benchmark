@@ -26,7 +26,7 @@ class HUD {
       this.updateHealthBar();
       this.updateScore();
       this.updateDistance();
-      this._warningOverlay.classList.remove('active');
+      this._warningOverlay?.classList.remove('active');
     });
 
     this.updateHealthBar();
@@ -100,6 +100,30 @@ class HUD {
       flash.style.opacity = '0';
       setTimeout(() => flash.remove(), duration);
     });
+  }
+
+  showGameOver(score, highScore) {
+    const gameOverEl = document.getElementById('game-over');
+    const finalScoreEl = document.getElementById('final-score');
+    const highScoreEl = document.getElementById('high-score');
+    const restartPromptEl = document.getElementById('restart-prompt');
+
+    if (gameOverEl && finalScoreEl && highScoreEl) {
+      gameOverEl.style.display = 'flex';
+      finalScoreEl.textContent = score.toLocaleString();
+      highScoreEl.textContent = highScore.toLocaleString();
+    }
+
+    if (restartPromptEl) {
+      restartPromptEl.textContent = 'Press ENTER or SPACE to restart';
+    }
+  }
+
+  hideGameOver() {
+    const gameOverEl = document.getElementById('game-over');
+    if (gameOverEl) {
+      gameOverEl.style.display = 'none';
+    }
   }
 }
 

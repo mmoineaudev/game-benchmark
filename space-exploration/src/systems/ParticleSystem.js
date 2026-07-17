@@ -17,15 +17,12 @@ class ParticleSystem {
     // Initialize particle pools
     for (let i = 0; i < Constants.PARTICLE.EXHAUST_POOL; i++) {
       this._pool.push(this._createExhaustParticle());
-      this._pool[i]._active = false;
-      this._pool[i]._life = 0;
-      this._pool[i]._maxLife = 0;
     }
   }
 
   _createExhaustParticle() {
-    const geo = new THREE.BufferGeometry();
     const positions = new Float32Array([0, 0, 0]);
+    const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
     const mat = new THREE.ShaderMaterial({
@@ -34,12 +31,13 @@ class ParticleSystem {
       },
       vertexShader: `
         attribute vec3 position;
+        uniform float uTime;
         varying float vAlpha;
         void main() {
-          vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
-          gl_PointSize = mix(4.0, 1.0, 0.5) * (200.0 / -mvPos.z);
-          gl_Position = projectionMatrix * mvPos;
           vAlpha = 1.0;
+          vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = mix(4.0, 1.0, 0.5) * (200.0 / max(-mvPos.z, 1.0));
+          gl_Position = projectionMatrix * mvPos;
         }
       `,
       fragmentShader: `
@@ -59,13 +57,13 @@ class ParticleSystem {
     });
 
     const points = new THREE.Points(geo, mat);
+    points.visible = false;
     points.userData = {
       _active: false, _life: 0, _maxLife: 0,
       velocity: new THREE.Vector3(), position: new THREE.Vector3(),
     };
     this.scene.add(points);
-    return points;
-  }
+    return points;  }
 
   /**
    * Spawn exhaust particles from a source point and direction
@@ -238,12 +236,10 @@ class ParticleSystem {
         continue;
       }
 
-      const lifeRatio = p.userData._life / p.userData._maxLife;
       p.userData.position.add(p.userData.velocity.clone().multiplyScalar(dt));
       p.userData.velocity.multiplyScalar(0.95);
       p.position.copy(p.userData.position);
-
-      p.material.uniforms.uColor.value.setScalar(1.0 - lifeRatio * 0.7);
+      p.visible = true;
     }
 
     // Update explosions/sparks
@@ -252,26 +248,18 @@ class ParticleSystem {
       const lives = p.userData._lifetimes;
       const maxLives = p.userData._maxLifes;
       let allDead = true;
+      const posAttr = p.geometry.getAttribute('position');
 
       for (let j = 0; j < lives.length; j++) {
         lives[j] += dt;
         if (lives[j] < maxLives[j]) {
           allDead = false;
-          const posAttr = p.geometry.getAttribute('position');
-          // Simple outward expansion
-          const existingX = posAttr.getX(j);
-          const existingY = posAttr.getY(j);
-          const existingZ = posAttr.getZ(j);
           // Particles expand outward from origin
-          posAttr.setXYZ(j, 
-            posAttr.getX(j) + (Math.random() - 0.5) * dt * 3,
-            posAttr.getY(j) + (Math.random() - 0.5) * dt * 3,
-            posAttr.getZ(j) + (Math.random() - 0.5) * dt * 3
-          );
+          posAttr.setX(j, posAttr.getX(j) + (Math.random() - 0.5) * dt * 3);
+          posAttr.setY(j, posAttr.getY(j) + (Math.random() - 0.5) * dt * 3);
+          posAttr.setZ(j, posAttr.getZ(j) + (Math.random() - 0.5) * dt * 3);
         }
       }
-
-      p.geometry.getAttribute('position').needsUpdate = true;
 
       if (allDead) {
         this.scene.remove(p);

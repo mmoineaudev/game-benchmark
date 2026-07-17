@@ -76,22 +76,23 @@ class AsteroidField {
     // Icosahedron with vertex displacement
     const baseGeo = new THREE.IcosahedronGeometry(1, 2);
     const positions = baseGeo.attributes.position;
-    const simplex = this._simplexNoise(positions.count);
 
     for (let i = 0; i < positions.count; i++) {
       const x = positions.getX(i);
       const y = positions.getY(i);
       const z = positions.getZ(i);
-      const noise = simplex(x * 0.5, y * 0.5, z * 0.5) * 0.3;
+      const nx = Math.sin(x * 1.1 + y * 2.3 + z * 0.7) * 0.3;
+      const ny = Math.cos(y * 1.5 + z * 0.9) * 0.25;
+      const nz = Math.sin(z * 2.1 + x * 1.7) * 0.2;
       const len = Math.sqrt(x*x + y*y + z*z);
-      const scale = (1 + noise) / len;
+      const scale = (1 + (nx + ny + nz)) / len;
       positions.setXYZ(i, x * scale, y * scale, z * scale);
     }
     baseGeo.computeVertexNormals();
 
     const size = 2 + rng() * 3;
     const color = new THREE.Color().setHSL(
-      0.05 + rng() * 0.1, // brown/orange hue
+      0.05 + rng() * 0.1,
       0.2 + rng() * 0.3,
       0.15 + rng() * 0.2
     );

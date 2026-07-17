@@ -267,7 +267,7 @@ class PlayerShip {
 
     // Update accent light intensity
     if (this._accentLight) {
-      this._accentLight.intensity = 1 + thrusting ? 2 : 0;
+      this._accentLight.intensity = thrusting ? 3 : 1;
     }
   }
 
@@ -278,10 +278,13 @@ class PlayerShip {
     if (this.mesh.userData.hitFlash > 0) {
       this.mesh.userData.hitFlash -= dt;
       
-      // Flash red
+      // Flash red on ship meshes
       this.mesh.children.forEach(child => {
-        if (child.isMesh && child.material && !child.material.emissive) {
-          // Don't modify transparent/transmission materials
+        if (child.isMesh && child.material && child.material.emissiveIntensity !== undefined) {
+          if (!child.material.transparent) {
+            child.material.emissiveIntensity = 0.8;
+            child.material.emissive.setHex(0xff0000);
+          }
         }
       });
     } else {
@@ -290,6 +293,7 @@ class PlayerShip {
         if (child.isMesh && child.material && child.material.emissiveIntensity !== undefined) {
           if (!child.material.transparent) {
             child.material.emissiveIntensity = 0.1;
+            child.material.emissive.setHex(Constants.SHIP.MESH_EMISSIVE);
           }
         }
       });

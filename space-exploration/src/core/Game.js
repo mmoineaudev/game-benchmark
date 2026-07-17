@@ -27,6 +27,8 @@ class Game {
     this._clock = new THREE.Clock();
     this._delta = 0;
     this._fpsCounter = { frames: 0, lastTime: 0 };
+    this._isMouseDown = false;
+    this._projectileHitsProcessed = new Set();
   }
 
   /**
@@ -64,6 +66,23 @@ class Game {
     this._setupLighting();
 
     // 5. Systems
+    this._initSystems();
+
+    // 6. Event listeners
+    this._setupEvents();
+
+    // 7. Start loop
+    this._isRunning = true;
+    this._lastTime = performance.now();
+    this._animate();
+
+    // Emit game start
+    EventBus.emit('game:start', {});
+
+    console.log('[Game] Initialized successfully');
+  }
+
+  _initSystems() {
     this.input = new InputSystem();
     this.input.init();
 
@@ -81,7 +100,6 @@ class Game {
     this.postProcessing = new PostProcessingSystem(this.renderer, this.camera, this.scene);
     this.postProcessing.init();
 
-    // 6. Gameplay
     this.playerShip = new PlayerShip(this.scene);
     this.playerShip.init();
 
@@ -94,32 +112,17 @@ class Game {
     this.buffs = new BuffSystem();
     this.buffs.init();
 
-    // 7. Level/Environment
     this.starfield = new Starfield(this.scene);
     this.starfield.init();
 
     this.chunkManager = new ChunkManager(this.scene, this.camera);
     this.chunkManager.init();
 
-    // 8. UI
     this.hud = new HUD();
     this.hud.init();
 
     this.crosshair = new Crosshair();
     this.crosshair.init();
-
-    // 9. Event listeners
-    this._setupEvents();
-
-    // 10. Start loop
-    this._isRunning = true;
-    this._lastTime = performance.now();
-    this._animate();
-
-    // Emit game start
-    EventBus.emit('game:start', {});
-
-    console.log('[Game] Initialized successfully');
   }
 
   _setupLighting() {
@@ -280,11 +283,16 @@ class Game {
     const hits = this.physics.checkProjectileCollisions(projectiles, destructibles);
 
     for (const hit of hits) {
-      const proj = projectiles[hit.projectileIndex];
-      if (!proj) continue;
+      // Skip if already processed this hit
+      const hitKey = `${hit.projectileIndex}-${hit.targetIndex}`;
+      if (this._projectileHitsProcessed.has(hitKey)) continue;
+      this._projectileHitsProcessed.add(hitKey);
 
-      // Destroy target
-      if (!hit.target.isInstanced) {
+      const proj = projectiles[hit.projectileIndex];
+      if (!proj || !this.scene.children.includes(proj.mesh)) continue;
+
+      // Destroy target (only non-instanced)
+      if (!hit.target.isInstanced && hit.target.userData) {
         hit.target.userData.isDestroyed = true;
         // Explosion particles
         this.particles.createExplosion(hit.target.position.clone(), hit.target.userData.size || 1);
@@ -321,7 +329,12 @@ class Game {
 
     // --- Game Over check ---
     if (GameState.health <= 0 && GameState.isAlive) {
-      // Handled by GameState.takeDamage
+      GameState.takeDamage(0); // triggers game over
+    }
+
+    // --- Game Over UI ---
+    if (!GameState.isAlive) {
+      this.hud.showGameOver(GameState.score, GameState.highScore);
     }
 
     // --- Render ---
@@ -356,9 +369,10 @@ class Game {
     // Reset state
     GameState.restart();
     this.score.reset();
+    this._projectileHitsProcessed.clear();
 
-    // Re-initialize
-    this.init();
+    // Re-initialize (without re-adding event listeners)
+    this._initSystems();
   }
 
   /**

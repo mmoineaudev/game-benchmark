@@ -3,24 +3,12 @@
 // ============================================================
 import * as THREE from 'three';
 
-const _pool = [];
-const POOL_SIZE = 64;
-
-// Pre-allocate pool
-for (let i = 0; i < POOL_SIZE; i++) {
-  _pool.push(new THREE.Vector3());
-}
-let _poolIndex = 0;
-
 /**
- * Get a pooled Vector3 to avoid GC pressure.
- * Call .copy() to copy values in, and don't hold references.
+ * Get a new Vector3 (not pooled — use sparingly in non-hot paths).
+ * For hot paths, pass a pre-allocated Vector3 to receive values.
  */
 export function getVector3(x = 0, y = 0, z = 0) {
-  const v = _pool[_poolIndex % POOL_SIZE];
-  v.set(x, y, z);
-  _poolIndex++;
-  return v;
+  return new THREE.Vector3(x, y, z);
 }
 
 /**

@@ -2,7 +2,7 @@
 // BiomeGenerator — Biome variant selection
 // ============================================================
 import Constants from '../core/Constants.js';
-import { chunkSeed, mapRange, clamp } from '../utils/MathHelpers.js';
+import { chunkSeed, mapRange, clamp, mulberry32 } from '../utils/MathHelpers.js';
 
 class BiomeGenerator {
   constructor() {
@@ -101,7 +101,7 @@ class BiomeGenerator {
    */
   getChunkRNG(chunkX, chunkZ) {
     const seed = chunkSeed(chunkX, chunkZ);
-    return chunkSeed;
+    return mulberry32(seed);
   }
 }
 

@@ -85,13 +85,15 @@ class PhysicsSystem {
     this._sphere.copy(shipObject.userData.boundingSphere || new THREE.Sphere(shipObject.position, shipRadius));
 
     for (const target of targets) {
-      if (!target.userData.boundingSphere) continue;
+      // Skip instanced proxies (individual instance collision is too expensive)
+      if (target.isInstanced) continue;
       if (!target.visible) continue;
+      if (!target.userData?.boundingSphere) continue;
+      if (target.userData?.isDestroyed) continue;
 
       this._targetSphere.copy(target.userData.boundingSphere);
 
       if (this._sphere.intersectsSphere(this._targetSphere)) {
-        // Determine size tier
         const size = target.userData.size || 1;
         const isLarge = size > 2;
 
@@ -120,10 +122,19 @@ class PhysicsSystem {
       for (let j = 0; j < targets.length; j++) {
         const target = targets[j];
         if (!target.visible) continue;
-        if (!target.userData.boundingSphere) continue;
-        if (target.userData.isDestroyed) continue;
+        if (target.userData?.isDestroyed) continue;
 
-        const targetSphere = target.userData.boundingSphere;
+        // Handle both mesh targets and instanced proxy objects
+        let targetSphere;
+        if (target.isInstanced) {
+          // For instanced, skip (individual instance collision is too expensive)
+          continue;
+        }
+        if (target.userData?.boundingSphere) {
+          targetSphere = target.userData.boundingSphere;
+        } else {
+          continue;
+        }
 
         if (projSphere.intersectsSphere(targetSphere)) {
           hits.push({ projectileIndex: i, target, targetIndex: j });

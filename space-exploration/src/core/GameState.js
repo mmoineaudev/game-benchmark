@@ -1,6 +1,7 @@
 // ============================================================
 // GameState — Centralized state: player, combat, game
 // ============================================================
+import * as THREE from 'three';
 import Constants from './Constants.js';
 
 class GameState {

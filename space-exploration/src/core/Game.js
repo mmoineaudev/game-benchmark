@@ -24,6 +24,7 @@ class Game {
   constructor(containerId) {
     this.container = document.getElementById(containerId);
     this._isRunning = false;
+    this._isPaused = true; // Start paused so player can see HUD and take screenshots
     this._clock = new THREE.Clock();
     this._delta = 0;
     this._fpsCounter = { frames: 0, lastTime: 0 };
@@ -72,12 +73,10 @@ class Game {
     // 6. Event listeners
     this._setupEvents();
 
-    // 7. Start loop
-    this._isRunning = true;
-    this._lastTime = performance.now();
-    this._animate();
-
-    console.log('[Game] Initialized successfully');
+    // 7. Show pause screen and wait for user input to start
+    this._showPauseScreen();
+    
+    console.log('[Game] Initialized (paused). Press SPACE to start.');
   }
 
   _initSystems() {
@@ -390,6 +389,41 @@ class Game {
     if (health <= Constants.HEALTH.WARNING_THRESHOLD && GameState.isAlive) {
       EventBus.emit('audio:warning', {});
     }
+  }
+
+  /**
+   * Show pause screen overlay
+   */
+  _showPauseScreen() {
+    const pauseDiv = document.createElement('div');
+    pauseDiv.id = 'pause-screen';
+    pauseDiv.style.cssText = `
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.7); z-index: 50; display: flex;
+      align-items: center; justify-content: center; flex-direction: column;
+      color: #aaccff; font-family: 'Courier New', monospace;
+      text-shadow: 0 0 12px rgba(100,150,255,0.8);
+    `;
+    pauseDiv.innerHTML = `
+      <h1 style="font-size: 48px; margin-bottom: 20px;">PAUSED</h1>
+      <p style="font-size: 20px; opacity: 0.8;">Press SPACE to start</p>
+    `;
+    document.body.appendChild(pauseDiv);
+
+    // Listen for SPACE to unpause
+    this._unpauseHandler = (e) => {
+      if (e.code === 'Space') {
+        e.preventDefault();
+        document.body.removeChild(pauseDiv);
+        window.removeEventListener('keydown', this._unpauseHandler);
+        this._isPaused = false;
+        this._isRunning = true;
+        this._lastTime = performance.now();
+        this._animate();
+        console.log('[Game] Unpaused. Game started.');
+      }
+    };
+    window.addEventListener('keydown', this._unpauseHandler);
   }
 
   /**

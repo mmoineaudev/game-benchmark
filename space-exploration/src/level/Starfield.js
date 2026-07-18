@@ -1,10 +1,11 @@
 // ============================================================
 // Starfield — Multi-layer parallax particle starfield
+// Enhanced with streaking at high speed, twinkling, and GPU-based parallax
 // ============================================================
 import * as THREE from 'three';
 import Constants from '../core/Constants.js';
 import { STAR_VERTEX_SHADER, STAR_FRAGMENT_SHADER } from '../utils/ShaderHelpers.js';
-import { mulberry32, randomRange } from '../utils/MathHelpers.js';
+import { mulberry32 } from '../utils/MathHelpers.js';
 
 class Starfield {
   constructor(scene) {
@@ -13,29 +14,27 @@ class Starfield {
   }
 
   init() {
-    // Create a single combined buffer for all stars (single draw call per layer)
-    this._createLayer('far', Constants.PARTICLE.STAR_FAR_COUNT, 0.3, 0.02, 0x8899cc, 0.1);
-    this._createLayer('mid', Constants.PARTICLE.STAR_MID_COUNT, 0.8, 0.04, 0xaabbdd, 0.3);
-    this._createLayer('near', Constants.PARTICLE.STAR_NEAR_COUNT, 1.8, 0.08, 0xccddff, 0.8);
-    this._createLayer('bright', Constants.PARTICLE.STAR_BRIGHT_COUNT, 3.0, 0.15, 0xffffff, 1.2);
+    // Create multiple layers with different sizes, colors, and parallax factors
+    this._createLayer('far',   Constants.PARTICLE.STAR_FAR_COUNT,  0.3,  0.02, 0x8899cc, 0.05, 0.15);
+    this._createLayer('mid',   Constants.PARTICLE.STAR_MID_COUNT,  0.8,  0.04, 0xaabbdd, 0.15, 0.35);
+    this._createLayer('near',  Constants.PARTICLE.STAR_NEAR_COUNT, 1.8,  0.08, 0xccddff, 0.35, 0.8);
+    this._createLayer('bright', Constants.PARTICLE.STAR_BRIGHT_COUNT, 3.0, 0.15, 0xffffff, 0.8, 1.2);
 
     return this.layers;
   }
 
-  _createLayer(name, count, sizeBase, sizeSpread, colorHex, parallaxFactor) {
+  _createLayer(name, count, sizeBase, sizeSpread, colorHex, parallaxMin, parallaxMax) {
     const positions = new Float32Array(count * 3);
     const sizes = new Float32Array(count);
     const colors = new Float32Array(count * 3);
     const twinkleSpeeds = new Float32Array(count);
     const twinkleOffsets = new Float32Array(count);
+    const parallaxFactors = new Float32Array(count);
 
-    // Seeded RNG for deterministic star positions
     const seed = mulberry32(42 + name.charCodeAt(0) * 1000);
-    const color = new THREE.Color(colorHex);
+    const baseColor = new THREE.Color(colorHex);
 
-    // Create stars in a large sphere around origin
     for (let i = 0; i < count; i++) {
-      // Random position in a large box
       const theta = seed() * Math.PI * 2;
       const phi = Math.acos(2 * seed() - 1);
       const r = 200 + seed() * 400;
@@ -46,15 +45,14 @@ class Starfield {
 
       sizes[i] = sizeBase + seed() * sizeSpread;
 
-      // Slight color variation
       const variation = 0.9 + seed() * 0.1;
-      colors[i * 3] = color.r * variation;
-      colors[i * 3 + 1] = color.g * variation;
-      colors[i * 3 + 2] = color.b * variation;
+      colors[i * 3] = baseColor.r * variation;
+      colors[i * 3 + 1] = baseColor.g * variation;
+      colors[i * 3 + 2] = baseColor.b * variation;
 
-      // Twinkle parameters (only relevant for near layer)
-      twinkleSpeeds[i] = 1 + seed() * 3;
+      twinkleSpeeds[i] = name === 'near' ? (1 + seed() * 4) : (0.3 + seed() * 1);
       twinkleOffsets[i] = seed() * Math.PI * 2;
+      parallaxFactors[i] = parallaxMin + seed() * (parallaxMax - parallaxMin);
     }
 
     const geometry = new THREE.BufferGeometry();
@@ -62,14 +60,14 @@ class Starfield {
     geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
     geometry.setAttribute('twinkleSpeed', new THREE.BufferAttribute(twinkleSpeeds, 1));
     geometry.setAttribute('twinkleOffset', new THREE.BufferAttribute(twinkleOffsets, 1));
+    geometry.setAttribute('parallaxFactor', new THREE.BufferAttribute(parallaxFactors, 1));
 
     const material = new THREE.ShaderMaterial({
       uniforms: {
         uColor: { value: new THREE.Color(colorHex) },
         uTime: { value: 0 },
         uSpeed: { value: 0 },
-        uCameraOffset: { value: new THREE.Vector3(0, 0, 0) },  // For parallax on GPU
-        uParallaxFactor: { value: parallaxFactor },
+        uCameraOffset: { value: new THREE.Vector3(0, 0, 0) },
       },
       vertexShader: STAR_VERTEX_SHADER,
       fragmentShader: STAR_FRAGMENT_SHADER,
@@ -80,8 +78,8 @@ class Starfield {
 
     const points = new THREE.Points(geometry, material);
     points.userData.layer = name;
-    points.userData.parallaxFactor = parallaxFactor;
-    
+    points.userData.parallaxFactor = parallaxMax; // For legacy compatibility
+
     this.scene.add(points);
     this.layers.push(points);
 
@@ -90,7 +88,7 @@ class Starfield {
 
   /**
    * Update starfield based on ship movement for parallax effect
-   * All parallax is done in the shader (GPU) — no CPU iteration needed.
+   * All parallax and streaking is done in the shader (GPU) — no CPU iteration needed.
    */
   update(shipPosition, speedRatio, dt) {
     for (const layer of this.layers) {
@@ -98,7 +96,7 @@ class Starfield {
       layer.material.uniforms.uTime.value += dt;
       layer.material.uniforms.uSpeed.value = speedRatio;
 
-      // Pass camera offset to shader for parallax — GPU handles the rest
+      // Pass camera offset to shader for parallax
       layer.material.uniforms.uCameraOffset.value.copy(shipPosition);
     }
   }

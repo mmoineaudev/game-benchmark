@@ -28,9 +28,9 @@ const ChromaticAberrationShader = {
     varying vec2 vUv;
     void main() {
       vec2 offset = (vUv - 0.5) * uOffset;
-      float r = texture2D(tDiffuse, vUv + offset).r;
-      float g = texture2D(tDiffuse, vUv).g;
-      float b = texture2D(tDiffuse, vUv - offset).b;
+      float r = texture(tDiffuse, vUv + offset).r;
+      float g = texture(tDiffuse, vUv).g;
+      float b = texture(tDiffuse, vUv - offset).b;
       gl_FragColor = vec4(r, g, b, 1.0);
     }
   `,
@@ -56,7 +56,7 @@ const VignetteShader = {
     uniform float uOffset;
     varying vec2 vUv;
     void main() {
-      vec4 color = texture2D(tDiffuse, vUv);
+      vec4 color = texture(tDiffuse, vUv);
       float dist = distance(vUv, vec2(0.5));
       float vignette = smoothstep(uOffset + 0.3, uOffset - 0.2, dist);
       color.rgb = mix(color.rgb * (1.0 - uDarkness), color.rgb, vignette);
@@ -90,7 +90,7 @@ const FilmGrainShader = {
     }
     
     void main() {
-      vec4 color = texture2D(tDiffuse, vUv);
+      vec4 color = texture(tDiffuse, vUv);
       float grain = random(vUv * uTime * 1000.0) * uIntensity;
       color.rgb += grain - uIntensity * 0.5;
       gl_FragColor = color;
@@ -163,6 +163,18 @@ class PostProcessingSystem {
     if (this.chromaticPass) {
       const maxOffset = 0.008;
       this.chromaticPass.uniforms.uOffset.value = speedRatio * maxOffset;
+    }
+  }
+
+  /**
+   * Update bloom intensity based on ship speed (more intense at high speeds)
+   */
+  updateBloom(speedRatio) {
+    if (this.bloomPass) {
+      // Bloom intensity scales from 1.2 (idle) to 2.0 (full thrust)
+      const minBloom = 1.2;
+      const maxBloom = 2.0;
+      this.bloomPass.strength = minBloom + speedRatio * (maxBloom - minBloom);
     }
   }
 

@@ -94,7 +94,7 @@ export const SIMPLEX_3D_GLSL = `
 `;
 
 /**
- * Nebula fragment shader template
+ * Nebula fragment shader template — enhanced with more detail and animation
  */
 export const NEBULA_FRAGMENT_SHADER = `
   ${SIMPLEX_3D_GLSL}
@@ -108,17 +108,49 @@ export const NEBULA_FRAGMENT_SHADER = `
   uniform float uDensity;
   uniform float uPulse;
 
+  // Improved FBM with more octaves
+  float fbm(vec3 p, int octaves) {
+    float value = 0.0;
+    float amplitude = 0.5;
+    float frequency = 1.0;
+    for (int i = 0; i < 6; i++) {
+      if (i >= octaves) break;
+      value += amplitude * snoise(p * frequency);
+      amplitude *= 0.5;
+      frequency *= 2.0;
+    }
+    return (value + 1.0) * 0.5;  // Normalize to [0,1]
+  }
+
   void main() {
     vec3 p = vUv * 3.0 + uTime * 0.05;
-    float n = fbm(p, 4) * 0.5 + 0.5;
-    n = smoothstep(0.2, 0.9, n);
-    n = pow(n, 1.5);
 
+    // Multi-scale noise for more detail
+    float n1 = fbm(p, 4);
+    float n2 = fbm(p * 2.0 + uTime * 0.03, 3);
+    float n3 = snoise(p * 4.0 + uTime * 0.08) * 0.5;
+
+    // Combine noise layers
+    float n = n1 * 0.5 + n2 * 0.3 + n3 * 0.2;
+    n = smoothstep(0.15, 0.85, n);
+    n = pow(n, 1.2);
+
+    // Mix colors based on noise
     vec3 color = mix(uColor1, uColor2, n);
-    float n2 = snoise(p * 2.0 + uTime * 0.02) * 0.5 + 0.5;
-    color = mix(color, uColor3, n2);
+    float detail = snoise(p * 3.0 + uTime * 0.02) * 0.5 + 0.5;
+    color = mix(color, uColor3, detail * n);
 
-    float alpha = n * uDensity * (0.8 + 0.2 * sin(uTime * uPulse));
+    // Add subtle bright spots
+    float bright = smoothstep(0.7, 1.0, n);
+    color += bright * 0.15;
+
+    // Pulsing animation
+    float pulse = 0.85 + 0.15 * sin(uTime * uPulse);
+
+    // Alpha with edge softness
+    float alpha = n * uDensity * pulse * 0.7;
+    alpha = smoothstep(0.0, 0.3, alpha);
+
     gl_FragColor = vec4(color, alpha);
   }
 `;
@@ -151,26 +183,33 @@ export const STAR_VERTEX_SHADER = `
   attribute float size;
   attribute float twinkleSpeed;
   attribute float twinkleOffset;
+  attribute float parallaxFactor;
 
   uniform float uTime;
   uniform float uSpeed;
   uniform vec3 uCameraOffset;
-  uniform float uParallaxFactor;
 
   varying float vAlpha;
 
   void main() {
     vec3 pos = position;
     // GPU-based parallax: shift positions based on camera movement
-    pos.x -= uCameraOffset.x * uParallaxFactor * 0.01;
-    pos.y -= uCameraOffset.y * uParallaxFactor * 0.01;
+    pos.x -= uCameraOffset.x * parallaxFactor * 0.01;
+    pos.y -= uCameraOffset.y * parallaxFactor * 0.01;
+    // Z-axis parallax for depth
+    pos.z -= uCameraOffset.z * parallaxFactor * 0.005;
+
+    // Star streaking effect at high speed
+    float streakLength = uSpeed * 0.5;
+    vec3 streakDir = normalize(-uCameraOffset);
+    pos += streakDir * streakLength;
 
     vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-    gl_PointSize = size * (200.0 / -mvPosition.z);
+    gl_PointSize = size * (200.0 / -mvPosition.z) + uSpeed * 2.0;
     gl_Position = projectionMatrix * mvPosition;
 
     float twinkle = sin(uTime * twinkleSpeed + twinkleOffset) * 0.3 + 0.7;
-    vAlpha = twinkle * (1.0 + uSpeed * 0.5);
+    vAlpha = twinkle * (1.0 + uSpeed * 0.3);
   }
 `;
 
@@ -315,7 +354,7 @@ export const WORMHOLE_FRAGMENT_SHADER = `
 `;
 
 /**
- * Engine flame vertex shader
+ * Engine flame vertex shader — flickering cone with noise
  */
 export const FLAME_VERTEX_SHADER = `
   uniform float uTime;
@@ -329,29 +368,41 @@ export const FLAME_VERTEX_SHADER = `
     vNormal = normal;
 
     vec3 pos = position;
-    float flicker = sin(uTime * 15.0 + position.y * 10.0) * 0.05 * uThrust;
-    pos.xz += flicker;
-    pos.y += uThrust * 0.1;
+    // Flickering effect — vertex displacement based on time and height
+    float flickerX = sin(uTime * 15.0 + pos.y * 12.0) * 0.03 * uThrust;
+    float flickerZ = cos(uTime * 12.0 + pos.y * 10.0) * 0.03 * uThrust;
+    pos.xz += vec2(flickerX, flickerZ);
+    // Flame elongates slightly during thrust
+    pos.y += uThrust * 0.08;
 
     gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
   }
 `;
 
 /**
- * Engine flame fragment shader
+ * Engine flame fragment shader — bright core with fading edge
  */
 export const FLAME_FRAGMENT_SHADER = `
   uniform vec3 uColor;
+  uniform vec3 uBrightColor;
   uniform float uTime;
 
   varying vec2 vUv;
 
   void main() {
-    float t = vUv.y;
-    float flicker = sin(uTime * 20.0 + vUv.x * 20.0) * 0.1;
-    float alpha = (1.0 - t) * (0.6 + flicker);
-    vec3 color = mix(uColor, vec3(1.0, 0.6, 0.2), t * 0.5);
-    gl_FragColor = vec4(color, alpha * 0.7);
+    float t = vUv.y;  // 0 at base, 1 at tip
+
+    // Flicker noise
+    float flicker = sin(uTime * 25.0 + vUv.x * 30.0) * 0.05;
+
+    // Bright core (white/yellow) near base, fading to color at tip
+    float core = smoothstep(0.3, 0.0, abs(vUv.x - 0.5));
+    vec3 color = mix(uColor, uBrightColor, core * (0.7 + flicker));
+
+    // Fade out towards tip
+    float alpha = (1.0 - t * t) * (0.75 + flicker);
+
+    gl_FragColor = vec4(color, alpha);
   }
 `;
 

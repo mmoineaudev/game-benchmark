@@ -325,6 +325,7 @@ class Game {
 
     // --- Post-Processing ---
     this.postProcessing.updateChromaticAberration(speedRatio);
+    this.postProcessing.updateBloom(speedRatio);
     this.postProcessing.updateFilmGrain(GameState.game.time);
 
     // --- Score HUD ---

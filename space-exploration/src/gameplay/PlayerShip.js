@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import Constants from '../core/Constants.js';
 import GameState from '../core/GameState.js';
+import { FLAME_VERTEX_SHADER, FLAME_FRAGMENT_SHADER } from '../utils/ShaderHelpers.js';
 
 class PlayerShip {
   constructor(scene) {
@@ -184,13 +185,19 @@ class PlayerShip {
     const flameGeo = new THREE.ConeGeometry(0.15, 0.8, 8);
     flameGeo.rotateX(Math.PI / 2);
     
-    const flameMat = new THREE.MeshStandardMaterial({
-      color: Constants.SHIP.ENGINE_COLOR,
-      emissive: Constants.SHIP.ENGINE_COLOR,
-      emissiveIntensity: 3,
+    const flameMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uColor: { value: new THREE.Color(Constants.SHIP.ENGINE_COLOR) },
+        uBrightColor: { value: new THREE.Color(0xffeedd) },
+        uTime: { value: 0 },
+        uThrust: { value: 0 },
+      },
+      vertexShader: FLAME_VERTEX_SHADER,
+      fragmentShader: FLAME_FRAGMENT_SHADER,
       transparent: true,
-      opacity: 0.8,
-      roughness: 1,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
     });
 
     for (let x of [-0.8, 0.8]) {
@@ -260,7 +267,13 @@ class PlayerShip {
 
     for (const flame of this._engineFlames) {
       flame.visible = true;
-      flame.material.opacity += (targetOpacity - flame.material.opacity) * 5;
+      // Update shader uniforms for flickering flame
+      if (flame.material.uniforms) {
+        flame.material.uniforms.uThrust.value = thrusting ? 1 : 0;
+        flame.material.uniforms.uTime.value = GameState.time;
+        flame.material.uniforms.uColor.value = new THREE.Color(Constants.SHIP.ENGINE_COLOR);
+      }
+      // Fallback scale animation
       const s = flame.scale.x + (targetScale - flame.scale.x) * 5;
       flame.scale.set(s, s, s);
     }

@@ -167,8 +167,7 @@ class ChunkManager {
       chunkObjects.push(tunnel);
     }
 
-    // Store chunk objects for cleanup
-    this._activeChunks.get(`${cx},${cz}`).objects = chunkObjects;
+    // Chunk objects tracked via chunkEntry.objects (set before spawn)
   }
 
   _createWormholeTunnel(center) {

@@ -12,6 +12,7 @@ class PhysicsSystem {
     this._sphere = new THREE.Sphere();
     this._targetSphere = new THREE.Sphere();
     this._contactPoint = new THREE.Vector3();
+    this._lastPos = 0;
   }
 
   /**
@@ -60,6 +61,14 @@ class PhysicsSystem {
 
     // Update position
     shipObject.position.add(vel.clone().multiplyScalar(dt));
+
+    // Track cumulative distance for biome progression and scoring
+    const pos = shipObject.position;
+    const currentDist = Math.abs(pos.x) + Math.abs(pos.y) + Math.abs(pos.z);
+    if (currentDist > this._lastPos) {
+      GameState.addDistance(currentDist - this._lastPos);
+    }
+    this._lastPos = currentDist;
 
     // Update GameState position
     GameState.setPlayerPosition(shipObject.position.clone());

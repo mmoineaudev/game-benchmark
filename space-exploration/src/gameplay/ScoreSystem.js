@@ -29,10 +29,17 @@ class ScoreSystem {
   /**
    * Award points for destruction
    */
-  awardDestruction(type) {
-    let points = Constants.SCORE.DEBIS;
+  awardDestruction(type, size) {
+    let points = 0;
     if (type === 'asteroid') {
-      points = Constants.SCORE.ASTEROID_LARGE;
+      // Size tier: large (>2) = 30, medium (>0.8) = 20, small = 10
+      if (size > 2) {
+        points = Constants.SCORE.ASTEROID_LARGE;
+      } else if (size > 0.8) {
+        points = Constants.SCORE.ASTEROID_MEDIUM;
+      } else {
+        points = Constants.SCORE.ASTEROID_SMALL;
+      }
     } else if (type === 'debris') {
       points = Constants.SCORE.DEBRIS;
     }

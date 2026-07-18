@@ -150,11 +150,8 @@ class Game {
     window.addEventListener('resize', onResize);
     this._unsubscribers.push(() => window.removeEventListener('resize', onResize));
 
-    // Input: fire (spacebar only, not mouse)
+    // Input: fire (spacebar only) — handled via isPressed in game loop, not event
     this._unsubscribers.push(EventBus.on('input:keydown', (code) => {
-      if (code === Constants.INPUT.FIRE) {
-        this._attemptFire();
-      }
       if (code === Constants.INPUT.RESTART && !GameState.isAlive) {
         this._restart();
       }
@@ -190,8 +187,8 @@ class Game {
     }));
 
     // Score destruction
-    this._unsubscribers.push(EventBus.on('weapon:destroy', (type) => {
-      this.score.awardDestruction(type);
+    this._unsubscribers.push(EventBus.on('weapon:destroy', (data) => {
+      this.score.awardDestruction(data.type, data.size);
     }));
 
     // Game over
@@ -313,8 +310,8 @@ class Game {
         EventBus.emit('audio:explosion', size);
         this.audio.playExplosion(size);
         // Score
-        EventBus.emit('weapon:destroy', type);
-        this.score.awardDestruction(type);
+        EventBus.emit('weapon:destroy', { type, size });
+        this.score.awardDestruction(type, size);
         // Camera shake
         EventBus.emit('camera:shake', isAsteroid ? 0.5 : 0.2);
         this.hud.screenFlash(isAsteroid ? '#ffaa00' : '#888888', isAsteroid ? 80 : 50);
@@ -348,6 +345,9 @@ class Game {
     // --- Score HUD (distance + score) ---
     this.score.updateHUD();
     this.score.updateDistanceScore(this._delta);
+
+    // --- Buffs ---
+    this.buffs.update(this._delta);
 
     // --- Health System ---
     this._checkHealth();

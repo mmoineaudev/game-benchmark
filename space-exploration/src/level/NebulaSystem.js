@@ -12,8 +12,7 @@ class NebulaSystem {
   }
 
   init() {
-    // Create a shared large plane geometry for all nebula billboards
-    this._sharedGeo = new THREE.PlaneGeometry(1, 1);
+    // Lazy-init shared geometry on first createCluster() call
     return this._clusters;
   }
 
@@ -23,6 +22,11 @@ class NebulaSystem {
   createCluster(position, params, rng) {
     const cluster = new THREE.Group();
     const numBillboards = 8 + Math.floor(rng() * 5);
+
+    // Lazily create shared geometry (avoids init() ordering issues)
+    if (!this._sharedGeo) {
+      this._sharedGeo = new THREE.PlaneGeometry(1, 1);
+    }
 
     for (let i = 0; i < numBillboards; i++) {
       const scale = 15 + rng() * 35;

@@ -69,7 +69,6 @@ class HUD {
     if (GameState.health <= Constants.HEALTH.WARNING_THRESHOLD && GameState.isAlive) {
       if (!this._warningOverlay.classList.contains('active')) {
         this._warningOverlay.classList.add('active');
-        EventBus.emit('audio:warning', {});
       }
     } else {
       this._warningOverlay.classList.remove('active');

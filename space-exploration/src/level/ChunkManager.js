@@ -9,7 +9,7 @@ import BiomeGenerator from './BiomeGenerator.js';
 import NebulaSystem from './NebulaSystem.js';
 import AsteroidField from './AsteroidField.js';
 import DebrisSystem from './DebrisSystem.js';
-import { mulberry32, chunkSeed, randomInCylinder } from '../utils/MathHelpers.js';
+import { mulberry32, chunkSeed } from '../utils/MathHelpers.js';
 
 class ChunkManager {
   constructor(scene, camera) {
@@ -22,34 +22,31 @@ class ChunkManager {
     this._activeChunks = new Map();
     this._lastShipPos = new THREE.Vector3();
     this._totalDistance = 0;
+    this._lastShipChunkX = -999;
+    this._lastShipChunkZ = -999;
   }
 
   init() {
     // Create initial chunk
     this._updateChunks(new THREE.Vector3(0, 0, 0));
     this._lastShipPos.set(0, 0, 0);
-
-    EventBus.on('game:restart', () => {
-      this._totalDistance = 0;
-      this._clearAllChunks();
-      this._updateChunks(new THREE.Vector3(0, 0, 0));
-      this._lastShipPos.set(0, 0, 0);
-    });
   }
 
   /**
    * Update chunks based on ship position
    */
   update(shipPosition, dt) {
-    // Track total distance
-    this._totalDistance += shipPosition.distanceTo(this._lastShipPos);
-    this._lastShipPos.copy(shipPosition);
+    // Track total distance from absolute position
+    this._totalDistance = Math.max(
+      this._totalDistance,
+      Math.abs(shipPosition.x) + Math.abs(shipPosition.y) + Math.abs(shipPosition.z)
+    );
 
     // Spawn chunks ahead, remove chunks behind
     this._updateChunks(shipPosition);
 
-    // Update nebula shader uniforms
-    this.nebula.update(GameState.time);
+    // Update nebula shader uniforms and billboarding
+    this.nebula.update(GameState.time, this.camera);
 
     // Update asteroid drift
     this.asteroids.update(dt, GameState.time);
@@ -61,9 +58,7 @@ class ChunkManager {
     this.asteroids.removeDestroyed();
   }
 
-  _getChunkKey(pos) {
-    const cx = Math.floor(pos.x / Constants.CHUNK.WIDTH);
-    const cz = Math.floor(pos.z / Constants.CHUNK.LENGTH);
+  _getChunkKey(cx, cz) {
     return `${cx},${cz}`;
   }
 
@@ -71,21 +66,26 @@ class ChunkManager {
     const shipChunkX = Math.floor(shipPosition.x / Constants.CHUNK.WIDTH);
     const shipChunkZ = Math.floor(shipPosition.z / Constants.CHUNK.LENGTH);
 
-    // Determine chunks to spawn
     const spawnAhead = Constants.CHUNK.SPAWN_AHEAD;
     const cleanupBehind = Constants.CHUNK.CLEANUP_BEHIND;
 
-    // Spawn chunks ahead
+    // Determine which chunks need to exist
+    const neededChunks = new Set();
     for (let dx = -1; dx <= spawnAhead; dx++) {
       for (let dz = -spawnAhead; dz <= spawnAhead; dz++) {
         const cx = shipChunkX + dx;
         const cz = shipChunkZ + dz;
         const key = `${cx},${cz}`;
+        neededChunks.add(key);
+      }
+    }
 
-        if (!this._activeChunks.has(key)) {
-          this._spawnChunk(cx, cz);
-          this._activeChunks.set(key, { cx, cz, objects: [] });
-        }
+    // Spawn new chunks
+    for (const key of neededChunks) {
+      if (!this._activeChunks.has(key)) {
+        const [cx, cz] = key.split(',').map(Number);
+        this._spawnChunk(cx, cz);
+        this._activeChunks.set(key, { cx, cz, objects: [] });
       }
     }
 
@@ -118,21 +118,23 @@ class ChunkManager {
 
     // Spawn nebula
     for (let i = 0; i < biomeParams.nebulaCount; i++) {
-      const offset = randomInCylinder(50, 30);
-      const nebulaPos = new THREE.Vector3(center.x + offset.x, offset.y, center.z + offset.z);
+      const offset = new THREE.Vector3(
+        (rng() - 0.5) * 60,
+        (rng() - 0.5) * 40,
+        (rng() - 0.5) * 60
+      );
+      const nebulaPos = new THREE.Vector3(center.x + offset.x, center.y + offset.y, center.z + offset.z);
       const cluster = this.nebula.createCluster(nebulaPos, biomeParams, rng);
-      // Track nebula group for cleanup
       chunkObjects.push(cluster);
     }
 
     // Spawn asteroids
-    const asteroidCount = 5 + Math.floor(rng() * 45) * biomeParams.asteroidDensity;
+    const asteroidCount = 5 + Math.floor(rng() * 45);
     const asteroids = this.asteroids.createAsteroids(center, asteroidCount, biomeParams, rng);
-    // Track asteroid references
     chunkObjects.push(...asteroids);
 
     // Spawn debris
-    const debrisCount = Math.floor(10 + rng() * 90 * biomeParams.asteroidDensity);
+    const debrisCount = 10 + Math.floor(rng() * 90);
     const debrisPieces = this.debris.createDebris(center, debrisCount, rng);
     chunkObjects.push(...debrisPieces);
 
@@ -140,13 +142,17 @@ class ChunkManager {
     if (biomeParams.nebulaCount > 0) {
       const lightCount = Math.min(biomeParams.nebulaCount, 4);
       for (let i = 0; i < lightCount; i++) {
-        const offset = randomInCylinder(30, 15);
         const lightColor = new THREE.Color(
           biomeParams.nebulaColors.c1[0] + rng() * 0.3,
           biomeParams.nebulaColors.c1[1] + rng() * 0.3,
           biomeParams.nebulaColors.c1[2] + rng() * 0.3
         );
         const light = new THREE.PointLight(lightColor, 0.5, 40);
+        const offset = new THREE.Vector3(
+          (rng() - 0.5) * 30,
+          (rng() - 0.5) * 20,
+          (rng() - 0.5) * 30
+        );
         light.position.set(center.x + offset.x, offset.y, center.z + offset.z);
         light.userData.isChunkObject = true;
         this.scene.add(light);
@@ -165,7 +171,6 @@ class ChunkManager {
   }
 
   _createWormholeTunnel(center) {
-    // Create curved tunnel geometry
     const tunnelLength = Constants.CHUNK.LENGTH;
     const tunnelRadius = 25;
     const segments = 32;
@@ -203,7 +208,7 @@ class ChunkManager {
       if (!obj) continue;
 
       // Handle groups (nebula clusters)
-      if (obj.isGroup || obj.isObject3D) {
+      if (obj.isGroup) {
         obj.traverse((child) => {
           if (child.isMesh || child.isPoints) {
             if (child.geometry) child.geometry.dispose();
@@ -230,6 +235,7 @@ class ChunkManager {
             obj.material.dispose();
           }
         }
+        this.scene.remove(obj);
       }
 
       // Handle InstancedMesh
@@ -242,20 +248,55 @@ class ChunkManager {
             obj.material.dispose();
           }
         }
+        this.scene.remove(obj);
       }
 
       // Handle lights
       if (obj.isLight) {
-        // Lights don't need disposal but we remove them from scene
-      }
-
-      // Remove from scene
-      if (obj.parent === this.scene) {
         this.scene.remove(obj);
       }
     }
 
     chunk.objects = [];
+  }
+
+  /**
+   * Get all destructible objects in scene (non-instanced only)
+   */
+  getDestructibles() {
+    const destructibles = [];
+
+    // Add individual asteroids
+    for (const a of this.asteroids._asteroids) {
+      if (!a.isInstanced && a.visible) {
+        destructibles.push(a);
+      }
+    }
+
+    // Add individual debris pieces
+    for (const d of this.debris._debris) {
+      if (d.visible) {
+        destructibles.push(d);
+      }
+    }
+
+    return destructibles;
+  }
+
+  /**
+   * Destroy a specific asteroid (for shooting)
+   */
+  destroyAsteroid(asteroid) {
+    if (!asteroid.isInstanced && asteroid.userData) {
+      asteroid.userData.isDestroyed = true;
+    }
+  }
+
+  /**
+   * Cleanup
+   */
+  destroy() {
+    this._clearAllChunks();
   }
 
   _clearAllChunks() {
@@ -276,44 +317,18 @@ class ChunkManager {
       if (obj.userData.isChunkObject || obj.userData.isWormhole) {
         toRemove.push(obj);
       }
-      if (obj.isPointLight && obj.parent === this.scene && !obj.userData.isChunkObject) {
-        toRemove.push(obj);
-      }
     });
     for (const obj of toRemove) {
       this.scene.remove(obj);
       if (obj.geometry) obj.geometry.dispose();
-      if (obj.material) obj.material.dispose();
+      if (obj.material) {
+        if (Array.isArray(obj.material)) {
+          obj.material.forEach(m => m.dispose());
+        } else {
+          obj.material.dispose();
+        }
+      }
     }
-  }
-
-  /**
-   * Get all destructible objects in scene
-   */
-  getDestructibles() {
-    const destructibles = [...this.asteroids._asteroids.filter(a => !a.isInstanced)];
-    // Add asteroid instances as targets
-    for (const mesh of this.asteroids._instancedMeshes) {
-      destructibles.push(mesh);
-    }
-    return destructibles;
-  }
-
-  /**
-   * Destroy a specific asteroid (for shooting)
-   */
-  destroyAsteroid(asteroid) {
-    if (!asteroid.isInstanced) {
-      asteroid.userData.isDestroyed = true;
-    }
-    // For instanced, we'd need to remove the instance from the InstancedMesh
-  }
-
-  /**
-   * Cleanup
-   */
-  destroy() {
-    this._clearAllChunks();
   }
 }
 

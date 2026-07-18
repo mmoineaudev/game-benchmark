@@ -1,7 +1,6 @@
 // ============================================================
 // BuffSystem — Time-based stat modifiers
 // ============================================================
-import EventBus from '../core/EventBus.js';
 
 class BuffSystem {
   constructor() {
@@ -9,14 +8,7 @@ class BuffSystem {
   }
 
   init() {
-    // Listen for buff events
-    EventBus.on('buff:add', (data) => {
-      this.addBuff(data);
-    });
-
-    EventBus.on('game:reset', () => {
-      this.clearAll();
-    });
+    // Buffs are not yet used in the game, but the system is ready
   }
 
   /**
@@ -29,13 +21,15 @@ class BuffSystem {
       duration: data.duration || 5,
       remaining: data.duration || 5,
       params: data.params || {},
+      onApply: data.onApply,
+      onExpire: data.onExpire,
     };
 
     // Apply immediate effect
     if (data.onApply) data.onApply(buff.params);
-    
+
     this._activeBuffs.set(buff.id, buff);
-    EventBus.emit('buff:applied', buff);
+    return buff.id;
   }
 
   /**

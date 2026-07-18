@@ -151,12 +151,19 @@ class AudioSystem {
     source.start();
   }
 
+  _lastWarningTime = 0;
+  _warningCooldown = 1.5; // seconds between warning bursts
+
   /**
    * Play warning beeps
    */
   playWarning() {
     if (!this._isInitialized || this._isMuted) return;
     if (this._ctx.state !== 'running') return;
+
+    // Cooldown: only fire once per cooldown period
+    if (this._ctx.currentTime - this._lastWarningTime < this._warningCooldown) return;
+    this._lastWarningTime = this._ctx.currentTime;
 
     for (let i = 0; i < Constants.AUDIO.WARNING_BEIPS; i++) {
       const osc = this._ctx.createOscillator();
@@ -241,6 +248,7 @@ class AudioSystem {
     }
     this._isInitialized = false;
     this._isMuted = false;
+    this._lastWarningTime = 0;
   }
 }
 

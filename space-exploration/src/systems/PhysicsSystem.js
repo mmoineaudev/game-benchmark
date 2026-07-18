@@ -64,13 +64,6 @@ class PhysicsSystem {
     // Update GameState position
     GameState.setPlayerPosition(shipObject.position.clone());
 
-    // Calculate distance traveled (simplified)
-    const delta = shipObject.position.distanceTo(shipObject.userData.lastCheckpoint);
-    if (delta > 0.5) {
-      GameState.addDistance(delta);
-      shipObject.userData.lastCheckpoint.copy(shipObject.position);
-    }
-
     return accel.length() > 0.1;
   }
 
@@ -85,7 +78,7 @@ class PhysicsSystem {
     this._sphere.copy(shipObject.userData.boundingSphere || new THREE.Sphere(shipObject.position, shipRadius));
 
     for (const target of targets) {
-      // Skip instanced proxies (individual instance collision is too expensive)
+      // Skip instanced proxies
       if (target.isInstanced) continue;
       if (!target.visible) continue;
       if (!target.userData?.boundingSphere) continue;
@@ -117,6 +110,7 @@ class PhysicsSystem {
 
     for (let i = projectiles.length - 1; i >= 0; i--) {
       const proj = projectiles[i];
+      if (!proj || !proj.mesh) continue;
       const projSphere = new THREE.Sphere(proj.position, projRadius);
 
       for (let j = 0; j < targets.length; j++) {

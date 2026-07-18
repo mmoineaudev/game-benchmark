@@ -16,6 +16,8 @@ export const CAMERA = {
   FOLLOW_HEIGHT: 4,
   DAMPING_SPEED: 2.5,
   FOV_LERP_SPEED: 3,
+  MIN_FOV: 75,
+  MAX_FOV: 95,
 };
 
 export const SHIP = {

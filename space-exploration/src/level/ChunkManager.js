@@ -84,8 +84,9 @@ class ChunkManager {
     for (const key of neededChunks) {
       if (!this._activeChunks.has(key)) {
         const [cx, cz] = key.split(',').map(Number);
-        this._spawnChunk(cx, cz);
-        this._activeChunks.set(key, { cx, cz, objects: [] });
+        const chunkEntry = { cx, cz, objects: [] };
+        this._activeChunks.set(key, chunkEntry);
+        this._spawnChunk(cx, cz, chunkEntry);
       }
     }
 
@@ -99,7 +100,7 @@ class ChunkManager {
     }
   }
 
-  _spawnChunk(cx, cz) {
+  _spawnChunk(cx, cz, chunkEntry) {
     const center = new THREE.Vector3(
       cx * Constants.CHUNK.WIDTH + Constants.CHUNK.WIDTH / 2,
       0,
@@ -113,8 +114,8 @@ class ChunkManager {
     const seed = chunkSeed(cx, cz);
     const rng = mulberry32(seed);
 
-    // Chunk object tracking
-    const chunkObjects = [];
+    // Use the already-created chunk entry for tracking objects
+    const chunkObjects = chunkEntry.objects;
 
     // Spawn nebula
     for (let i = 0; i < biomeParams.nebulaCount; i++) {

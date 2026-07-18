@@ -21,8 +21,8 @@ class BiomeGenerator {
     }
     // Wrap for distances beyond last zone
     if (distance >= this._biomes[this._biomes.length - 1].end) {
-      const cycle = (distance - this._biomes[this._biomes.length - 1].start) % 
-                    (this._biomes[this._biomes.length - 1].end - this._biomes[this._biomes.length - 1].start);
+      const totalCycle = this._biomes[this._biomes.length - 1].end;
+      const cycle = distance % totalCycle;
       for (const zone of this._biomes) {
         if (cycle >= zone.start && cycle < zone.end) {
           current = zone;

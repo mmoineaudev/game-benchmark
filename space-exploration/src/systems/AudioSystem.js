@@ -204,6 +204,8 @@ class AudioSystem {
    */
   toggleMute() {
     this._isMuted = !this._isMuted;
+    // Notify listeners of mute state change
+    EventBus.emit('audio:mute', this._isMuted);
     if (this._engineGain) {
       const now = this._ctx?.currentTime || 0;
       this._engineGain.gain.setTargetAtTime(this._isMuted ? 0 : 0.15, now, 0.05);

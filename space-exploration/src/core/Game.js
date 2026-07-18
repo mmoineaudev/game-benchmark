@@ -175,6 +175,11 @@ class Game {
       this.audio.playExplosion(size);
     }));
 
+    // Audio: warning beep
+    this._unsubscribers.push(EventBus.on('audio:warning', () => {
+      this.audio.playWarning();
+    }));
+
     // Physics collision
     this._unsubscribers.push(EventBus.on('physics:collision', (data) => {
       this.hud.damageFlash();
@@ -353,6 +358,7 @@ class Game {
     this._checkHealth();
     if (GameState.health <= 0 && GameState.isAlive) {
       GameState.takeDamage(0); // ensure game over state
+      EventBus.emit('game:gameover');
     }
     EventBus.emit('game:tick');
 
@@ -415,6 +421,7 @@ class Game {
 
     // Reset state
     GameState.restart();
+    EventBus.emit('game:restart');
     this.score.reset();
     this.buffs.clearAll();
     this._projectileHitsProcessed.clear();

@@ -1,58 +1,53 @@
 // ============================================================
-// NebulaSystem — Volumetric-feel nebula clouds (custom shaders)
+// NebulaSystem — Volumetric nebula clouds with billboarding
 // ============================================================
 import * as THREE from 'three';
-import { NEBULA_FRAGMENT_SHADER } from '../utils/ShaderHelpers.js';
+import Constants from '../core/Constants.js';
+import { NEBULA_FRAGMENT_SHADER, NEBULA_VERTEX_SHADER } from '../utils/ShaderHelpers.js';
 
 class NebulaSystem {
   constructor(scene) {
     this.scene = scene;
     this._clusters = [];
-    this._sharedGeo = null;
+    this._sharedGeo = null; // Lazy init to avoid ordering issues
   }
 
   init() {
-    // Lazy-init shared geometry on first createCluster() call
+    // Create shared geometry lazily on first use
     return this._clusters;
   }
 
   /**
-   * Create nebula cloud clusters for a chunk
+   * Create a nebula cluster at position
    */
   createCluster(position, params, rng) {
-    const cluster = new THREE.Group();
-    const numBillboards = 8 + Math.floor(rng() * 5);
-
-    // Lazily create shared geometry (avoids init() ordering issues)
     if (!this._sharedGeo) {
       this._sharedGeo = new THREE.PlaneGeometry(1, 1);
     }
 
-    for (let i = 0; i < numBillboards; i++) {
-      const scale = 15 + rng() * 35;
-      const offset = new THREE.Vector3(
-        (rng() - 0.5) * 30,
-        (rng() - 0.5) * 20,
-        (rng() - 0.5) * 30
-      );
-      offset.add(position);
+    const cluster = new THREE.Group();
+    const count = 5 + Math.floor(rng() * 8);
 
-      const material = new THREE.ShaderMaterial({
+    for (let i = 0; i < count; i++) {
+      const offset = new THREE.Vector3(
+        (rng() - 0.5) * 20,
+        (rng() - 0.5) * 15,
+        (rng() - 0.5) * 20
+      );
+
+      const scale = 8 + rng() * 15;
+      const rotation = rng() * Math.PI * 2;
+
+      const mat = new THREE.ShaderMaterial({
         uniforms: {
           uTime: { value: 0 },
-          uColor1: { value: new THREE.Color(...params.nebulaColors.c1) },
-          uColor2: { value: new THREE.Color(...params.nebulaColors.c2) },
-          uColor3: { value: new THREE.Color(...params.nebulaColors.c3) },
-          uDensity: { value: params.nebulaDensity * (0.5 + rng() * 0.5) },
-          uPulse: { value: 0.5 + rng() },
+          uColor1: { value: new THREE.Color(params.nebulaColors.c1[0], params.nebulaColors.c1[1], params.nebulaColors.c1[2]) },
+          uColor2: { value: new THREE.Color(params.nebulaColors.c2[0], params.nebulaColors.c2[1], params.nebulaColors.c2[2]) },
+          uColor3: { value: new THREE.Color(params.nebulaColors.c3[0], params.nebulaColors.c3[1], params.nebulaColors.c3[2]) },
+          uDensity: { value: params.nebulaDensity },
+          uPulse: { value: 0.5 + rng() * 1.5 },
         },
-        vertexShader: `
-          varying vec2 vUv;
-          void main() {
-            vUv = uv;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-          }
-        `,
+        vertexShader: NEBULA_VERTEX_SHADER,
         fragmentShader: NEBULA_FRAGMENT_SHADER,
         transparent: true,
         depthWrite: false,
@@ -60,76 +55,48 @@ class NebulaSystem {
         side: THREE.DoubleSide,
       });
 
-      const billboard = new THREE.Mesh(this._sharedGeo, material);
-      billboard.position.copy(offset);
-      billboard.scale.setScalar(scale);
-      billboard.rotation.z = rng() * Math.PI * 2;
-      billboard.userData.isNebula = true;
+      const mesh = new THREE.Mesh(this._sharedGeo, mat);
+      mesh.position.copy(position).add(offset);
+      mesh.scale.setScalar(scale);
+      mesh.rotation.z = rotation;
 
-      // Billboard: face camera each frame
-      billboard.userData.billboard = true;
-
-      cluster.add(billboard);
+      cluster.add(mesh);
     }
 
     this.scene.add(cluster);
-    this._clusters.push({ group: cluster, position: position.clone(), params });
+    this._clusters.push(cluster);
+
     return cluster;
   }
 
   /**
-   * Update all nebula uniforms and billboarding
+   * Update nebula shader uniforms and billboarding
    */
   update(time, camera) {
-    const cam = camera || this.scene.parent?.camera || new THREE.Vector3();
     for (const cluster of this._clusters) {
-      for (const child of cluster.group.children) {
-        // Billboard: face camera each frame
-        if (child.userData.billboard) {
-          child.lookAt(cam);
+      for (const mesh of cluster.children) {
+        if (mesh.material.uniforms) {
+          mesh.material.uniforms.uTime.value = time;
         }
-        if (child.isMesh && child.material.uniforms) {
-          child.material.uniforms.uTime.value = time;
-        }
+        // Billboard: face the camera
+        mesh.lookAt(camera.position);
       }
     }
   }
 
   /**
-   * Remove a specific cluster
-   */
-  removeCluster(cluster) {
-    const idx = this._clusters.findIndex(c => c.group === cluster);
-    if (idx >= 0) {
-      this._clusters[idx].group.traverse(obj => {
-        if (obj.geometry) obj.geometry.dispose();
-        if (obj.material) obj.material.dispose();
-      });
-      this.scene.remove(this._clusters[idx].group);
-      this._clusters.splice(idx, 1);
-    }
-  }
-
-  /**
-   * Clear all clusters
+   * Clear all nebula clusters
    */
   clear() {
     for (const cluster of this._clusters) {
-      cluster.group.traverse(obj => {
-        if (obj.geometry) obj.geometry.dispose();
-        if (obj.material) obj.material.dispose();
-      });
-      this.scene.remove(cluster.group);
+      this.scene.remove(cluster);
+      for (const mesh of cluster.children) {
+        if (mesh.material) mesh.material.dispose();
+      }
     }
     this._clusters = [];
-  }
-
-  destroy() {
-    this.clear();
-    if (this._sharedGeo) {
-      this._sharedGeo.dispose();
-      this._sharedGeo = null;
-    }
+    this._sharedGeo?.dispose();
+    this._sharedGeo = null;
   }
 }
 

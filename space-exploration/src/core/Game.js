@@ -313,10 +313,8 @@ class Game {
         // Explosion particles
         this.particles.createExplosion(hit.target.position.clone(), size);
         EventBus.emit('audio:explosion', size);
-        this.audio.playExplosion(size);
         // Score
         EventBus.emit('weapon:destroy', { type, size });
-        this.score.awardDestruction(type, size);
         // Camera shake
         EventBus.emit('camera:shake', isAsteroid ? 0.5 : 0.2);
         this.hud.screenFlash(isAsteroid ? '#ffaa00' : '#888888', isAsteroid ? 80 : 50);
@@ -447,12 +445,9 @@ class Game {
    * Dispose all objects in the scene
    */
   _disposeScene() {
+    // Dispose all geometries and materials in scene
     const toDispose = [];
     this.scene.traverse(obj => {
-      toDispose.push(obj);
-    });
-    for (const obj of toDispose) {
-      this.scene.remove(obj);
       if (obj.geometry) obj.geometry.dispose();
       if (obj.material) {
         if (Array.isArray(obj.material)) {
@@ -461,7 +456,8 @@ class Game {
           obj.material.dispose();
         }
       }
-    }
+    });
+    this.scene.clear();
   }
 
   /**

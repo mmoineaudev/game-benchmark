@@ -1,46 +1,21 @@
 // ============================================================
-// Crosshair — Reticle for targeting
+// Crosshair — Reticle overlay
 // ============================================================
-import EventBus from '../core/EventBus.js';
-
 class Crosshair {
   constructor() {
-    this._crosshair = document.getElementById('crosshair');
-    this._lastFireTime = 0;
+    this._element = null;
   }
 
   init() {
-    // Listen for fire events to add visual feedback
-    EventBus.on('weapon:fire', () => {
-      this._onFire();
-    });
-
-    // Listen for game over
-    EventBus.on('game:gameover', () => {
-      if (this._crosshair) {
-        this._crosshair.style.opacity = '0.2';
-      }
-    });
-
-    EventBus.on('game:restart', () => {
-      if (this._crosshair) {
-        this._crosshair.style.opacity = '1';
-      }
-    });
+    this._element = document.getElementById('crosshair');
   }
 
-  _onFire() {
-    if (!this._crosshair) return;
-    
-    // Brief scale pulse on fire
-    this._crosshair.style.transform = 'translate(-50%, -50%) scale(1.3)';
-    this._crosshair.style.opacity = '0.8';
-    setTimeout(() => {
-      if (this._crosshair) {
-        this._crosshair.style.transform = 'translate(-50%, -50%) scale(1)';
-        this._crosshair.style.opacity = '1';
-      }
-    }, 80);
+  update(dt) {
+    // Could add dynamic crosshair based on velocity/aim in future
+  }
+
+  destroy() {
+    // No DOM cleanup needed (crosshair is in HTML)
   }
 }
 

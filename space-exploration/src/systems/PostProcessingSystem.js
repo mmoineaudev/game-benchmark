@@ -109,6 +109,14 @@ class PostProcessingSystem {
     this.vignettePass = null;
     this.filmGrainPass = null;
     this._lowEnd = this._detectLowEnd();
+    
+    // Add error listener to renderer for debugging shader issues
+    if (renderer && renderer.info) {
+      const originalWarn = console.warn.bind(console);
+      renderer.info.on('webgl:warn', (msg) => {
+        console.warn('[WebGL Warning]', msg);
+      });
+    }
   }
 
   _detectLowEnd() {
@@ -133,27 +141,44 @@ class PostProcessingSystem {
 
     // 3. Chromatic Aberration (skip on low-end)
     if (!this._lowEnd) {
-      this.chromaticPass = new ShaderPass(ChromaticAberrationShader);
-      this.chromaticPass.uniforms.uOffset.value = 0;
-      this.composer.addPass(this.chromaticPass);
+      try {
+        this.chromaticPass = new ShaderPass(ChromaticAberrationShader);
+        this.chromaticPass.uniforms.uOffset.value = 0;
+        this.composer.addPass(this.chromaticPass);
+        console.log('[PostProcessing] Chromatic Aberration shader compiled successfully');
+      } catch (e) {
+        console.error('[PostProcessing] Failed to compile Chromatic Aberration shader:', e);
+      }
     }
 
     // 4. Vignette
-    this.vignettePass = new ShaderPass(VignetteShader);
-    this.vignettePass.uniforms.uDarkness.value = Constants.POST_PROCESSING.VIGNETTE_DARKNESS;
-    this.vignettePass.uniforms.uOffset.value = Constants.POST_PROCESSING.VIGNETTE_OFFSET;
-    this.composer.addPass(this.vignettePass);
+    try {
+      this.vignettePass = new ShaderPass(VignetteShader);
+      this.vignettePass.uniforms.uDarkness.value = Constants.POST_PROCESSING.VIGNETTE_DARKNESS;
+      this.vignettePass.uniforms.uOffset.value = Constants.POST_PROCESSING.VIGNETTE_OFFSET;
+      this.composer.addPass(this.vignettePass);
+      console.log('[PostProcessing] Vignette shader compiled successfully');
+    } catch (e) {
+      console.error('[PostProcessing] Failed to compile Vignette shader:', e);
+    }
 
     // 5. Film Grain (skip on low-end)
     if (!this._lowEnd) {
-      this.filmGrainPass = new ShaderPass(FilmGrainShader);
-      this.filmGrainPass.uniforms.uIntensity.value = Constants.POST_PROCESSING.FILM_GRAIN_INTENSITY;
-      this.composer.addPass(this.filmGrainPass);
+      try {
+        this.filmGrainPass = new ShaderPass(FilmGrainShader);
+        this.filmGrainPass.uniforms.uIntensity.value = Constants.POST_PROCESSING.FILM_GRAIN_INTENSITY;
+        this.composer.addPass(this.filmGrainPass);
+        console.log('[PostProcessing] Film Grain shader compiled successfully');
+      } catch (e) {
+        console.error('[PostProcessing] Failed to compile Film Grain shader:', e);
+      }
     }
 
     // Output pass for proper tone mapping
     const outputPass = new OutputPass();
     this.composer.addPass(outputPass);
+    
+    console.log('[PostProcessing] Initialization complete. Low-end:', this._lowEnd);
   }
 
   /**

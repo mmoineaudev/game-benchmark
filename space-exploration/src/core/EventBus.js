@@ -1,35 +1,38 @@
 // ============================================================
-// EventBus — Singleton pub/sub with domain:action events
+// EventBus — Simple pub/sub event system
 // ============================================================
-
 class EventBus {
   constructor() {
     this._listeners = new Map();
   }
 
   /**
-   * Subscribe to an event. Returns an unsubscribe function.
-   * @param {string} event - "domain:action" format
-   * @param {Function} callback
-   * @returns {Function} unsubscribe
+   * Subscribe to an event
+   * @param {string} eventName 
+   * @param {Function} callback 
+   * @returns {Function} unsubscribe function
    */
-  on(event, callback) {
-    if (!this._listeners.has(event)) {
-      this._listeners.set(event, new Set());
+  on(eventName, callback) {
+    if (!this._listeners.has(eventName)) {
+      this._listeners.set(eventName, []);
     }
-    this._listeners.get(event).add(callback);
+    const listeners = this._listeners.get(eventName);
+    listeners.push(callback);
 
-    return () => this.off(event, callback);
+    // Return unsubscribe function
+    return () => {
+      const idx = listeners.indexOf(callback);
+      if (idx >= 0) {
+        listeners.splice(idx, 1);
+      }
+    };
   }
 
   /**
-   * Subscribe once — callback fires only the first time.
-   * @param {string} event
-   * @param {Function} callback
-   * @returns {Function} unsubscribe
+   * Subscribe once to an event
    */
-  once(event, callback) {
-    const unsub = this.on(event, (...args) => {
+  once(eventName, callback) {
+    const unsub = this.on(eventName, (...args) => {
       unsub();
       callback(...args);
     });
@@ -37,59 +40,34 @@ class EventBus {
   }
 
   /**
-   * Unsubscribe a specific callback.
-   * @param {string} event
-   * @param {Function} callback
+   * Emit an event with optional data
    */
-  off(event, callback) {
-    const set = this._listeners.get(event);
-    if (set) {
-      set.delete(callback);
-      if (set.size === 0) {
-        this._listeners.delete(event);
+  emit(eventName, data) {
+    if (!this._listeners.has(eventName)) return;
+    
+    const listeners = this._listeners.get(eventName);
+    for (let i = listeners.length - 1; i >= 0; i--) {
+      try {
+        listeners[i](data);
+      } catch (e) {
+        console.error(`[EventBus] Error in listener for '${eventName}':`, e);
       }
     }
   }
 
   /**
-   * Emit an event with optional data.
-   * @param {string} event
-   * @param {*} [data]
+   * Remove all listeners for an event
    */
-  emit(event, data) {
-    const set = this._listeners.get(event);
-    if (set) {
-      // Copy to avoid mutation during iteration
-      for (const callback of new Set(set)) {
-        try {
-          callback(data);
-        } catch (e) {
-          console.error(`EventBus error on "${event}":`, e);
-        }
-      }
-    }
+  off(eventName) {
+    this._listeners.delete(eventName);
   }
 
   /**
-   * Remove all listeners for an event.
-   * @param {string} [event] - if omitted, remove all
+   * Clear all events and listeners
    */
-  clear(event) {
-    if (event) {
-      this._listeners.delete(event);
-    } else {
-      this._listeners.clear();
-    }
-  }
-
-  /**
-   * Get all registered event names.
-   * @returns {string[]}
-   */
-  get events() {
-    return Array.from(this._listeners.keys());
+  clear() {
+    this._listeners.clear();
   }
 }
 
-// Singleton instance
 export default new EventBus();

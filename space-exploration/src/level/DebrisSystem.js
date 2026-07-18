@@ -1,14 +1,13 @@
 // ============================================================
-// DebrisSystem — Floating debris, destructible objects
+// DebrisSystem — Floating debris pieces in chunks
 // ============================================================
 import * as THREE from 'three';
-import { randomInCylinder, randomRange } from '../utils/MathHelpers.js';
+import { randomInCylinder } from '../utils/MathHelpers.js';
 
 class DebrisSystem {
   constructor(scene) {
     this.scene = scene;
     this._debris = [];
-    this._instancedMeshes = [];
   }
 
   init() {
@@ -16,92 +15,34 @@ class DebrisSystem {
   }
 
   /**
-   * Create debris objects for a chunk
+   * Create debris pieces for a chunk
    */
   createDebris(chunkCenter, count, rng) {
     const debris = [];
-    const actualCount = Math.floor(count * 0.3);
-
-    // Mix of debris types: boxes (shards), cylinders (space junk)
-    const boxCount = Math.floor(actualCount * 0.6);
-    const junkCount = actualCount - boxCount;
-
-    // Individual debris pieces
-    for (let i = 0; i < boxCount; i++) {
-      const piece = this._createDebrisPiece(chunkCenter, rng);
-      this.scene.add(piece);
-      this._debris.push(piece);
+    
+    // Create instanced mesh for debris (small floating rocks)
+    const baseGeo = new THREE.IcosahedronGeometry(0.3, 0);
+    const positions = baseGeo.attributes.position;
+    
+    // Add some noise to make them look like rocks
+    for (let i = 0; i < positions.count; i++) {
+      const x = positions.getX(i);
+      const y = positions.getY(i);
+      const z = positions.getZ(i);
+      const noise = Math.sin(x * 3.7 + y * 2.3) * 0.1 + Math.cos(z * 2.9) * 0.1;
+      const len = Math.sqrt(x*x + y*y + z*z);
+      if (len > 0) {
+        positions.setXYZ(i, x * (1 + noise/len), y * (1 + noise/len), z * (1 + noise/len));
+      }
     }
+    baseGeo.computeVertexNormals();
 
-    // Instanced space junk for performance
-    if (junkCount > 0) {
-      const mesh = this._createJunkInstanced(chunkCenter, junkCount, rng);
-      this.scene.add(mesh);
-      this._instancedMeshes.push(mesh);
-    }
-
-    return debris;
-  }
-
-  _createDebrisPiece(center, rng) {
-    // Random shape
-    let geo;
-    const shape = rng();
-    if (shape < 0.5) {
-      // Box shard
-      const sx = 0.05 + rng() * 0.2;
-      const sy = 0.05 + rng() * 0.2;
-      const sz = 0.05 + rng() * 0.15;
-      geo = new THREE.BoxGeometry(sx, sy, sz);
-    } else if (shape < 0.8) {
-      // Cylinder junk
-      geo = new THREE.CylinderGeometry(0.03 + rng() * 0.05, 0.03 + rng() * 0.05, 0.2 + rng() * 0.3, 6);
-    } else {
-      // Octahedron rock
-      geo = new THREE.OctahedronGeometry(0.05 + rng() * 0.1);
-    }
-
-    const color = new THREE.Color().setHSL(
-      0.1 + rng() * 0.15,
-      0.1 + rng() * 0.2,
-      0.15 + rng() * 0.2
-    );
-
-    const mat = new THREE.MeshStandardMaterial({
-      color: color,
-      roughness: 0.9,
-      metalness: 0.2 + rng() * 0.3,
-    });
-
-    const mesh = new THREE.Mesh(geo, mat);
-    const offset = randomInCylinder(50, 30);
-    mesh.position.set(center.x + offset.x, center.y + offset.y, center.z + offset.z);
-    mesh.rotation.set(rng() * Math.PI, rng() * Math.PI, rng() * Math.PI);
-
-    mesh.userData.isDestroyed = false;
-    mesh.userData.size = 0.3;
-    mesh.userData.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 0.3);
-    mesh.userData.rotationSpeed = new THREE.Vector3(
-      (rng() - 0.5) * 0.3,
-      (rng() - 0.5) * 0.3,
-      (rng() - 0.5) * 0.3
-    );
-    mesh.userData.driftVelocity = new THREE.Vector3(
-      (rng() - 0.5) * 1,
-      (rng() - 0.5) * 1,
-      (rng() - 0.5) * 1
-    );
-
-    return mesh;
-  }
-
-  _createJunkInstanced(center, count, rng) {
-    const geo = new THREE.CylinderGeometry(0.04, 0.04, 0.3, 6);
     const instancedMesh = new THREE.InstancedMesh(
-      geo,
+      baseGeo,
       new THREE.MeshStandardMaterial({
-        roughness: 0.9,
-        metalness: 0.3,
+        roughness: 0.95,
+        metalness: 0.1,
+        flatShading: true,
       }),
       count
     );
@@ -110,39 +51,67 @@ class DebrisSystem {
     const color = new THREE.Color();
 
     for (let i = 0; i < count; i++) {
-      const offset = randomInCylinder(40, 25);
-      
-      dummy.position.set(center.x + offset.x, center.y + offset.y, center.z + offset.z);
-      dummy.rotation.set(rng() * Math.PI, rng() * Math.PI, rng() * Math.PI);
-      const scale = 0.5 + rng() * 1.5;
-      dummy.scale.setScalar(scale);
+      const offset = randomInCylinder(50, 40);
+      const size = 0.1 + rng() * 0.3;
+
+      dummy.position.set(
+        chunkCenter.x + offset.x,
+        chunkCenter.y + offset.y,
+        chunkCenter.z + offset.z
+      );
+      dummy.rotation.set(
+        rng() * Math.PI,
+        rng() * Math.PI,
+        rng() * Math.PI
+      );
+      dummy.scale.setScalar(size);
       dummy.updateMatrix();
 
       instancedMesh.setMatrixAt(i, dummy.matrix);
 
-      color.setHSL(0.08 + rng() * 0.1, 0.15, 0.2 + rng() * 0.15);
+      // Per-instance color variation
+      color.setHSL(0.05 + rng() * 0.1, 0.2, 0.15 + rng() * 0.15);
       instancedMesh.setColorAt(i, color);
     }
 
     instancedMesh.instanceMatrix.needsUpdate = true;
     if (instancedMesh.instanceColor) instancedMesh.instanceColor.needsUpdate = true;
 
-    return instancedMesh;
+    instancedMesh.userData.isDebris = true;
+    this.scene.add(instancedMesh);
+    
+    // Store reference for collision detection
+    debris.push({
+      mesh: instancedMesh,
+      isInstanced: true,
+      userData: { 
+        size: 0.2, 
+        isDestroyed: false, 
+        boundingSphere: null 
+      }
+    });
+
+    return debris;
   }
 
   /**
-   * Update debris rotation and drift
+   * Update all debris (drift)
    */
   update(dt) {
+    // Debris doesn't move much, just slight drift
     for (const d of this._debris) {
-      if (d.userData.rotationSpeed) {
-        d.rotation.x += d.userData.rotationSpeed.x * dt;
-        d.rotation.y += d.userData.rotationSpeed.y * dt;
-      }
-      if (d.userData.driftVelocity) {
-        d.position.add(d.userData.driftVelocity.clone().multiplyScalar(dt));
+      if (d.mesh && !d.mesh.isInstanced) {
+        d.mesh.position.y += Math.sin(Date.now() * 0.001 + d.mesh.userData.seed || 0) * 0.01;
       }
     }
+  }
+
+  /**
+   * Remove destroyed debris
+   */
+  removeDestroyed() {
+    // Debris fragments are not individually tracked for destruction
+    // Only the instanced mesh is removed when chunk is cleaned up
   }
 
   /**
@@ -150,17 +119,13 @@ class DebrisSystem {
    */
   clear() {
     for (const d of this._debris) {
-      this.scene.remove(d);
-      d.geometry?.dispose();
-      d.material?.dispose();
-    }
-    for (const mesh of this._instancedMeshes) {
-      this.scene.remove(mesh);
-      mesh.geometry?.dispose();
-      mesh.material?.dispose();
+      if (d.mesh && !d.isInstanced) {
+        this.scene.remove(d.mesh);
+        d.mesh.geometry?.dispose();
+        d.mesh.material?.dispose();
+      }
     }
     this._debris = [];
-    this._instancedMeshes = [];
   }
 }
 

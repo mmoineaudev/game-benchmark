@@ -110,12 +110,16 @@ class PostProcessingSystem {
     this.filmGrainPass = null;
     this._lowEnd = this._detectLowEnd();
     
-    // Add error listener to renderer for debugging shader issues
+    // WebGL warning listener — renderer.info became a plain object (no .on()) in Three.js r152+
     if (renderer && renderer.info) {
       const originalWarn = console.warn.bind(console);
-      renderer.info.on('webgl:warn', (msg) => {
-        console.warn('[WebGL Warning]', msg);
-      });
+      renderer.info.reset = function (...args) {
+        originalWarn('[WebGL Info Reset]', ...args);
+        // WebGLInfo.prototype.reset may not exist in all three.js versions
+        if (THREE.WebGLInfo && THREE.WebGLInfo.prototype && THREE.WebGLInfo.prototype.reset) {
+          THREE.WebGLInfo.prototype.reset.call(this, ...args);
+        }
+      }.bind(renderer.info);
     }
   }
 

@@ -3,12 +3,27 @@
 // ============================================================
 import Game from './core/Game.js';
 
-// Wait for DOM to be ready
-document.addEventListener('DOMContentLoaded', () => {
-  // Boot the game
-  const game = new Game('game-container');
-  game.init();
+// Wait for DOM to be ready (or boot immediately if already loaded)
+function bootGame() {
+  try {
+    const game = new Game('game-container');
+    game.init();
+    
+    // Hide loading screen — it's in index.html but never removed by the game
+    var loadingEl = document.getElementById('loading-screen');
+    if (loadingEl) loadingEl.style.display = 'none';
+    
+    window.__game = game;
+    console.log('[Boot] Game initialized successfully');
+  } catch(e) {
+    console.error('[Boot] Failed to initialize game:', e);
+    throw e;
+  }
+}
 
-  // Expose game instance for debugging
-  window.__game = game;
-});
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', bootGame);
+} else {
+  // DOM already loaded, boot immediately
+  bootGame();
+}

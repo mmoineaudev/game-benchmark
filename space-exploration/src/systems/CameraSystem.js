@@ -31,34 +31,31 @@ class CameraSystem {
     const speed = shipObject.userData.velocity.length() || 0;
     const speedRatio = Math.min(speed / Constants.SHIP.MAX_SPEED, 1);
 
-    // FOV speed effect
     this._fovTarget = Constants.CAMERA.MIN_FOV + speedRatio * (Constants.CAMERA.MAX_FOV - Constants.CAMERA.MIN_FOV);
     this.camera.fov += (this._fovTarget - this.camera.fov) * Constants.CAMERA.FOV_LERP_SPEED * dt;
     this.camera.updateProjectionMatrix();
 
-    // Target position behind ship
-    const forward = new THREE.Vector3(0, 0, -1);
-    forward.applyQuaternion(shipObject.quaternion);
+    const back = new THREE.Vector3(0, 0, 1).applyQuaternion(shipObject.quaternion);
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(shipObject.quaternion);
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(shipObject.quaternion);
 
-    this._targetPos.copy(shipObject.position).add(
-      this._offset.clone().applyQuaternion(shipObject.quaternion)
-    );
+    const heightOffset = up.clone().multiplyScalar(Constants.CAMERA.FOLLOW_HEIGHT);
+    const backOffset = back.clone().multiplyScalar(Constants.CAMERA.FOLLOW_DISTANCE);
 
-    // Damped follow (exponential interpolation)
+    this._targetPos.copy(shipObject.position).add(heightOffset).add(backOffset);
+
     const lerpFactor = Math.min(1, 1 - Math.pow(0.01, Constants.CAMERA.DAMPING_SPEED * dt));
     this._currentPos.lerp(this._targetPos, lerpFactor);
 
-    // Camera shake
     if (this._shakeAmount > 0.001) {
       this._currentPos.x += (Math.random() - 0.5) * this._shakeAmount;
       this._currentPos.y += (Math.random() - 0.5) * this._shakeAmount;
       this._currentPos.z += (Math.random() - 0.5) * this._shakeAmount;
-      this._shakeAmount *= Math.pow(0.01, dt); // exponential decay
+      this._shakeAmount *= Math.pow(0.001, dt);
       if (this._shakeAmount < 0.001) this._shakeAmount = 0;
     }
 
-    // Look ahead of ship
-    this._lookTarget.copy(shipObject.position).add(forward.multiplyScalar(15));
+    this._lookTarget.copy(shipObject.position).add(right.clone().multiplyScalar(0.2)).add(back.clone().multiplyScalar(-15));
 
     this.camera.position.copy(this._currentPos);
     this.camera.lookAt(this._lookTarget);

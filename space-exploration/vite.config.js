@@ -1,7 +1,12 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  build: { target: 'es2020' },
-  server: { open: '/game.html' },
-  preview: { open: '/game.html' },
+  build: { 
+    target: 'es2020',
+    sourcemap: true,
+    minify: false,
+  },
+  root: '.',
+  publicDir: 'public',
+  server: { open: false },
 });

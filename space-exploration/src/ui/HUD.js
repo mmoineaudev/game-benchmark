@@ -7,14 +7,17 @@ import EventBus from '../core/EventBus.js';
 
 class HUD {
   constructor() {
-    this._healthBar = document.getElementById('health-bar');
+    this._healthFill = document.getElementById('health-fill');
     this._warningOverlay = document.getElementById('warning-overlay');
     this._scoreEl = document.getElementById('score-display');
     this._distanceEl = document.getElementById('distance-display');
+    this._gameOver = document.getElementById('game-over');
+    this._goScore = document.getElementById('go-score');
+    this._goDistance = document.getElementById('go-distance');
+    this._goHigh = document.getElementById('go-highscore');
   }
 
   init() {
-    // Listen for state changes
     EventBus.on('game:tick', () => {
       this.updateHealthBar();
       this.updateScore();
@@ -35,21 +38,15 @@ class HUD {
   }
 
   updateHealthBar() {
-    if (!this._healthBar) return;
-
-    const health = GameState.health;
-    const maxHealth = Constants.HEALTH.MAX;
-    const pct = Math.max(0, (health / maxHealth) * 100);
-
-    this._healthBar.style.width = pct + '%';
-
-    // Color transitions: green → yellow → red
+    if (!this._healthFill) return;
+    const pct = Math.max(0, (GameState.health / Constants.HEALTH.MAX) * 100);
+    this._healthFill.style.width = pct + '%';
     if (pct > 60) {
-      this._healthBar.style.background = 'linear-gradient(90deg, #22cc66, #44ee88)';
+      this._healthFill.style.background = 'linear-gradient(90deg, #22cc66, #44ee88)';
     } else if (pct > 30) {
-      this._healthBar.style.background = 'linear-gradient(90deg, #cccc22, #eeee44)';
+      this._healthFill.style.background = 'linear-gradient(90deg, #cccc22, #eeee44)';
     } else {
-      this._healthBar.style.background = 'linear-gradient(90deg, #cc2222, #ee4444)';
+      this._healthFill.style.background = 'linear-gradient(90deg, #cc2222, #ee4444)';
     }
   }
 
@@ -76,24 +73,17 @@ class HUD {
   }
 
   damageFlash() {
-    // Brief red flash on health bar
-    if (this._healthBar) {
-      this._healthBar.style.filter = 'brightness(2) saturate(0.5)';
+    if (this._healthFill) {
+      this._healthFill.style.filter = 'brightness(2) saturate(0.5)';
       setTimeout(() => {
-        if (this._healthBar) {
-          this._healthBar.style.filter = '';
-        }
+        if (this._healthFill) this._healthFill.style.filter = '';
       }, 100);
     }
   }
 
   screenFlash(color = '#ff0000', duration = 100) {
     const flash = document.createElement('div');
-    flash.style.cssText = `
-      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-      background: ${color}; opacity: 0.3; pointer-events: none; z-index: 20;
-      transition: opacity ${duration}ms ease-out;
-    `;
+    flash.style.cssText = `position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: ${color}; opacity: 0.25; pointer-events: none; z-index: 20; transition: opacity ${duration}ms ease-out;`;
     document.body.appendChild(flash);
     requestAnimationFrame(() => {
       flash.style.opacity = '0';
@@ -102,30 +92,15 @@ class HUD {
   }
 
   showGameOver(score, highScore) {
-    const gameOverEl = document.getElementById('game-over');
-    const goScoreEl = document.getElementById('go-score');
-    const goDistEl = document.getElementById('go-distance');
-    const goHighEl = document.getElementById('go-highscore');
-
-    if (gameOverEl) {
-      gameOverEl.classList.add('active');
-    }
-    if (goScoreEl) {
-      goScoreEl.textContent = `Score: ${score.toLocaleString()}`;
-    }
-    if (goDistEl) {
-      goDistEl.textContent = `Distance: ${Math.floor(GameState.distance).toLocaleString()} units`;
-    }
-    if (goHighEl) {
-      goHighEl.textContent = `High Score: ${highScore.toLocaleString()}`;
-    }
+    if (!this._gameOver) return;
+    this._gameOver.classList.add('active');
+    this._goScore.textContent = `Score: ${score.toLocaleString()}`;
+    this._goDistance.textContent = `Distance: ${Math.floor(GameState.distance).toLocaleString()} units`;
+    this._goHigh.textContent = `High Score: ${highScore.toLocaleString()}`;
   }
 
   hideGameOver() {
-    const gameOverEl = document.getElementById('game-over');
-    if (gameOverEl) {
-      gameOverEl.classList.remove('active');
-    }
+    if (this._gameOver) this._gameOver.classList.remove('active');
   }
 }
 

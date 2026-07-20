@@ -18,10 +18,20 @@ class AsteroidField {
   /**
    * Create procedural asteroids for a chunk
    */
-  createAsteroids(chunkCenter, count, params, rng) {
+  createAsteroids(chunkCenter, count, params, rng, shipPosition = null) {
     const asteroids = [];
     const density = params.asteroidDensity;
     const actualCount = Math.floor(count * density);
+
+    // Calculate safety zone radius based on ship position
+    let safetyRadius = 0;
+    if (shipPosition) {
+      const distToOrigin = shipPosition.length();
+      // If spawning near origin, enforce a larger safety zone
+      if (distToOrigin < 10) {
+        safetyRadius = 25; // Minimum 25 units from ship position
+      }
+    }
 
     // Create instanced meshes for medium and small asteroids
     const mediumCount = Math.floor(actualCount * 0.4);
@@ -31,7 +41,16 @@ class AsteroidField {
     // Large asteroids — individual meshes (fewer, more detailed)
     if (largeCount > 0) {
       for (let i = 0; i < largeCount; i++) {
-        const asteroid = this._createLargeAsteroid(chunkCenter, rng);
+        let asteroid, pos;
+        let attempts = 0;
+        // Retry if too close to ship position
+        do {
+          asteroid = this._createLargeAsteroid(chunkCenter, rng);
+          pos = asteroid.position.clone();
+          attempts++;
+        } while (safetyRadius > 0 && attempts < 20 && 
+                 (shipPosition ? pos.distanceTo(shipPosition) < safetyRadius : false));
+        
         this.scene.add(asteroid);
         asteroids.push(asteroid);
         this._asteroids.push(asteroid);
@@ -40,7 +59,7 @@ class AsteroidField {
 
     // Medium asteroids — InstancedMesh
     if (mediumCount > 0) {
-      const mesh = this._createMediumInstanced(chunkCenter, mediumCount, rng);
+      const mesh = this._createMediumInstanced(chunkCenter, mediumCount, rng, safetyRadius, shipPosition);
       this.scene.add(mesh);
       this._instancedMeshes.push(mesh);
       // Store references
@@ -56,7 +75,7 @@ class AsteroidField {
 
     // Small asteroids — InstancedMesh
     if (smallCount > 0) {
-      const mesh = this._createSmallInstanced(chunkCenter, smallCount, rng);
+      const mesh = this._createSmallInstanced(chunkCenter, smallCount, rng, safetyRadius, shipPosition);
       this.scene.add(mesh);
       this._instancedMeshes.push(mesh);
       for (let i = 0; i < smallCount; i++) {
@@ -112,7 +131,7 @@ class AsteroidField {
 
     mesh.userData.size = size;
     mesh.userData.isDestroyed = false;
-    mesh.userData.boundingSphere = new THREE.Sphere(new THREE.Vector3(), size);
+    mesh.userData.boundingSphere = new THREE.Sphere(mesh.position.clone(), size);
     mesh.userData.rotationSpeed = new THREE.Vector3(
       (rng() - 0.5) * 0.5,
       (rng() - 0.5) * 0.5,
@@ -127,7 +146,7 @@ class AsteroidField {
     return mesh;
   }
 
-  _createMediumInstanced(center, count, rng) {
+  _createMediumInstanced(center, count, rng, safetyRadius = 0, shipPosition = null) {
     const baseGeo = new THREE.DodecahedronGeometry(1, 0);
     const positions = baseGeo.attributes.position;
 
@@ -157,10 +176,17 @@ class AsteroidField {
     const color = new THREE.Color();
 
     for (let i = 0; i < count; i++) {
-      const offset = randomInCylinder(50, 30);
-      const size = 0.5 + rng() * 1.0;
+      let offset, pos;
+      let attempts = 0;
+      do {
+        offset = randomInCylinder(50, 30);
+        dummy.position.set(center.x + offset.x, center.y + offset.y, center.z + offset.z);
+        pos = dummy.position.clone();
+        attempts++;
+      } while (safetyRadius > 0 && attempts < 10 && 
+               (shipPosition ? pos.distanceTo(shipPosition) < safetyRadius : false));
 
-      dummy.position.set(center.x + offset.x, center.y + offset.y, center.z + offset.z);
+      const size = 0.5 + rng() * 1.0;
       dummy.rotation.set(rng() * Math.PI, rng() * Math.PI, rng() * Math.PI);
       dummy.scale.setScalar(size);
       dummy.updateMatrix();
@@ -181,7 +207,7 @@ class AsteroidField {
     return instancedMesh;
   }
 
-  _createSmallInstanced(center, count, rng) {
+  _createSmallInstanced(center, count, rng, safetyRadius = 0, shipPosition = null) {
     const baseGeo = new THREE.OctahedronGeometry(1, 0);
     const positions = baseGeo.attributes.position;
 
@@ -211,10 +237,17 @@ class AsteroidField {
     const color = new THREE.Color();
 
     for (let i = 0; i < count; i++) {
-      const offset = randomInCylinder(40, 25);
-      const size = 0.2 + rng() * 0.4;
+      let offset, pos;
+      let attempts = 0;
+      do {
+        offset = randomInCylinder(40, 25);
+        dummy.position.set(center.x + offset.x, center.y + offset.y, center.z + offset.z);
+        pos = dummy.position.clone();
+        attempts++;
+      } while (safetyRadius > 0 && attempts < 10 && 
+               (shipPosition ? pos.distanceTo(shipPosition) < safetyRadius : false));
 
-      dummy.position.set(center.x + offset.x, center.y + offset.y, center.z + offset.z);
+      const size = 0.2 + rng() * 0.4;
       dummy.rotation.set(rng() * Math.PI, rng() * Math.PI, rng() * Math.PI);
       dummy.scale.setScalar(size);
       dummy.updateMatrix();
@@ -256,6 +289,11 @@ class AsteroidField {
       asteroid.rotation.x += asteroid.userData.rotationSpeed.x * dt;
       asteroid.rotation.y += asteroid.userData.rotationSpeed.y * dt;
       asteroid.position.add(asteroid.userData.driftVelocity.clone().multiplyScalar(dt));
+      
+      // Update bounding sphere position to match new position
+      if (asteroid.userData.boundingSphere) {
+        asteroid.userData.boundingSphere.center.copy(asteroid.position);
+      }
     }
   }
 

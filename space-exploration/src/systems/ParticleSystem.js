@@ -11,6 +11,7 @@ class ParticleSystem {
     this._particles = [];
     this._pool = [];
     this._explosionPool = [];
+    this._scratch = new THREE.Vector3();
   }
 
   init() {
@@ -99,27 +100,24 @@ class ParticleSystem {
       Math.random() * (Constants.PARTICLE.EXPLOSION_MAX - Constants.PARTICLE.EXPLOSION_MIN) * sizeTier
     );
     const maxLife = 0.5 + sizeTier * 0.3;
-
     const colors = [
       new THREE.Color(0xffaa00),
       new THREE.Color(0xff4400),
       new THREE.Color(0x220000),
     ];
 
-    const geo = new THREE.BufferGeometry();
-    const positions = new Float32Array(count * 3);
-    const lifetimes = new Float32Array(count);
-    const maxLifes = new Float32Array(count);
-    const velocities = new Float32Array(count * 3);
+    const points = this._getExplosionPoints() || this._createExplosionPoints(count);
+    const geo = points.geometry;
+    const positions = geo.attributes.position.array;
+    const velocities = points.userData._velocities;
 
-    for (let i = 0; i < count; i++) {
+    for (let i = 0, l = positions.length / 3; i < l; i++) {
       positions[i * 3] = position.x;
       positions[i * 3 + 1] = position.y;
       positions[i * 3 + 2] = position.z;
-      lifetimes[i] = 0;
-      maxLifes[i] = maxLife * (0.5 + Math.random() * 0.5);
+      points.userData._lifetimes[i] = 0;
+      points.userData._maxLifes[i] = maxLife * (0.5 + Math.random() * 0.5);
 
-      // Expand outward from explosion center
       const theta = Math.random() * Math.PI * 2;
       const phi = Math.acos(2 * Math.random() - 1);
       const speed = 20 + Math.random() * 40 * sizeTier;
@@ -128,15 +126,29 @@ class ParticleSystem {
       velocities[i * 3 + 2] = Math.cos(phi) * speed;
     }
 
+    geo.attributes.position.needsUpdate = true;
+    points.userData._type = 'explosion';
+    points.userData._maxLife = maxLife;
+    points.userData._alive = true;
+    points.visible = true;
+    this._explosionPool.push(points);
+
+    return points;
+  }
+
+  _createExplosionPoints(count) {
+    const positions = new Float32Array(count * 3);
+    const lifetimes = new Float32Array(count);
+    const maxLifes = new Float32Array(count);
+    const velocities = new Float32Array(count * 3);
+
+    const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geo.setAttribute('life', new THREE.BufferAttribute(lifetimes, 1));
-    geo.setAttribute('maxLife', new THREE.BufferAttribute(maxLifes, 1));
-    geo.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
 
     const mat = new THREE.ShaderMaterial({
       uniforms: {
-        uStartColor: { value: colors[0] },
-        uEndColor: { value: colors[2] },
+        uStartColor: { value: new THREE.Color(0xffaa00) },
+        uEndColor: { value: new THREE.Color(0x220000) },
       },
       vertexShader: `
         attribute float life;
@@ -174,14 +186,26 @@ class ParticleSystem {
       _type: 'explosion',
       _lifetimes: lifetimes,
       _maxLifes: maxLifes,
-      _maxLife,
+      _maxLife: 1,
       _velocities: velocities,
-      _origin: position.clone(),
+      _origin: new THREE.Vector3(),
     };
     this.scene.add(points);
-    this._explosionPool.push(points);
-
     return points;
+  }
+
+  _getExplosionPoints() {
+    for (let i = this._explosionPool.length - 1; i >= 0; i--) {
+      const p = this._explosionPool[i];
+      if (!p.userData._alive) {
+        if (i < this._explosionPool.length - 1) {
+          this._explosionPool[i] = this._explosionPool[this._explosionPool.length - 1];
+        }
+        this._explosionPool.pop();
+        return p;
+      }
+    }
+    return null;
   }
 
   /**
@@ -256,7 +280,7 @@ class ParticleSystem {
         continue;
       }
 
-      p.userData.position.add(p.userData.velocity.clone().multiplyScalar(dt));
+      p.userData.position.addScaledVector(p.userData.velocity, dt);
       p.userData.velocity.multiplyScalar(0.95);
       p.position.copy(p.userData.position);
       p.visible = true;

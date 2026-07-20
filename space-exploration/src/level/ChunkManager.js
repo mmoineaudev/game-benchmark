@@ -27,7 +27,7 @@ class ChunkManager {
   }
 
   init() {
-    // Create initial chunk
+    // Create initial chunk — pass ship's starting position (0,0,0)
     this._updateChunks(new THREE.Vector3(0, 0, 0));
     this._lastShipPos.set(0, 0, 0);
   }
@@ -80,13 +80,13 @@ class ChunkManager {
       }
     }
 
-    // Spawn new chunks
+    // Spawn new chunks (pass ship position for safety zone)
     for (const key of neededChunks) {
       if (!this._activeChunks.has(key)) {
         const [cx, cz] = key.split(',').map(Number);
         const chunkEntry = { cx, cz, objects: [] };
         this._activeChunks.set(key, chunkEntry);
-        this._spawnChunk(cx, cz, chunkEntry);
+        this._spawnChunk(cx, cz, chunkEntry, shipPosition);
       }
     }
 
@@ -100,7 +100,7 @@ class ChunkManager {
     }
   }
 
-  _spawnChunk(cx, cz, chunkEntry) {
+  _spawnChunk(cx, cz, chunkEntry, shipPosition = null) {
     const center = new THREE.Vector3(
       cx * Constants.CHUNK.WIDTH + Constants.CHUNK.WIDTH / 2,
       0,
@@ -113,6 +113,12 @@ class ChunkManager {
     // Create seeded RNG for this chunk (deterministic)
     const seed = chunkSeed(cx, cz);
     const rng = mulberry32(seed);
+
+    // Get ship position for safety zone (only near origin)
+    let safetyShipPos = null;
+    if (shipPosition && shipPosition.length() < 10) {
+      safetyShipPos = shipPosition;
+    }
 
     // Use the already-created chunk entry for tracking objects
     const chunkObjects = chunkEntry.objects;
@@ -129,9 +135,9 @@ class ChunkManager {
       chunkObjects.push(cluster);
     }
 
-    // Spawn asteroids
+    // Spawn asteroids (pass ship position for safety zone)
     const asteroidCount = 5 + Math.floor(rng() * 45);
-    const asteroids = this.asteroids.createAsteroids(center, asteroidCount, biomeParams, rng);
+    const asteroids = this.asteroids.createAsteroids(center, asteroidCount, biomeParams, rng, safetyShipPos);
     chunkObjects.push(...asteroids);
 
     // Spawn debris
@@ -141,14 +147,14 @@ class ChunkManager {
 
     // Add point lights for nebula cores (limited count)
     if (biomeParams.nebulaCount > 0) {
-      const lightCount = Math.min(biomeParams.nebulaCount, 4);
+      const lightCount = Math.min(biomeParams.nebulaCount, 2);
       for (let i = 0; i < lightCount; i++) {
         const lightColor = new THREE.Color(
           biomeParams.nebulaColors.c1[0] + rng() * 0.3,
           biomeParams.nebulaColors.c1[1] + rng() * 0.3,
           biomeParams.nebulaColors.c1[2] + rng() * 0.3
         );
-        const light = new THREE.PointLight(lightColor, 0.5, 40);
+        const light = new THREE.PointLight(lightColor, 0.4, 35);
         const offset = new THREE.Vector3(
           (rng() - 0.5) * 30,
           (rng() - 0.5) * 20,

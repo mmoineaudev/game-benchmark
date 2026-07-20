@@ -109,18 +109,6 @@ class PostProcessingSystem {
     this.vignettePass = null;
     this.filmGrainPass = null;
     this._lowEnd = this._detectLowEnd();
-    
-    // WebGL warning listener — renderer.info became a plain object (no .on()) in Three.js r152+
-    if (renderer && renderer.info) {
-      const originalWarn = console.warn.bind(console);
-      renderer.info.reset = function (...args) {
-        originalWarn('[WebGL Info Reset]', ...args);
-        // WebGLInfo.prototype.reset may not exist in all three.js versions
-        if (THREE.WebGLInfo && THREE.WebGLInfo.prototype && THREE.WebGLInfo.prototype.reset) {
-          THREE.WebGLInfo.prototype.reset.call(this, ...args);
-        }
-      }.bind(renderer.info);
-    }
   }
 
   _detectLowEnd() {

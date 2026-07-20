@@ -7,11 +7,27 @@ import GameState from '../core/GameState.js';
 import EventBus from '../core/EventBus.js';
 import ParticleSystem from '../systems/ParticleSystem.js';
 
+const _sharedLaserGeo = new THREE.CylinderGeometry(
+  Constants.WEAPON.LASER_RADIUS,
+  Constants.WEAPON.LASER_RADIUS,
+  Constants.WEAPON.LASER_LENGTH,
+  6
+);
+_sharedLaserGeo.rotateX(Math.PI / 2);
+_sharedLaserGeo.translate(0, 0, -Constants.WEAPON.LASER_LENGTH / 2);
+
+const _laserMat = new THREE.MeshStandardMaterial({
+  color: Constants.WEAPON.LASER_COLOR,
+  emissive: Constants.WEAPON.LASER_COLOR,
+  emissiveIntensity: 4,
+  roughness: 0,
+  metalness: 1,
+});
+
 class WeaponSystem {
   constructor(scene) {
     this.scene = scene;
     this._projectiles = [];
-    this._laserPool = [];
     this._lastFireTime = 0;
   }
 
@@ -19,9 +35,6 @@ class WeaponSystem {
     return this._projectiles;
   }
 
-  /**
-   * Attempt to fire a laser
-   */
   fire(shipMesh, dt, particleSystem) {
     if (!shipMesh) return;
 
@@ -37,101 +50,63 @@ class WeaponSystem {
     // Play laser sound
     EventBus.emit('audio:laser', {});
 
-    // Create laser projectile
-    const laser = this._createLaser(shipMesh);
+    const laser = new THREE.Mesh(_sharedLaserGeo, _laserMat);
+
+    const forward = new THREE.Vector3(0, 0, -1);
+    forward.applyQuaternion(shipMesh.quaternion);
+    const origin = shipMesh.position.clone().add(forward.clone().multiplyScalar(2.2));
+    origin.y += 0.3;
+
+    laser.position.copy(origin);
+    laser.lookAt(origin.clone().add(forward));
+
+    this.scene.add(laser);
+
     const velocity = new THREE.Vector3(0, 0, -Constants.WEAPON.PROJECTILE_SPEED);
     velocity.applyQuaternion(shipMesh.quaternion);
     this._projectiles.push({
       mesh: laser,
-      velocity: velocity,
+      velocity,
       life: Constants.WEAPON.PROJECTILE_LIFETIME,
       range: 0,
     });
 
-    // Apply slight recoil
     const recoil = new THREE.Vector3(0, 0, 1);
     recoil.applyQuaternion(shipMesh.quaternion);
     shipMesh.userData.velocity.add(recoil.multiplyScalar(0.5));
+
+    if (particleSystem) {
+      particleSystem.spawnExhaust(origin, forward.clone().multiplyScalar(-1), 2, 0.6);
+    }
   }
 
-  _createLaser(shipMesh) {
-    const geo = new THREE.CylinderGeometry(
-      Constants.WEAPON.LASER_RADIUS,
-      Constants.WEAPON.LASER_RADIUS,
-      Constants.WEAPON.LASER_LENGTH,
-      6
-    );
-    geo.rotateX(Math.PI / 2);
-    geo.translate(0, 0, -Constants.WEAPON.LASER_LENGTH / 2);
-
-    const mat = new THREE.MeshStandardMaterial({
-      color: Constants.WEAPON.LASER_COLOR,
-      emissive: Constants.WEAPON.LASER_COLOR,
-      emissiveIntensity: 3,
-      roughness: 0,
-      metalness: 1,
-    });
-
-    const laser = new THREE.Mesh(geo, mat);
-    
-    // Position at ship's front
-    const forward = new THREE.Vector3(0, 0, -1);
-    forward.applyQuaternion(shipMesh.quaternion);
-    const origin = shipMesh.position.clone().add(forward.multiplyScalar(2));
-    origin.y += 0.3; // Slightly above ship center
-    
-    laser.position.copy(origin);
-    laser.lookAt(origin.clone().add(forward));
-    
-    this.scene.add(laser);
-    return laser;
-  }
-
-  /**
-   * Update projectiles
-   */
   update(dt, particleSystem) {
     for (let i = this._projectiles.length - 1; i >= 0; i--) {
       const proj = this._projectiles[i];
-      
-      // Move
-      proj.mesh.position.add(proj.velocity.clone().multiplyScalar(dt));
+
+      proj.mesh.position.addScaledVector(proj.velocity, dt);
       proj.life -= dt;
       proj.range += proj.velocity.length() * dt;
 
-      // Remove if expired or out of range
       if (proj.life <= 0 || proj.range >= Constants.WEAPON.PROJECTILE_RANGE) {
         this.scene.remove(proj.mesh);
-        proj.mesh.geometry.dispose();
-        proj.mesh.material.dispose();
         this._projectiles.splice(i, 1);
         GameState.removeProjectile(i);
       }
     }
   }
 
-  /**
-   * Get active projectiles
-   */
   getProjectiles() {
     return this._projectiles;
   }
 
-  /**
-   * Clear all projectiles
-   */
   clear() {
     for (const proj of this._projectiles) {
       this.scene.remove(proj.mesh);
-      proj.mesh.geometry.dispose();
-      proj.mesh.material.dispose();
     }
     this._projectiles = [];
   }
 
-  /**
-   * Reset firing cooldown
-   */
   reset() {
     this._lastFireTime = 0;
   }

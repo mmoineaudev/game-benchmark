@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Space Exploration</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { overflow: hidden; width: 100%; height: 100%; background: #000; }
+    #game-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; }
+    
+    /* HUD overlay */
+    #hud {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 10;
+      font-family: 'Courier New', monospace;
+      color: #aaccff;
+      text-shadow: 0 0 8px rgba(100,150,255,0.6);
+    }
+    
+    #hud-top {
+      position: absolute;
+      top: 20px; left: 20px; right: 20px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 18px;
+      letter-spacing: 2px;
+    }
+    
+    #hud-bottom {
+      position: absolute;
+      bottom: 30px; left: 50%;
+      transform: translateX(-50%);
+      text-align: center;
+    }
+    
+    .health-bar-bg {
+      width: 300px; height: 12px;
+      background: rgba(100,150,255,0.15);
+      border: 1px solid rgba(100,150,255,0.4);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    
+    .health-bar-fill {
+      height: 100%;
+      width: 100%;
+      background: linear-gradient(90deg, #ff3333, #ffaa33, #33ff66);
+      transition: width 0.3s ease;
+      border-radius: 6px;
+    }
+    
+    .health-label {
+      font-size: 12px;
+      opacity: 0.7;
+      margin-bottom: 5px;
+      letter-spacing: 3px;
+    }
+    
+    #game-over {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.85);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      color: #ff6644;
+      font-family: 'Courier New', monospace;
+      text-shadow: 0 0 20px rgba(255,100,68,0.8);
+    }
+    
+    #game-over h1 {
+      font-size: 72px;
+      margin-bottom: 20px;
+      letter-spacing: 8px;
+    }
+    
+    #game-over p {
+      font-size: 24px;
+      opacity: 0.9;
+      margin-bottom: 10px;
+    }
+    
+    #game-over .restart-hint {
+      font-size: 16px;
+      opacity: 0.5;
+      margin-top: 30px;
+      letter-spacing: 2px;
+    }
+    
+    /* Damage flash overlay */
+    #damage-flash {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 5;
+      opacity: 0;
+      transition: opacity 0.1s ease-out;
+    }
+    
+    /* Screen flash */
+    #screen-flash {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 6;
+      opacity: 0;
+    }
+    
+    /* Crosshair */
+    #crosshair {
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 15;
+      pointer-events: none;
+    }
+    
+    .crosshair-line {
+      position: absolute;
+      background: rgba(170,204,255,0.6);
+    }
+    
+    .crosshair-h {
+      width: 30px; height: 2px;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+    }
+    
+    .crosshair-v {
+      width: 2px; height: 30px;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+    }
+    
+    .crosshair-dot {
+      width: 6px; height: 6px;
+      background: rgba(255,255,255,0.9);
+      border-radius: 50%;
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+    }
+    
+    /* Buff indicators */
+    #buff-indicators {
+      position: fixed;
+      top: 80px; right: 20px;
+      z-index: 12;
+      pointer-events: none;
+      text-align: right;
+    }
+    
+    .buff-icon {
+      font-size: 32px;
+      margin-bottom: 10px;
+      opacity: 0.9;
+      filter: drop-shadow(0 0 8px rgba(100,150,255,0.6));
+    }
+    
+    /* Loading screen */
+    #loading {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: #000;
+      z-index: 200;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      color: #aaccff;
+      font-family: 'Courier New', monospace;
+    }
+    
+    .loading-spinner {
+      width: 60px; height: 60px;
+      border: 3px solid rgba(100,150,255,0.2);
+      border-top-color: #aaccff;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 20px;
+    }
+    
+    @keyframes spin { to { transform: rotate(360deg); } }
+    
+    .loading-text {
+      font-size: 18px;
+      letter-spacing: 4px;
+      opacity: 0.7;
+    }
+  </style>
+</head>
+<body>
+  <!-- Loading screen -->
+  <div id="loading">
+    <div class="loading-spinner"></div>
+    <div class="loading-text">LOADING VOID DRIFT...</div>
+  </div>
+  
+  <!-- Game container -->
+  <div id="game-container"></div>
+  
+  <!-- HUD -->
+  <div id="hud" style="display: none;">
+    <div id="hud-top">
+      <div id="score-display">SCORE: 0</div>
+      <div id="distance-display">DISTANCE: 0 units</div>
+    </div>
+    <div id="hud-bottom">
+      <div class="health-label">HULL INTEGRITY</div>
+      <div class="health-bar-bg">
+        <div class="health-bar-fill" id="health-fill"></div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Crosshair -->
+  <div id="crosshair" style="display: none;">
+    <div class="crosshair-line crosshair-h"></div>
+    <div class="crosshair-line crosshair-v"></div>
+    <div class="crosshair-dot"></div>
+  </div>
+  
+  <!-- Buff indicators -->
+  <div id="buff-indicators"></div>
+  
+  <!-- Damage flash -->
+  <div id="damage-flash"></div>
+  <div id="screen-flash"></div>
+  
+  <!-- Game over screen -->
+  <div id="game-over">
+    <h1>GAME OVER</h1>
+    <p id="final-score">SCORE: 0</p>
+    <p id="high-score">HIGH SCORE: 0</p>
+    <p class="restart-hint">PRESS SPACE TO RESTART</p>
+  </div>
+  
+  <!-- Main game script -->
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

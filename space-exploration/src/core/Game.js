@@ -24,8 +24,8 @@ class Game {
   constructor(containerId) {
     this.container = document.getElementById(containerId);
     this._isRunning = false;
-    this._isPaused = true; // Start paused so player can see HUD and take screenshots
-    this._clock = new THREE.Clock();
+    this._isPaused = true;
+    this._clock = performance.now();
     this._delta = 0;
     this._fpsCounter = { frames: 0, lastTime: 0 };
     this._unsubscribers = [];
@@ -33,11 +33,7 @@ class Game {
     this._projectileHitsProcessed = new Set();
   }
 
-  /**
-   * Initialize all systems in order
-   */
   init() {
-    // 1. Renderer
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
       alpha: false,
@@ -45,17 +41,14 @@ class Game {
     });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.shadowMap.enabled = false;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.2;
     this.container.appendChild(this.renderer.domElement);
 
-    // 2. Scene
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(Constants.SCENE.BACKGROUND_COLOR);
     this.scene.fog = new THREE.FogExp2(Constants.SCENE.FOG_COLOR, Constants.SCENE.FOG_DENSITY);
 
-    // 3. Camera
     this.camera = new THREE.PerspectiveCamera(
       Constants.CAMERA.START_FOV,
       window.innerWidth / window.innerHeight,
@@ -64,19 +57,29 @@ class Game {
     );
     this.camera.position.set(0, Constants.CAMERA.FOLLOW_HEIGHT, -Constants.CAMERA.FOLLOW_DISTANCE);
 
-    // 4. Lighting
     this._setupLighting();
-
-    // 5. Systems
     this._initSystems();
-
-    // 6. Event listeners
     this._setupEvents();
-
-    // 7. Show pause screen and wait for user input to start
     this._showPauseScreen();
-    
+
     console.log('[Game] Initialized (paused). Press SPACE to start.');
+  }
+
+  _setupLighting() {
+    const ambient = new THREE.AmbientLight(0x0b1020, 0.5);
+    this.scene.add(ambient);
+
+    this.sunLight = new THREE.DirectionalLight(0xaaccff, 0.9);
+    this.sunLight.position.set(-60, 40, -40);
+    this.scene.add(this.sunLight);
+
+    const fill = new THREE.DirectionalLight(0x446688, 0.4);
+    fill.position.set(40, 15, 50);
+    this.scene.add(fill);
+
+    const rim = new THREE.DirectionalLight(0x224477, 0.25);
+    rim.position.set(-20, -10, 20);
+    this.scene.add(rim);
   }
 
   _initSystems() {
@@ -122,24 +125,7 @@ class Game {
     this.crosshair.init();
   }
 
-  _setupLighting() {
-    // Ambient (very dim)
-    const ambient = new THREE.AmbientLight(0x112244, 0.05);
-    this.scene.add(ambient);
-
-    // Directional (sun)
-    this.sunLight = new THREE.DirectionalLight(0x8899cc, 0.8);
-    this.sunLight.position.set(50, 30, -50);
-    this.scene.add(this.sunLight);
-
-    // Secondary fill light
-    const fill = new THREE.DirectionalLight(0x334466, 0.2);
-    fill.position.set(-30, -20, 30);
-    this.scene.add(fill);
-  }
-
   _setupEvents() {
-    // Resize handler
     const onResize = () => {
       this.camera.aspect = window.innerWidth / window.innerHeight;
       this.camera.updateProjectionMatrix();
@@ -149,128 +135,77 @@ class Game {
     window.addEventListener('resize', onResize);
     this._unsubscribers.push(() => window.removeEventListener('resize', onResize));
 
-    // Input: fire (spacebar only) — handled via isPressed in game loop, not event
     this._unsubscribers.push(EventBus.on('input:keydown', (code) => {
       if (code === Constants.INPUT.RESTART && !GameState.isAlive) {
         this._restart();
       }
-      // Mute toggle
       if (code === 'KeyM') {
         this.audio.toggleMute();
       }
     }));
 
-    // Audio events
-    this._unsubscribers.push(EventBus.on('audio:laser', () => {
-      this.audio.playLaser();
-    }));
+    this._unsubscribers.push(EventBus.on('audio:laser', () => this.audio.playLaser()));
+    this._unsubscribers.push(EventBus.on('audio:collision', () => this.audio.playCollision()));
+    this._unsubscribers.push(EventBus.on('audio:explosion', (size) => this.audio.playExplosion(size)));
+    this._unsubscribers.push(EventBus.on('audio:warning', () => this.audio.playWarning()));
 
-    this._unsubscribers.push(EventBus.on('audio:collision', () => {
-      this.audio.playCollision();
-    }));
-
-    // Audio: explosion
-    this._unsubscribers.push(EventBus.on('audio:explosion', (size) => {
-      this.audio.playExplosion(size);
-    }));
-
-    // Audio: warning beep
-    this._unsubscribers.push(EventBus.on('audio:warning', () => {
-      this.audio.playWarning();
-    }));
-
-    // Physics collision
-    this._unsubscribers.push(EventBus.on('physics:collision', (data) => {
+    this._unsubscribers.push(EventBus.on('physics:collision', () => {
       this.hud.damageFlash();
       this.hud.screenFlash('#ff4444', 150);
     }));
 
-    // Camera shake
-    this._unsubscribers.push(EventBus.on('camera:shake', (amount) => {
-      this.cameraSystem.triggerShake(amount);
-    }));
+    this._unsubscribers.push(EventBus.on('camera:shake', (amount) => this.cameraSystem.triggerShake(amount)));
 
-    // Score destruction
-    this._unsubscribers.push(EventBus.on('weapon:destroy', (data) => {
-      this.score.awardDestruction(data.type, data.size);
-    }));
-
-    // Game over
-    this._unsubscribers.push(EventBus.on('game:gameover', () => {
-      this._isRunning = false;
-    }));
-
-    // Mute feedback
-    this._unsubscribers.push(EventBus.on('audio:mute', (muted) => {
-      console.log(`[Game] Audio ${muted ? 'muted' : 'unmuted'}`);
-    }));
+    this._unsubscribers.push(EventBus.on('weapon:destroy', (data) => this.score.awardDestruction(data.type, data.size)));
   }
 
   _attemptFire() {
     if (!GameState.isAlive) return;
-    const dt = this._delta;
-    this.weapon.fire(this.playerShip.mesh, dt, this.particles);
+    this.weapon.fire(this.playerShip.mesh, this._delta, this.particles);
   }
 
-  /**
-   * Main game loop
-   */
   _animate() {
     if (!this._isRunning) return;
-
     requestAnimationFrame(() => this._animate());
 
-    // Delta time calculation (capped to prevent death spiral on tab-out)
     const now = performance.now();
     this._delta = Math.min((now - this._lastTime) / 1000, 0.1);
     this._lastTime = now;
 
-    // Update game time
     GameState.game.time += this._delta;
+    this.input.update(this._delta);
 
-    // --- Input ---
-    const thrusting = this.input.isPressed(Constants.INPUT.FORWARD);
-
-    // --- Player Physics ---
     const isThrusting = this.physics.updatePlayerPhysics(
-      this.playerShip.mesh, this.input, this._delta
+      this.playerShip.mesh,
+      this.input,
+      this._delta
     );
 
-    // --- Ship Rotation ---
-    this.playerShip.updateRotation(this._delta, this.input.getRollInput());
+    this.playerShip.updateRotation(this._delta, this.input);
     this.playerShip.updateEngineFlames(isThrusting);
     this.playerShip.updateHitFlash(this._delta);
 
-    // --- Camera ---
     this.cameraSystem.update(this.playerShip.mesh, this._delta);
 
-    // --- Engine Rumble ---
     const speedRatio = Math.min(
       this.playerShip.mesh.userData.velocity.length() / Constants.SHIP.MAX_SPEED,
       1
     );
     this.audio.updateEngine(isThrusting, speedRatio);
 
-    // --- Weapon ---
     if (this.input.isPressed(Constants.INPUT.FIRE)) {
       this._attemptFire();
     }
     this.weapon.update(this._delta, this.particles);
 
-    // --- Starfield ---
     this.starfield.update(this.playerShip.mesh.position, speedRatio, this._delta);
-
-    // --- Chunk/World ---
     this.chunkManager.update(this.playerShip.mesh.position, this._delta);
 
-    // --- Exhaust particles ---
     if (isThrusting) {
       const exhaustDir = new THREE.Vector3(0, 0, 1);
       exhaustDir.applyQuaternion(this.playerShip.mesh.quaternion);
       this.particles.spawnExhaust(
-        this.playerShip.mesh.position.clone().add(
-          exhaustDir.clone().multiplyScalar(1.5)
-        ),
+        this.playerShip.mesh.position.clone().add(exhaustDir.clone().multiplyScalar(1.5)),
         exhaustDir,
         Math.ceil(3 + speedRatio * 5),
         speedRatio
@@ -278,7 +213,6 @@ class Game {
     }
     this.particles.update(this._delta);
 
-    // --- Collision Detection ---
     const destructibles = this.chunkManager.getDestructibles();
     const shipCollisions = this.physics.checkShipCollisions(
       this.playerShip.mesh, destructibles
@@ -289,12 +223,10 @@ class Game {
       EventBus.emit('audio:collision', {});
     }
 
-    // --- Projectile Collisions ---
     const projectiles = this.weapon.getProjectiles();
     const hits = this.physics.checkProjectileCollisions(projectiles, destructibles);
 
     for (const hit of hits) {
-      // Skip if already processed this hit
       const hitKey = `${hit.projectileIndex}-${hit.targetIndex}`;
       if (this._projectileHitsProcessed.has(hitKey)) continue;
       this._projectileHitsProcessed.add(hitKey);
@@ -302,201 +234,120 @@ class Game {
       const proj = projectiles[hit.projectileIndex];
       if (!proj || !proj.mesh || !this.scene.children.includes(proj.mesh)) continue;
 
-      // Destroy target (only non-instanced)
       if (!hit.target.isInstanced && hit.target.userData) {
         const isAsteroid = hit.target.userData.size > 0.3;
         const type = isAsteroid ? 'asteroid' : 'debris';
         const size = hit.target.userData.size || 1;
 
         hit.target.userData.isDestroyed = true;
-        // Explosion particles
         this.particles.createExplosion(hit.target.position.clone(), size);
         EventBus.emit('audio:explosion', size);
-        // Score
         EventBus.emit('weapon:destroy', { type, size });
-        // Camera shake
         EventBus.emit('camera:shake', isAsteroid ? 0.5 : 0.2);
         this.hud.screenFlash(isAsteroid ? '#ffaa00' : '#888888', isAsteroid ? 80 : 50);
-        // Remove from scene
-        if (isAsteroid) {
-          this.chunkManager.destroyAsteroid(hit.target);
-        }
+        this.chunkManager.destroyAsteroid(hit.target);
       }
 
-      // Remove projectile
       if (proj.mesh && this.scene.children.includes(proj.mesh)) {
         this.scene.remove(proj.mesh);
         proj.mesh.geometry.dispose();
         proj.mesh.material.dispose();
       }
-      // Remove from projectile array
       const idx = this.weapon._projectiles.indexOf(proj);
       if (idx >= 0) {
         this.weapon._projectiles.splice(idx, 1);
       }
 
-      // Spark impact
       this.particles.createSparks(proj.mesh.position.clone());
     }
 
-    // --- Post-Processing ---
     this.postProcessing.updateChromaticAberration(speedRatio);
     this.postProcessing.updateBloom(speedRatio);
     this.postProcessing.updateFilmGrain(GameState.game.time);
 
-    // --- Score HUD (distance + score) ---
     this.score.updateHUD();
     this.score.updateDistanceScore(this._delta);
 
-    // --- Buffs ---
     this.buffs.update(this._delta);
 
-    // --- Health System ---
-    this._checkHealth();
     if (GameState.health <= 0 && GameState.isAlive) {
-      GameState.takeDamage(0); // ensure game over state
+      GameState.takeDamage(0);
       EventBus.emit('game:gameover');
     }
-    EventBus.emit('game:tick');
 
-    // --- Game Over check ---
-    if (!GameState.isAlive && this._isRunning) {
+    if (!GameState.isAlive) {
+      this.hud.showGameOver(GameState.score, GameState.highScore);
       this._isRunning = false;
     }
 
-    // --- Game Over UI ---
-    if (!GameState.isAlive) {
-      this.hud.showGameOver(GameState.score, GameState.highScore);
-    }
-
-    // --- Render ---
     this.postProcessing.render();
-
-    // --- FPS counter ---
-    this._fpsCounter.frames++;
-    if (now - this._fpsCounter.lastTime >= 1000) {
-      this._fpsCounter.frames = 0;
-      this._fpsCounter.lastTime = now;
-    }
   }
 
-  /**
-   * Health system — check for game over and warning beeps
-   */
-  _checkHealth() {
-    const health = GameState.health;
-    // Warning beep when health drops below threshold
-    if (health <= Constants.HEALTH.WARNING_THRESHOLD && GameState.isAlive) {
-      EventBus.emit('audio:warning', {});
-    }
-  }
-
-  /**
-   * Show pause screen overlay
-   */
   _showPauseScreen() {
     const pauseDiv = document.createElement('div');
     pauseDiv.id = 'pause-screen';
-    pauseDiv.style.cssText = `
-      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-      background: rgba(0,0,0,0.7); z-index: 50; display: flex;
-      align-items: center; justify-content: center; flex-direction: column;
-      color: #aaccff; font-family: 'Courier New', monospace;
-      text-shadow: 0 0 12px rgba(100,150,255,0.8);
-    `;
-    pauseDiv.innerHTML = `
-      <h1 style="font-size: 48px; margin-bottom: 20px;">PAUSED</h1>
-      <p style="font-size: 20px; opacity: 0.8;">Press SPACE to start</p>
-    `;
+    pauseDiv.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.35); z-index: 50; display: flex; align-items: center; justify-content: center; flex-direction: column; color: #aaccff; font-family: Courier New, monospace; text-shadow: 0 0 12px rgba(100,150,255,0.8); pointer-events: none;';
+    pauseDiv.innerHTML = '<h1 style="font-size: 44px; margin-bottom: 18px;">PAUSED - Press SPACE to start</h1><p style="font-size: 18px; opacity: 0.8;">Mouse to steer | Z=forward, S=backward | Q/D=strafe | A/E=up/down | Space=fire</p>';
     document.body.appendChild(pauseDiv);
 
-    // Listen for SPACE to unpause
     this._unpauseHandler = (e) => {
       if (e.code === 'Space') {
         e.preventDefault();
-        document.body.removeChild(pauseDiv);
+        const el = document.getElementById('pause-screen');
+        if (el) document.body.removeChild(el);
         window.removeEventListener('keydown', this._unpauseHandler);
         this._isPaused = false;
         this._isRunning = true;
         this._lastTime = performance.now();
         this._animate();
-        console.log('[Game] Unpaused. Game started.');
       }
     };
     window.addEventListener('keydown', this._unpauseHandler);
+
+    this.renderer.render(this.scene, this.camera);
   }
 
-  /**
-   * Restart the game
-   */
   _restart() {
-    // Stop the loop
     this._isRunning = false;
-
-    // Hide game over screen
     this.hud.hideGameOver();
-
-    // Clean up all systems
     this.playerShip.destroy();
     this.weapon.clear();
     this.particles.destroy();
     this.starfield.destroy();
     this.chunkManager.destroy();
     this.postProcessing.composer?.dispose();
-
-    // Clear scene and dispose everything
     this._disposeScene();
 
-    // Re-setup lighting
     this.scene.clear();
     this._setupLighting();
 
-    // Reset state
     GameState.restart();
     EventBus.emit('game:restart');
     this.score.reset();
     this.buffs.clearAll();
     this._projectileHitsProcessed.clear();
-    this._lastHealth = 100;
     this._lastTime = performance.now();
 
-    // Re-initialize all systems
-    this._initSystems();
-
-    // Re-setup event listeners (remove old ones, add new ones)
-    for (const unsub of this._unsubscribers) {
-      unsub();
-    }
+    for (const unsub of this._unsubscribers) unsub();
     this._unsubscribers = [];
     this._setupEvents();
 
-    // Restart the loop
     this._isRunning = true;
     this._animate();
   }
 
-  /**
-   * Dispose all objects in the scene
-   */
   _disposeScene() {
-    // Dispose all geometries and materials in scene
     const toDispose = [];
-    this.scene.traverse(obj => {
+    this.scene.traverse((obj) => {
       if (obj.geometry) obj.geometry.dispose();
       if (obj.material) {
-        if (Array.isArray(obj.material)) {
-          obj.material.forEach(m => m.dispose());
-        } else {
-          obj.material.dispose();
-        }
+        if (Array.isArray(obj.material)) obj.material.forEach((m) => m.dispose());
+        else obj.material.dispose();
       }
     });
     this.scene.clear();
   }
 
-  /**
-   * Shutdown all systems
-   */
   shutdown() {
     this._isRunning = false;
     this.input.destroy();
@@ -506,9 +357,7 @@ class Game {
     this.weapon.clear();
     this.starfield.destroy();
     this.chunkManager.destroy();
-    for (const unsub of this._unsubscribers) {
-      unsub();
-    }
+    for (const unsub of this._unsubscribers) unsub();
     this._unsubscribers = [];
   }
 }

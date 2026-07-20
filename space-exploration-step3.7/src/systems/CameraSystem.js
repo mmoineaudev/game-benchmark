@@ -17,6 +17,11 @@ class CameraSystem {
     this._fovTarget = Constants.CAMERA.START_FOV;
     this._shakeAmount = 0;
     this._shakeDecay = 5;
+    this._back = new THREE.Vector3();
+    this._rightAxis = new THREE.Vector3();
+    this._upAxis = new THREE.Vector3();
+    this._heightOffset = new THREE.Vector3();
+    this._backOffset = new THREE.Vector3();
   }
 
   init() {
@@ -35,13 +40,12 @@ class CameraSystem {
     this.camera.fov += (this._fovTarget - this.camera.fov) * Constants.CAMERA.FOV_LERP_SPEED * dt;
     this.camera.updateProjectionMatrix();
 
-    const back = new THREE.Vector3(0, 0, 1).applyQuaternion(shipObject.quaternion);
-    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(shipObject.quaternion);
-    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(shipObject.quaternion);
+    const back = this._back; back.set(0, 0, 1).applyQuaternion(shipObject.quaternion);
+    const right = this._rightAxis; right.set(1, 0, 0).applyQuaternion(shipObject.quaternion);
+    const up = this._upAxis; up.set(0, 1, 0).applyQuaternion(shipObject.quaternion);
 
-    const heightOffset = up.clone().multiplyScalar(Constants.CAMERA.FOLLOW_HEIGHT);
-    const backOffset = back.clone().multiplyScalar(Constants.CAMERA.FOLLOW_DISTANCE);
-
+    const heightOffset = this._heightOffset.copy(up).multiplyScalar(Constants.CAMERA.FOLLOW_HEIGHT);
+    const backOffset = this._backOffset.copy(back).multiplyScalar(Constants.CAMERA.FOLLOW_DISTANCE);
     this._targetPos.copy(shipObject.position).add(heightOffset).add(backOffset);
 
     const lerpFactor = Math.min(1, 1 - Math.pow(0.01, Constants.CAMERA.DAMPING_SPEED * dt));
@@ -55,7 +59,7 @@ class CameraSystem {
       if (this._shakeAmount < 0.001) this._shakeAmount = 0;
     }
 
-    this._lookTarget.copy(shipObject.position).add(right.clone().multiplyScalar(0.2)).add(back.clone().multiplyScalar(-15));
+    this._lookTarget.copy(shipObject.position).addScaledVector(right, 0.2).addScaledVector(back, -15);
 
     this.camera.position.copy(this._currentPos);
     this.camera.lookAt(this._lookTarget);

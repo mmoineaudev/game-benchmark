@@ -12,26 +12,33 @@ class PhysicsSystem {
     this._targetSphere = new THREE.Sphere();
     this._contactPoint = new THREE.Vector3();
     this._lastPos = 0;
+    this._forward = new THREE.Vector3();
+    this._right = new THREE.Vector3();
+    this._up = new THREE.Vector3();
+    this._accel = new THREE.Vector3();
   }
 
   updatePlayerPhysics(shipObject, input, dt) {
     const vel = shipObject.userData.velocity;
+    const q = shipObject.quaternion;
+    const _f = this._forward; _f.set(0, 0, -1).applyQuaternion(q).normalize();
+    const _r = this._right; _r.set(1, 0, 0).applyQuaternion(q).normalize();
+    const _u = this._up; _u.set(0, 1, 0).applyQuaternion(q).normalize();
+    const accel = this._accel; accel.set(0, 0, 0);
 
-    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(shipObject.quaternion).normalize();
-    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(shipObject.quaternion).normalize();
-    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(shipObject.quaternion).normalize();
+    const keys = input.keys;
+    let forwardInput = 0, rightInput = 0, verticalInput = 0;
+    if (keys['KeyZ'] || keys['ArrowUp']) forwardInput += 1;
+    if (keys['KeyS'] || keys['ArrowDown']) forwardInput += -1;
+    if (keys['KeyD'] || keys['ArrowRight']) rightInput += 1;
+    if (keys['KeyQ'] || keys['ArrowLeft']) rightInput += -1;
+    if (keys['KeyE']) verticalInput += 1;
+    if (keys['KeyA']) verticalInput += -1;
 
-    const accel = new THREE.Vector3(0, 0, 0);
-
-    const fwd = input.getForwardInput();
-    const strafe = input.getStrafeInput();
-    const vertical = input.getVerticalInput();
-
-    const forwardAccel = fwd > 0 ? Constants.SHIP.ACCELERATION : -Constants.SHIP.ACCELERATION * 0.7;
-    accel.addScaledVector(forward, forwardAccel * fwd);
-
-    accel.addScaledVector(right, Constants.SHIP.ACCELERATION * 0.7 * strafe);
-    accel.addScaledVector(up, Constants.SHIP.ACCELERATION * 0.45 * vertical);
+    const forwardAccel = forwardInput > 0 ? Constants.SHIP.ACCELERATION : -Constants.SHIP.ACCELERATION * 0.7;
+    accel.addScaledVector(_f, forwardAccel * forwardInput);
+    accel.addScaledVector(_r, Constants.SHIP.ACCELERATION * 0.7 * rightInput);
+    accel.addScaledVector(_u, Constants.SHIP.ACCELERATION * 0.45 * verticalInput);
 
     vel.addScaledVector(accel, dt);
     vel.multiplyScalar(Math.pow(Constants.SHIP.DRAG, dt * 60));

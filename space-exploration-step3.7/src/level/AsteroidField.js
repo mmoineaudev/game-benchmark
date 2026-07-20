@@ -288,7 +288,7 @@ class AsteroidField {
       
       asteroid.rotation.x += asteroid.userData.rotationSpeed.x * dt;
       asteroid.rotation.y += asteroid.userData.rotationSpeed.y * dt;
-      asteroid.position.add(asteroid.userData.driftVelocity.clone().multiplyScalar(dt));
+      asteroid.position.addScaledVector(asteroid.userData.driftVelocity, dt);
       
       // Update bounding sphere position to match new position
       if (asteroid.userData.boundingSphere) {

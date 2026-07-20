@@ -38,6 +38,12 @@ class ParticleSystem {
       _active: false, _life: 0, _maxLife: 0,
       velocity: new THREE.Vector3(), position: new THREE.Vector3(),
     };
+    // hot-path shims
+    points._active = points.userData._active;
+    points._life = points.userData._life;
+    points._maxLife = points.userData._maxLife;
+    points._position = points.userData.position;
+    points._velocity = points.userData.velocity;
     this.scene.add(points);
     return points;
   }
@@ -196,19 +202,18 @@ class ParticleSystem {
       const maxLives = p.userData._maxLifes;
       const vel = p.userData._velocities;
       let allDead = true;
-      const posAttr = p.geometry.getAttribute('position');
-
-      const fadeStart = p.userData._maxLife || 0.25;
+      const posArray = p.geometry.attributes.position.array;
       for (let j = 0; j < lives.length; j++) {
         lives[j] += dt;
         if (lives[j] < maxLives[j]) {
           allDead = false;
-          posAttr.setX(j, posAttr.getX(j) + vel[j * 3] * dt);
-          posAttr.setY(j, posAttr.getY(j) + vel[j * 3 + 1] * dt);
-          posAttr.setZ(j, posAttr.getZ(j) + vel[j * 3 + 2] * dt);
-          vel[j * 3] *= 0.98;
-          vel[j * 3 + 1] *= 0.98;
-          vel[j * 3 + 2] *= 0.98;
+          const j3 = j * 3;
+          posArray[j3] += vel[j3] * dt;
+          posArray[j3 + 1] += vel[j3 + 1] * dt;
+          posArray[j3 + 2] += vel[j3 + 2] * dt;
+          vel[j3] *= 0.98;
+          vel[j3 + 1] *= 0.98;
+          vel[j3 + 2] *= 0.98;
         }
       }
 

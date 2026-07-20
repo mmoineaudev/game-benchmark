@@ -32,6 +32,9 @@ class Game {
     this._unsubscribers = [];
     this._lastHealth = 100;
     this._projectileHitsProcessed = new Set();
+    this._forward = new THREE.Vector3();
+    this._right = new THREE.Vector3();
+    this._up = new THREE.Vector3();
   }
 
   init() {

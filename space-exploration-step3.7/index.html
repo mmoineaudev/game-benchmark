@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Space Exploration</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { overflow: hidden; width: 100%; height: 100%; background: #000; }
+    #game-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; }
+
+    #hud {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 10;
+      font-family: 'Courier New', monospace;
+      color: #7adfff;
+      text-shadow: 0 0 6px #4aaaff, 0 0 12px #2255aa;
+    }
+
+    #hud-top {
+      position: absolute;
+      top: 24px; left: 28px; right: 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+
+    .hud-block {
+      background: linear-gradient(180deg, rgba(4, 14, 28, 0.55), rgba(4, 14, 28, 0.0));
+      border: 1px solid rgba(90, 170, 255, 0.2);
+      border-top: 1px solid rgba(90, 170, 255, 0.6);
+      padding: 10px 14px;
+      border-radius: 10px;
+      backdrop-filter: blur(4px);
+    }
+
+    .hud-label {
+      font-size: 10px;
+      letter-spacing: 4px;
+      opacity: 0.8;
+      margin-bottom: 4px;
+    }
+
+    .hud-value {
+      font-size: 22px;
+      letter-spacing: 2px;
+    }
+
+    #hud-bottom {
+      position: absolute;
+      bottom: 32px; left: 50%;
+      transform: translateX(-50%);
+      text-align: center;
+    }
+
+    .health-bar-bg {
+      width: 320px; height: 10px;
+      background: rgba(10, 30, 60, 0.85);
+      border: 1px solid rgba(90, 170, 255, 0.45);
+      border-radius: 999px;
+      overflow: hidden;
+      box-shadow: 0 0 18px rgba(50, 140, 255, 0.2);
+    }
+
+    .health-bar-fill {
+      height: 100%;
+      width: 100%;
+      background: linear-gradient(90deg, #22cc77, #55ffaa, #88ffcc);
+      transition: width 0.3s ease, background 0.3s ease;
+      border-radius: 999px;
+      box-shadow: 0 0 14px rgba(100, 255, 170, 0.5);
+    }
+
+    .health-label {
+      font-size: 11px;
+      opacity: 0.75;
+      margin-bottom: 6px;
+      letter-spacing: 4px;
+    }
+
+    #game-over {
+      display: none;
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: radial-gradient(ellipse at center, rgba(10, 10, 24, 0.88), rgba(0,0,0,0.92));
+      z-index: 100;
+      align-items: center; justify-content: center;
+      flex-direction: column;
+      color: #7adfff;
+      font-family: 'Courier New', monospace;
+      text-shadow: 0 0 18px #3c7eff, 0 0 30px #14367a;
+      backdrop-filter: blur(6px);
+    }
+    #game-over.active { display: flex; }
+    #game-over h1 {
+      font-size: 56px;
+      margin-bottom: 18px;
+      letter-spacing: 8px;
+      opacity: 0.95;
+    }
+    #game-over .stat {
+      font-size: 22px;
+      margin: 8px 0;
+      opacity: 0.85;
+    }
+    #game-over .restart {
+      margin-top: 40px;
+      font-size: 16px;
+      opacity: 0.6;
+      animation: pulse 1.5s infinite;
+      letter-spacing: 3px;
+    }
+    @keyframes pulse {
+      0%,100% { opacity: 0.35; }
+      50% { opacity: 0.95; }
+    }
+
+    #warning-overlay {
+      display: none;
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      z-index: 5; pointer-events: none;
+      border: 0px solid rgba(255,60,60,0);
+      box-shadow: inset 0 0 70px rgba(255,40,40,0);
+      transition: box-shadow 0.2s, border 0.2s;
+    }
+    #warning-overlay.active {
+      display: block;
+      animation: warningPulse 1s infinite;
+    }
+    @keyframes warningPulse {
+      0%,100% { box-shadow: inset 0 0 40px rgba(255,40,40,0.12); border: 0px solid rgba(255,60,60,0); }
+      50% { box-shadow: inset 0 0 100px rgba(255,40,40,0.25); border: 8px solid rgba(255,60,60,0.15); }
+    }
+
+    #crosshair {
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 34px; height: 34px;
+      opacity: 0.85;
+    }
+    #crosshair::before, #crosshair::after {
+      content: ''; position: absolute;
+      background: rgba(170, 220, 255, 0.7);
+      box-shadow: 0 0 10px rgba(120, 210, 255, 0.55);
+    }
+    #crosshair::before {
+      top: 50%; left: 4px; right: 4px; height: 2px;
+      transform: translateY(-50%); border-radius: 1px;
+    }
+    #crosshair::after {
+      left: 50%; top: 4px; bottom: 4px; width: 2px;
+      transform: translateX(-50%); border-radius: 1px;
+    }
+    .crosshair-dot {
+      position: absolute; width: 5px; height: 5px;
+      border-radius: 50%;
+      background: rgba(185, 225, 255, 0.8);
+      box-shadow: 0 0 10px rgba(120, 210, 255, 0.6);
+    }
+    .crosshair-dot.tl { top: 3px; left: 3px; }
+    .crosshair-dot.tr { top: 3px; right: 3px; }
+    .crosshair-dot.bl { bottom: 3px; left: 3px; }
+    .crosshair-dot.br { bottom: 3px; right: 3px; }
+  </style>
+</head>
+<body>
+  <div id="game-container"></div>
+
+  <div id="hud">
+    <div id="hud-top">
+      <div class="hud-block">
+        <div class="hud-label">SCORE</div>
+        <div class="hud-value" id="score-display">SCORE: 0</div>
+      </div>
+      <div class="hud-block">
+        <div class="hud-label">DISTANCE</div>
+        <div class="hud-value" id="distance-display">DISTANCE: 0 units</div>
+      </div>
+    </div>
+    <div id="hud-bottom">
+      <div class="health-label">HULL INTEGRITY</div>
+      <div class="health-bar-bg">
+        <div class="health-bar-fill" id="health-fill"></div>
+      </div>
+    </div>
+    <div id="crosshair">
+      <div class="crosshair-dot tl"></div>
+      <div class="crosshair-dot tr"></div>
+      <div class="crosshair-dot bl"></div>
+      <div class="crosshair-dot br"></div>
+    </div>
+  </div>
+
+  <div id="warning-overlay"></div>
+
+  <div id="game-over">
+    <h1>GAME OVER</h1>
+    <div class="stat" id="go-score">Score: 0</div>
+    <div class="stat" id="go-distance">Distance: 0 units</div>
+    <div class="stat" id="go-highscore">High Score: 0</div>
+    <div class="restart">Press R to restart</div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

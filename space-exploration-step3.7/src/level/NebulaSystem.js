@@ -3,7 +3,7 @@
 // ============================================================
 import * as THREE from 'three';
 import Constants from '../core/Constants.js';
-import { NEBULA_FRAGMENT_BODY, NEBULA_VERTEX_SHADER } from '../utils/ShaderHelpers.js';
+import { NEBULA_FRAGMENT_BODY, NEBULA_VERTEX_SHADER, SIMPLEX_3D_GLSL } from '../utils/ShaderHelpers.js';
 
 class NebulaSystem {
   constructor(scene) {

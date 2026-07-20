@@ -16,6 +16,7 @@ class PhysicsSystem {
     this._right = new THREE.Vector3();
     this._up = new THREE.Vector3();
     this._accel = new THREE.Vector3();
+    this._pushDir = new THREE.Vector3();
   }
 
   updatePlayerPhysics(shipObject, input, dt) {
@@ -55,8 +56,8 @@ class PhysicsSystem {
     }
     this._lastPos = currentDist;
 
-    GameState.setPlayerPosition(shipObject.position.clone());
-    const moving = vel.length() > 0.1 || Math.abs(fwd) > 0.01 || Math.abs(strafe) > 0.01 || Math.abs(vertical) > 0.01;
+    GameState.setPlayerPosition(shipObject.position);
+    const moving = vel.length() > 0.1 || Math.abs(forwardInput) > 0.01 || Math.abs(rightInput) > 0.01 || Math.abs(verticalInput) > 0.01;
     return moving;
   }
 
@@ -120,8 +121,8 @@ class PhysicsSystem {
     GameState.takeDamage(collision.damage);
     EventBus.emit('physics:collision', { damage: collision.damage, isLarge: collision.isLarge });
 
-    const pushDir = new THREE.Vector3().subVectors(shipObject.position, collision.target.position).normalize().multiplyScalar(2);
-    shipObject.userData.velocity.add(pushDir);
+    this._pushDir.subVectors(shipObject.position, collision.target.position).normalize().multiplyScalar(2);
+    shipObject.userData.velocity.add(this._pushDir);
     EventBus.emit('camera:shake', collision.isLarge ? 0.8 : 0.3);
     shipObject.userData.hitFlash = 0.2;
   }

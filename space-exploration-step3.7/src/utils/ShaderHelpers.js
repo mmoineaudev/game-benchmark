@@ -104,16 +104,18 @@ uniform vec3 uColor3;
 uniform float uDensity;
 uniform float uPulse;
 
+varying vec2 vUv;
+
 void main() {
-  float n1 = fbm(vUv * 3.0 + uTime * 0.05, 4);
-  float n2 = fbm(vUv * 2.0 + uTime * 0.03, 3);
-  float n3 = snoise(vUv * 4.0 + uTime * 0.08) * 0.5;
+  float n1 = fbm(vec3(vUv, uTime * 0.05) * 3.0, 4);
+  float n2 = fbm(vec3(vUv, uTime * 0.03) * 2.0, 3);
+  float n3 = snoise(vec3(vUv, uTime * 0.08) * 4.0) * 0.5;
   float n = n1 * 0.5 + n2 * 0.3 + n3 * 0.2;
   n = smoothstep(0.15, 0.85, n);
   n = pow(n, 1.2);
 
   vec3 color = mix(uColor1, uColor2, n);
-  float detail = snoise(vUv * 3.0 + uTime * 0.02) * 0.5 + 0.5;
+  float detail = snoise(vec3(vUv, uTime * 0.02) * 3.0) * 0.5 + 0.5;
   color = mix(color, uColor3, detail * n);
 
   float bright = smoothstep(0.7, 1.0, n);

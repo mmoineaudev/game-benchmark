@@ -98,7 +98,7 @@ class NPCShipManager {
 
     const typeIndex = Math.floor(rng() * TYPES.length);
     const color = COLORS[Math.floor(rng() * COLORS.length)];
-    const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.55, roughness: 0.4, metalness: 0.5 });
+    const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.35, roughness: 0.4, metalness: 0.5 });
     const mesh = TYPES[typeIndex](mat, color, rng);
     mesh.position.set(x, y, z);
     const heading = rng() * Math.PI * 2;

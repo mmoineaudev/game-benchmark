@@ -189,8 +189,8 @@ class PostProcessingSystem {
   updateBloom(speedRatio) {
     if (this.bloomPass) {
       // Bloom intensity scales from 1.2 (idle) to 2.0 (full thrust)
-      const minBloom = 1.2;
-      const maxBloom = 2.0;
+      const minBloom = 0.7;
+      const maxBloom = 1.2;
       this.bloomPass.strength = minBloom + speedRatio * (maxBloom - minBloom);
     }
   }

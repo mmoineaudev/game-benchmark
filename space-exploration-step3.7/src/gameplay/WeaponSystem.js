@@ -19,7 +19,7 @@ _sharedLaserGeo.translate(0, 0, -Constants.WEAPON.LASER_LENGTH / 2);
 const _laserMat = new THREE.MeshStandardMaterial({
   color: Constants.WEAPON.LASER_COLOR,
   emissive: Constants.WEAPON.LASER_COLOR,
-  emissiveIntensity: 4,
+  emissiveIntensity: 1.25,
   roughness: 0,
   metalness: 1,
 });

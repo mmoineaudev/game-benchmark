@@ -25,9 +25,9 @@ class ParticleSystem {
 
     const mat = new THREE.PointsMaterial({
       color: Constants.SHIP.ENGINE_COLOR,
-      size: 0.25,
+      size: 0.18,
       transparent: true,
-      opacity: 0.7,
+      opacity: 0.45,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
     });
@@ -115,7 +115,7 @@ class ParticleSystem {
 
     const mat = new THREE.PointsMaterial({
       color: 0xffaa00,
-      size: 0.45,
+      size: 0.35,
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
@@ -167,7 +167,7 @@ class ParticleSystem {
 
     const mat = new THREE.PointsMaterial({
       color,
-      size: 0.18,
+      size: 0.14,
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,

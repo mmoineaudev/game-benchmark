@@ -29,13 +29,13 @@ class PlayerShip {
     this.mesh.userData.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0.3), 1.6);
     this.mesh.userData.hitFlash = 0;
 
-    this._headlight = new THREE.SpotLight(0xffffff, 0.8, 22, Math.PI / 6, 0.6, 1.5);
+    this._headlight = new THREE.SpotLight(0xffffff, 0.55, 18, Math.PI / 6, 0.6, 1.5);
     this._headlight.position.set(0, 0, 2);
     this._headlight.target.position.set(0, 0, -15);
     this.mesh.add(this._headlight);
     this.mesh.add(this._headlight.target);
 
-    this._accentLight = new THREE.PointLight(Constants.SHIP.ACCENT_COLOR, 1.0, 10);
+    this._accentLight = new THREE.PointLight(Constants.SHIP.ACCENT_COLOR, 0.6, 8);
     this._accentLight.position.set(0, -0.8, 1);
     this.mesh.add(this._accentLight);
 
@@ -106,7 +106,7 @@ class PlayerShip {
 
     // Wing reactor rings
     const ringGeo = new THREE.TorusGeometry(0.2, 0.04, 8, 16);
-    const ringMat = new THREE.MeshStandardMaterial({ color: Constants.SHIP.ENGINE_COLOR, emissive: Constants.SHIP.ENGINE_COLOR, emissiveIntensity: 1.2, roughness: 0.2 });
+    const ringMat = new THREE.MeshStandardMaterial({ color: Constants.SHIP.ENGINE_COLOR, emissive: Constants.SHIP.ENGINE_COLOR, emissiveIntensity: 0.4, roughness: 0.2 });
     const leftRing = new THREE.Mesh(ringGeo, ringMat);
     leftRing.position.set(-1.1, -0.15, 1.2);
     group.add(leftRing);
@@ -178,7 +178,7 @@ class PlayerShip {
 
   _createTailLights() {
     const lightGeo = new THREE.SphereGeometry(0.07, 6, 6);
-    const redMat = new THREE.MeshStandardMaterial({ color: Constants.SHIP.WINGTIP_RED, emissive: Constants.SHIP.WINGTIP_RED, emissiveIntensity: 2.5 });
+    const redMat = new THREE.MeshStandardMaterial({ color: Constants.SHIP.WINGTIP_RED, emissive: Constants.SHIP.WINGTIP_RED, emissiveIntensity: 1.0 });
     for (let x of [-0.7, 0.7]) {
       const tail = new THREE.Mesh(lightGeo, redMat);
       tail.position.set(x, 0.05, 2.0);
@@ -248,7 +248,7 @@ class PlayerShip {
       this._engineGlow.scale.set(gs, gs, 1);
     }
 
-    if (this._accentLight) this._accentLight.intensity = 1.2 + 2.0 * speedRatio;
+    if (this._accentLight) this._accentLight.intensity = 0.8 + 1.2 * speedRatio;
 
     if (this._reactorGlows.length === 2) {
       this._reactorGlows[0].material.opacity = 0.15 + speedRatio * 0.2 + Math.abs(this._yawInput) * 0.25;

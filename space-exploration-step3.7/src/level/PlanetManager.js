@@ -41,8 +41,8 @@ const PLANET_FRAG = `
     flow = flow * 0.5 + 0.5;
     vec3 color = mix(uColor1, uColor2, flow);
     color = mix(color, uColor3, smoothstep(0.55, 0.85, flow) * 0.5);
-    color += uRim * fresnel * 0.9;
-    float alpha = 0.85 + fresnel * 0.15;
+    color += uRim * fresnel * 0.55;
+    float alpha = 0.78 + fresnel * 0.22;
     gl_FragColor = vec4(color, alpha);
   }
 `;

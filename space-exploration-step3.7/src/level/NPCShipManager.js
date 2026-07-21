@@ -21,7 +21,7 @@ class NPCShipManager {
   constructor(scene) {
     this.scene = scene;
     this._ships = new Map();
-    this._maxShips = 12;
+    this._maxShips = 28;
     this._spacing = 2400;
     this._viewDistance = 11250;
     this._trails = new Map();

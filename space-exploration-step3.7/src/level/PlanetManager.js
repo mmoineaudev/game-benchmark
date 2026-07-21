@@ -68,7 +68,7 @@ class PlanetManager {
           needed.add(key);
           if (!this._planets.has(key)) {
             const hash = this._hashKey(key);
-            if (hash < 0.18) this._spawnPlanet(cx+dx, cy+dy, cz+dz, key);
+            if (hash < 0.38) this._spawnPlanet(cx+dx, cy+dy, cz+dz, key);
           }
         }
       }

@@ -174,6 +174,7 @@ class AsteroidField {
 
     const dummy = new THREE.Object3D();
     const color = new THREE.Color();
+    const collidables = [];
 
     for (let i = 0; i < count; i++) {
       let offset, pos;
@@ -196,6 +197,13 @@ class AsteroidField {
       // Per-instance color variation
       color.setHSL(0.06 + rng() * 0.08, 0.3, 0.15 + rng() * 0.15);
       instancedMesh.setColorAt(i, color);
+
+      collidables.push({
+        instanceId: i,
+        position: pos,
+        size,
+        radius: size,
+      });
     }
 
     instancedMesh.instanceMatrix.needsUpdate = true;
@@ -203,6 +211,7 @@ class AsteroidField {
 
     instancedMesh.userData.size = 1.2;
     instancedMesh.userData.isInstanced = true;
+    instancedMesh.userData._collidables = collidables;
 
     return instancedMesh;
   }
@@ -235,6 +244,7 @@ class AsteroidField {
 
     const dummy = new THREE.Object3D();
     const color = new THREE.Color();
+    const collidables = [];
 
     for (let i = 0; i < count; i++) {
       let offset, pos;
@@ -256,6 +266,13 @@ class AsteroidField {
 
       color.setHSL(0.05 + rng() * 0.1, 0.2, 0.2 + rng() * 0.15);
       instancedMesh.setColorAt(i, color);
+
+      collidables.push({
+        instanceId: i,
+        position: pos,
+        size,
+        radius: size,
+      });
     }
 
     instancedMesh.instanceMatrix.needsUpdate = true;
@@ -263,6 +280,7 @@ class AsteroidField {
 
     instancedMesh.userData.size = 0.4;
     instancedMesh.userData.isInstanced = true;
+    instancedMesh.userData._collidables = collidables;
 
     return instancedMesh;
   }

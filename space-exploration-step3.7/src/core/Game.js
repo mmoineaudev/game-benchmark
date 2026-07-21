@@ -74,20 +74,23 @@ class Game {
   }
 
   _setupLighting() {
-    const ambient = new THREE.AmbientLight(0x0b1020, 0.5);
+    const ambient = new THREE.AmbientLight(0x161e33, 0.85);
     this.scene.add(ambient);
 
-    this.sunLight = new THREE.DirectionalLight(0xaaccff, 0.9);
+    this.sunLight = new THREE.DirectionalLight(0xddeeff, 1.1);
     this.sunLight.position.set(-60, 40, -40);
     this.scene.add(this.sunLight);
 
-    const fill = new THREE.DirectionalLight(0x446688, 0.4);
+    const fill = new THREE.DirectionalLight(0x5577aa, 0.6);
     fill.position.set(40, 15, 50);
     this.scene.add(fill);
 
-    const rim = new THREE.DirectionalLight(0x224477, 0.25);
+    const rim = new THREE.DirectionalLight(0x335577, 0.4);
     rim.position.set(-20, -10, 20);
     this.scene.add(rim);
+
+    const horizon = new THREE.HemisphereLight(0x334466, 0x0a0a0a, 0.35);
+    this.scene.add(horizon);
   }
 
   _initSystems() {

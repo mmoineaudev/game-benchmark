@@ -61,10 +61,31 @@ class PhysicsSystem {
     this._sphere.copy(shipObject.userData.boundingSphere || new THREE.Sphere(shipObject.position, shipRadius));
 
     for (const target of targets) {
-      if (target.isInstanced) continue;
       if (!target.visible) continue;
-      if (!target.userData?.boundingSphere) continue;
       if (target.userData?.isDestroyed) continue;
+
+      if (target.isInstanced) {
+        if (!target.userData?._collidables) continue;
+        const meshCenter = target.position.clone();
+        for (const c of target.userData._collidables) {
+          const worldPos = meshCenter.clone().add(c.position);
+          this._targetSphere.center.copy(worldPos);
+          this._targetSphere.radius = c.radius || 1;
+          if (this._sphere.intersectsSphere(this._targetSphere)) {
+            collisions.push({
+              target: {
+                position: worldPos,
+                userData: { size: c.size, radius: c.radius },
+              },
+              isLarge: c.size > 2,
+              damage: Constants.HEALTH.COLLISION_DAMAGE,
+            });
+          }
+        }
+        continue;
+      }
+
+      if (!target.userData?.boundingSphere) continue;
 
       this._targetSphere.copy(target.userData.boundingSphere);
       if (this._sphere.intersectsSphere(this._targetSphere)) {
@@ -136,7 +157,11 @@ class PhysicsSystem {
     }
     vel.multiplyScalar(0.7);
 
-    const pen = 1.2 + (target.userData?.radius || target.userData?.size || 1);
+    let pen = 1.2;
+    if (target.userData) {
+      if (target.userData.radius) pen = target.userData.radius;
+      else if (target.userData.size) pen = target.userData.size;
+    }
     shipObject.position.addScaledVector(normal, pen + 0.2);
     EventBus.emit('camera:shake', collision.isLarge ? 0.8 : 0.3);
     shipObject.userData.hitFlash = 0.25;

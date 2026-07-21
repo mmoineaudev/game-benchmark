@@ -52,7 +52,7 @@ class PlanetManager {
     this.scene = scene;
     this._planets = new Map();
     this._spacing = 4800;
-    this._viewDistance = 15000;
+    this._viewDistance = 18750;
     this._clock = new THREE.Clock();
   }
 

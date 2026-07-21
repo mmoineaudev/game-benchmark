@@ -23,7 +23,7 @@ class NPCShipManager {
     this._ships = new Map();
     this._maxShips = 12;
     this._spacing = 2400;
-    this._viewDistance = 9000;
+    this._viewDistance = 11250;
     this._trails = new Map();
     this._trailPositions = [];
     this._trailGeo = null;

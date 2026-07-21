@@ -191,19 +191,7 @@ export class PlayerShip {
     const targetBank = Math.max(-Constants.SHIP.MAX_BANK, Math.min(Constants.SHIP.MAX_BANK,
       yawRate * Constants.SHIP.BANK_RATE - strafe * 0.35));
     this._bank += (targetBank - this._bank) * Math.min(6 * dt, 1);
-    if (!rollInput) this._euler.z = this._bank;
-
-    // Idle self-level: pitch + roll only, after IDLE_SELF_LEVEL_DELAY with no input.
-    const inputStrength = Math.abs(input.mouseX) + Math.abs(input.mouseY) + Math.abs(rollInput);
-    if (inputStrength < 0.001) this._idleTime += dt;
-    else this._idleTime = 0;
-    if (this._idleTime > Constants.INPUT.IDLE_SELF_LEVEL_DELAY) {
-      const t = Math.min((this._idleTime - Constants.INPUT.IDLE_SELF_LEVEL_DELAY) * 0.5, 1);
-      const k = Constants.INPUT.SELF_LEVEL_RATE * dt * t;
-      this._euler.x += (0 - this._euler.x) * k;
-      this._bank += (0 - this._bank) * k;
-      if (!rollInput) this._euler.z = this._bank;
-    }
+    this._euler.z = this._bank;
 
     this.mesh.quaternion.setFromEuler(this._euler);
   }
@@ -252,7 +240,6 @@ export class PlayerShip {
     this.mesh.scale.setScalar(1.35);   // readable at chase-cam distance
     this.mesh.quaternion.identity();
     this.mesh.userData.velocity.set(0, 0, 0);
-    this._idleTime = 0;
     this._bank = 0;
     this._euler.set(0, 0, 0, 'YXZ');
     this._hitFlashTime = 0;

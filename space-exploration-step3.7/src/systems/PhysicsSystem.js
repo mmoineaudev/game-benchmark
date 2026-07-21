@@ -73,7 +73,7 @@ class PhysicsSystem {
         collisions.push({
           target,
           isLarge,
-          damage: isLarge ? Constants.HEALTH.COLLISION_LARGE : Constants.HEALTH.COLLISION_SMALL,
+          damage: Constants.HEALTH.COLLISION_DAMAGE,
         });
       }
     }
@@ -116,8 +116,19 @@ class PhysicsSystem {
     GameState.takeDamage(collision.damage);
     EventBus.emit('physics:collision', { damage: collision.damage, isLarge: collision.isLarge });
 
-    this._pushDir.subVectors(shipObject.position, collision.target.position).normalize().multiplyScalar(2);
-    shipObject.userData.velocity.add(this._pushDir);
+    const normal = new THREE.Vector3().subVectors(shipObject.position, collision.target.position);
+    if (normal.lengthSq() === 0) normal.set(0, 1, 0);
+    normal.normalize();
+
+    const vel = shipObject.userData.velocity;
+    const vn = vel.dot(normal);
+    if (vn > 0) {
+      vel.addScaledVector(normal, -2 * vn);
+      vel.multiplyScalar(0.85);
+    }
+
+    const pen = 1.2 + (collision.target.userData?.radius || collision.target.userData?.size || 1);
+    shipObject.position.addScaledVector(normal, pen + 0.1);
     EventBus.emit('camera:shake', collision.isLarge ? 0.8 : 0.3);
     shipObject.userData.hitFlash = 0.2;
   }

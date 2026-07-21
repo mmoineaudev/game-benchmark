@@ -107,8 +107,7 @@ export const SCORE = {
 
 export const HEALTH = {
   MAX: 100,
-  COLLISION_LARGE: 20,
-  COLLISION_SMALL: 5,
+  COLLISION_DAMAGE: 10,
   WARNING_THRESHOLD: 30,
 };
 

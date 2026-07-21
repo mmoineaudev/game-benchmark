@@ -252,6 +252,19 @@ class ChunkManager {
     return destructibles;
   }
 
+  getCollidables(shipPos) {
+    const collidables = [];
+    collidables.push(...this.getDestructibles());
+
+    for (const [, npc] of this.npcShips._ships) {
+      if (npc.visible && npc.userData && !npc.userData.isDestroyed) {
+        collidables.push(npc);
+      }
+    }
+
+    return collidables;
+  }
+
   destroyAsteroid(asteroid) {
     if (!asteroid.isInstanced && asteroid.userData) {
       asteroid.userData.isDestroyed = true;

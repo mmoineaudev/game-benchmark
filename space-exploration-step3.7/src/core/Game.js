@@ -239,7 +239,7 @@ class Game {
       }
       this.particles.update(this._delta);
 
-      const destructibles = this.chunkManager.getDestructibles();
+      const destructibles = this.chunkManager.getCollidables(this.playerShip.mesh.position);
       const shipCollisions = this.physics.checkShipCollisions(
         this.playerShip.mesh, destructibles
       );

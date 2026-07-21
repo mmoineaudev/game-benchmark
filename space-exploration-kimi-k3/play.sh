@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # VOID DRIFT launcher — installs deps if needed, builds once, then starts dev server and opens browser.
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
 if [ ! -d node_modules ]; then

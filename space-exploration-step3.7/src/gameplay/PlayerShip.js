@@ -241,12 +241,10 @@ class PlayerShip {
     const speedLerp = 0.6 + 0.4 * speedRatio;
     const rate = Constants.SHIP.ROTATION_SPEED * speedLerp;
 
-    const yaw = 0;
-    const pitch = 0;
-    if (input.isPressed('ArrowLeft')) this.mesh.rotation.y += rate * dt;
-    if (input.isPressed('ArrowRight')) this.mesh.rotation.y -= rate * dt;
-    if (input.isPressed('ArrowDown')) this.mesh.rotation.x += rate * dt;
-    if (input.isPressed('ArrowUp')) this.mesh.rotation.x -= rate * dt;
+    if (input.isPressed('ArrowLeft')) this.mesh.rotateOnWorldAxis(new THREE.Vector3(0, 1, 0), rate * dt);
+    if (input.isPressed('ArrowRight')) this.mesh.rotateOnWorldAxis(new THREE.Vector3(0, 1, 0), -rate * dt);
+    if (input.isPressed('ArrowDown')) this.mesh.rotateOnAxis(new THREE.Vector3(1, 0, 0), rate * dt);
+    if (input.isPressed('ArrowUp')) this.mesh.rotateOnAxis(new THREE.Vector3(1, 0, 0), -rate * dt);
 
     const q = new THREE.Euler().setFromQuaternion(this.mesh.quaternion, 'YXZ');
     q.x = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, q.x));

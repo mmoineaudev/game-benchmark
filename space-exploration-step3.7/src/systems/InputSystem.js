@@ -4,7 +4,7 @@
 import Constants from '../core/Constants.js';
 import EventBus from '../core/EventBus.js';
 
-const SENSITIVITY = 2.4;
+const SENSITIVITY = 3.5;
 
 class InputSystem {
   constructor() {

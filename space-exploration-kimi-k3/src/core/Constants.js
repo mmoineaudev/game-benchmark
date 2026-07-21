@@ -121,25 +121,25 @@ export const SCORE = {
 // --- Biomes ------------------------------------------------------------------
 export const BIOME = {
   ZONES: [
-    { name: 'Open Space',      min: 0,    max: 1000, nebulaCount: 1, asteroidDensity: 0.35, debrisCount: 8,
+    { name: 'Open Space',      min: 0,    max: 2000, nebulaCount: 1, asteroidDensity: 0.35, debrisCount: 8,
       nebulaColors: [0x2244aa, 0x3355cc, 0x1133aa], wormhole: false },
-    { name: 'Asteroid Belt',   min: 1000, max: 3000, nebulaCount: 1, asteroidDensity: 0.8,  debrisCount: 8,
+    { name: 'Asteroid Belt',   min: 2000, max: 6000, nebulaCount: 1, asteroidDensity: 0.8,  debrisCount: 8,
       nebulaColors: [0xaa6633, 0x885522, 0xcc7744], wormhole: false },
-    { name: 'Nebula Corridor', min: 3000, max: 5000, nebulaCount: 3, asteroidDensity: 0.2,  debrisCount: 10,
+    { name: 'Nebula Corridor', min: 6000, max: 10000, nebulaCount: 3, asteroidDensity: 0.2,  debrisCount: 10,
       nebulaColors: [0x8833cc, 0x22ccdd, 0x6622aa], wormhole: false },
-    { name: 'Wormhole Tunnel', min: 5000, max: 7000, nebulaCount: 2, asteroidDensity: 0.05, debrisCount: 4,
+    { name: 'Wormhole Tunnel', min: 10000, max: 14000, nebulaCount: 2, asteroidDensity: 0.05, debrisCount: 4,
       nebulaColors: [0xaa22cc, 0x22ffdd, 0x7711aa], wormhole: true },
   ],
-  CYCLE_LENGTH: 7000,
-  INTENSITY_DIVISOR: 5000,
+  CYCLE_LENGTH: 14000,
+  INTENSITY_DIVISOR: 10000,
   INTENSITY_MAX: 2.75,
 };
 
 // --- Chunks ------------------------------------------------------------------
 export const CHUNK = {
   SIZE: 240,
-  SPAWN_AHEAD: 1,
-  CLEANUP_BEHIND: 1,
+  SPAWN_AHEAD: 2,
+  CLEANUP_BEHIND: 2,
   LOW_ALTITUDE_SPAWN_BIAS_Y: 10,
   ORIGIN_SAFETY_RADIUS: 25,
   ORIGIN_SAFETY_DISTANCE: 10,

@@ -14,6 +14,7 @@ class PhysicsSystem {
     this._lastPos = 0;
     this._forward = new THREE.Vector3();
     this._pushDir = new THREE.Vector3();
+    this._projSphere = new THREE.Sphere();
   }
 
   updatePlayerPhysics(shipObject, input, dt) {
@@ -86,7 +87,8 @@ class PhysicsSystem {
     for (let i = projectiles.length - 1; i >= 0; i--) {
       const proj = projectiles[i];
       if (!proj || !proj.mesh) continue;
-      const projSphere = new THREE.Sphere(proj.mesh.position, projRadius);
+      this._projSphere.center.copy(proj.mesh.position);
+      this._projSphere.radius = projRadius;
 
       for (let j = 0; j < targets.length; j++) {
         const target = targets[j];
@@ -101,7 +103,7 @@ class PhysicsSystem {
           continue;
         }
 
-        if (projSphere.intersectsSphere(targetSphere)) {
+        if (this._projSphere.intersectsSphere(targetSphere)) {
           hits.push({ projectileIndex: i, target, targetIndex: j });
           break;
         }

@@ -9,7 +9,6 @@ class CameraSystem {
   constructor(camera, scene) {
     this.camera = camera;
     this.scene = scene;
-    this._offset = new THREE.Vector3(0, Constants.CAMERA.FOLLOW_HEIGHT, -Constants.CAMERA.FOLLOW_DISTANCE);
     this._targetPos = new THREE.Vector3();
     this._currentPos = new THREE.Vector3();
     this._lookTarget = new THREE.Vector3();
@@ -45,6 +44,7 @@ class CameraSystem {
     const back = this._back; back.set(0, 0, 1).applyQuaternion(shipObject.quaternion);
     const right = this._rightAxis; right.set(1, 0, 0).applyQuaternion(shipObject.quaternion);
     const up = this._upAxis; up.set(0, 1, 0).applyQuaternion(shipObject.quaternion);
+
     const heightOffset = this._heightOffset.copy(up).multiplyScalar(Constants.CAMERA.FOLLOW_HEIGHT);
     const baseDist = Constants.CAMERA.FOLLOW_DISTANCE * Math.max(this.zoomFactor, Constants.CAMERA.ZOOM_MIN);
     const backOffset = this._backOffset.copy(back).multiplyScalar(baseDist);
@@ -61,7 +61,10 @@ class CameraSystem {
       if (this._shakeAmount < 0.001) this._shakeAmount = 0;
     }
 
-    this._lookTarget.copy(shipObject.position).addScaledVector(up, -Constants.CAMERA.LOOK_OFFSET_Y).addScaledVector(back, Constants.CAMERA.LOOK_OFFSET_Z);
+    this._lookTarget
+      .copy(shipObject.position)
+      .addScaledVector(up, -Constants.CAMERA.LOOK_OFFSET_Y)
+      .addScaledVector(back, Constants.CAMERA.LOOK_OFFSET_Z);
 
     this.camera.position.copy(this._currentPos);
     this.camera.lookAt(this._lookTarget);

@@ -99,8 +99,8 @@ class BiomeGenerator {
   /**
    * Generate a seeded random for chunk content
    */
-  getChunkRNG(chunkX, chunkZ) {
-    const seed = chunkSeed(chunkX, chunkZ);
+  getChunkRNG(chunkX, chunkY, chunkZ) {
+    const seed = chunkSeed(chunkX, chunkY || 0, chunkZ || 0);
     return mulberry32(seed);
   }
 }

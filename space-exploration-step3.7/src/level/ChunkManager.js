@@ -79,10 +79,10 @@ class ChunkManager {
 
     const toRemove = [];
     for (const [key, chunk] of this._activeChunks) {
-      const dx = Math.abs(chunk.cx - shipChunkX);
-      const dy = Math.abs(chunk.cy - shipChunkY);
-      const dz = Math.abs(chunk.cz - shipChunkZ);
-      if (dx > cleanupBehind && dz > cleanupBehind && dy > cleanupBehind) {
+      const dx = chunk.cx - shipChunkX;
+      const dy = chunk.cy - shipChunkY;
+      const dz = chunk.cz - shipChunkZ;
+      if (dx < -1 || dy < -1 || dz < -1 || dx > spawnAhead || dy > spawnAhead || dz > spawnAhead) {
         toRemove.push(key);
       }
     }
@@ -103,7 +103,7 @@ class ChunkManager {
     );
 
     const biomeParams = this.biome.getBiomeParams(this._totalDistance);
-    const seed = chunkSeed(cx, cz);
+    const seed = chunkSeed(cx, cy, cz);
     const rng = mulberry32(seed);
 
     let safetyShipPos = null;

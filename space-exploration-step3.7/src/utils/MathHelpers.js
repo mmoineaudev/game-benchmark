@@ -29,8 +29,8 @@ export function mulberry32(seed) {
 /**
  * Hash a chunk coordinate to a seed
  */
-export function chunkSeed(x, z) {
-  const h = (x * 374761393 + z * 668265263) ^ 0x5bd1e995;
+export function chunkSeed(x, y, z) {
+  const h = (x * 374761393 + (y || 0) * 668265263 + (z || 0) * 1274126177) ^ 0x5bd1e995;
   return (h ^ (h >>> 13)) >>> 0;
 }
 

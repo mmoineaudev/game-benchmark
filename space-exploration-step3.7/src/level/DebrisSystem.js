@@ -119,7 +119,7 @@ class DebrisSystem {
    */
   clear() {
     for (const d of this._debris) {
-      if (d.mesh && !d.isInstanced) {
+      if (d.mesh) {
         this.scene.remove(d.mesh);
         d.mesh.geometry?.dispose();
         d.mesh.material?.dispose();

@@ -24,9 +24,9 @@ class PlayerShip {
     this.mesh.userData.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1.5);
     this.mesh.userData.hitFlash = 0;
 
-    this._headlight = new THREE.SpotLight(0xffffff, 2, 80, Math.PI / 5, 0.5, 1.5);
+    this._headlight = new THREE.SpotLight(0xffffff, 1.2, 35, Math.PI / 6, 0.6, 1.5);
     this._headlight.position.set(0, 0, 2);
-    this._headlight.target.position.set(0, 0, -20);
+    this._headlight.target.position.set(0, 0, -15);
     this.mesh.add(this._headlight);
     this.mesh.add(this._headlight.target);
 

@@ -3,21 +3,24 @@
 // ============================================================
 
 export const SCENE = {
-  BACKGROUND_COLOR: 0x000011,
-  FOG_COLOR: 0x000011,
-  FOG_DENSITY: 0.008,
+  BACKGROUND_COLOR: 0x111827,
+  FOG_COLOR: 0x111827,
+  FOG_DENSITY: 0.0008,
   MAX_FOV: 95,
   MIN_FOV: 75,
 };
 
 export const CAMERA = {
   START_FOV: 75,
-  FOLLOW_DISTANCE: 12,
+  FOLLOW_DISTANCE: 15,
   FOLLOW_HEIGHT: 4,
   DAMPING_SPEED: 2.5,
   FOV_LERP_SPEED: 3,
-  MIN_FOV: 75,
-  MAX_FOV: 95,
+  MIN_FOV: 60,
+  MAX_FOV: 110,
+  ZOOM_MIN: 1,
+  ZOOM_MAX: 3,
+  ZOOM_STEP: 0.25,
 };
 
 export const SHIP = {

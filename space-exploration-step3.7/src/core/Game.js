@@ -163,6 +163,12 @@ class Game {
 
     this._unsubscribers.push(EventBus.on('camera:shake', (amount) => this.cameraSystem.triggerShake(amount)));
 
+    this._unsubscribers.push(EventBus.on('camera:zoom', (delta) => {
+      if (this.cameraSystem && typeof this.cameraSystem.applyZoom === 'function') {
+        this.cameraSystem.applyZoom(delta);
+      }
+    }));
+
     this._unsubscribers.push(EventBus.on('weapon:destroy', (data) => this.score.awardDestruction(data.type, data.size)));
   }
 
@@ -348,6 +354,7 @@ class Game {
     this.score.reset();
     this.buffs.clearAll();
     this._projectileHitsProcessed.clear();
+    this.cameraSystem.zoomFactor = 1;
     this._lastTime = performance.now();
 
     for (const unsub of this._unsubscribers) unsub();

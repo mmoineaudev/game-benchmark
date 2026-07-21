@@ -1,6 +1,5 @@
 // ============================================================
 // InputSystem — Mouse orientation + click thrust/brake
-// AZERTY-safe: used e.code so bindings are layout-independent
 // ============================================================
 import Constants from '../core/Constants.js';
 import EventBus from '../core/EventBus.js';
@@ -12,14 +11,9 @@ class InputSystem {
     this.rawMouseY = 0;
     this.mouseX = 0;
     this.mouseY = 0;
-    this._boundHandlers = new Map();
-    this._invertY = false;
     this.thrust = false;
     this.brake = false;
-  }
-
-  setInvertY(v) {
-    this._invertY = !!v;
+    this._boundHandlers = new Map();
   }
 
   init() {
@@ -59,6 +53,9 @@ class InputSystem {
       if (e.button === 0) this.thrust = false;
       if (e.button === 2) this.brake = false;
     };
+    const onWheel = (e) => {
+      EventBus.emit('camera:zoom', -Math.sign(e.deltaY) * Constants.CAMERA.ZOOM_STEP);
+    };
     const onContextMenu = (e) => e.preventDefault();
 
     window.addEventListener('keydown', onKeyDown);
@@ -66,6 +63,7 @@ class InputSystem {
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('pointerdown', onPointerDown);
     window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('wheel', onWheel, { passive: true });
     window.addEventListener('contextmenu', onContextMenu);
 
     this._boundHandlers.set('destroy', () => {
@@ -74,6 +72,7 @@ class InputSystem {
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('wheel', onWheel);
       window.removeEventListener('contextmenu', onContextMenu);
     });
   }
@@ -82,10 +81,6 @@ class InputSystem {
     const lerp = 1 - Math.pow(0.0005, dt);
     this.mouseX += (this.rawMouseX - this.mouseX) * lerp;
     this.mouseY += (this.rawMouseY - this.mouseY) * lerp;
-  }
-
-  clearFrame() {
-    this.keys = {};
   }
 
   isPressed(code) {

@@ -1,5 +1,5 @@
 // ============================================================
-// CameraSystem — Follow-cam, damping, FOV speed effect
+// CameraSystem — Follow-cam, damping, FOV speed effect, zoom
 // ============================================================
 import * as THREE from 'three';
 import Constants from '../core/Constants.js';
@@ -22,11 +22,13 @@ class CameraSystem {
     this._upAxis = new THREE.Vector3();
     this._heightOffset = new THREE.Vector3();
     this._backOffset = new THREE.Vector3();
+    this.zoomFactor = 1;
   }
 
   init() {
     this.camera.fov = Constants.CAMERA.START_FOV;
     this.camera.updateProjectionMatrix();
+    this.zoomFactor = 1;
     this._currentPos.copy(this._targetPos);
   }
 
@@ -45,7 +47,8 @@ class CameraSystem {
     const up = this._upAxis; up.set(0, 1, 0).applyQuaternion(shipObject.quaternion);
 
     const heightOffset = this._heightOffset.copy(up).multiplyScalar(Constants.CAMERA.FOLLOW_HEIGHT);
-    const backOffset = this._backOffset.copy(back).multiplyScalar(Constants.CAMERA.FOLLOW_DISTANCE);
+    const baseDist = Constants.CAMERA.FOLLOW_DISTANCE * Math.max(this.zoomFactor, Constants.CAMERA.ZOOM_MIN);
+    const backOffset = this._backOffset.copy(back).multiplyScalar(baseDist);
     this._targetPos.copy(shipObject.position).add(heightOffset).add(backOffset);
 
     const lerpFactor = Math.min(1, 1 - Math.pow(0.01, Constants.CAMERA.DAMPING_SPEED * dt));
@@ -65,6 +68,13 @@ class CameraSystem {
     this.camera.lookAt(this._lookTarget);
 
     this._lastShipPos.copy(shipObject.position);
+  }
+
+  applyZoom(delta) {
+    this.zoomFactor = Math.max(
+      Constants.CAMERA.ZOOM_MIN,
+      Math.min(Constants.CAMERA.ZOOM_MAX, this.zoomFactor + delta)
+    );
   }
 
   triggerShake(amount) {

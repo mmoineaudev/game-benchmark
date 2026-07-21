@@ -1,19 +1,68 @@
 // ============================================================
-// NPCShipManager — occasional ambient ships cruising
+// NPCShipManager — rare wandering ships with trails
 // ============================================================
 import * as THREE from 'three';
 import Constants from '../core/Constants.js';
 import { mulberry32, chunkSeed } from '../utils/MathHelpers.js';
 
-const CLR = [0x00ff88, 0xff8833, 0x33aaff, 0xff33aa, 0xffff33];
+const COLORS = [0x00ff88, 0xff8833, 0x33aaff, 0xff33aa, 0xffff33, 0xff2222];
+const TYPES = [
+  (mat,col,rng)=> new THREE.Mesh(new THREE.ConeGeometry(0.35, 1.4, 6), mat),
+  (mat,col,rng)=> new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.2, 1.6), mat),
+  (mat,col,rng)=> new THREE.Mesh(new THREE.DodecahedronGeometry(0.55), mat),
+  (mat,col,rng)=> {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.45, 1.7, 8), mat);
+    m.rotation.x = Math.PI / 2;
+    return m;
+  },
+];
 
 class NPCShipManager {
   constructor(scene) {
     this.scene = scene;
     this._ships = new Map();
-    this._maxShips = 18;
-    this._spacing = 1600;
+    this._maxShips = 12;
+    this._spacing = 2400;
     this._viewDistance = 9000;
+    this._trails = new Map();
+    this._trailPositions = [];
+    this._trailGeo = null;
+    this._trailMat = null;
+    this._buildTrailPool(256);
+  }
+
+  _buildTrailPool(capacity) {
+    this._trailPositions = new Float32Array(capacity * 3);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(this._trailPositions, 3));
+    geo.setDrawRange(0, 0);
+    const mat = new THREE.PointsMaterial({
+      color: 0xaaccff,
+      size: 0.22,
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    this._trailPoints = new THREE.Points(geo, mat);
+    this._trailPoints.visible = false;
+    this.scene.add(this._trailPoints);
+
+    this._trailIndex = 0;
+    this._trailCapacity = capacity;
+    this._trailLifes = new Float32Array(capacity).fill(0);
+  }
+
+  _spawnTrailAt(position, velocity) {
+    const i = this._trailIndex;
+    this._trailPositions[i * 3] = position.x;
+    this._trailPositions[i * 3 + 1] = position.y;
+    this._trailPositions[i * 3 + 2] = position.z;
+    this._trailLifes[i] = 1.0;
+    this._trailIndex = (this._trailIndex + 1) % this._trailCapacity;
+    this._trailPoints.geometry.attributes.position.needsUpdate = true;
+    this._trailPoints.geometry.setDrawRange(0, this._trailCapacity);
+    this._trailPoints.visible = true;
   }
 
   update(shipPos, dt) {
@@ -34,47 +83,32 @@ class NPCShipManager {
       if (!needed.has(key) || npc.position.distanceToSquared(shipPos) > this._viewDistance * this._viewDistance) {
         this._removeNPC(key);
       } else {
-        this._moveNPC(npc, dt);
+        this._moveNPC(npc, dt, shipPos);
       }
     }
+    this._decayTrails(dt);
   }
 
   _spawnNPC(gx, gy, gz, key) {
     const seed = chunkSeed(gx * 1013, gy * 1009, gz * 997);
     const rng = mulberry32(seed);
-    const x = gx * this._spacing + (rng() - 0.5) * this._spacing * 0.5;
-    const y = gy * this._spacing + (rng() - 0.5) * this._spacing * 0.5;
-    const z = gz * this._spacing + (rng() - 0.5) * this._spacing * 0.5;
+    const x = gx * this._spacing + (rng() - 0.5) * this._spacing * 0.6;
+    const y = gy * this._spacing + (rng() - 0.5) * this._spacing * 0.6;
+    const z = gz * this._spacing + (rng() - 0.5) * this._spacing * 0.6;
 
-    const shape = Math.floor(rng() * 4);
-    let mesh;
-    if (shape === 0) {
-      mesh = new THREE.Mesh(
-        new THREE.ConeGeometry(0.35, 1.2, 6),
-        new THREE.MeshStandardMaterial({ color: CLR[Math.floor(rng()*CLR.length)], emissive: CLR[Math.floor(rng()*CLR.length)], emissiveIntensity: 0.6, roughness: 0.4, metalness: 0.5 })
-      );
-    } else if (shape === 1) {
-      mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(0.6, 0.2, 1.4),
-        new THREE.MeshStandardMaterial({ color: CLR[Math.floor(rng()*CLR.length)], emissive: CLR[Math.floor(rng()*CLR.length)], emissiveIntensity: 0.5, roughness: 0.5, metalness: 0.4 })
-      );
-    } else if (shape === 2) {
-      mesh = new THREE.Mesh(
-        new THREE.DodecahedronGeometry(0.55),
-        new THREE.MeshStandardMaterial({ color: CLR[Math.floor(rng()*CLR.length)], emissive: CLR[Math.floor(rng()*CLR.length)], emissiveIntensity: 0.5, roughness: 0.3, metalness: 0.7 })
-      );
-    } else {
-      mesh = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.25, 0.4, 1.5, 8),
-        new THREE.MeshStandardMaterial({ color: CLR[Math.floor(rng()*CLR.length)], emissive: CLR[Math.floor(rng()*CLR.length)], emissiveIntensity: 0.5, roughness: 0.5, metalness: 0.3 })
-      );
-      mesh.rotation.x = Math.PI / 2;
-    }
-
+    const typeIndex = Math.floor(rng() * TYPES.length);
+    const color = COLORS[Math.floor(rng() * COLORS.length)];
+    const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.55, roughness: 0.4, metalness: 0.5 });
+    const mesh = TYPES[typeIndex](mat, color, rng);
     mesh.position.set(x, y, z);
+    const heading = rng() * Math.PI * 2;
+    const climb = (rng() - 0.5) * 0.4;
     mesh.userData = {
-      velocity: new THREE.Vector3((rng()-0.5)*8, (rng()-0.5)*4, (rng()-0.5)*8),
-      rotSpeed: (rng()-0.5) * 1.5,
+      velocity: new THREE.Vector3(Math.cos(climb) * Math.sin(heading) * 10, Math.sin(climb) * 10, Math.cos(climb) * Math.cos(heading) * 10),
+      rotSpeedY: (rng() - 0.5) * 0.6,
+      rotSpeedX: (rng() - 0.5) * 0.3,
+      type: typeIndex,
+      trailAccum: 0,
       isChunkObject: true,
       isNPC: true,
     };
@@ -82,10 +116,31 @@ class NPCShipManager {
     this._ships.set(key, mesh);
   }
 
-  _moveNPC(npc, dt) {
-    npc.position.addScaledVector(npc.userData.velocity, dt);
-    npc.rotation.y += npc.userData.rotSpeed * dt;
-    npc.rotation.x += npc.userData.rotSpeed * 0.5 * dt;
+  _moveNPC(npc, dt, towardShip) {
+    const ud = npc.userData;
+    npc.position.addScaledVector(ud.velocity, dt);
+    npc.rotation.y += ud.rotSpeedY * dt;
+    npc.rotation.x += ud.rotSpeedX * dt;
+
+    ud.trailAccum += dt;
+    if (ud.trailAccum > 0.05) {
+      ud.trailAccum = 0;
+      const back = new THREE.Vector3(0, 0, 1).applyQuaternion(npc.quaternion);
+      const pos = npc.position.clone().addScaledVector(back, -1.2);
+      this._spawnTrailAt(pos, ud.velocity);
+    }
+  }
+
+  _decayTrails(dt) {
+    for (let i = 0; i < this._trailCapacity; i++) {
+      if (this._trailLifes[i] <= 0) {
+        this._trailPositions[i * 3 + 1] = -99999;
+        continue;
+      }
+      this._trailLifes[i] -= dt * 0.9;
+      if (this._trailLifes[i] < 0) this._trailLifes[i] = 0;
+    }
+    this._trailPoints.geometry.attributes.position.needsUpdate = true;
   }
 
   _removeNPC(key) {
@@ -98,7 +153,14 @@ class NPCShipManager {
   }
 
   clear() { for (const key of [...this._ships.keys()]) this._removeNPC(key); }
-  destroy() { this.clear(); }
+  destroy() {
+    this.clear();
+    if (this._trailPoints) {
+      this.scene.remove(this._trailPoints);
+      if (this._trailPoints.geometry) this._trailPoints.geometry.dispose();
+      if (this._trailPoints.material) this._trailPoints.material.dispose();
+    }
+  }
 }
 
 export default NPCShipManager;

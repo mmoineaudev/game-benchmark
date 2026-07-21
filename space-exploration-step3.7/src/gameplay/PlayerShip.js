@@ -239,8 +239,20 @@ class PlayerShip {
     );
     const speedLerp = 0.6 + 0.4 * speedRatio;
 
-    this.mesh.rotation.x += (input.mouseY - this.mesh.rotation.x) * Constants.SHIP.ROTATION_SPEED * speedLerp * dt;
-    this.mesh.rotation.y += (-input.mouseX - this.mesh.rotation.y) * Constants.SHIP.ROTATION_SPEED * speedLerp * dt;
+    const rate = Constants.SHIP.ROTATION_SPEED * speedLerp;
+
+    const yawRate = input.mouseX * rate * dt;
+    const pitchRate = input.mouseY * rate * dt;
+
+    this.mesh.rotation.y += yawRate;
+    this.mesh.rotation.x += pitchRate;
+
+    const targetBank = -yawRate * 2.5;
+    this.mesh.rotation.z += (targetBank - this.mesh.rotation.z) * 3 * dt;
+
+    const q = new THREE.Euler().setFromQuaternion(this.mesh.quaternion, 'YXZ');
+    q.x = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, q.x));
+    this.mesh.quaternion.setFromEuler(q);
   }
 
   updateEngineFlames(thrusting) {

@@ -4,6 +4,8 @@
 import Constants from '../core/Constants.js';
 import EventBus from '../core/EventBus.js';
 
+const SENSITIVITY = 2.4;
+
 class InputSystem {
   constructor() {
     this.keys = {};
@@ -14,12 +16,11 @@ class InputSystem {
     this.thrust = false;
     this.brake = false;
     this.pointerLocked = false;
-    this._steerX = 0;
-    this._steerY = 0;
     this._boundHandlers = new Map();
   }
 
   init() {
+    this.keys = {};
     this.rawMouseX = 0;
     this.rawMouseY = 0;
     this.mouseX = 0;
@@ -27,21 +28,11 @@ class InputSystem {
     this.thrust = false;
     this.brake = false;
     this.pointerLocked = false;
-    this._steerX = 0;
-    this._steerY = 0;
 
     const onKeyDown = (e) => {
       this.keys[e.code] = true;
       EventBus.emit('input:keydown', e.code);
-      if (
-        [
-          'Space',
-          'KeyR',
-          'KeyM',
-        ].includes(e.code)
-      ) {
-        e.preventDefault();
-      }
+      if (['Space', 'KeyR', 'KeyM'].includes(e.code)) e.preventDefault();
     };
     const onKeyUp = (e) => {
       this.keys[e.code] = false;
@@ -49,12 +40,18 @@ class InputSystem {
     };
     const onMouseMove = (e) => {
       if (document.pointerLockElement) {
-        const sens = 0.008;
-        this._steerX = Math.max(-1, Math.min(1, this._steerX + e.movementX * sens));
-        this._steerY = Math.max(-1, Math.min(1, this._steerY + e.movementY * sens));
+        const nx = e.movementX / window.innerWidth;
+        const ny = e.movementY / window.innerHeight;
+        this.mouseX = Math.max(-1, Math.min(1, nx * SENSITIVITY));
+        this.mouseY = Math.max(-1, Math.min(1, -ny * SENSITIVITY));
       } else {
-        this.rawMouseX = (e.clientX / window.innerWidth) * 2 - 1;
-        this.rawMouseY = (e.clientY / window.innerHeight) * 2 - 1;
+        const x = (e.clientX / window.innerWidth) * 2 - 1;
+        const y = (e.clientY / window.innerHeight) * 2 - 1;
+        const lerp = 1 - Math.pow(0.0005, 1 / 60);
+        this.rawMouseX += (x - this.rawMouseX) * lerp;
+        this.rawMouseY += (y - this.rawMouseY) * lerp;
+        this.mouseX = Math.max(-1, Math.min(1, this.rawMouseX * SENSITIVITY));
+        this.mouseY = Math.max(-1, Math.min(1, -this.rawMouseY * SENSITIVITY));
       }
     };
     const onPointerDown = (e) => {
@@ -72,19 +69,16 @@ class InputSystem {
     };
     const onPointerLockChange = () => {
       this.pointerLocked = !!document.pointerLockElement;
-      if (!this.pointerLocked) {
-        this._steerX = 0;
-        this._steerY = 0;
-      }
     };
     const onWheel = (e) => {
       EventBus.emit('camera:zoom', -Math.sign(e.deltaY) * Constants.CAMERA.ZOOM_STEP);
     };
     const onContextMenu = (e) => e.preventDefault();
 
+    window.addEventListener('mousemove', onMouseMove);
+
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
-    window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('pointerdown', onPointerDown);
     window.addEventListener('pointerup', onPointerUp);
     window.addEventListener('pointerlockchange', onPointerLockChange);
@@ -92,9 +86,9 @@ class InputSystem {
     window.addEventListener('contextmenu', onContextMenu);
 
     this._boundHandlers.set('destroy', () => {
+      window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
-      window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('pointerlockchange', onPointerLockChange);
@@ -104,14 +98,7 @@ class InputSystem {
   }
 
   update(dt) {
-    if (document.pointerLockElement) {
-      this.mouseX = this._steerX;
-      this.mouseY = this._steerY;
-    } else {
-      const lerp = 1 - Math.pow(0.0005, dt);
-      this.mouseX += (this.rawMouseX - this.mouseX) * lerp;
-      this.mouseY += (this.rawMouseY - this.mouseY) * lerp;
-    }
+    // values are already continuous rates in [-1, 1].
   }
 
   isPressed(code) {

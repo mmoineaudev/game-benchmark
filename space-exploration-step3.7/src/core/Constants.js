@@ -21,8 +21,8 @@ export const CAMERA = {
   ZOOM_MIN: 1,
   ZOOM_MAX: 3,
   ZOOM_STEP: 0.25,
-  LOOK_OFFSET_Y: -1.5,
-  LOOK_OFFSET_Z: -12,
+  LOOK_OFFSET_Y: -2.5,
+  LOOK_OFFSET_Z: -14,
 };
 
 export const SHIP = {

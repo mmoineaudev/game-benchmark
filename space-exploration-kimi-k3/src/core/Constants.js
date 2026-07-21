@@ -56,18 +56,12 @@ export const SHIP = {
   BANK_RATE: 0.9,                   // cosmetic roll from yaw/strafe
   MAX_BANK: 0.5,
 
-  BODY_COLOR: 0xbb2233,
-  TRIM_COLOR: 0x1a1c22,
-  GLASS_COLOR: 0x66ddff,
-  ENGINE_COLOR: 0x44aaff,
-  TAIL_COLOR: 0xff2233,
-  ACCENT_COLOR: 0x4488ff,
-
-  HEADLIGHT_INTENSITY: 0.8,
-  HEADLIGHT_DISTANCE: 22,
-  ACCENT_INTENSITY: 1.0,
-  ACCENT_DISTANCE: 10,
-  WINGTIP_EMISSIVE: 3,
+  PRESETS: [
+    { id: 'interceptor', label: 'INTERCEPTOR', body: 0xbb2233, trim: 0x1a1c22, glass: 0x66ddff, engine: 0x44aaff, tail: 0xff2233, accent: 0x4488ff, scale: 1.0 },
+    { id: 'claymore',    label: 'CLAYMORE',    body: 0xdd8833, trim: 0x221a12, glass: 0xffccaa, engine: 0xffaa44, tail: 0xff4411, accent: 0xffdd44, scale: 1.25 },
+    { id: 'vanguard',    label: 'VANGUARD',    body: 0x3388cc, trim: 0x0e1420, glass: 0xaaffff, engine: 0x22ccff, tail: 0x0088ff, accent: 0x66eeff, scale: 1.15 },
+    { id: 'sprinter',    label: 'SPRINTER',    body: 0x88cc22, trim: 0x141a0e, glass: 0xddffaa, engine: 0x66ff22, tail: 0x33aa00, accent: 0xaaff44, scale: 0.88 },
+  ],
 };
 
 // --- Camera ------------------------------------------------------------------

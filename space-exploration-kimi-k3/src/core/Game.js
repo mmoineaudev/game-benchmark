@@ -25,6 +25,7 @@ import { PlanetManager } from '../level/PlanetManager.js';
 import { NPCShipManager } from '../level/NPCShipManager.js';
 import { HUD } from '../ui/HUD.js';
 import { Crosshair } from '../ui/Crosshair.js';
+import { StartScreen } from '../ui/StartScreen.js';
 
 export class Game {
   constructor(containerId) {
@@ -42,8 +43,12 @@ export class Game {
     this._initRenderer();
     this._initScene();
     this._initSystems();
+    this._startScreen = new StartScreen((preset) => {
+      GameState.game.selectedPreset = preset;
+    });
+    this._startScreen.mount(this._container);
     this._setupEvents();
-    this._showPauseScreen();
+    this._showStartScreen();
     this._lastTime = performance.now();
     this._isRunning = true;
     this._animate();
@@ -157,35 +162,75 @@ export class Game {
         this.hud.showToast(muted ? 'MUTED' : 'SOUND ON');
       }
       if (code === Constants.INPUT.FIRE && GameState.game.isPaused && !GameState.game.isGameOver) {
-        this._startRun();
+        if (this._startScreen && this._startScreen._root && this._startScreen._root.parentNode) {
+          // in start screen: F selects the currently highlighted preset
+          if (this._startScreen.chosen < 0 && Constants.SHIP.PRESETS.length) {
+            this._startScreen._pick(0);
+          }
+        } else {
+          this._startRun();
+        }
       }
       if (code === Constants.INPUT.RESTART && !GameState.player.isAlive) {
         try { this._restart(); } catch (err) { console.error('[Game] restart failed:', err); }
       }
+      if ((code === Constants.INPUT.FORWARD || code === 'Space') && this._startScreen && this._startScreen._root && this._startScreen._root.parentNode) {
+        if (this._startScreen.chosen < 0 && Constants.SHIP.PRESETS.length) {
+          this._startScreen._pick(0);
+        } else if (this._startScreen.chosen >= 0) {
+          this._startRun();
+        }
+      }
     }));
     // Click also starts the run from pause (and captures pointer lock).
-    this._onClickStart = () => {
+    this._onClickStart = (e) => {
+      if (this._startScreen && this._startScreen._root && this._startScreen._root.parentNode) {
+        const card = e.target.closest('[style*="cursor: pointer"]') || e.target.closest('div[role="button"]');
+        // allow default card click handling; ignore here
+        return;
+      }
       if (GameState.game.isPaused && !GameState.game.isGameOver) this._startRun();
     };
     this._container.addEventListener('click', this._onClickStart);
   }
 
   // ---------------------------------------------------------------- overlays
+  _showStartScreen() {
+    this._startScreen && this._startScreen._root && this._startScreen._root.parentNode
+      ? null : this._startScreen && this._startScreen.mount(this._container);
+    const pauseScreen = document.getElementById('pause-screen');
+    const gameOver = document.getElementById('game-over');
+    if (pauseScreen) pauseScreen.classList.add('hidden');
+    if (gameOver) gameOver.classList.add('hidden');
+  }
+
+  _hideStartScreen() {
+    this._startScreen && this._startScreen.destroy();
+  }
+
+  _hidePauseScreen() {
+    const pauseScreen = document.getElementById('pause-screen');
+    if (pauseScreen) pauseScreen.classList.add('hidden');
+  }
+
   _showPauseScreen() {
     const legend = document.getElementById('controls-legend');
     if (legend && legend.childElementCount === 0) {
       legend.innerHTML = Constants.CONTROLS_LEGEND
         .map(([k, v]) => `<div><b>${k}</b> ${v}</div>`).join('');
     }
-    document.getElementById('pause-screen').classList.remove('hidden');
-  }
-
-  _hidePauseScreen() {
-    document.getElementById('pause-screen').classList.add('hidden');
+    const pauseScreen = document.getElementById('pause-screen');
+    if (pauseScreen) pauseScreen.classList.remove('hidden');
+    if (this._startScreen && this._startScreen._root && this._startScreen._root.parentNode) {
+      this._startScreen.destroy();
+    }
   }
 
   _startRun() {
+    const preset = GameState.game.selectedPreset || Constants.SHIP.PRESETS[0];
+    if (this.playerShip._preset !== preset) this.playerShip.setPreset(preset);
     GameState.game.isPaused = false;
+    this._hideStartScreen();
     this._hidePauseScreen();
     this.audio.resume();
     EventBus.emit('input:request-pointer-lock');

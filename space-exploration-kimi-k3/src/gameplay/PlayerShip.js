@@ -9,7 +9,7 @@ import * as Constants from '../core/Constants.js';
 import { ENGINE_FLAME_VERTEX, ENGINE_FLAME_FRAGMENT } from '../utils/ShaderHelpers.js';
 
 export class PlayerShip {
-  constructor(scene) {
+  constructor(scene, preset) {
     this._scene = scene;
     this.mesh = null;
     this._flames = [];
@@ -21,33 +21,35 @@ export class PlayerShip {
     this._euler = new THREE.Euler(0, 0, 0, 'YXZ');
     this._materials = [];
     this._geometries = [];
+    this._preset = preset || Constants.SHIP.PRESETS[0];
   }
 
   init() {
     const S = Constants.SHIP;
+    const p = this._preset || S.PRESETS[0];
     this.mesh = new THREE.Group();
-    this.mesh.scale.setScalar(1.35);   // readable at chase-cam distance
+    this.mesh.scale.setScalar(p.scale || 1);   // preset scale for ship silhouette
     this.mesh.userData.velocity = new THREE.Vector3();
 
     const mat = (opts) => { const m = new THREE.MeshStandardMaterial(opts); this._materials.push(m); return m; };
     const geo = (g) => { this._geometries.push(g); return g; };
 
-    const bodyMat = mat({ color: S.BODY_COLOR, metalness: 0.75, roughness: 0.35 });
-    const trimMat = mat({ color: S.TRIM_COLOR, metalness: 0.6, roughness: 0.5 });
+    const bodyMat = mat({ color: p.body, metalness: 0.75, roughness: 0.35 });
+    const trimMat = mat({ color: p.trim, metalness: 0.6, roughness: 0.5 });
     const glassMat = new THREE.MeshPhysicalMaterial({
-      color: S.GLASS_COLOR, metalness: 0.1, roughness: 0.05,
+      color: p.glass, metalness: 0.1, roughness: 0.05,
       transmission: 0.7, transparent: true, opacity: 0.85,
     });
     this._materials.push(glassMat);
     const engineMat = mat({
       color: 0x222831, metalness: 0.8, roughness: 0.3,
-      emissive: S.ENGINE_COLOR, emissiveIntensity: 1.4,
+      emissive: p.engine, emissiveIntensity: 1.4,
     });
     const tailMat = mat({
-      color: 0x330000, emissive: S.TAIL_COLOR, emissiveIntensity: 2.0,
+      color: 0x330000, emissive: p.tail, emissiveIntensity: 2.0,
     });
     const wingtipMat = mat({
-      color: 0x111111, emissive: S.ACCENT_COLOR, emissiveIntensity: S.WINGTIP_EMISSIVE,
+      color: 0x111111, emissive: p.accent, emissiveIntensity: S.WINGTIP_EMISSIVE,
     });
 
     // Fuselage: long low box + hemisphere nose.
@@ -237,12 +239,20 @@ export class PlayerShip {
 
   reset() {
     this.mesh.position.set(0, 0, 0);
-    this.mesh.scale.setScalar(1.35);   // readable at chase-cam distance
+    const p = this._preset || Constants.SHIP.PRESETS[0];
+    this.mesh.scale.setScalar(p.scale || 1);
     this.mesh.quaternion.identity();
     this.mesh.userData.velocity.set(0, 0, 0);
     this._bank = 0;
     this._euler.set(0, 0, 0, 'YXZ');
     this._hitFlashTime = 0;
+  }
+
+  setPreset(preset) {
+    this._preset = preset;
+    if (!this.mesh) return;
+    this.destroy();
+    this.init();
   }
 
   destroy() {

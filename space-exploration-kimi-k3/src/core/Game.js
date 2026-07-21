@@ -269,7 +269,11 @@ export class Game {
 
     const shipHits = this.physics.checkShipCollisions(this.playerShip.mesh, collidables);
     for (const hit of shipHits) {
-      GameState.takeDamage(Constants.HEALTH.COLLISION_DAMAGE);
+      if (hit.kind === 'planet' || (hit.mesh && hit.mesh.userData && hit.mesh.userData.kind === 'planet')) {
+        GameState.takeDamage(Constants.HEALTH.MAX);
+      } else {
+        GameState.takeDamage(Constants.HEALTH.COLLISION_DAMAGE);
+      }
       this.physics.handleCollision(this.playerShip.mesh, hit);
       this.playerShip.hitFlash();
       this.cameraSystem.addShake(hit.size > 2 ? 0.8 : 0.3);

@@ -149,6 +149,11 @@ export class ChunkManager {
           Math.abs(m.position.y - shipPos.y) < S &&
           Math.abs(m.position.z - shipPos.z) < S) list.push(m);
     }
+    for (const [, p] of this._planets) {
+      if (Math.abs(p.mesh.position.x - shipPos.x) < S &&
+          Math.abs(p.mesh.position.y - shipPos.y) < S &&
+          Math.abs(p.mesh.position.z - shipPos.z) < S) list.push(p.mesh);
+    }
     for (const npcMesh of this._sub.npcs.getCollidables()) {
       if (Math.abs(npcMesh.position.x - shipPos.x) < S &&
           Math.abs(npcMesh.position.y - shipPos.y) < S &&

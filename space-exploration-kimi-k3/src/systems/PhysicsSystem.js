@@ -108,7 +108,9 @@ export class PhysicsSystem {
       this._targetSphere.radius = radius;
       if (this._shipSphere.intersectsSphere(this._targetSphere)) {
         hits.push({
-          kind: target.userData && target.userData.isNPC ? 'npc' : 'mesh',
+          kind: target.userData && target.userData.isNPC ? 'npc'
+            : target.userData && target.userData.kind === 'planet' ? 'planet'
+            : 'mesh',
           mesh: target,
           size: (target.userData && target.userData.size) || radius,
           position: target.position,

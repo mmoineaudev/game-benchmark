@@ -46,7 +46,7 @@ export class PlanetManager {
       gx * grid + (rng() - 0.5) * grid * 0.5,
       gy * grid + (rng() - 0.5) * grid * 0.5,
       gz * grid + (rng() - 0.5) * grid * 0.5);
-    mesh.userData = { isChunkObject: true };
+    mesh.userData = { isChunkObject: true, radius, kind: 'planet' };
     this._scene.add(mesh);
 
     let atmo = null;

@@ -41,8 +41,8 @@ const PLANET_FRAG = `
     flow = flow * 0.5 + 0.5;
     vec3 color = mix(uColor1, uColor2, flow);
     color = mix(color, uColor3, smoothstep(0.55, 0.85, flow) * 0.5);
-    color += uRim * fresnel * 0.55;
-    float alpha = 0.78 + fresnel * 0.22;
+    color += uRim * fresnel * 0.35;
+    float alpha = 0.72 + fresnel * 0.22;
     gl_FragColor = vec4(color, alpha);
   }
 `;
@@ -51,8 +51,8 @@ class PlanetManager {
   constructor(scene) {
     this.scene = scene;
     this._planets = new Map();
-    this._spacing = 2800;
-    this._viewDistance = 12000;
+    this._spacing = 4800;
+    this._viewDistance = 15000;
     this._clock = new THREE.Clock();
   }
 
@@ -92,11 +92,11 @@ class PlanetManager {
     const radius = chunkRadius * Constants.CHUNK.WIDTH * 0.5;
 
     const colorSets = [
-      [0x2244aa, 0x7755aa, 0xaaddff, 0x88ddff],
-      [0x772200, 0xaa6622, 0xffcc88, 0xff8844],
-      [0x005544, 0x22aa66, 0xaaffdd, 0x44ddaa],
-      [0x880044, 0xaa3377, 0xffaadd, 0xff88cc],
-      [0x003355, 0x2288aa, 0xaaddff, 0x66eeff],
+      [0x111133, 0x332244, 0x446688, 0x3388aa],
+      [0x331100, 0x552211, 0x664433, 0x663311],
+      [0x002211, 0x115533, 0x336644, 0x227755],
+      [0x330022, 0x441133, 0x553344, 0x553355],
+      [0x001122, 0x112233, 0x224455, 0x225566],
     ];
     const set = colorSets[Math.floor(rng() * colorSets.length)];
 
@@ -120,7 +120,7 @@ class PlanetManager {
     this.scene.add(mesh);
 
     const atmoGeo = new THREE.IcosahedronGeometry(radius * 1.12, 2);
-    const atmoMat = new THREE.MeshBasicMaterial({ color: set[3], transparent: true, opacity: 0.10, side: THREE.BackSide });
+    const atmoMat = new THREE.MeshBasicMaterial({ color: set[3], transparent: true, opacity: 0.07, side: THREE.BackSide });
     const atmo = new THREE.Mesh(atmoGeo, atmoMat);
     atmo.position.copy(mesh.position);
     atmo.userData = { isChunkObject: true, isPlanetAtmo: true };

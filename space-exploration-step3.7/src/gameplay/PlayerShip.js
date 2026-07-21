@@ -239,8 +239,8 @@ class PlayerShip {
     );
     const speedLerp = 0.6 + 0.4 * speedRatio;
 
-    this.mesh.rotation.x += (-input.mouseY * 0.9 - this.mesh.rotation.x) * Constants.SHIP.ROTATION_SPEED * speedLerp * dt;
-    this.mesh.rotation.y += (input.mouseX * 0.9 - this.mesh.rotation.y) * Constants.SHIP.ROTATION_SPEED * speedLerp * dt;
+    this.mesh.rotation.x += (input.mouseY - this.mesh.rotation.x) * Constants.SHIP.ROTATION_SPEED * speedLerp * dt;
+    this.mesh.rotation.y += (-input.mouseX - this.mesh.rotation.y) * Constants.SHIP.ROTATION_SPEED * speedLerp * dt;
   }
 
   updateEngineFlames(thrusting) {

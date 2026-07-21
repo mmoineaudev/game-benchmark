@@ -1,5 +1,5 @@
 // ============================================================
-// InputSystem — Mouse orientation + click thrust/brake
+// InputSystem — Mouse orientation accumulator
 // ============================================================
 import Constants from '../core/Constants.js';
 import EventBus from '../core/EventBus.js';
@@ -9,22 +9,22 @@ const SENSITIVITY = 3.5;
 class InputSystem {
   constructor() {
     this.keys = {};
-    this.rawMouseX = 0;
-    this.rawMouseY = 0;
+    this.yaw = 0;
+    this.pitch = 0;
     this.mouseX = 0;
     this.mouseY = 0;
     this.thrust = false;
     this.brake = false;
     this.pointerLocked = false;
+    this._lastYaw = 0;
+    this._lastPitch = 0;
     this._boundHandlers = new Map();
   }
 
   init() {
     this.keys = {};
-    this.rawMouseX = 0;
-    this.rawMouseY = 0;
-    this.mouseX = 0;
-    this.mouseY = 0;
+    this.yaw = 0;
+    this.pitch = 0;
     this.thrust = false;
     this.brake = false;
     this.pointerLocked = false;
@@ -40,18 +40,16 @@ class InputSystem {
     };
     const onMouseMove = (e) => {
       if (document.pointerLockElement) {
-        const nx = e.movementX / window.innerWidth;
-        const ny = e.movementY / window.innerHeight;
-        this.mouseX = Math.max(-1, Math.min(1, nx * SENSITIVITY));
-        this.mouseY = Math.max(-1, Math.min(1, -ny * SENSITIVITY));
+        this.yaw += e.movementX * SENSITIVITY * 0.001;
+        this.pitch += -e.movementY * SENSITIVITY * 0.001;
       } else {
         const x = (e.clientX / window.innerWidth) * 2 - 1;
         const y = (e.clientY / window.innerHeight) * 2 - 1;
         const lerp = 1 - Math.pow(0.0005, 1 / 60);
-        this.rawMouseX += (x - this.rawMouseX) * lerp;
-        this.rawMouseY += (y - this.rawMouseY) * lerp;
-        this.mouseX = Math.max(-1, Math.min(1, this.rawMouseX * SENSITIVITY));
-        this.mouseY = Math.max(-1, Math.min(1, -this.rawMouseY * SENSITIVITY));
+        const targetYaw = x * SENSITIVITY * 0.001;
+        const targetPitch = -y * SENSITIVITY * 0.001;
+        this.yaw += (targetYaw - this.yaw) * lerp;
+        this.pitch += (targetPitch - this.pitch) * lerp;
       }
     };
     const onPointerDown = (e) => {
@@ -76,7 +74,6 @@ class InputSystem {
     const onContextMenu = (e) => e.preventDefault();
 
     window.addEventListener('mousemove', onMouseMove);
-
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('pointerdown', onPointerDown);
@@ -98,7 +95,12 @@ class InputSystem {
   }
 
   update(dt) {
-    // values are already continuous rates in [-1, 1].
+    if (dt > 0) {
+      this.mouseX = Math.tanh((this.yaw - this._lastYaw) / dt);
+      this.mouseY = Math.tanh((this.pitch - this._lastPitch) / dt);
+      this._lastYaw = this.yaw;
+      this._lastPitch = this.pitch;
+    }
   }
 
   isPressed(code) {

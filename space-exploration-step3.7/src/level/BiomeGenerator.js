@@ -57,30 +57,30 @@ class BiomeGenerator {
       case 'Open Space':
         params.nebulaCount = 1;
         params.nebulaDensity = 0.15;
-        params.asteroidDensity = 0.5;
-        params.debrisCount = 10;
+        params.asteroidDensity = 0.35;
+        params.debrisCount = 8;
         params.nebulaColors = { c1: [0.1, 0.1, 0.4], c2: [0.2, 0.1, 0.5], c3: [0.1, 0.3, 0.5] };
         break;
       case 'Asteroid Belt':
-        params.nebulaCount = 2;
-        params.nebulaDensity = 0.2;
-        params.asteroidDensity = 1.5;
-        params.debrisCount = 40;
+        params.nebulaCount = 1;
+        params.nebulaDensity = 0.15;
+        params.asteroidDensity = 0.8;
+        params.debrisCount = 8;
         params.ambientColor = 0x110800;
         params.nebulaColors = { c1: [0.5, 0.2, 0.05], c2: [0.7, 0.3, 0.1], c3: [0.4, 0.15, 0.05] };
         break;
       case 'Nebula Corridor':
-        params.nebulaCount = 4;
+        params.nebulaCount = 3;
         params.nebulaDensity = 0.4;
-        params.asteroidDensity = 0.3;
-        params.debrisCount = 15;
+        params.asteroidDensity = 0.2;
+        params.debrisCount = 10;
         params.nebulaColors = { c1: [0.3, 0.1, 0.5], c2: [0.1, 0.4, 0.5], c3: [0.5, 0.2, 0.3] };
         break;
       case 'Wormhole Tunnel':
-        params.nebulaCount = 3;
+        params.nebulaCount = 2;
         params.nebulaDensity = 0.5;
-        params.asteroidDensity = 0.1;
-        params.debrisCount = 5;
+        params.asteroidDensity = 0.05;
+        params.debrisCount = 4;
         params.wormholeActive = true;
         params.nebulaColors = { c1: [0.3, 0.1, 0.6], c2: [0.1, 0.3, 0.8], c3: [0.1, 0.6, 0.7] };
         params.tunnelColors = { c1: [0.4, 0.2, 0.8], c2: [0.1, 0.5, 0.9] };

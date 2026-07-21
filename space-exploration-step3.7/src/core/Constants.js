@@ -94,10 +94,10 @@ export const BIOME = {
 };
 
 export const CHUNK = {
-  WIDTH: 200,
-  HEIGHT: 200,
-  LENGTH: 200,
-  SPAWN_AHEAD: 3,
+  WIDTH: 280,
+  HEIGHT: 280,
+  LENGTH: 280,
+  SPAWN_AHEAD: 2,
   CLEANUP_BEHIND: 2,
 };
 

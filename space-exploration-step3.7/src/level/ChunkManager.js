@@ -9,6 +9,7 @@ import BiomeGenerator from './BiomeGenerator.js';
 import NebulaSystem from './NebulaSystem.js';
 import AsteroidField from './AsteroidField.js';
 import DebrisSystem from './DebrisSystem.js';
+import CollectibleSystem from './CollectibleSystem.js';
 import { mulberry32, chunkSeed } from '../utils/MathHelpers.js';
 
 class ChunkManager {
@@ -19,6 +20,7 @@ class ChunkManager {
     this.nebula = new NebulaSystem(scene);
     this.asteroids = new AsteroidField(scene);
     this.debris = new DebrisSystem(scene);
+    this.collectibles = new CollectibleSystem(scene);
     this._activeChunks = new Map();
     this._lastShipPos = new THREE.Vector3();
     this._totalDistance = 0;
@@ -39,6 +41,7 @@ class ChunkManager {
     this.nebula.update(GameState.time, this.camera);
     this.asteroids.update(dt, GameState.time);
     this.debris.update(dt);
+    this.collectibles.update(shipPosition);
     this.asteroids.removeDestroyed();
   }
 
@@ -124,13 +127,19 @@ class ChunkManager {
       chunkObjects.push(cluster);
     }
 
-    const asteroidCount = 5 + Math.floor(rng() * 45);
+    const asteroidCount = 1 + Math.floor(rng() * 12);
     const asteroids = this.asteroids.createAsteroids(center, asteroidCount, biomeParams, rng, safetyShipPos);
     chunkObjects.push(...asteroids);
 
     const debrisCount = 10 + Math.floor(rng() * 90);
     const debrisPieces = this.debris.createDebris(center, debrisCount, rng);
     chunkObjects.push(...debrisPieces);
+
+    const crystalCount = 1 + Math.floor(rng() * 3);
+    this.collectibles.spawnCrystals(center, crystalCount, rng);
+
+    const ruinCount = 1 + Math.floor(rng() * 2);
+    this.collectibles.spawnRuins(center, ruinCount, rng);
 
     if (biomeParams.nebulaCount > 0) {
       const lightCount = Math.min(biomeParams.nebulaCount, 2);
@@ -277,6 +286,7 @@ class ChunkManager {
     this.nebula.clear();
     this.asteroids.clear();
     this.debris.clear();
+    this.collectibles.clear();
 
     const toRemove = [];
     this.scene.traverse(obj => {

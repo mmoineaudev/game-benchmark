@@ -173,8 +173,8 @@ export const NPC = {
 };
 
 export const SHOOTING_STAR = {
-  CHECK_INTERVAL: 3.5,
-  SPAWN_CHANCE: 0.35,
+  CHECK_INTERVAL: 0.6,
+  SPAWN_CHANCE: 0.65,
   MIN_POINTS: 12,
   MAX_POINTS: 32,
   MIN_SPEED: 40,

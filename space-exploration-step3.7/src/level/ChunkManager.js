@@ -10,6 +10,8 @@ import NebulaSystem from './NebulaSystem.js';
 import AsteroidField from './AsteroidField.js';
 import DebrisSystem from './DebrisSystem.js';
 import CollectibleSystem from './CollectibleSystem.js';
+import PlanetManager from './PlanetManager.js';
+import NPCShipManager from './NPCShipManager.js';
 import { mulberry32, chunkSeed } from '../utils/MathHelpers.js';
 
 class ChunkManager {
@@ -21,6 +23,8 @@ class ChunkManager {
     this.asteroids = new AsteroidField(scene);
     this.debris = new DebrisSystem(scene);
     this.collectibles = new CollectibleSystem(scene);
+    this.planets = new PlanetManager(scene);
+    this.npcShips = new NPCShipManager(scene);
     this._activeChunks = new Map();
     this._lastShipPos = new THREE.Vector3();
     this._totalDistance = 0;
@@ -42,6 +46,8 @@ class ChunkManager {
     this.asteroids.update(dt, GameState.time);
     this.debris.update(dt);
     this.collectibles.update(shipPosition);
+    this.planets.update(shipPosition);
+    this.npcShips.update(shipPosition, dt);
     this.asteroids.removeDestroyed();
   }
 
@@ -266,6 +272,8 @@ class ChunkManager {
     this.asteroids.clear();
     this.debris.clear();
     this.collectibles.clear();
+    this.planets.clear();
+    this.npcShips.clear();
 
     const toRemove = [];
     this.scene.traverse(obj => {

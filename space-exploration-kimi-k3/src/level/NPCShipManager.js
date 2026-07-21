@@ -12,6 +12,7 @@ export class NPCShipManager {
   constructor(scene) {
     this._scene = scene;
     this._npcs = new Map();    // key -> { mesh, velocity, ... }
+    this._wanderAccum = 0;
     this._trailCapacity = Constants.NPC.TRAIL_POOL * Constants.NPC.MAX_COUNT;
     this._trailPositions = null;
     this._trailLife = null;
@@ -53,7 +54,6 @@ export class NPCShipManager {
   }
 
   _spawnNPC(gx, gy, gz, key) {
-    if (this._npcs.size >= Constants.NPC.MAX_COUNT) return;
     const rng = mulberry32(hashKey(key) * 1e9 + 7);
     const grid = Constants.NPC.GRID_SIZE;
     const mesh = this._buildShipMesh(rng);
@@ -72,6 +72,29 @@ export class NPCShipManager {
       rotSpeedY: (rng() - 0.5) * 0.5,
       rotSpeedX: (rng() - 0.5) * 0.25,
       trailAccum: 0,
+    };
+    this._scene.add(mesh);
+    this._npcs.set(key, { mesh });
+  }
+
+  _spawnWanderer(pos, key) {
+    if (this._npcs.size >= Constants.NPC.MAX_COUNT) return;
+    const rng = mulberry32(hashKey(key) * 1e9 + 101);
+    const mesh = this._buildShipMesh(rng);
+    mesh.position.copy(pos);
+    const speed = Constants.NPC.SPEED * (0.6 + rng() * 0.5);
+    const velocity = randomUnitVector(rng).multiplyScalar(speed);
+    mesh.userData = {
+      isChunkObject: true, isNPC: true,
+      radius: Constants.NPC.COLLISION_RADIUS,
+      size: Constants.NPC.COLLISION_RADIUS,
+      velocity,
+      wanderRng: mulberry32(hashKey(key) * 1e9 + 999),
+      wanderAccum: rng() * 2,
+      rotSpeedY: (rng() - 0.5) * 0.5,
+      rotSpeedX: (rng() - 0.5) * 0.25,
+      trailAccum: 0,
+      kind: 'wanderer',
     };
     this._scene.add(mesh);
     this._npcs.set(key, { mesh });
@@ -105,6 +128,7 @@ export class NPCShipManager {
     const cgy = Math.round(shipPos.y / grid);
     const cgz = Math.round(shipPos.z / grid);
 
+    // Deterministic sparse grid placement.
     for (let dx = -1; dx <= 1; dx++) {
       for (let dy = -1; dy <= 1; dy++) {
         for (let dz = -1; dz <= 1; dz++) {
@@ -112,6 +136,23 @@ export class NPCShipManager {
           if (!this._npcs.has(key) && hashKey(key) < Constants.NPC.SPAWN_CHANCE) {
             this._spawnNPC(cgx + dx, cgy + dy, cgz + dz, key);
           }
+        }
+      }
+    }
+
+    // Random wandering encounters near the flight path.
+    this._wanderAccum += dt;
+    if (this._wanderAccum > 1.0) {
+      this._wanderAccum -= 1.0;
+      if (Math.random() < Constants.NPC.WANDER_SPAWN_CHANCE && this._npcs.size < Constants.NPC.MAX_COUNT) {
+        const offset = new THREE.Vector3(
+          (Math.random() - 0.5) * view * 0.6,
+          (Math.random() - 0.5) * view * 0.6,
+          (Math.random() - 0.5) * view * 0.6,
+        ).add(shipPos);
+        const key = `w${Math.floor(offset.x)}_${Math.floor(offset.y)}_${Math.floor(offset.z)}`;
+        if (!this._npcs.has(key)) {
+          this._spawnWanderer(offset, key);
         }
       }
     }

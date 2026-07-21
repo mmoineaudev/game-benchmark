@@ -169,7 +169,8 @@ export const NPC = {
   MAX_COUNT: 28,
   GRID_SIZE: 2400,
   VIEW_DISTANCE: 11250,
-  SPAWN_CHANCE: 0.4,
+  SPAWN_CHANCE: 0.15,               // deterministic per-cell (lowered)
+  WANDER_SPAWN_CHANCE: 0.12,        // per-second random encounter near ship path
   SPEED: 16,
   TRAIL_POOL: 256,
   TRAIL_CADENCE: 0.05,

@@ -45,7 +45,6 @@ class CameraSystem {
     const back = this._back; back.set(0, 0, 1).applyQuaternion(shipObject.quaternion);
     const right = this._rightAxis; right.set(1, 0, 0).applyQuaternion(shipObject.quaternion);
     const up = this._upAxis; up.set(0, 1, 0).applyQuaternion(shipObject.quaternion);
-
     const heightOffset = this._heightOffset.copy(up).multiplyScalar(Constants.CAMERA.FOLLOW_HEIGHT);
     const baseDist = Constants.CAMERA.FOLLOW_DISTANCE * Math.max(this.zoomFactor, Constants.CAMERA.ZOOM_MIN);
     const backOffset = this._backOffset.copy(back).multiplyScalar(baseDist);

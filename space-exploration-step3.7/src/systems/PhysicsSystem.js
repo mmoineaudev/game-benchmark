@@ -13,9 +13,6 @@ class PhysicsSystem {
     this._contactPoint = new THREE.Vector3();
     this._lastPos = 0;
     this._forward = new THREE.Vector3();
-    this._right = new THREE.Vector3();
-    this._up = new THREE.Vector3();
-    this._accel = new THREE.Vector3();
     this._pushDir = new THREE.Vector3();
   }
 
@@ -24,25 +21,24 @@ class PhysicsSystem {
 
     const vel = shipObject.userData.velocity;
     const q = shipObject.quaternion;
-    const _f = this._forward; _f.set(0, 0, -1).applyQuaternion(q).normalize();
-    const _r = this._right; _r.set(1, 0, 0).applyQuaternion(q).normalize();
-    const _u = this._up; _u.set(0, 1, 0).applyQuaternion(q).normalize();
-    const accel = this._accel; accel.set(0, 0, 0);
+    this._forward.set(0, 0, -1).applyQuaternion(q).normalize();
 
-    const forwardInput = input.getThrustInput();
-    const rightInput = input.getYawInput();
-    const verticalInput = input.getPitchInput();
+    // Ship always moves along its forward axis only; no sideways drift.
+    const currentForwardSpeed = vel.dot(this._forward);
+    let targetForwardSpeed = currentForwardSpeed;
 
-    const forwardAccel = forwardInput > 0 ? Constants.SHIP.ACCELERATION : -Constants.SHIP.DECELERATION;
-    accel.addScaledVector(_f, forwardAccel * Math.max(0, forwardInput));
-    accel.addScaledVector(_r, Constants.SHIP.ACCELERATION * 1.1 * rightInput);
-    accel.addScaledVector(_u, Constants.SHIP.ACCELERATION * 0.8 * verticalInput);
-
-    vel.addScaledVector(accel, dt);
-
-    if (vel.length() > Constants.SHIP.MAX_SPEED) {
-      vel.normalize().multiplyScalar(Constants.SHIP.MAX_SPEED);
+    if (input.thrust) {
+      targetForwardSpeed += Constants.SHIP.ACCELERATION * dt;
     }
+    if (input.brake && currentForwardSpeed > 0) {
+      targetForwardSpeed -= Constants.SHIP.DECELERATION * dt;
+      if (targetForwardSpeed < 0) targetForwardSpeed = 0;
+    }
+
+    // Clamp speed for low-fps stability.
+    targetForwardSpeed = Math.max(0, Math.min(targetForwardSpeed, Constants.SHIP.MAX_SPEED));
+
+    vel.copy(this._forward).multiplyScalar(targetForwardSpeed);
 
     shipObject.position.addScaledVector(vel, dt);
 
@@ -54,7 +50,7 @@ class PhysicsSystem {
     this._lastPos = currentDist;
 
     GameState.setPlayerPosition(shipObject.position);
-    const moving = vel.length() > 0.1 || Math.abs(forwardInput) > 0.01 || Math.abs(rightInput) > 0.01 || Math.abs(verticalInput) > 0.01;
+    const moving = targetForwardSpeed > 0.1;
     return moving;
   }
 

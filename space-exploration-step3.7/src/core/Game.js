@@ -202,7 +202,7 @@ class Game {
       );
       this.audio.updateEngine(isThrusting, speedRatio);
 
-      if (this.input.isPressed(Constants.INPUT.FIRE) || this.input.mouseDown) {
+      if (this.input.isPressed(Constants.INPUT.FIRE)) {
         this._attemptFire();
       }
       this.weapon.update(this._delta, this.particles);

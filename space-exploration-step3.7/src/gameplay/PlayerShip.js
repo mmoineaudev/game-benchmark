@@ -135,7 +135,7 @@ class PlayerShip {
   }
 
   _createEngineFlames() {
-    const flameGeo = new THREE.ConeGeometry(0.18, 1.0, 8);
+    const flameGeo = new THREE.ConeGeometry(0.12, 0.8, 6);
     flameGeo.rotateX(Math.PI / 2);
 
     const flameMat = new THREE.ShaderMaterial({
@@ -149,27 +149,27 @@ class PlayerShip {
       fragmentShader: FLAME_FRAGMENT_SHADER,
       transparent: true,
       depthWrite: false,
-      blending: THREE.AdditiveBlending,
+      blending: THREE.NormalBlending,
       side: THREE.DoubleSide,
     });
 
     const glowSpriteMat = new THREE.SpriteMaterial({
       color: Constants.SHIP.ENGINE_GLOW_COLOR,
       transparent: true,
-      opacity: 0.25,
+      opacity: 0.12,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
     const glowSprite = new THREE.Sprite(glowSpriteMat);
-    glowSprite.scale.set(2.4, 2.4, 1);
-    glowSprite.position.set(0, -0.2, 2.6);
+    glowSprite.scale.set(1.6, 1.6, 1);
+    glowSprite.position.set(0, -0.2, 2.4);
     glowSprite.visible = false;
     this.mesh.add(glowSprite);
     this._engineGlow = glowSprite;
 
     for (let x of [-1.1, 1.1]) {
       const flame = new THREE.Mesh(flameGeo, flameMat.clone());
-      flame.position.set(x, -0.25, 2.2);
+      flame.position.set(x, -0.25, 2.0);
       flame.visible = false;
       this.mesh.add(flame);
       this._engineFlames.push(flame);

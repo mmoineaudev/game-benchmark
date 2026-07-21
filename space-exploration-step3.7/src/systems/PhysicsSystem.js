@@ -116,21 +116,30 @@ class PhysicsSystem {
     GameState.takeDamage(collision.damage);
     EventBus.emit('physics:collision', { damage: collision.damage, isLarge: collision.isLarge });
 
-    const normal = new THREE.Vector3().subVectors(shipObject.position, collision.target.position);
-    if (normal.lengthSq() === 0) normal.set(0, 1, 0);
+    const target = collision.target;
+    const normal = new THREE.Vector3().subVectors(shipObject.position, target.position);
+    if (normal.lengthSq() === 0) {
+      if (shipObject.userData.velocity.lengthSq() > 0) {
+        normal.copy(shipObject.userData.velocity).normalize();
+      } else {
+        normal.set(0, 1, 0);
+      }
+    }
     normal.normalize();
 
     const vel = shipObject.userData.velocity;
     const vn = vel.dot(normal);
     if (vn > 0) {
-      vel.addScaledVector(normal, -2 * vn);
-      vel.multiplyScalar(0.85);
+      vel.addScaledVector(normal, -(vn + 3.5));
+    } else {
+      vel.addScaledVector(normal, 3.5);
     }
+    vel.multiplyScalar(0.7);
 
-    const pen = 1.2 + (collision.target.userData?.radius || collision.target.userData?.size || 1);
-    shipObject.position.addScaledVector(normal, pen + 0.1);
+    const pen = 1.2 + (target.userData?.radius || target.userData?.size || 1);
+    shipObject.position.addScaledVector(normal, pen + 0.2);
     EventBus.emit('camera:shake', collision.isLarge ? 0.8 : 0.3);
-    shipObject.userData.hitFlash = 0.2;
+    shipObject.userData.hitFlash = 0.25;
   }
 }
 

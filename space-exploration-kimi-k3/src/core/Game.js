@@ -160,7 +160,7 @@ export class Game {
         this._startRun();
       }
       if (code === Constants.INPUT.RESTART && !GameState.player.isAlive) {
-        this._restart();
+        try { this._restart(); } catch (err) { console.error('[Game] restart failed:', err); }
       }
     }));
     // Click also starts the run from pause (and captures pointer lock).

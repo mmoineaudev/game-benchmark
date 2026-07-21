@@ -26,6 +26,7 @@ export class PlayerShip {
   init() {
     const S = Constants.SHIP;
     this.mesh = new THREE.Group();
+    this.mesh.scale.setScalar(1.35);   // readable at chase-cam distance
     this.mesh.userData.velocity = new THREE.Vector3();
 
     const mat = (opts) => { const m = new THREE.MeshStandardMaterial(opts); this._materials.push(m); return m; };
@@ -246,6 +247,7 @@ export class PlayerShip {
 
   reset() {
     this.mesh.position.set(0, 0, 0);
+    this.mesh.scale.setScalar(1.35);   // readable at chase-cam distance
     this.mesh.quaternion.identity();
     this.mesh.userData.velocity.set(0, 0, 0);
     this._idleTime = 0;

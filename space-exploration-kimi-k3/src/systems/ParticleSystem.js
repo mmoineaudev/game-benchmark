@@ -5,6 +5,22 @@
 import * as THREE from 'three';
 import * as Constants from '../core/Constants.js';
 
+let _softTex = null;
+function softDotTexture() {
+  if (_softTex) return _softTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 32;
+  const ctx = c.getContext('2d');
+  const grad = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.4, 'rgba(255,255,255,0.7)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 32, 32);
+  _softTex = new THREE.CanvasTexture(c);
+  return _softTex;
+}
+
 export class ParticleSystem {
   constructor(scene) {
     this._scene = scene;
@@ -20,8 +36,8 @@ export class ParticleSystem {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     const mat = new THREE.PointsMaterial({
-      color: 0x66bbff, size: 0.35, transparent: true, opacity: 0.7,
-      blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
+      color: 0x66bbff, size: 0.55, transparent: true, opacity: 0.55, map: softDotTexture(),
+      blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true, alphaTest: 0.01,
     });
     this._exhaust = new THREE.Points(geo, mat);
     this._exhaust.frustumCulled = false;
@@ -72,7 +88,8 @@ export class ParticleSystem {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     const mat = new THREE.PointsMaterial({
-      color: colorHex, size: 0.5 * Math.max(size * 0.5, 0.7), transparent: true, opacity: 0.9,
+      color: colorHex, size: 0.7 * Math.max(size * 0.5, 0.7), transparent: true, opacity: 0.9,
+      map: softDotTexture(), alphaTest: 0.01,
       blending: THREE.AdditiveBlending, depthWrite: false,
     });
     const points = new THREE.Points(geo, mat);

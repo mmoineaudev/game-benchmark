@@ -29,7 +29,7 @@ export class NebulaSystem {
           uColor1: { value: color },
           uColor2: { value: color2 },
           uColor3: { value: color3 },
-          uOpacity: { value: 0.5 + rng() * 0.3 },
+          uOpacity: { value: 0.28 + rng() * 0.18 },
         },
         transparent: true,
         blending: THREE.AdditiveBlending,
@@ -37,7 +37,7 @@ export class NebulaSystem {
         side: THREE.DoubleSide,
       });
       const mesh = new THREE.Mesh(this._sharedGeo, mat);
-      const scale = 60 + rng() * 90;
+      const scale = 45 + rng() * 65;
       mesh.scale.set(scale, scale, 1);
       mesh.position.set(
         center.x + (rng() - 0.5) * Constants.CHUNK.SIZE,

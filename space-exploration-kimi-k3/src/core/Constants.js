@@ -69,8 +69,8 @@ export const SHIP = {
 
 // --- Camera ------------------------------------------------------------------
 export const CAMERA = {
-  MIN_FOV: 60,
-  MAX_FOV: 110,
+  MIN_FOV: 62,
+  MAX_FOV: 88,
   FOLLOW_HEIGHT: 6,
   FOLLOW_DISTANCE: 12,
   LOOK_OFFSET_Y: -2.5,
@@ -214,10 +214,10 @@ export const AUDIO = {
 
 // --- Post-processing ----------------------------------------------------------
 export const POST = {
-  BLOOM_MIN: 0.7,
-  BLOOM_MAX: 1.35,
-  BLOOM_RADIUS: 0.55,
-  BLOOM_THRESHOLD: 0.35,
+  BLOOM_MIN: 0.55,
+  BLOOM_MAX: 1.1,
+  BLOOM_RADIUS: 0.4,
+  BLOOM_THRESHOLD: 0.5,
   CHROMATIC_MAX_OFFSET: 0.012,
   VIGNETTE_DARKNESS: 0.6,
   VIGNETTE_OFFSET: 0.22,

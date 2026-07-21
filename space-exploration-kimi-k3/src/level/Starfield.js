@@ -5,6 +5,21 @@ import * as THREE from 'three';
 import * as Constants from '../core/Constants.js';
 import { mulberry32 } from '../utils/MathHelpers.js';
 
+/** Soft round point sprite so stars render as dots, not squares. */
+function makeStarTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 32;
+  const ctx = c.getContext('2d');
+  const grad = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.4, 'rgba(255,255,255,0.8)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 32, 32);
+  const tex = new THREE.CanvasTexture(c);
+  return tex;
+}
+
 export class Starfield {
   constructor(scene) {
     this._scene = scene;
@@ -16,6 +31,7 @@ export class Starfield {
   init() {
     const rng = mulberry32(1337);
     const R = Constants.STARFIELD.RADIUS;
+    const starTex = makeStarTexture();
 
     // Far layer: dim, uniform.
     {
@@ -30,8 +46,8 @@ export class Starfield {
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
       const mat = new THREE.PointsMaterial({
-        color: 0xaabbdd, size: 1.4, sizeAttenuation: false,
-        transparent: true, opacity: 0.75, depthWrite: false,
+        color: 0xaabbdd, size: 2.2, sizeAttenuation: false, map: starTex,
+        transparent: true, opacity: 0.7, depthWrite: false, alphaTest: 0.01,
       });
       this._stars = new THREE.Points(geo, mat);
       this._stars.frustumCulled = false;
@@ -51,8 +67,8 @@ export class Starfield {
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
       const mat = new THREE.PointsMaterial({
-        color: 0xddeeff, size: 2.4, sizeAttenuation: false,
-        transparent: true, opacity: 0.9, depthWrite: false,
+        color: 0xddeeff, size: 3.4, sizeAttenuation: false, map: starTex,
+        transparent: true, opacity: 0.8, depthWrite: false, alphaTest: 0.01,
         blending: THREE.AdditiveBlending,
       });
       this._bright = new THREE.Points(geo, mat);
@@ -66,8 +82,8 @@ export class Starfield {
     if (this._stars) this._stars.position.copy(shipPos);
     if (this._bright) {
       this._bright.position.copy(shipPos);
-      this._bright.material.size = 2.4 + speedRatio * 3.2;
-      this._bright.material.opacity = 0.7 + speedRatio * 0.3;
+      this._bright.material.size = 3.4 + speedRatio * 2.6;
+      this._bright.material.opacity = 0.6 + speedRatio * 0.25;
     }
   }
 

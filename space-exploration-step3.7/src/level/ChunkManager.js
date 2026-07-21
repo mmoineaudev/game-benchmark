@@ -141,27 +141,6 @@ class ChunkManager {
     const ruinCount = 1 + Math.floor(rng() * 2);
     this.collectibles.spawnRuins(center, ruinCount, rng);
 
-    if (biomeParams.nebulaCount > 0) {
-      const lightCount = Math.min(biomeParams.nebulaCount, 2);
-      for (let i = 0; i < lightCount; i++) {
-        const lightColor = new THREE.Color(
-          biomeParams.nebulaColors.c1[0] + rng() * 0.3,
-          biomeParams.nebulaColors.c1[1] + rng() * 0.3,
-          biomeParams.nebulaColors.c1[2] + rng() * 0.3,
-        );
-        const light = new THREE.PointLight(lightColor, 0.4, 35);
-        const offset = new THREE.Vector3(
-          (rng() - 0.5) * cw,
-          (rng() - 0.5) * ch,
-          (rng() - 0.5) * cl,
-        );
-        light.position.copy(center).add(offset);
-        light.userData.isChunkObject = true;
-        this.scene.add(light);
-        chunkObjects.push(light);
-      }
-    }
-
     if (biomeParams.wormholeActive) {
       const tunnel = this._createWormholeTunnel(center);
       chunkObjects.push(tunnel);

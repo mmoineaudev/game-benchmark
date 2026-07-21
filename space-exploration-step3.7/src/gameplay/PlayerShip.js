@@ -239,17 +239,11 @@ class PlayerShip {
     );
     const speedLerp = 0.6 + 0.4 * speedRatio;
 
-    const rollInput = input.getRollInput();
-    const targetRoll = -rollInput * 0.9;
-    this.mesh.rotation.z += (targetRoll - this.mesh.rotation.z) * Constants.SHIP.ROLL_SPEED * speedLerp * dt;
-
     const pitchInput = input.getPitchInput();
-    const targetPitch = pitchInput * 0.9;
-    this.mesh.rotation.x += (targetPitch - this.mesh.rotation.x) * Constants.SHIP.ROTATION_SPEED * speedLerp * dt;
+    this.mesh.rotation.x += (pitchInput * 0.9 - this.mesh.rotation.x) * Constants.SHIP.ROTATION_SPEED * speedLerp * dt;
 
     const yawInput = input.getYawInput();
-    const targetYaw = yawInput * 0.9;
-    this.mesh.rotation.y += (targetYaw - this.mesh.rotation.y) * Constants.SHIP.ROTATION_SPEED * speedLerp * dt;
+    this.mesh.rotation.y += (yawInput * 0.9 - this.mesh.rotation.y) * Constants.SHIP.ROTATION_SPEED * speedLerp * dt;
   }
 
   updateEngineFlames(thrusting) {

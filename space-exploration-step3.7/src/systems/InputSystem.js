@@ -14,6 +14,7 @@ class InputSystem {
     this.mouseY = 0;
     this._boundHandlers = new Map();
     this._invertY = false;
+    this.mouseDown = false;
   }
 
   setInvertY(v) {
@@ -69,10 +70,22 @@ class InputSystem {
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('mousemove', onMouseMove);
 
+    const onPointerDown = (e) => {
+      this.mouseDown = true;
+    };
+    const onPointerUp = (e) => {
+      this.mouseDown = false;
+    };
+
+    window.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('pointerup', onPointerUp);
+
     this._boundHandlers.set('destroy', () => {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('pointerup', onPointerUp);
     });
   }
 
@@ -90,37 +103,26 @@ class InputSystem {
     return !!this.keys[code];
   }
 
-  getForwardInput() {
-    const up = this.isPressed('ArrowUp') ? 1 : 0;
-    const z = this.isPressed('KeyZ') ? 1 : 0;
-    return Math.max(-1, Math.min(1, up + z));
-  }
-
-  getBackwardInput() {
-    const down = this.isPressed('ArrowDown') ? -1 : 0;
-    const s = this.isPressed('KeyS') ? -0.6 : 0;
-    return Math.max(-1, Math.min(1, down + s));
-  }
-
-  getStrafeInput() {
-    const arrow = (this.isPressed('ArrowRight') ? 1 : 0) + (this.isPressed('ArrowLeft') ? -1 : 0);
+  getYawInput() {
     const q = this.isPressed('KeyQ') ? -1 : 0;
     const d = this.isPressed('KeyD') ? 1 : 0;
-    return Math.max(-1, Math.min(1, arrow + q + d));
-  }
-
-  getVerticalInput() {
-    const a = this.isPressed('KeyA') ? -1 : 0;
-    const e = this.isPressed('KeyE') ? 1 : 0;
-    return Math.max(-1, Math.min(1, a + e));
-  }
-
-  getYawInput() {
-    return this.mouseX;
+    const arrow = (this.isPressed('ArrowLeft') ? -1 : 0) + (this.isPressed('ArrowRight') ? 1 : 0);
+    return Math.max(-1, Math.min(1, q + d + arrow));
   }
 
   getPitchInput() {
-    return this._invertY ? -this.mouseY : this.mouseY;
+    const a = this.isPressed('KeyA') ? -1 : 0;
+    const e = this.isPressed('KeyE') ? 1 : 0;
+    const arrow = (this.isPressed('ArrowUp') ? 1 : 0) + (this.isPressed('ArrowDown') ? -1 : 0);
+    return Math.max(-1, Math.min(1, a + e + arrow));
+  }
+
+  getThrustInput() {
+    const shift = this.isPressed('ShiftLeft') || this.isPressed('ShiftRight') ? 1 : 0;
+    const comma = this.isPressed('Comma') ? -1 : 0;
+    const up = this.isPressed('ArrowUp') ? 1 : 0;
+    const w = this.isPressed('KeyW') ? 1 : 0;
+    return Math.max(-1, Math.min(1, shift + comma + up + w));
   }
 
   getRollInput() {

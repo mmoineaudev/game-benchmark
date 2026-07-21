@@ -20,6 +20,8 @@ class PhysicsSystem {
   }
 
   updatePlayerPhysics(shipObject, input, dt) {
+    if (!shipObject || !input) return false;
+
     const vel = shipObject.userData.velocity;
     const q = shipObject.quaternion;
     const _f = this._forward; _f.set(0, 0, -1).applyQuaternion(q).normalize();
@@ -27,22 +29,17 @@ class PhysicsSystem {
     const _u = this._up; _u.set(0, 1, 0).applyQuaternion(q).normalize();
     const accel = this._accel; accel.set(0, 0, 0);
 
-    const keys = input.keys;
-    let forwardInput = 0, rightInput = 0, verticalInput = 0;
-    if (keys['KeyZ'] || keys['ArrowUp']) forwardInput += 1;
-    if (keys['KeyS'] || keys['ArrowDown']) forwardInput += -1;
-    if (keys['KeyD'] || keys['ArrowRight']) rightInput += 1;
-    if (keys['KeyQ'] || keys['ArrowLeft']) rightInput += -1;
-    if (keys['KeyE']) verticalInput += 1;
-    if (keys['KeyA']) verticalInput += -1;
+    const forwardInput = input.getThrustInput();
+    const rightInput = input.getYawInput();
+    const verticalInput = input.getPitchInput();
 
-    const forwardAccel = forwardInput > 0 ? Constants.SHIP.ACCELERATION : -Constants.SHIP.ACCELERATION * 0.7;
-    accel.addScaledVector(_f, forwardAccel * forwardInput);
-    accel.addScaledVector(_r, Constants.SHIP.ACCELERATION * 0.7 * rightInput);
-    accel.addScaledVector(_u, Constants.SHIP.ACCELERATION * 0.45 * verticalInput);
+    const forwardAccel = forwardInput > 0 ? Constants.SHIP.ACCELERATION : -Constants.SHIP.DECELERATION;
+    accel.addScaledVector(_f, forwardAccel * Math.max(0, forwardInput));
+    accel.addScaledVector(_r, Constants.SHIP.ACCELERATION * 1.1 * rightInput);
+    accel.addScaledVector(_u, Constants.SHIP.ACCELERATION * 0.8 * verticalInput);
 
     vel.addScaledVector(accel, dt);
-    vel.multiplyScalar(Math.pow(Constants.SHIP.DRAG, dt * 60));
+
     if (vel.length() > Constants.SHIP.MAX_SPEED) {
       vel.normalize().multiplyScalar(Constants.SHIP.MAX_SPEED);
     }

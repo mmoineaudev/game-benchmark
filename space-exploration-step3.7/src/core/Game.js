@@ -35,6 +35,9 @@ class Game {
     this._forward = new THREE.Vector3();
     this._right = new THREE.Vector3();
     this._up = new THREE.Vector3();
+    this._accumulator = 0;
+    this._fixedDt = 1 / 60;
+    this._maxSteps = 5;
   }
 
   init() {
@@ -176,123 +179,127 @@ class Game {
     this._delta = Math.min((now - this._lastTime) / 1000, 0.1);
     this._lastTime = now;
 
-    GameState.game.time += this._delta;
-    this.input.update(this._delta);
-    EventBus.emit('game:tick');
+    try {
+      GameState.game.time += this._delta;
+      this.input.update(this._delta);
+      EventBus.emit('game:tick');
 
-    const isThrusting = this.physics.updatePlayerPhysics(
-      this.playerShip.mesh,
-      this.input,
-      this._delta
-    );
-
-    this.playerShip.updateRotation(this._delta, this.input);
-    this.playerShip.updateEngineFlames(isThrusting);
-    this.playerShip.updateHitFlash(this._delta);
-
-    this.cameraSystem.update(this.playerShip.mesh, this._delta);
-
-    const speedRatio = Math.min(
-      this.playerShip.mesh.userData.velocity.length() / Constants.SHIP.MAX_SPEED,
-      1
-    );
-    this.audio.updateEngine(isThrusting, speedRatio);
-
-    if (this.input.isPressed(Constants.INPUT.FIRE)) {
-      this._attemptFire();
-    }
-    this.weapon.update(this._delta, this.particles);
-
-    this.starfield.update(this.playerShip.mesh.position, speedRatio, this._delta);
-    this.chunkManager.update(this.playerShip.mesh.position, this._delta);
-
-    if (isThrusting) {
-      if (!this._exhaustDir) {
-        this._exhaustDir = new THREE.Vector3(0, 0, 1);
-        this._exhaustOrigin = new THREE.Vector3();
-        this._exhaustOffset = new THREE.Vector3();
-      }
-      this._exhaustDir.set(0, 0, 1).applyQuaternion(this.playerShip.mesh.quaternion);
-      this._exhaustOrigin.copy(this.playerShip.mesh.position).add(
-        this._exhaustOffset.copy(this._exhaustDir).multiplyScalar(1.5)
+      const isThrusting = this.physics.updatePlayerPhysics(
+        this.playerShip.mesh,
+        this.input,
+        this._delta
       );
-      this.particles.spawnExhaust(
-        this._exhaustOrigin,
-        this._exhaustDir,
-        Math.ceil(3 + speedRatio * 5),
-        speedRatio
+
+      this.playerShip.updateRotation(this._delta, this.input);
+      this.playerShip.updateEngineFlames(isThrusting);
+      this.playerShip.updateHitFlash(this._delta);
+
+      this.cameraSystem.update(this.playerShip.mesh, this._delta);
+
+      const speedRatio = Math.min(
+        this.playerShip.mesh.userData.velocity.length() / Constants.SHIP.MAX_SPEED,
+        1
       );
-    }
-    this.particles.update(this._delta);
+      this.audio.updateEngine(isThrusting, speedRatio);
 
-    const destructibles = this.chunkManager.getDestructibles();
-    const shipCollisions = this.physics.checkShipCollisions(
-      this.playerShip.mesh, destructibles
-    );
+      if (this.input.isPressed(Constants.INPUT.FIRE) || this.input.mouseDown) {
+        this._attemptFire();
+      }
+      this.weapon.update(this._delta, this.particles);
 
-    for (const collision of shipCollisions) {
-      this.physics.handleCollision(this.playerShip.mesh, collision);
-      EventBus.emit('audio:collision', {});
-    }
+      this.starfield.update(this.playerShip.mesh.position, speedRatio, this._delta);
+      this.chunkManager.update(this.playerShip.mesh.position, this._delta);
 
-    const projectiles = this.weapon.getProjectiles();
-    const hits = this.physics.checkProjectileCollisions(projectiles, destructibles);
+      if (isThrusting) {
+        if (!this._exhaustDir) {
+          this._exhaustDir = new THREE.Vector3(0, 0, 1);
+          this._exhaustOrigin = new THREE.Vector3();
+          this._exhaustOffset = new THREE.Vector3();
+        }
+        this._exhaustDir.set(0, 0, 1).applyQuaternion(this.playerShip.mesh.quaternion);
+        this._exhaustOrigin.copy(this.playerShip.mesh.position).add(
+          this._exhaustOffset.copy(this._exhaustDir).multiplyScalar(1.5)
+        );
+        this.particles.spawnExhaust(
+          this._exhaustOrigin,
+          this._exhaustDir,
+          Math.ceil(3 + speedRatio * 5),
+          speedRatio
+        );
+      }
+      this.particles.update(this._delta);
 
-    for (const hit of hits) {
-      const hitKey = `${hit.projectileIndex}-${hit.targetIndex}`;
-      if (this._projectileHitsProcessed.has(hitKey)) continue;
-      this._projectileHitsProcessed.add(hitKey);
+      const destructibles = this.chunkManager.getDestructibles();
+      const shipCollisions = this.physics.checkShipCollisions(
+        this.playerShip.mesh, destructibles
+      );
 
-      const proj = projectiles[hit.projectileIndex];
-      if (!proj || !proj.mesh || !this.scene.children.includes(proj.mesh)) continue;
-
-      if (!hit.target.isInstanced && hit.target.userData) {
-        const isAsteroid = hit.target.userData.size > 0.3;
-        const type = isAsteroid ? 'asteroid' : 'debris';
-        const size = hit.target.userData.size || 1;
-
-        hit.target.userData.isDestroyed = true;
-        this.particles.createExplosion(hit.target.position.clone(), size);
-        EventBus.emit('audio:explosion', size);
-        EventBus.emit('weapon:destroy', { type, size });
-        EventBus.emit('camera:shake', isAsteroid ? 0.5 : 0.2);
-        this.hud.screenFlash(isAsteroid ? '#ffaa00' : '#888888', isAsteroid ? 80 : 50);
-        this.chunkManager.destroyAsteroid(hit.target);
+      for (const collision of shipCollisions) {
+        this.physics.handleCollision(this.playerShip.mesh, collision);
+        EventBus.emit('audio:collision', {});
       }
 
-      if (proj.mesh && this.scene.children.includes(proj.mesh)) {
-        this.scene.remove(proj.mesh);
-        proj.mesh.geometry.dispose();
-        proj.mesh.material.dispose();
+      const projectiles = this.weapon.getProjectiles();
+      const hits = this.physics.checkProjectileCollisions(projectiles, destructibles);
+
+      for (const hit of hits) {
+        const hitKey = `${hit.projectileIndex}-${hit.targetIndex}`;
+        if (this._projectileHitsProcessed.has(hitKey)) continue;
+        this._projectileHitsProcessed.add(hitKey);
+
+        const proj = projectiles[hit.projectileIndex];
+        if (!proj || !proj.mesh || !this.scene.children.includes(proj.mesh)) continue;
+
+        if (!hit.target.isInstanced && hit.target.userData) {
+          const isAsteroid = hit.target.userData.size > 0.3;
+          const type = isAsteroid ? 'asteroid' : 'debris';
+          const size = hit.target.userData.size || 1;
+
+          hit.target.userData.isDestroyed = true;
+          this.particles.createExplosion(hit.target.position.clone(), size);
+          EventBus.emit('audio:explosion', size);
+          EventBus.emit('weapon:destroy', { type, size });
+          EventBus.emit('camera:shake', isAsteroid ? 0.5 : 0.2);
+          this.hud.screenFlash(isAsteroid ? '#ffaa00' : '#888888', isAsteroid ? 80 : 50);
+          this.chunkManager.destroyAsteroid(hit.target);
+        }
+
+        if (proj.mesh && this.scene.children.includes(proj.mesh)) {
+          this.scene.remove(proj.mesh);
+          proj.mesh.geometry.dispose();
+          proj.mesh.material.dispose();
+        }
+        const idx = this.weapon._projectiles.indexOf(proj);
+        if (idx >= 0) {
+          this.weapon._projectiles.splice(idx, 1);
+        }
+
+        this.particles.createSparks(proj.mesh.position.clone());
       }
-      const idx = this.weapon._projectiles.indexOf(proj);
-      if (idx >= 0) {
-        this.weapon._projectiles.splice(idx, 1);
+
+      this.postProcessing.updateChromaticAberration(speedRatio);
+      this.postProcessing.updateBloom(speedRatio);
+      this.postProcessing.updateFilmGrain(GameState.game.time);
+
+      this.score.updateHUD();
+      this.score.updateDistanceScore(this._delta);
+
+      this.buffs.update(this._delta);
+
+      if (GameState.health <= 0 && GameState.isAlive) {
+        GameState.takeDamage(0);
+        EventBus.emit('game:gameover');
       }
 
-      this.particles.createSparks(proj.mesh.position.clone());
+      if (!GameState.isAlive) {
+        this.hud.showGameOver(GameState.score, GameState.highScore);
+        this._isRunning = false;
+      }
+
+      this.postProcessing.render();
+    } catch (err) {
+      console.error('[Game] Fatal tick error:', err);
     }
-
-    this.postProcessing.updateChromaticAberration(speedRatio);
-    this.postProcessing.updateBloom(speedRatio);
-    this.postProcessing.updateFilmGrain(GameState.game.time);
-
-    this.score.updateHUD();
-    this.score.updateDistanceScore(this._delta);
-
-    this.buffs.update(this._delta);
-
-    if (GameState.health <= 0 && GameState.isAlive) {
-      GameState.takeDamage(0);
-      EventBus.emit('game:gameover');
-    }
-
-    if (!GameState.isAlive) {
-      this.hud.showGameOver(GameState.score, GameState.highScore);
-      this._isRunning = false;
-    }
-
-    this.postProcessing.render();
   }
 
   _showPauseScreen() {
@@ -322,6 +329,9 @@ class Game {
   _restart() {
     this._isRunning = false;
     this.hud.hideGameOver();
+
+    const existing = document.getElementById('pause-screen');
+    if (existing) document.body.removeChild(existing);
     this.playerShip.destroy();
     this.weapon.clear();
     this.particles.destroy();

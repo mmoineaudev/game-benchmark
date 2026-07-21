@@ -176,23 +176,25 @@ export class PlayerShip {
     const speedRatio = Math.min((vel ? vel.length() : 0) / Constants.SHIP.MAX_SPEED, 1);
     const rate = Constants.SHIP.ROTATION_SPEED * (0.6 + 0.4 * speedRatio);
 
-    const yawRate = -input.mouseX * rate;
-    const pitchRate = input.mouseY * rate;
+    const yawRate   = -(input.mouseX + (input.keyboardRoll ? 0 : 0)) * rate;
+    const pitchRate =  input.mouseY * rate;
+    const rollInput = input.keyboardRoll || 0;
 
     this._euler.setFromQuaternion(this.mesh.quaternion, 'YXZ');
     this._euler.y += yawRate * dt;
     this._euler.x += pitchRate * dt;
     this._euler.x = Math.max(-Constants.INPUT.PITCH_CLAMP, Math.min(Constants.INPUT.PITCH_CLAMP, this._euler.x));
+    if (rollInput) this._euler.z += rollInput * dt;
 
     // Cosmetic banking from yaw rate + strafe input.
     const strafe = input.getStrafeInput ? input.getStrafeInput() : 0;
     const targetBank = Math.max(-Constants.SHIP.MAX_BANK, Math.min(Constants.SHIP.MAX_BANK,
       yawRate * Constants.SHIP.BANK_RATE - strafe * 0.35));
     this._bank += (targetBank - this._bank) * Math.min(6 * dt, 1);
-    this._euler.z = this._bank;
+    if (!rollInput) this._euler.z = this._bank;
 
     // Idle self-level: pitch + roll only, after IDLE_SELF_LEVEL_DELAY with no input.
-    const inputStrength = Math.abs(input.mouseX) + Math.abs(input.mouseY);
+    const inputStrength = Math.abs(input.mouseX) + Math.abs(input.mouseY) + Math.abs(rollInput);
     if (inputStrength < 0.001) this._idleTime += dt;
     else this._idleTime = 0;
     if (this._idleTime > Constants.INPUT.IDLE_SELF_LEVEL_DELAY) {
@@ -200,7 +202,7 @@ export class PlayerShip {
       const k = Constants.INPUT.SELF_LEVEL_RATE * dt * t;
       this._euler.x += (0 - this._euler.x) * k;
       this._bank += (0 - this._bank) * k;
-      this._euler.z = this._bank;
+      if (!rollInput) this._euler.z = this._bank;
     }
 
     this.mesh.quaternion.setFromEuler(this._euler);

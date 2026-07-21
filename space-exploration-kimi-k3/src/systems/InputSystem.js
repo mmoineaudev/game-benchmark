@@ -21,6 +21,7 @@ export class InputSystem {
     this.brake = false;
     this.fire = false;
     this.pointerLocked = false;
+    this._keyboardRoll = 0;
     this._unsub = [];
     this._domCleanup = [];
     this._canvas = null;
@@ -30,10 +31,10 @@ export class InputSystem {
     this._canvas = canvas || document.getElementById('game-container');
 
     const preventCodes = new Set([
+      Constants.INPUT.ARROW_UP, Constants.INPUT.ARROW_DOWN,
+      Constants.INPUT.ARROW_LEFT, Constants.INPUT.ARROW_RIGHT,
       Constants.INPUT.FORWARD, Constants.INPUT.BACKWARD,
-      Constants.INPUT.STRAFE_LEFT, Constants.INPUT.STRAFE_RIGHT,
-      Constants.INPUT.DOWN, Constants.INPUT.UP,
-      Constants.INPUT.FIRE, 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+      Constants.INPUT.FIRE,
     ]);
 
     const onKeyDown = (e) => {
@@ -122,7 +123,7 @@ export class InputSystem {
   }
 
   update() {
-    // tanh-bounded per-frame deltas — fast flicks stay possible.
+    // Mouse: tanh-bounded per-frame deltas — fast flicks stay possible.
     const dy = this.yaw - this._lastYaw;
     const dp = this.pitch - this._lastPitch;
     this.mouseX = Math.tanh(dy * 60);
@@ -130,9 +131,26 @@ export class InputSystem {
     this._lastYaw = this.yaw;
     this._lastPitch = this.pitch;
 
+    // Keyboard: arrow keys add to the same roll/yaw/pitch channels.
+    const arrowYaw =
+      (this.isPressed(Constants.INPUT.ARROW_RIGHT) ? 1 : 0) -
+      (this.isPressed(Constants.INPUT.ARROW_LEFT)  ? 1 : 0);
+    const arrowPitch =
+      (this.isPressed(Constants.INPUT.ARROW_DOWN) ? 1 : 0) -
+      (this.isPressed(Constants.INPUT.ARROW_UP)   ? 1 : 0);
+    const arrowRoll =
+      (this.isPressed(Constants.INPUT.ARROW_LEFT)  ? 1 : 0) -
+      (this.isPressed(Constants.INPUT.ARROW_RIGHT) ? 1 : 0);
+    if (arrowYaw) this.mouseX += arrowYaw * Constants.INPUT.KEYBOARD_PITCH_YAW_RATE;
+    if (arrowPitch) this.mouseY += arrowPitch * Constants.INPUT.KEYBOARD_PITCH_YAW_RATE;
+    this._keyboardRoll = arrowRoll * Constants.INPUT.KEYBOARD_ROLL_RATE;
+
+    // Throttles.
     this.thrust = this.isPressed(Constants.INPUT.FORWARD);
     this.brake = this.isPressed(Constants.INPUT.BACKWARD);
   }
+
+  get keyboardRoll() { return this._keyboardRoll || 0; }
 
   destroy() {
     for (const fn of this._domCleanup) fn();

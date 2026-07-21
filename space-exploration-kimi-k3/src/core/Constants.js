@@ -10,31 +10,34 @@ export const SCENE = {
 };
 
 // --- Input (event.code, physical positions — AZERTY/QWERTY safe) -------------
-// Left-hand diamond: Z(QWERTY W) top, S bottom, Q(QWERTY A) left, D right.
-// Vertical: A(QWERTY Q) down, E up.
+// Gyroscopic: Arrow keys = pitch/yaw/roll.
+// Throttles: Shift accelerate, Space brake.
+// Weapons: F fire. Mute M. Restart R. Zoom mouse wheel.
 export const INPUT = {
-  FORWARD: 'KeyZ',
-  BACKWARD: 'KeyS',
-  STRAFE_LEFT: 'KeyQ',
-  STRAFE_RIGHT: 'KeyD',
-  DOWN: 'KeyA',
-  UP: 'KeyE',
-  FIRE: 'Space',
+  FORWARD: 'ShiftLeft',
+  BACKWARD: 'Space',
+  FIRE: 'KeyF',
   RESTART: 'KeyR',
   MUTE: 'KeyM',
+  ARROW_UP: 'ArrowUp',
+  ARROW_DOWN: 'ArrowDown',
+  ARROW_LEFT: 'ArrowLeft',
+  ARROW_RIGHT: 'ArrowRight',
   MOUSE_SENSITIVITY: 3.5,
   PITCH_CLAMP: Math.PI / 2.2,       // ~±81°
   IDLE_SELF_LEVEL_DELAY: 3.0,       // seconds
   SELF_LEVEL_RATE: 2.0,
+  KEYBOARD_ROLL_RATE: 1.6,
+  KEYBOARD_PITCH_YAW_RATE: 2.2,
 };
 
 // Legend rendered on the pause screen — generated from this list.
 export const CONTROLS_LEGEND = [
-  ['MOUSE', 'steer (click to capture)'],
-  ['Z / S', 'thrust / reverse  (W / S on QWERTY)'],
-  ['Q / D', 'strafe left / right  (A / D on QWERTY)'],
-  ['A / E', 'descend / ascend  (Q / E on QWERTY)'],
-  ['SPACE / LEFT CLICK', 'fire lasers'],
+  ['ARROWS', 'gyroscopic pitch/yaw/roll'],
+  ['SHIFT', 'accelerate'],
+  ['SPACE', 'brake / reverse'],
+  ['F / LEFT CLICK', 'fire lasers'],
+  ['MOUSE (pointer lock)', 'gyroscopic yaw/pitch alternative'],
   ['MOUSE WHEEL', 'camera zoom'],
   ['M', 'mute'],
   ['R', 'restart (after ship lost)'],

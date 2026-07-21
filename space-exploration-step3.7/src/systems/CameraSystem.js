@@ -62,7 +62,7 @@ class CameraSystem {
       if (this._shakeAmount < 0.001) this._shakeAmount = 0;
     }
 
-    this._lookTarget.copy(shipObject.position).addScaledVector(right, 0.2).addScaledVector(back, -15);
+    this._lookTarget.copy(shipObject.position).addScaledVector(up, -Constants.CAMERA.LOOK_OFFSET_Y).addScaledVector(back, Constants.CAMERA.LOOK_OFFSET_Z);
 
     this.camera.position.copy(this._currentPos);
     this.camera.lookAt(this._lookTarget);

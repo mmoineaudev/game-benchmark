@@ -12,8 +12,8 @@ export const SCENE = {
 
 export const CAMERA = {
   START_FOV: 75,
-  FOLLOW_DISTANCE: 15,
-  FOLLOW_HEIGHT: 4,
+  FOLLOW_DISTANCE: 12,
+  FOLLOW_HEIGHT: 6,
   DAMPING_SPEED: 2.5,
   FOV_LERP_SPEED: 3,
   MIN_FOV: 60,
@@ -21,6 +21,8 @@ export const CAMERA = {
   ZOOM_MIN: 1,
   ZOOM_MAX: 3,
   ZOOM_STEP: 0.25,
+  LOOK_OFFSET_Y: -1.5,
+  LOOK_OFFSET_Z: -12,
 };
 
 export const SHIP = {
@@ -93,6 +95,7 @@ export const BIOME = {
 
 export const CHUNK = {
   WIDTH: 200,
+  HEIGHT: 200,
   LENGTH: 200,
   SPAWN_AHEAD: 3,
   CLEANUP_BEHIND: 2,

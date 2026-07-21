@@ -178,7 +178,7 @@ class PostProcessingSystem {
    */
   updateChromaticAberration(speedRatio) {
     if (this.chromaticPass) {
-      const maxOffset = 0.008;
+      const maxOffset = 0.012;
       this.chromaticPass.uniforms.uOffset.value = speedRatio * maxOffset;
     }
   }
@@ -190,7 +190,7 @@ class PostProcessingSystem {
     if (this.bloomPass) {
       // Bloom intensity scales from 1.2 (idle) to 2.0 (full thrust)
       const minBloom = 0.7;
-      const maxBloom = 1.2;
+      const maxBloom = 1.35;
       this.bloomPass.strength = minBloom + speedRatio * (maxBloom - minBloom);
     }
   }

@@ -89,6 +89,20 @@ class NPCShipManager {
     this._decayTrails(dt);
   }
 
+  _wander(currentVelocity, dt, rng) {
+    const wanderStrength = 8;
+    const wanderRate = 0.6;
+    const angle = rng() * Math.PI * 2;
+    const lift = (rng() - 0.5) * 0.55;
+    const wish = new THREE.Vector3(
+      Math.cos(angle) * wanderStrength,
+      lift * 6,
+      Math.sin(angle) * wanderStrength
+    );
+    currentVelocity.lerp(wish, Math.min(dt * wanderRate, 0.5)).normalize().multiplyScalar(10);
+    return currentVelocity;
+  }
+
   _spawnNPC(gx, gy, gz, key) {
     const seed = chunkSeed(gx * 1013, gy * 1009, gz * 997);
     const rng = mulberry32(seed);
@@ -96,21 +110,26 @@ class NPCShipManager {
     const y = gy * this._spacing + (rng() - 0.5) * this._spacing * 0.6;
     const z = gz * this._spacing + (rng() - 0.5) * this._spacing * 0.6;
 
+    const heading = rng() * Math.PI * 2;
+    const climb = (rng() - 0.5) * 0.25;
+    const velocity = new THREE.Vector3(Math.cos(climb) * Math.sin(heading) * 10, Math.sin(climb) * 10, Math.cos(climb) * Math.cos(heading) * 10);
+    this._wander(velocity, 1, rng);
+
     const typeIndex = Math.floor(rng() * TYPES.length);
     const color = COLORS[Math.floor(rng() * COLORS.length)];
-    const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.35, roughness: 0.4, metalness: 0.5 });
+    const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.25, roughness: 0.5, metalness: 0.4 });
     const mesh = TYPES[typeIndex](mat, color, rng);
     mesh.position.set(x, y, z);
-    const heading = rng() * Math.PI * 2;
-    const climb = (rng() - 0.5) * 0.4;
     mesh.userData = {
-      velocity: new THREE.Vector3(Math.cos(climb) * Math.sin(heading) * 10, Math.sin(climb) * 10, Math.cos(climb) * Math.cos(heading) * 10),
-      rotSpeedY: (rng() - 0.5) * 0.6,
-      rotSpeedX: (rng() - 0.5) * 0.3,
+      velocity,
+      rotSpeedY: (rng() - 0.5) * 0.5,
+      rotSpeedX: (rng() - 0.5) * 0.25,
       type: typeIndex,
       trailAccum: 0,
       isChunkObject: true,
       isNPC: true,
+      wanderRng: mulberry32(seed + 999),
+      wanderAccum: Math.random() * 2,
     };
     this.scene.add(mesh);
     this._ships.set(key, mesh);
@@ -118,6 +137,11 @@ class NPCShipManager {
 
   _moveNPC(npc, dt, towardShip) {
     const ud = npc.userData;
+    ud.wanderAccum -= dt;
+    if (ud.wanderAccum <= 0) {
+      ud.wanderAccum = 0.8 + Math.random() * 1.5;
+      this._wander(ud.velocity, 1, ud.wanderRng);
+    }
     npc.position.addScaledVector(ud.velocity, dt);
     npc.rotation.y += ud.rotSpeedY * dt;
     npc.rotation.x += ud.rotSpeedX * dt;

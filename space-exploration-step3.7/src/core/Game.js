@@ -13,6 +13,7 @@ import WeaponSystem from '../gameplay/WeaponSystem.js';
 import ScoreSystem from '../gameplay/ScoreSystem.js';
 import BuffSystem from '../gameplay/BuffSystem.js';
 import Starfield from '../level/Starfield.js';
+import ShootingStarManager from '../level/ShootingStarManager.js';
 import ChunkManager from '../level/ChunkManager.js';
 import HUD from '../ui/HUD.js';
 import Crosshair from '../ui/Crosshair.js';
@@ -125,6 +126,8 @@ class Game {
     this.chunkManager = new ChunkManager(this.scene, this.camera);
     this.chunkManager.init();
 
+    this.shootingStars = new ShootingStarManager(this.scene);
+
     this.hud = new HUD();
     this.hud.init();
 
@@ -215,6 +218,7 @@ class Game {
 
       this.starfield.update(this.playerShip.mesh.position, speedRatio, this._delta);
       this.chunkManager.update(this.playerShip.mesh.position, this._delta);
+      this.shootingStars.update(this.playerShip.mesh.position, this._delta);
 
       if (isThrusting) {
         if (!this._exhaustDir) {
@@ -343,6 +347,7 @@ class Game {
     this.particles.destroy();
     this.starfield.destroy();
     this.chunkManager.destroy();
+    this.shootingStars.destroy();
     this.postProcessing.composer?.dispose();
     this._disposeScene();
 
@@ -386,6 +391,7 @@ class Game {
     this.weapon.clear();
     this.starfield.destroy();
     this.chunkManager.destroy();
+    this.shootingStars.destroy();
     for (const unsub of this._unsubscribers) unsub();
     this._unsubscribers = [];
   }

@@ -92,11 +92,8 @@ class Starfield {
    */
   update(shipPosition, speedRatio, dt) {
     for (const layer of this.layers) {
-      // Update time uniform for twinkle
       layer.material.uniforms.uTime.value += dt;
       layer.material.uniforms.uSpeed.value = speedRatio;
-
-      // Pass camera offset to shader for parallax
       layer.material.uniforms.uCameraOffset.value.copy(shipPosition);
     }
   }

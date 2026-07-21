@@ -66,7 +66,10 @@ class PlanetManager {
         for (let dz = -1; dz <= 1; dz++) {
           const key = `${cx+dx},${cy+dy},${cz+dz}`;
           needed.add(key);
-          if (!this._planets.has(key)) this._spawnPlanet(cx+dx, cy+dy, cz+dz, key);
+          if (!this._planets.has(key)) {
+            const hash = this._hashKey(key);
+            if (hash < 0.18) this._spawnPlanet(cx+dx, cy+dy, cz+dz, key);
+          }
         }
       }
     }
@@ -81,6 +84,12 @@ class PlanetManager {
     }
   }
 
+  _hashKey(key) {
+    let hash = 0;
+    for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) & 0xffffff;
+    return (hash % 10000) / 10000;
+  }
+
   _spawnPlanet(gx, gy, gz, key) {
     const seed = chunkSeed(gx * 997, gy * 991, gz * 983);
     const rng = mulberry32(seed);
@@ -88,8 +97,9 @@ class PlanetManager {
     const y = gy * this._spacing + (rng() - 0.5) * this._spacing * 0.6;
     const z = gz * this._spacing + (rng() - 0.5) * this._spacing * 0.6;
 
-    const chunkRadius = 3 + Math.floor(rng() * 7);
-    const radius = chunkRadius * Constants.CHUNK.WIDTH * 0.5;
+    const minRadius = Constants.CHUNK.WIDTH * 0.25;
+    const maxRadius = Constants.CHUNK.WIDTH * 1.4;
+    const radius = minRadius + rng() * (maxRadius - minRadius);
 
     const colorSets = [
       [0x111133, 0x332244, 0x446688, 0x3388aa],
@@ -97,10 +107,13 @@ class PlanetManager {
       [0x002211, 0x115533, 0x336644, 0x227755],
       [0x330022, 0x441133, 0x553344, 0x553355],
       [0x001122, 0x112233, 0x224455, 0x225566],
+      [0x0a0a0a, 0x1a1a1a, 0x222222, 0x0f0f1a],
+      [0x111108, 0x282818, 0x333322, 0x1a1a10],
     ];
     const set = colorSets[Math.floor(rng() * colorSets.length)];
 
-    const geo = new THREE.IcosahedronGeometry(radius, 3);
+    const detail = Math.max(2, Math.floor(3 + radius * 0.04));
+    const geo = new THREE.IcosahedronGeometry(radius, detail);
     const mat = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 },
@@ -119,14 +132,17 @@ class PlanetManager {
     mesh.userData = { isChunkObject: true, isPlanet: true, radius };
     this.scene.add(mesh);
 
-    const atmoGeo = new THREE.IcosahedronGeometry(radius * 1.12, 2);
-    const atmoMat = new THREE.MeshBasicMaterial({ color: set[3], transparent: true, opacity: 0.07, side: THREE.BackSide });
-    const atmo = new THREE.Mesh(atmoGeo, atmoMat);
-    atmo.position.copy(mesh.position);
-    atmo.userData = { isChunkObject: true, isPlanetAtmo: true };
-    this.scene.add(atmo);
-
-    this._planets.set(key, { mesh, atmo });
+    if (radius > 12) {
+      const atmoGeo = new THREE.IcosahedronGeometry(radius * 1.12, 2);
+      const atmoMat = new THREE.MeshBasicMaterial({ color: set[3], transparent: true, opacity: 0.07, side: THREE.BackSide });
+      const atmo = new THREE.Mesh(atmoGeo, atmoMat);
+      atmo.position.copy(mesh.position);
+      atmo.userData = { isChunkObject: true, isPlanetAtmo: true };
+      this.scene.add(atmo);
+      this._planets.set(key, { mesh, atmo });
+    } else {
+      this._planets.set(key, { mesh, atmo: null });
+    }
   }
 
   _removePlanet(key) {

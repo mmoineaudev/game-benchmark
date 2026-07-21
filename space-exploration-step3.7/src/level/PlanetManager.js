@@ -71,7 +71,7 @@ class PlanetManager {
       }
     }
     for (const [key, planet] of this._planets) {
-      if (!needed.has(key) || planet.position.distanceToSquared(shipPos) > this._viewDistance * this._viewDistance) {
+      if (!needed.has(key) || !planet?.mesh?.position || planet.mesh.position.distanceToSquared(shipPos) > this._viewDistance * this._viewDistance) {
         this._removePlanet(key);
       }
     }

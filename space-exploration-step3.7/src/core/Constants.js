@@ -42,13 +42,9 @@ export const SHIP = {
 };
 
 export const INPUT = {
-  FORWARD: 'KeyW',
-  BACKWARD: 'KeyS',
-  LEFT: 'KeyA',
-  RIGHT: 'KeyD',
-  UP: 'KeyE',
-  DOWN: 'KeyQ',
-  FIRE: 'Space',
+  FORWARD: 'ShiftLeft',
+  BACKWARD: 'Space',
+  FIRE: 'KeyF',
   RESTART: 'KeyR',
 };
 

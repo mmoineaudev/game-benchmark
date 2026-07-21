@@ -239,35 +239,18 @@ class PlayerShip {
       1
     );
     const speedLerp = 0.6 + 0.4 * speedRatio;
-
     const rate = Constants.SHIP.ROTATION_SPEED * speedLerp;
 
-    const yawRate = input.mouseX * rate * dt;
-    const pitchRate = input.mouseY * rate * dt;
-
-    this.mesh.rotation.y += yawRate;
-    this.mesh.rotation.x += pitchRate;
-
-    const targetBank = -yawRate * 2.5;
-    this.mesh.rotation.z += (targetBank - this.mesh.rotation.z) * 3 * dt;
+    const yaw = 0;
+    const pitch = 0;
+    if (input.isPressed('ArrowLeft')) this.mesh.rotation.y += rate * dt;
+    if (input.isPressed('ArrowRight')) this.mesh.rotation.y -= rate * dt;
+    if (input.isPressed('ArrowDown')) this.mesh.rotation.x += rate * dt;
+    if (input.isPressed('ArrowUp')) this.mesh.rotation.x -= rate * dt;
 
     const q = new THREE.Euler().setFromQuaternion(this.mesh.quaternion, 'YXZ');
-    const clampedPitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, q.x));
-    q.x = clampedPitch;
+    q.x = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, q.x));
     this.mesh.quaternion.setFromEuler(q);
-
-    const inputStrength = Math.abs(input.mouseX) + Math.abs(input.mouseY);
-    if (inputStrength < 0.001) {
-      this._idleTime += dt;
-    } else {
-      this._idleTime = 0;
-    }
-
-    if (this._idleTime > 3) {
-      const t = Math.min((this._idleTime - 3) * 0.5, 1);
-      this.mesh.rotation.x += (0 - this.mesh.rotation.x) * 2 * dt * t;
-      this.mesh.rotation.z += (0 - this.mesh.rotation.z) * 2 * dt * t;
-    }
   }
 
   updateEngineFlames(thrusting) {

@@ -312,7 +312,7 @@ class Game {
     const pauseDiv = document.createElement('div');
     pauseDiv.id = 'pause-screen';
     pauseDiv.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.35); z-index: 50; display: flex; align-items: center; justify-content: center; flex-direction: column; color: #aaccff; font-family: Courier New, monospace; text-shadow: 0 0 12px rgba(100,150,255,0.8); pointer-events: none;';
-    pauseDiv.innerHTML = '<h1 style="font-size: 44px; margin-bottom: 18px;">PAUSED - Press SPACE to start</h1><p style="font-size: 18px; opacity: 0.8;">Mouse to steer | Z=forward, S=backward | Q/D=strafe | A/E=up/down | Space=fire</p>';
+    pauseDiv.innerHTML = '<h1 style="font-size: 44px; margin-bottom: 18px;">PAUSED - Press SPACE to start</h1><p style="font-size: 18px; opacity: 0.8;">Arrows = rotate | Shift = accelerate | Space = brake | F = fire</p>';
     document.body.appendChild(pauseDiv);
 
     this._unpauseHandler = (e) => {

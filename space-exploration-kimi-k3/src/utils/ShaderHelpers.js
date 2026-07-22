@@ -179,14 +179,13 @@ void main(){
   float core = smoothstep(0.0, 0.08, dist);
   float outer = smoothstep(0.35, 0.0, dist - rim * 0.28);
 
-  vec3 color = mix(uColor1, uColor2, smoothstep(-0.8, 0.8, bands));
-  color = mix(color, uColor2 * 1.4, smoothstep(0.2, 1.0, rings) * 0.35);
-  color += uColor1 * pulse * outer * 0.55;
-  color *= 1.1 + 0.35 * rim;
+  vec3 color = mix(uColor1 * 0.6, uColor2 * 0.7, smoothstep(-0.8, 0.8, bands));
+  color = mix(color, uColor2 * 0.8, smoothstep(0.2, 1.0, rings) * 0.25);
+  color += uColor1 * 0.18 * outer;
 
-  float alpha = (0.45 + 0.35 * rim + 0.25 * smoothstep(-0.5, 0.9, swirl)) * core;
+  float alpha = (0.18 + 0.22 * rim + 0.12 * smoothstep(-0.5, 0.9, swirl)) * core;
   alpha *= 0.75 + 0.25 * pulse;
-  if (alpha < 0.01) discard;
+  if (alpha < 0.005) discard;
   gl_FragColor = vec4(color, alpha);
 }
 `;

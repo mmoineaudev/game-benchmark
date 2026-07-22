@@ -250,8 +250,21 @@ export class NPCShipManager {
       // Prune by distance.
       if (mesh.position.distanceTo(shipPos) > view) {
         this._scene.remove(mesh);
-        mesh.geometry.dispose();
-        mesh.material.dispose();
+        if (mesh.isGroup || mesh.type === 'Group') {
+          mesh.traverse((child) => {
+            if (child.geometry) child.geometry.dispose();
+            if (child.material) {
+              if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
+              else child.material.dispose();
+            }
+          });
+        } else {
+          if (mesh.geometry) mesh.geometry.dispose();
+          if (mesh.material) {
+            if (Array.isArray(mesh.material)) mesh.material.forEach((m) => m.dispose());
+            else mesh.material.dispose();
+          }
+        }
         this._npcs.delete(key);
       }
     }

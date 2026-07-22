@@ -178,13 +178,13 @@ export const CHUNK = {
 
 // --- Level entities ----------------------------------------------------------
 export const NPC = {
-  MAX_COUNT: 90,
-  GRID_SIZE: 1600,
-  VIEW_DISTANCE: 20000,
-  SPAWN_CHANCE: 0.28,               // deterministic per-cell
-  WANDER_SPAWN_CHANCE: 0.80,        // per-second random encounter near ship path
-  SPEED: 20,
-  TRAIL_POOL: 256,
+  MAX_COUNT: 140,
+  GRID_SIZE: 1200,
+  VIEW_DISTANCE: 28000,
+  SPAWN_CHANCE: 0.55,               // deterministic per-cell
+  WANDER_SPAWN_CHANCE: 1.20,        // per-second random encounter near ship path
+  SPEED: 24,
+  TRAIL_POOL: 320,
   TRAIL_CADENCE: 0.04,
   TRAIL_DECAY: 0.9,
   COLLISION_RADIUS: 2.0,
@@ -236,11 +236,11 @@ export const WORMHOLE = {
 // Black holes
 // ----------------------------------------------------------------------------
 export const BLACK_HOLE = Object.freeze({
-  MAX_ACTIVE: 4,
+  MAX_ACTIVE: 8,
   PULL: 14,
-  VIEW_DISTANCE: 36000,
-  SPAWN_MIN: 3000,
-  SPAWN_MAX: 26000,
+  VIEW_DISTANCE: 50000,
+  SPAWN_MIN: 2000,
+  SPAWN_MAX: 32000,
   ACTIVE_BONUS_MULTIPLIER: 3.4,
 });
 

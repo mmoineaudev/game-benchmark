@@ -160,14 +160,14 @@ export const PLANET = {
 };
 
 export const NPC = {
-  MAX_COUNT: 28,
-  GRID_SIZE: 2400,
-  VIEW_DISTANCE: 11250,
-  SPAWN_CHANCE: 0.15,               // deterministic per-cell (lowered)
-  WANDER_SPAWN_CHANCE: 0.12,        // per-second random encounter near ship path
-  SPEED: 16,
+  MAX_COUNT: 40,
+  GRID_SIZE: 2200,
+  VIEW_DISTANCE: 14000,
+  SPAWN_CHANCE: 0.28,               // deterministic per-cell (raised)
+  WANDER_SPAWN_CHANCE: 0.30,        // per-second random encounter near ship path
+  SPEED: 18,
   TRAIL_POOL: 256,
-  TRAIL_CADENCE: 0.05,
+  TRAIL_CADENCE: 0.04,
   TRAIL_DECAY: 0.9,
   COLLISION_RADIUS: 2.0,
 };

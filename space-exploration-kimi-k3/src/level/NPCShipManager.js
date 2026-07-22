@@ -128,10 +128,10 @@ export class NPCShipManager {
     const cgy = Math.round(shipPos.y / grid);
     const cgz = Math.round(shipPos.z / grid);
 
-    // Deterministic sparse grid placement.
-    for (let dx = -1; dx <= 1; dx++) {
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dz = -1; dz <= 1; dz++) {
+    // Deterministic sparse grid placement (±2).
+    for (let dx = -2; dx <= 2; dx++) {
+      for (let dy = -2; dy <= 2; dy++) {
+        for (let dz = -2; dz <= 2; dz++) {
           const key = `n${cgx + dx},${cgy + dy},${cgz + dz}`;
           if (!this._npcs.has(key) && hashKey(key) < Constants.NPC.SPAWN_CHANCE) {
             this._spawnNPC(cgx + dx, cgy + dy, cgz + dz, key);

@@ -55,12 +55,19 @@ export const SHIP = {
   COLLISION_RADIUS: 1.2,
   BANK_RATE: 0.9,                   // cosmetic roll from yaw/strafe
   MAX_BANK: 0.5,
+  HEADLIGHT_INTENSITY: 1.4,
+  HEADLIGHT_DISTANCE: 80,
+  ACCENT_COLOR: 0x4488ff,
+  ACCENT_INTENSITY: 0.9,
+  ACCENT_DISTANCE: 35,
+  ENGINE_COLOR: 0x44aaff,
+  WINGTIP_EMISSIVE: 2.0,
 
   PRESETS: [
-    { id: 'interceptor', label: 'INTERCEPTOR', shape: 'interceptor', body: 0xbb2233, trim: 0x1a1c22, glass: 0x66ddff, engine: 0x44aaff, tail: 0xff2233, accent: 0x4488ff, scale: 1.0 },
-    { id: 'claymore',    label: 'CLAYMORE',    shape: 'claymore',    body: 0xdd8833, trim: 0x221a12, glass: 0xffccaa, engine: 0xffaa44, tail: 0xff4411, accent: 0xffdd44, scale: 1.25 },
-    { id: 'vanguard',    label: 'VANGUARD',    shape: 'vanguard',    body: 0x3388cc, trim: 0x0e1420, glass: 0xaaffff, engine: 0x22ccff, tail: 0x0088ff, accent: 0x66eeff, scale: 1.15 },
-    { id: 'sprinter',    label: 'SPRINTER',    shape: 'sprinter',    body: 0x88cc22, trim: 0x141a0e, glass: 0xddffaa, engine: 0x66ff22, tail: 0x33aa00, accent: 0xaaff44, scale: 0.88 },
+    { id: 'interceptor', label: 'INTERCEPTOR', shape: 'interceptor', body: 0xbb2233, trim: 0x1a1c22, glass: 0x66ddff, engine: 0x44aaff, tail: 0xff2233, accent: 0x4488ff, scale: 1.0, engineColor: 0x44aaff, headlightIntensity: 1.4, headlightDistance: 80, accentIntensity: 0.9, accentDistance: 35, accentColor: 0x4488ff, wingtipEmissive: 2.0 },
+    { id: 'claymore',    label: 'CLAYMORE',    shape: 'claymore',    body: 0xdd8833, trim: 0x221a12, glass: 0xffccaa, engine: 0xffaa44, tail: 0xff4411, accent: 0xffdd44, scale: 1.25, engineColor: 0xffaa44, headlightIntensity: 1.6, headlightDistance: 95, accentIntensity: 1.1, accentDistance: 42, accentColor: 0xffdd44, wingtipEmissive: 2.4 },
+    { id: 'vanguard',    label: 'VANGUARD',    shape: 'vanguard',    body: 0x3388cc, trim: 0x0e1420, glass: 0xaaffff, engine: 0x22ccff, tail: 0x0088ff, accent: 0x66eeff, scale: 1.15, engineColor: 0x22ccff, headlightIntensity: 1.5, headlightDistance: 100, accentIntensity: 1.0, accentDistance: 40, accentColor: 0x66eeff, wingtipEmissive: 2.2 },
+    { id: 'sprinter',    label: 'SPRINTER',    shape: 'sprinter',    body: 0x88cc22, trim: 0x141a0e, glass: 0xddffaa, engine: 0x66ff22, tail: 0x33aa00, accent: 0xaaff44, scale: 0.88, engineColor: 0x66ff22, headlightIntensity: 1.25, headlightDistance: 65, accentIntensity: 0.8, accentDistance: 28, accentColor: 0xaaff44, wingtipEmissive: 2.0 },
   ],
 };
 

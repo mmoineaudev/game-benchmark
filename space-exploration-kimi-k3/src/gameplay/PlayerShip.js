@@ -1,6 +1,6 @@
 // VOID DRIFT — PlayerShip.js
 // Muscle-car silhouette: box fuselage + hemisphere nose, wings, nacelles,
-// reactor rings, fins, glass canopy, restrained lights, shader engine flames.
+// reactor rings, fins, glass canopy, preset-matched lights/flames/glow.
 // Mouse steering (unbounded accumulator), cosmetic banking, idle self-level
 // (pitch/roll only — never yaw).
 
@@ -48,7 +48,7 @@ export class PlayerShip {
     const tailMat = mat({
       color: 0x330000, emissive: p.tail, emissiveIntensity: 2.0,
     });
-    const wingtipEmissive = S.WINGTIP_EMISSIVE == null ? 2.0 : S.WINGTIP_EMISSIVE;
+    const wingtipEmissive = p.wingtipEmissive == null ? S.WINGTIP_EMISSIVE : p.wingtipEmissive;
     const wingtipMat = mat({
       color: 0x111111, emissive: p.accent, emissiveIntensity: wingtipEmissive,
     });
@@ -78,7 +78,7 @@ export class PlayerShip {
         uniforms: {
           uTime: { value: 0 },
           uIntensity: { value: 0.6 },
-          uColor: { value: new THREE.Color(S.ENGINE_COLOR) },
+          uColor: { value: new THREE.Color(p.engineColor || S.ENGINE_COLOR || 0x44aaff) },
         },
         transparent: true,
         blending: THREE.NormalBlending,
@@ -93,7 +93,7 @@ export class PlayerShip {
       this._flames.push({ mesh: flame, mat: flameMat, side });
 
       const glowMat = new THREE.SpriteMaterial({
-        color: S.ENGINE_COLOR || 0x44aaff, transparent: true, opacity: 0.12,
+        color: p.engineColor || S.ENGINE_COLOR || 0x44aaff, transparent: true, opacity: 0.12,
         blending: THREE.AdditiveBlending, depthWrite: false,
       });
       this._materials.push(glowMat);

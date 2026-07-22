@@ -26,6 +26,7 @@ import { NPCShipManager } from '../level/NPCShipManager.js';
 import { HUD } from '../ui/HUD.js';
 import { Crosshair } from '../ui/Crosshair.js';
 import { StartScreen } from '../ui/StartScreen.js';
+import { BlackHoleSystem } from '../level/BlackHoleSystem.js';
 
 export class Game {
   constructor(containerId) {
@@ -137,6 +138,9 @@ export class Game {
     this.planets = new PlanetManager(this.scene);
     this.npcs = new NPCShipManager(this.scene);
     this.npcs.init();
+
+    this.blackHoles = new BlackHoleSystem(this.scene);
+    this.blackHoles.init();
 
     this.chunkManager = new ChunkManager(this.scene, {
       asteroids: this.asteroids,
@@ -291,6 +295,7 @@ export class Game {
     this.npcs.update(shipPos, dt);
     this.asteroids.update(dt);
     this.nebula.update(dt, this.camera);
+    this.blackHoles.update(shipPos, gameTime, dt);
     const pickups = this.collectibles.update(dt, gameTime, shipPos);
     for (const p of pickups) {
       this.score.awardCollectible(p.type);
@@ -354,6 +359,8 @@ export class Game {
     this.hud.update();
     this.score.updateDistanceScore();
 
+    this._enforceBlackHoleGravity(dt);
+
     // Death check.
     if (!GameState.player.isAlive) {
       this._onDeath();
@@ -372,6 +379,7 @@ export class Game {
     // restart is idempotent: clear content, reset state, no new listeners.
     this.chunkManager.clearAll();
     this.planets.clearAll();
+    this.blackHoles.clearAll();
     this.weapon.clear();
     this.particles.clear();
     this.shootingStars.destroy();
@@ -410,6 +418,7 @@ export class Game {
     this.collectibles.destroy();
     this.nebula.destroy();
     this.npcs.destroy();
+    this.blackHoles.destroy();
     this.hud.destroy();
     this.renderer.dispose();
   }

@@ -196,6 +196,17 @@ export const STARFIELD = {
   PARALLAX: 0.05,
 };
 
+// ----------------------------------------------------------------------------
+// Black holes
+// ----------------------------------------------------------------------------
+export const BLACK_HOLE = Object.freeze({
+  MAX_ACTIVE: 3,
+  PULL: 42,
+  VIEW_DISTANCE: 18000,
+  SPAWN_MIN: 3500,
+  SPAWN_MAX: 16000,
+});
+
 // --- Audio -------------------------------------------------------------------
 export const AUDIO = {
   MASTER_GAIN: 0.3,
@@ -237,7 +248,7 @@ export const PARTICLES = {
   EXPLOSION_LIFE: 0.9,
 };
 
-// --- Persistence ---------------------------------------------------------------
+// --- Persistence --------------------------------------------------------------
 export const STORAGE = {
   HIGH_SCORE: 'space_exploration_highscore',
   MUTED: 'void_drift_muted',

@@ -120,7 +120,7 @@ export class StartScreen {
       name.style.cssText = 'font-size:15px;letter-spacing:3px;margin-bottom:10px;color:#7adfff;text-align:center;';
       name.textContent = p.label;
 
-      const viewport = this._makePreview(preset);
+      const viewport = this._makePreview(p);
 
       const meta = document.createElement('div');
       meta.style.cssText = 'font-size:11px;opacity:0.75;text-align:center;line-height:1.6;font-family:"Courier New",monospace;';

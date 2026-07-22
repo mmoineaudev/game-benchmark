@@ -45,9 +45,9 @@ export const CONTROLS_LEGEND = [
 
 // --- Ship --------------------------------------------------------------------
 export const SHIP = {
-  MAX_SPEED: 45,
-  ACCELERATION: 38,
-  DECELERATION: 30,
+  MAX_SPEED: 140,
+  ACCELERATION: 70,
+  DECELERATION: 50,
   REVERSE_RATIO: 0.3,               // reverse capped at 0.3 × MAX_SPEED
   STRAFE_SPEED_RATIO: 0.6,          // lateral/vertical thrust vs MAX_SPEED
   LATERAL_DRAG: 0.97,               // per-frame damping of strafe/vertical
@@ -66,10 +66,10 @@ export const SHIP = {
 
 // --- Camera ------------------------------------------------------------------
 export const CAMERA = {
-  MIN_FOV: 62,
-  MAX_FOV: 88,
+  MIN_FOV: 66,
+  MAX_FOV: 95,
   FOLLOW_HEIGHT: 6,
-  FOLLOW_DISTANCE: 12,
+  FOLLOW_DISTANCE: 14,
   LOOK_OFFSET_Y: -2.5,
   LOOK_OFFSET_Z: -14,
   DAMPING_SPEED: 4.5,
@@ -81,9 +81,9 @@ export const CAMERA = {
 
 // --- Weapon ------------------------------------------------------------------
 export const WEAPON = {
-  PROJECTILE_SPEED: 120,
-  PROJECTILE_LIFETIME: 3.0,
-  PROJECTILE_RANGE: 200,
+  PROJECTILE_SPEED: 180,
+  PROJECTILE_LIFETIME: 3.5,
+  PROJECTILE_RANGE: 280,
   PROJECTILE_RADIUS: 0.3,
   FIRE_RATE: 8,                     // shots per second
   LASER_COLOR: 0x00ffaa,

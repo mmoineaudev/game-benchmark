@@ -182,6 +182,7 @@ export class ChunkManager {
    * meshes and NPC ships.
    */
   getCollidables(shipPos) {
+    if (!shipPos) return [];
     const S = Constants.CHUNK.SIZE * 1.5;
     const list = [];
     for (const o of this._sub.asteroids._objects) {
@@ -209,9 +210,9 @@ export class ChunkManager {
     }
     for (const [, chunk] of this._chunks) {
       if (chunk.wormhole) {
-        const dx = shipPos.x - chunk.wormhole.position.x;
-        const dy = shipPos.y - chunk.wormhole.position.y;
-        const dz = shipPos.z - chunk.wormhole.position.z;
+        const dx = shipPos.x - chunk.center.x;
+        const dy = shipPos.y - chunk.center.y;
+        const dz = shipPos.z - chunk.center.z;
         if (Math.abs(dx) < S && Math.abs(dy) < S && Math.abs(dz) < S) list.push(chunk.wormhole);
       }
     }

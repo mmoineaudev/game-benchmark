@@ -356,6 +356,9 @@ export class Game {
       if (GameState.isLowHealth) this.audio.playWarning();
     }
     if (wormholeTeleport) {
+      GameState.takeDamage(Constants.HEALTH.COLLISION_DAMAGE);
+      this.hud.damageFlash();
+      this.audio.playCollision();
       const hit = wormholeTeleport;
       const worm = this.wormholes;
       const from = worm._holes.find(h => h.center.distanceTo(this.playerShip.mesh.position) < Constants.WORMHOLE.TELEPORT_RADIUS);

@@ -53,55 +53,25 @@ export class PlayerShip {
       color: 0x111111, emissive: p.accent, emissiveIntensity: wingtipEmissive,
     });
 
-    // Fuselage: long low box + hemisphere nose.
-    const fuselage = new THREE.Mesh(geo(new THREE.BoxGeometry(1.6, 0.7, 4.2)), bodyMat);
-    fuselage.position.set(0, 0, 0);
-    this.mesh.add(fuselage);
+    const shape = (p.shape || 'interceptor');
 
-    const nose = new THREE.Mesh(geo(new THREE.SphereGeometry(0.8, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2)), bodyMat);
-    nose.rotation.x = -Math.PI / 2;
-    nose.scale.set(1.0, 1.0, 0.9);
-    nose.position.set(0, 0, -2.1);
-    this.mesh.add(nose);
-
-    // Hood deck + trunk trim.
-    const hood = new THREE.Mesh(geo(new THREE.BoxGeometry(1.3, 0.12, 1.6)), trimMat);
-    hood.position.set(0, 0.4, -1.3);
-    this.mesh.add(hood);
-    const trunk = new THREE.Mesh(geo(new THREE.BoxGeometry(1.3, 0.12, 1.0)), trimMat);
-    trunk.position.set(0, 0.4, 1.6);
-    this.mesh.add(trunk);
-
-    // Glass canopy.
-    const canopy = new THREE.Mesh(geo(new THREE.BoxGeometry(1.1, 0.5, 1.4)), glassMat);
-    canopy.position.set(0, 0.55, 0.1);
-    this.mesh.add(canopy);
-
-    // Wings (low-aspect, mid-rear).
-    const wingGeo = geo(new THREE.BoxGeometry(2.6, 0.1, 1.1));
-    for (const side of [-1, 1]) {
-      const wing = new THREE.Mesh(wingGeo, bodyMat);
-      wing.position.set(side * 1.9, -0.05, 0.9);
-      wing.rotation.z = side * -0.06;
-      this.mesh.add(wing);
-
-      // Wingtip accent lights.
+    // Shared nacelle/light utility
+    const placeNacellePackage = (side, x, y, z, isLarge) => {
       const tip = new THREE.Mesh(geo(new THREE.BoxGeometry(0.18, 0.14, 0.5)), wingtipMat);
-      tip.position.set(side * 3.2, -0.05, 0.9);
+      tip.position.set(side * x, y, z);
       this.mesh.add(tip);
 
-      // Nacelles on wingtips.
-      const nacelle = new THREE.Mesh(geo(new THREE.CylinderGeometry(0.32, 0.38, 1.8, 12)), trimMat);
+      const radius = isLarge ? 0.45 : 0.32;
+      const height = isLarge ? 2.3 : 1.8;
+      const nacelle = new THREE.Mesh(geo(new THREE.CylinderGeometry(radius, radius + 0.06, height, 12)), trimMat);
       nacelle.rotation.x = Math.PI / 2;
-      nacelle.position.set(side * 2.9, -0.05, 0.9);
+      nacelle.position.set(side * x, y, z);
       this.mesh.add(nacelle);
 
-      // Reactor ring at nacelle intake.
-      const ring = new THREE.Mesh(geo(new THREE.TorusGeometry(0.34, 0.07, 8, 20)), engineMat);
-      ring.position.set(side * 2.9, -0.05, 0.0);
+      const ring = new THREE.Mesh(geo(new THREE.TorusGeometry(radius + 0.02, 0.07, 8, 20)), engineMat);
+      ring.position.set(side * x, y, z - height * 0.35);
       this.mesh.add(ring);
 
-      // Engine flame cone per nacelle (shader).
       const flameMat = new THREE.ShaderMaterial({
         vertexShader: ENGINE_FLAME_VERTEX,
         fragmentShader: ENGINE_FLAME_FRAGMENT,
@@ -117,34 +87,216 @@ export class PlayerShip {
       });
       this._materials.push(flameMat);
       const flame = new THREE.Mesh(geo(new THREE.ConeGeometry(0.16, 1.0, 6)), flameMat);
-      flame.rotation.x = Math.PI / 2;   // point backward (+Z)
-      flame.position.set(side * 2.9, -0.05, 2.2);
+      flame.rotation.x = Math.PI / 2;
+      flame.position.set(side * x, y, z + height * 0.55);
       this.mesh.add(flame);
       this._flames.push({ mesh: flame, mat: flameMat, side });
 
-      // Reactor glow sprite (subtle).
-      const engineColor = S.ENGINE_COLOR || 0x44aaff;
       const glowMat = new THREE.SpriteMaterial({
-        color: engineColor, transparent: true, opacity: 0.12,
+        color: S.ENGINE_COLOR || 0x44aaff, transparent: true, opacity: 0.12,
         blending: THREE.AdditiveBlending, depthWrite: false,
       });
       this._materials.push(glowMat);
       const glow = new THREE.Sprite(glowMat);
       glow.scale.set(1.5, 1.5, 1);
-      glow.position.set(side * 2.9, -0.05, 1.9);
+      glow.position.set(side * x, y, z + height * 0.45);
       this.mesh.add(glow);
       this._glowSprites.push(glow);
-    }
+    };
 
-    // Twin tail fins.
-    for (const side of [-1, 1]) {
-      const fin = new THREE.Mesh(geo(new THREE.BoxGeometry(0.1, 0.7, 0.9)), bodyMat);
-      fin.position.set(side * 0.6, 0.55, 1.9);
-      fin.rotation.x = -0.2;
-      this.mesh.add(fin);
-      const tailLight = new THREE.Mesh(geo(new THREE.SphereGeometry(0.09, 8, 6)), tailMat);
-      tailLight.position.set(side * 0.7, 0.1, 2.15);
-      this.mesh.add(tailLight);
+    if (shape === 'claymore') {
+      // Wide heavy bomber.
+      const fuselage = new THREE.Mesh(geo(new THREE.BoxGeometry(2.2, 1.2, 5.2)), bodyMat);
+      fuselage.position.set(0, 0.1, 0);
+      this.mesh.add(fuselage);
+
+      const nose = new THREE.Mesh(geo(new THREE.SphereGeometry(1.05, 20, 14, 0, Math.PI * 2, 0, Math.PI / 2)), bodyMat);
+      nose.rotation.x = -Math.PI / 2;
+      nose.scale.set(1.05, 1.05, 0.95);
+      nose.position.set(0, 0.1, -2.7);
+      this.mesh.add(nose);
+
+      const hood = new THREE.Mesh(geo(new THREE.BoxGeometry(1.8, 0.18, 1.9)), trimMat);
+      hood.position.set(0, 0.85, -1.5);
+      this.mesh.add(hood);
+      const trunk = new THREE.Mesh(geo(new THREE.BoxGeometry(1.8, 0.18, 1.2)), trimMat);
+      trunk.position.set(0, 0.85, 1.9);
+      this.mesh.add(trunk);
+
+      const canopy = new THREE.Mesh(geo(new THREE.BoxGeometry(1.4, 0.65, 1.6)), glassMat);
+      canopy.position.set(0, 0.95, 0.2);
+      this.mesh.add(canopy);
+
+      const wingGeo = geo(new THREE.BoxGeometry(4.2, 0.18, 1.6));
+      for (const side of [-1, 1]) {
+        const wing = new THREE.Mesh(wingGeo, bodyMat);
+        wing.position.set(side * 2.7, -0.15, 0.7);
+        wing.rotation.z = side * -0.08;
+        this.mesh.add(wing);
+
+        const tip = new THREE.Mesh(geo(new THREE.BoxGeometry(0.9, 0.2, 0.7)), wingtipMat);
+        tip.position.set(side * 5.1, -0.15, 0.7);
+        this.mesh.add(tip);
+
+        placeNacellePackage(side, 4.5, -0.15, 0.7, true);
+
+        const fin = new THREE.Mesh(geo(new THREE.BoxGeometry(0.12, 1.05, 1.15)), bodyMat);
+        fin.position.set(side * 0.85, 0.72, 2.25);
+        fin.rotation.x = -0.25;
+        this.mesh.add(fin);
+        const tailLight = new THREE.Mesh(geo(new THREE.SphereGeometry(0.11, 8, 6)), tailMat);
+        tailLight.position.set(side * 0.95, -0.05, 2.55);
+        this.mesh.add(tailLight);
+      }
+
+      // Vertical stabilizers.
+      for (const side of [-1, 1]) {
+        const v = new THREE.Mesh(geo(new THREE.BoxGeometry(0.12, 1.2, 1.4)), trimMat);
+        v.position.set(side * 0.7, 1.25, 2.1);
+        v.rotation.x = -0.2;
+        this.mesh.add(v);
+      }
+    } else if (shape === 'vanguard') {
+      // Long cruiser with side pods.
+      const fuselage = new THREE.Mesh(geo(new THREE.BoxGeometry(1.1, 0.55, 5.8)), bodyMat);
+      fuselage.position.set(0, 0, 0);
+      this.mesh.add(fuselage);
+
+      const nose = new THREE.Mesh(geo(new THREE.SphereGeometry(0.65, 18, 14, 0, Math.PI * 2, 0, Math.PI / 2)), bodyMat);
+      nose.rotation.x = -Math.PI / 2;
+      nose.scale.set(1.0, 1.0, 1.05);
+      nose.position.set(0, 0, -2.95);
+      this.mesh.add(nose);
+
+      const hood = new THREE.Mesh(geo(new THREE.BoxGeometry(0.9, 0.1, 2.0)), trimMat);
+      hood.position.set(0, 0.38, -1.7);
+      this.mesh.add(hood);
+      const trunk = new THREE.Mesh(geo(new THREE.BoxGeometry(0.9, 0.1, 1.4)), trimMat);
+      trunk.position.set(0, 0.38, 2.0);
+      this.mesh.add(trunk);
+
+      const canopy = new THREE.Mesh(geo(new THREE.BoxGeometry(0.85, 0.42, 1.7)), glassMat);
+      canopy.position.set(0, 0.52, 0.1);
+      this.mesh.add(canopy);
+
+      const chin = new THREE.Mesh(geo(new THREE.BoxGeometry(0.55, 0.28, 1.05)), trimMat);
+      chin.position.set(0, -0.52, -1.55);
+      this.mesh.add(chin);
+
+      const podGeo = geo(new THREE.BoxGeometry(0.95, 0.95, 2.9));
+      const podWingGeo = geo(new THREE.BoxGeometry(2.9, 0.12, 1.4));
+      for (const side of [-1, 1]) {
+        const pod = new THREE.Mesh(podGeo, bodyMat);
+        pod.position.set(side * 1.85, -0.05, 0.1);
+        this.mesh.add(pod);
+
+        const podWing = new THREE.Mesh(podWingGeo, trimMat);
+        podWing.position.set(side * 1.85, -0.45, 0.6);
+        podWing.rotation.z = side * 0.08;
+        this.mesh.add(podWing);
+
+        const tip = new THREE.Mesh(geo(new THREE.BoxGeometry(0.6, 0.14, 0.5)), wingtipMat);
+        tip.position.set(side * 3.35, -0.45, 0.6);
+        this.mesh.add(tip);
+
+        placeNacellePackage(side, 1.85, -0.05, 1.65, false);
+
+        const fin = new THREE.Mesh(geo(new THREE.BoxGeometry(0.1, 0.65, 0.85)), bodyMat);
+        fin.position.set(side * 0.9, 0.5, 2.35);
+        fin.rotation.x = -0.25;
+        this.mesh.add(fin);
+        const tailLight = new THREE.Mesh(geo(new THREE.SphereGeometry(0.09, 8, 6)), tailMat);
+        tailLight.position.set(side * 1.0, 0.05, 2.7);
+        this.mesh.add(tailLight);
+      }
+    } else if (shape === 'sprinter') {
+      // Small dart.
+      const fuselage = new THREE.Mesh(geo(new THREE.BoxGeometry(0.8, 0.52, 3.35)), bodyMat);
+      fuselage.position.set(0, 0, 0);
+      this.mesh.add(fuselage);
+
+      const nose = new THREE.Mesh(geo(new THREE.SphereGeometry(0.5, 18, 12, 0, Math.PI * 2, 0, Math.PI / 2)), bodyMat);
+      nose.rotation.x = -Math.PI / 2;
+      nose.scale.set(1.0, 1.0, 1.05);
+      nose.position.set(0, 0, -1.8);
+      this.mesh.add(nose);
+
+      const hood = new THREE.Mesh(geo(new THREE.BoxGeometry(0.65, 0.1, 1.45)), trimMat);
+      hood.position.set(0, 0.36, -1.2);
+      this.mesh.add(hood);
+      const trunk = new THREE.Mesh(geo(new THREE.BoxGeometry(0.65, 0.1, 0.9)), trimMat);
+      trunk.position.set(0, 0.36, 1.25);
+      this.mesh.add(trunk);
+
+      const canopy = new THREE.Mesh(geo(new THREE.BoxGeometry(0.72, 0.38, 1.15)), glassMat);
+      canopy.position.set(0, 0.46, 0.05);
+      this.mesh.add(canopy);
+
+      const canardGeo = geo(new THREE.BoxGeometry(1.35, 0.09, 0.72));
+      for (const side of [-1, 1]) {
+        const canard = new THREE.Mesh(canardGeo, trimMat);
+        canard.position.set(side * 1.05, 0.05, -0.55);
+        canard.rotation.z = side * -0.22;
+        this.mesh.add(canard);
+
+        placeNacellePackage(side, 1.25, 0.05, 0.15, false);
+
+        const tip = new THREE.Mesh(geo(new THREE.BoxGeometry(0.26, 0.11, 0.55)), wingtipMat);
+        tip.position.set(side * 2.05, 0.05, 0.15);
+        this.mesh.add(tip);
+
+        const fin = new THREE.Mesh(geo(new THREE.BoxGeometry(0.09, 0.55, 0.72)), bodyMat);
+        fin.position.set(side * 0.65, 0.45, 1.7);
+        fin.rotation.x = -0.22;
+        this.mesh.add(fin);
+        const tailLight = new THREE.Mesh(geo(new THREE.SphereGeometry(0.07, 8, 6)), tailMat);
+        tailLight.position.set(side * 0.75, 0.0, 2.05);
+        this.mesh.add(tailLight);
+      }
+    } else {
+      // Original interceptor shape.
+      const fuselage = new THREE.Mesh(geo(new THREE.BoxGeometry(1.6, 0.7, 4.2)), bodyMat);
+      fuselage.position.set(0, 0, 0);
+      this.mesh.add(fuselage);
+
+      const nose = new THREE.Mesh(geo(new THREE.SphereGeometry(0.8, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2)), bodyMat);
+      nose.rotation.x = -Math.PI / 2;
+      nose.scale.set(1.0, 1.0, 0.9);
+      nose.position.set(0, 0, -2.1);
+      this.mesh.add(nose);
+
+      const hood = new THREE.Mesh(geo(new THREE.BoxGeometry(1.3, 0.12, 1.6)), trimMat);
+      hood.position.set(0, 0.4, -1.3);
+      this.mesh.add(hood);
+      const trunk = new THREE.Mesh(geo(new THREE.BoxGeometry(1.3, 0.12, 1.0)), trimMat);
+      trunk.position.set(0, 0.4, 1.6);
+      this.mesh.add(trunk);
+
+      const canopy = new THREE.Mesh(geo(new THREE.BoxGeometry(1.1, 0.5, 1.4)), glassMat);
+      canopy.position.set(0, 0.55, 0.1);
+      this.mesh.add(canopy);
+
+      const wingGeo = geo(new THREE.BoxGeometry(2.6, 0.1, 1.1));
+      for (const side of [-1, 1]) {
+        const wing = new THREE.Mesh(wingGeo, bodyMat);
+        wing.position.set(side * 1.9, -0.05, 0.9);
+        wing.rotation.z = side * -0.06;
+        this.mesh.add(wing);
+
+        const tip = new THREE.Mesh(geo(new THREE.BoxGeometry(0.18, 0.14, 0.5)), wingtipMat);
+        tip.position.set(side * 3.2, -0.05, 0.9);
+        this.mesh.add(tip);
+
+        placeNacellePackage(side, 2.9, -0.05, 0.9, false);
+
+        const fin = new THREE.Mesh(geo(new THREE.BoxGeometry(0.1, 0.7, 0.9)), bodyMat);
+        fin.position.set(side * 0.6, 0.55, 1.9);
+        fin.rotation.x = -0.2;
+        this.mesh.add(fin);
+        const tailLight = new THREE.Mesh(geo(new THREE.SphereGeometry(0.09, 8, 6)), tailMat);
+        tailLight.position.set(side * 0.7, 0.1, 2.15);
+        this.mesh.add(tailLight);
+      }
     }
 
     // Headlight: small, focused, restrained.

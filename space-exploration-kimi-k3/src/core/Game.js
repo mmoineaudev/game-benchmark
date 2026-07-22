@@ -235,7 +235,6 @@ export class Game {
     const preset = GameState.game.selectedPreset || Constants.SHIP.PRESETS[0];
     if (this.playerShip._preset !== preset) this.playerShip.setPreset(preset);
     GameState.game.isPaused = false;
-    console.log('[Game] Starting run with preset:', preset.label);
     this._hideStartScreen();
     this._hidePauseScreen();
     this.audio.resume();

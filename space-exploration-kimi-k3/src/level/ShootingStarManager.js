@@ -9,14 +9,6 @@ export class ShootingStarManager {
     this._scene = scene;
     this._stars = [];
     this._lastCheck = 0;
-    this._sharedGeoTrail = null;
-    this._sharedGeoGlow = null;
-  }
-
-  _ensureGeometry() {
-    if (this._sharedGeoTrail) return;
-    this._sharedGeoTrail = new THREE.BufferGeometry();
-    this._sharedGeoGlow = new THREE.SphereGeometry(1, 8, 8);
   }
 
   _maybeSpawn(shipPos, time) {

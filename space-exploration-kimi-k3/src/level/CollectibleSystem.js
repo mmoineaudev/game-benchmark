@@ -5,7 +5,6 @@
 
 import * as THREE from 'three';
 import * as Constants from '../core/Constants.js';
-import { GameState } from '../core/GameState.js';
 import { EventBus } from '../core/EventBus.js';
 
 const PICKUP_RADIUS = 3.5;

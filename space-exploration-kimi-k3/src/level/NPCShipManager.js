@@ -29,6 +29,7 @@ export class NPCShipManager {
     const mat = new THREE.PointsMaterial({
       color: 0x66aaff, size: 0.6, transparent: true, opacity: 0.6,
       blending: THREE.AdditiveBlending, depthWrite: false,
+      sizeAttenuation: false,
     });
     this._trailPoints = new THREE.Points(geo, mat);
     this._trailPoints.frustumCulled = false;

@@ -64,7 +64,7 @@ export class Game {
     this._container.appendChild(this.renderer.domElement);
 
     this.camera = new THREE.PerspectiveCamera(
-      Constants.CAMERA.MIN_FOV, window.innerWidth / window.innerHeight, 0.1, 5000);
+      Constants.CAMERA.MIN_FOV, window.innerWidth / window.innerHeight, 0.1, 100000);
     this.camera.position.set(0, 8, 16);
 
     this._onResize = () => {

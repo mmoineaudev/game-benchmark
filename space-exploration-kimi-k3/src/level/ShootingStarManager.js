@@ -59,6 +59,7 @@ export class ShootingStarManager {
       opacity: baseOpacity,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
+      sizeAttenuation: false,
     });
     const trail = new THREE.Points(trailGeo, trailMat);
     trail.frustumCulled = false;

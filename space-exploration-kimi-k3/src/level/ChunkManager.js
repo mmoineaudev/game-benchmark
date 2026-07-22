@@ -15,7 +15,6 @@ export class ChunkManager {
     this._sub = subsystems;
     this._biome = new BiomeGenerator();
     this._chunks = new Map();   // "cx,cy,cz" -> { cx, cy, cz, center, wormhole? }
-    this._center = new THREE.Vector3();
     this.currentBiomeName = '';
   }
 

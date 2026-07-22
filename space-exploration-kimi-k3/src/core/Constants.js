@@ -155,8 +155,8 @@ export const BIOME = {
 // --- Planets ------------------------------------------------------------------
 export const PLANET = {
   GRID_SIZE: 4800,
-  VIEW_DISTANCE: 20000,
-  SPAWN_CHANCE: 0.28,
+  VIEW_DISTANCE: 14000,
+  SPAWN_CHANCE: 0.18,
   MIN_RADIUS: 80,
   MAX_RADIUS: 520,
   MAX_MEGA_RADIUS: 880,
@@ -168,31 +168,31 @@ export const PLANET = {
 // --- Chunks ------------------------------------------------------------------
 export const CHUNK = {
   SIZE: 960,
-  SPAWN_AHEAD: 4,
-  CLEANUP_BEHIND: 3,
+  SPAWN_AHEAD: 3,
+  CLEANUP_BEHIND: 2,
   ORIGIN_SAFETY_RADIUS: 30,
   ASTEROID_COUNT_BASE: 0,
-  ASTEROID_COUNT_VAR: 2,
+  ASTEROID_COUNT_VAR: 1,
   KEEP_OUT_RADIUS: 280,
 };
 
 // --- Level entities ----------------------------------------------------------
 export const NPC = {
-  MAX_COUNT: 140,
+  MAX_COUNT: 80,
   GRID_SIZE: 1200,
-  VIEW_DISTANCE: 28000,
-  SPAWN_CHANCE: 0.55,               // deterministic per-cell
-  WANDER_SPAWN_CHANCE: 1.20,        // per-second random encounter near ship path
+  VIEW_DISTANCE: 20000,
+  SPAWN_CHANCE: 0.38,               // deterministic per-cell
+  WANDER_SPAWN_CHANCE: 0.70,        // per-second random encounter near ship path
   SPEED: 24,
-  TRAIL_POOL: 320,
-  TRAIL_CADENCE: 0.04,
-  TRAIL_DECAY: 0.9,
+  TRAIL_POOL: 180,
+  TRAIL_CADENCE: 0.06,
+  TRAIL_DECAY: 0.88,
   COLLISION_RADIUS: 2.0,
 };
 
 export const SHOOTING_STAR = {
-  CHECK_INTERVAL: 0.6,
-  SPAWN_CHANCE: 0.65,
+  CHECK_INTERVAL: 1.0,
+  SPAWN_CHANCE: 0.35,
   MIN_POINTS: 8,
   MAX_POINTS: 22,
   MIN_SPEED: 40,
@@ -224,10 +224,10 @@ export const STARFIELD = {
 export const WORMHOLE = {
   TELEPORT_RADIUS: 55,
   TELEPORT_COOLDOWN: 2.5,
-  MIN_SPAWN_DIST: 2000,
-  MAX_SPAWN_DIST: 20000,
-  VIEW_DISTANCE: 26000,
-  SPAWN_CHANCE: 0.12,
+  MIN_SPAWN_DIST: 2500,
+  MAX_SPAWN_DIST: 18000,
+  VIEW_DISTANCE: 20000,
+  SPAWN_CHANCE: 0.06,
   PULL: 0,
   PULL_RADIUS: 0,
 };
@@ -236,11 +236,11 @@ export const WORMHOLE = {
 // Black holes
 // ----------------------------------------------------------------------------
 export const BLACK_HOLE = Object.freeze({
-  MAX_ACTIVE: 8,
+  MAX_ACTIVE: 4,
   PULL: 14,
-  VIEW_DISTANCE: 50000,
-  SPAWN_MIN: 2000,
-  SPAWN_MAX: 32000,
+  VIEW_DISTANCE: 34000,
+  SPAWN_MIN: 2500,
+  SPAWN_MAX: 28000,
   ACTIVE_BONUS_MULTIPLIER: 3.4,
 });
 
@@ -277,11 +277,11 @@ export const POST = {
 
 // --- Particles ----------------------------------------------------------------
 export const PARTICLES = {
-  EXHAUST_POOL: 120,
+  EXHAUST_POOL: 80,
   EXHAUST_LIFE_MIN: 0.3,
   EXHAUST_LIFE_MAX: 0.7,
   EXHAUST_DAMPING: 0.95,
-  EXPLOSION_COUNT: 50,
+  EXPLOSION_COUNT: 30,
   EXPLOSION_LIFE: 0.9,
 };
 

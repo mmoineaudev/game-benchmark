@@ -28,7 +28,7 @@ export class ScoreSystem {
     if (type === 'boost') {
       return 0;
     }
-    const pts = type === 'crystal' ? Constants.SCORE.CRYSTAL : Constants.SCORE.RUIN;
+    const pts = type === 'artifact' ? Constants.SCORE.ARTIFACT : Constants.SCORE.RUIN;
     GameState.addScore(pts);
     return pts;
   }

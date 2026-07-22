@@ -81,7 +81,7 @@ export class HUD {
   /** Floating "+50" at world position projected to screen. */
   _showPickupFloat(data) {
     if (!this._camera) return;
-    const pts = data.type === 'crystal' ? Constants.SCORE.CRYSTAL : Constants.SCORE.RUIN;
+    const pts = data.type === 'artifact' ? Constants.SCORE.ARTIFACT : Constants.SCORE.RUIN;
     this._projVec.copy(data.position).project(this._camera);
     if (this._projVec.z > 1) return;   // behind camera
     const x = (this._projVec.x * 0.5 + 0.5) * window.innerWidth;
@@ -91,6 +91,7 @@ export class HUD {
     el.textContent = `+${pts}`;
     el.style.left = `${x}px`;
     el.style.top = `${y}px`;
+    if (data.type === 'artifact') el.style.color = '#55ffaa';
     if (data.type === 'ruin') el.style.color = '#ddbb77';
     document.body.appendChild(el);
     setTimeout(() => el.remove(), 1300);

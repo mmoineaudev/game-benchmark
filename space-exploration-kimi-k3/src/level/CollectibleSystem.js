@@ -12,8 +12,8 @@ const PICKUP_RADIUS = 3.5;
 export class CollectibleSystem {
   constructor(scene) {
     this._scene = scene;
-    this._crystalGeo = new THREE.OctahedronGeometry(0.7, 0);
-    this._crystalMat = new THREE.MeshStandardMaterial({
+    this._artifactGeo = new THREE.OctahedronGeometry(0.7, 0);
+    this._artifactMat = new THREE.MeshStandardMaterial({
       color: 0x0a3322, emissive: 0x33ff88, emissiveIntensity: 2.2,
       metalness: 0.3, roughness: 0.2,
     });
@@ -33,7 +33,7 @@ export class CollectibleSystem {
   generateChunk(center, rng, isSafe, allowed, chunkKey) {
     if (isSafe) return;
     const types = [];
-    if ((allowed || new Set()).has('crystal')) types.push('crystal');
+    if ((allowed || new Set()).has('artifact')) types.push('artifact');
     if ((allowed || new Set()).has('ruin')) types.push('ruin');
     if ((allowed || new Set()).has('boost')) types.push('boost');
     if (types.length === 0) return;
@@ -43,7 +43,7 @@ export class CollectibleSystem {
       const idx = Math.floor(rng() * types.length);
       const type = types[idx];
       let mesh;
-      if (type === 'crystal') mesh = new THREE.Mesh(this._crystalGeo, this._crystalMat);
+      if (type === 'artifact') mesh = new THREE.Mesh(this._artifactGeo, this._artifactMat);
       else if (type === 'boost') mesh = new THREE.Mesh(this._boostGeo, this._boostMat);
       else mesh = new THREE.Mesh(this._ruinGeo, this._ruinMat);
 
@@ -66,7 +66,7 @@ export class CollectibleSystem {
     for (const it of this._items) {
       if (!it.mesh.visible) continue;   // already collected
       it.mesh.rotation.y += dt * 1.2;
-      if (it.type === 'crystal') {
+      if (it.type === 'artifact') {
         it.mesh.position.y = it.baseY + Math.sin(time * 1.5 + it.phase) * 0.4;
       }
       if (shipPos && it.mesh.position.distanceToSquared(shipPos) < PICKUP_RADIUS * PICKUP_RADIUS) {
@@ -100,8 +100,8 @@ export class CollectibleSystem {
 
   destroy() {
     this.clearAll();
-    this._crystalGeo.dispose();
-    this._crystalMat.dispose();
+    this._artifactGeo.dispose();
+    this._artifactMat.dispose();
     this._ruinGeo.dispose();
     this._ruinMat.dispose();
   }

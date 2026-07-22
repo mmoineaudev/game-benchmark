@@ -59,7 +59,7 @@ export class ChunkManager {
       this._sub.debris.generateChunk(center, rng, params.debrisCount, isSafe, shipPos, spawnRadius, keepOutRadius);
       this._sub.debris.tagChunk(key);
     }
-    if (allowed.has('crystal') || allowed.has('ruin') || allowed.has('boost')) {
+    if (allowed.has('artifact') || allowed.has('ruin') || allowed.has('boost')) {
       this._sub.collectibles.generateChunk(center, rng, isSafe, allowed, key, shipPos, spawnRadius, keepOutRadius);
       this._sub.collectibles.tagChunk(key);
     }

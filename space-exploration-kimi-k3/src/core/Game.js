@@ -310,7 +310,7 @@ export class Game {
 
     for (const p of pickups) {
       this.score.awardCollectible(p.type);
-      this.particles.spawnSparkle(p.position, p.type === 'crystal' ? 0x55ffaa : p.type === 'boost' ? 0x44aaff : 0xddbb77);
+      this.particles.spawnSparkle(p.position, p.type === 'artifact' ? 0x55ffaa : p.type === 'boost' ? 0x44aaff : 0xddbb77);
       this.audio.playPickup();
       if (p.type === 'boost') {
         GameState.beginBoost();

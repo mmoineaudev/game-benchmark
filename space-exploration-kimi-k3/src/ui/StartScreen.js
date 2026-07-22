@@ -3,44 +3,10 @@
 
 import * as THREE from 'three';
 import * as Constants from '../core/Constants.js';
+import { PlayerShip } from '../gameplay/PlayerShip.js';
 
 const SWATCH_SIZE = 180;
-
-function drawSwatch(body, trim, accent, label) {
-  const size = SWATCH_SIZE;
-  const c = document.createElement('canvas');
-  c.width = c.height = size * 2;
-  const ctx = c.getContext('2d');
-  const pad = size * 0.14;
-
-  ctx.fillStyle = '#080b14';
-  ctx.fillRect(0, 0, c.width, c.height);
-  ctx.strokeStyle = '#14263a';
-  ctx.lineWidth = size * 0.06;
-  ctx.strokeRect(pad, pad, c.width - pad * 2, c.height - pad * 2);
-
-  const bodyClr = '#' + body.toString(16).padStart(6, '0');
-  const trimClr = '#' + trim.toString(16).padStart(6, '0');
-  const accentClr = '#' + accent.toString(16).padStart(6, '0');
-
-  // body
-  ctx.fillStyle = bodyClr;
-  ctx.fillRect(size * 0.28, size * 0.38, c.width - size * 0.56, c.height * 0.38);
-  // trim
-  ctx.fillStyle = trimClr;
-  ctx.fillRect(size * 0.18, size * 0.28, c.width - size * 0.36, c.height * 0.16);
-  // accent block
-  ctx.fillStyle = accentClr;
-  ctx.fillRect(size * 0.52, c.height - size * 0.3, c.width - size * 0.64, size * 0.14);
-
-  ctx.fillStyle = '#e6f2ff';
-  ctx.font = `bold ${Math.floor(size*0.22)}px "Courier New", monospace`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(label, c.width / 2, c.height / 2 - size * 0.06);
-
-  return c;
-}
+const BG = 0x060a12;
 
 export class StartScreen {
   constructor(onSelect) {
@@ -49,11 +15,70 @@ export class StartScreen {
     this._root = document.createElement('div');
     this._root.className = 'overlay';
     this._root.id = 'start-screen';
+    this._previews = [];
+    this._raf = null;
   }
 
   mount(container) {
     container.appendChild(this._root);
     this._build();
+    const tick = () => {
+      this._renderPreviews(performance.now() * 0.001);
+      this._raf = requestAnimationFrame(tick);
+    };
+    this._raf = requestAnimationFrame(tick);
+  }
+
+  _makePreview(preset) {
+    const size = SWATCH_SIZE * 2;
+    const wrap = document.createElement('div');
+    wrap.style.cssText = `
+      width:${size}px; height:${size}px;
+      background: radial-gradient(circle at center, rgba(122,223,255,0.18), rgba(4,10,20,1));
+      border-radius: 12px;
+      overflow: hidden;
+    `;
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(size, size);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
+    wrap.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(BG);
+    scene.fog = new THREE.FogExp2(BG, 0.0004);
+
+    const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 200);
+    camera.position.set(0, 1.8, 10.5);
+    camera.lookAt(0, 0.25, 0);
+
+    scene.add(new THREE.AmbientLight(0x243350, 1.6));
+    const key = new THREE.DirectionalLight(0xddeeff, 2.0);
+    key.position.set(5, 9, 7);
+    scene.add(key);
+    const fill = new THREE.DirectionalLight(0x5577aa, 1.0);
+    fill.position.set(-7, 3, -5);
+    scene.add(fill);
+    const rim = new THREE.DirectionalLight(0x335577, 0.8);
+    rim.position.set(0, -5, 9);
+    scene.add(rim);
+
+    const ship = new PlayerShip(scene, preset);
+    ship.init();
+
+    this._previews.push({ renderer, scene, camera, ship });
+    return wrap;
+  }
+
+  _renderPreviews(time) {
+    if (!this._previews.length) return;
+    const t = time || 0;
+    for (const p of this._previews) {
+      p.ship.mesh.rotation.y += 0.014;
+      p.renderer.render(p.scene, p.camera);
+    }
   }
 
   _build() {
@@ -73,7 +98,7 @@ export class StartScreen {
       const card = document.createElement('div');
       card.style.cssText = `
         width: ${SWATCH_SIZE*2 + 120}px;
-        background: rgba(4,14,28,0.7);
+        background: rgba(4,14,28,0.75);
         border: 1px solid rgba(122,223,255,0.25);
         border-radius: 14px;
         padding: 18px;
@@ -95,19 +120,7 @@ export class StartScreen {
       name.style.cssText = 'font-size:15px;letter-spacing:3px;margin-bottom:10px;color:#7adfff;text-align:center;';
       name.textContent = p.label;
 
-      const viewport = document.createElement('div');
-      viewport.style.cssText = `
-        width: ${SWATCH_SIZE*2}px; height: ${SWATCH_SIZE*2}px;
-        background: radial-gradient(circle at center, rgba(122,223,255,0.12), rgba(4,10,20,1));
-        border-radius: 12px;
-        display: flex; align-items: center; justify-content: center;
-        margin: 0 auto 14px auto; overflow: hidden;
-      `;
-      const swatch = drawSwatch(p.body, p.trim, p.accent, p.label);
-      const img = document.createElement('img');
-      img.src = swatch.toDataURL();
-      img.style.cssText = 'width:100%;height:100%;display:block;pointer-events:none;';
-      viewport.appendChild(img);
+      const viewport = this._makePreview(preset);
 
       const meta = document.createElement('div');
       meta.style.cssText = 'font-size:11px;opacity:0.75;text-align:center;line-height:1.6;font-family:"Courier New",monospace;';
@@ -142,6 +155,15 @@ export class StartScreen {
 
   get chosen() { return this._chosen; }
   destroy() {
+    if (this._raf) {
+      try { cancelAnimationFrame(this._raf); } catch {}
+      this._raf = null;
+    }
+    for (const p of this._previews) {
+      p.renderer.dispose();
+      if (p.ship && typeof p.ship.destroy === 'function') p.ship.destroy();
+    }
+    this._previews = [];
     if (this._root && this._root.parentNode) {
       this._root.parentNode.removeChild(this._root);
     }

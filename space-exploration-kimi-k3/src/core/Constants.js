@@ -131,7 +131,7 @@ export const BIOME = {
 
 // --- Chunks ------------------------------------------------------------------
 export const CHUNK = {
-  SIZE: 240,
+  SIZE: 480,
   SPAWN_AHEAD: 2,
   CLEANUP_BEHIND: 2,
   LOW_ALTITUDE_SPAWN_BIAS_Y: 10,

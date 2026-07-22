@@ -12,6 +12,16 @@ export class WormholeSystem {
     this._teleportCooldown = 0;
   }
 
+  init(chunkManager) {
+    this.clearAll();
+    if (!chunkManager || !chunkManager._chunks) return;
+    for (const [, chunk] of chunkManager._chunks) {
+      if (chunk.wormhole && chunk.center) {
+        this.register(chunk.wormhole, chunk.center, chunk.wormhole.userData && chunk.wormhole.userData.chunkKey ? chunk.wormhole.userData.chunkKey : `${chunk.cx},${chunk.cy},${chunk.cz}`);
+      }
+    }
+  }
+
   register(group, center, chunkKey) {
     const entry = { group, center: center.clone(), chunkKey };
     this._holes.push(entry);

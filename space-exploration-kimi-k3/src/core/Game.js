@@ -242,6 +242,7 @@ export class Game {
     this._hideStartScreen();
     this._hidePauseScreen();
     this.audio.resume();
+    if (this.wormholes && typeof this.wormholes.init === 'function') this.wormholes.init(this.chunkManager);
     EventBus.emit('input:request-pointer-lock');
   }
 

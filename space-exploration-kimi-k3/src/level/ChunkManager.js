@@ -87,7 +87,7 @@ export class ChunkManager {
     const outer = new THREE.Mesh(outerGeo, outerMat);
     outer.position.copy(center);
     outer.rotation.set(rng() * Math.PI, rng() * Math.PI, rng() * Math.PI);
-    outer.userData = { isChunkObject: true, isWormhole: true };
+    outer.userData = { isChunkObject: true, isWormhole: true, radius: 38 };
     this._scene.add(outer);
 
     const innerGeo = new THREE.CylinderGeometry(18, 18, length, 24, 6, true);

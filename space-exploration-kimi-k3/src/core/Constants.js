@@ -128,28 +128,28 @@ export const BOOST = {
 // --- Biomes ------------------------------------------------------------------
 export const BIOME = {
   ZONES: [
-    { name: 'Open Space',      min: 0,    max: 2200, asteroidDensity: 0.35, debrisCount: 2,
+    { name: 'Open Space',      min: 0,    max: 2400, asteroidDensity: 0.25, debrisCount: 1,
       nebulaColors: [0x2244aa, 0x3355cc, 0x1133aa],
       entities: ['asteroid','debris','artifact','boost'] },
-    { name: 'Drift Belt',      min: 2200, max: 6200, asteroidDensity: 1.35, debrisCount: 2,
+    { name: 'Drift Belt',      min: 2400, max: 7000, asteroidDensity: 0.80, debrisCount: 1,
       nebulaColors: [0xaa6633, 0x885522, 0xcc7744],
       entities: ['asteroid','asteroid','asteroid','debris'] },
-    { name: 'Veil Nebula',     min: 6200, max: 9600, asteroidDensity: 0.55, debrisCount: 1,
+    { name: 'Veil Nebula',     min: 7000, max: 10800, asteroidDensity: 0.28, debrisCount: 1,
       nebulaColors: [0x8833cc, 0x22ccdd, 0x6622aa],
-      entities: ['cloud','cloud','cloud','asteroid','asteroid','artifact'] },
-    { name: 'Glass Rift',      min: 9600, max: 12600, asteroidDensity: 0.22, debrisCount: 1,
+      entities: ['cloud','asteroid','artifact'] },
+    { name: 'Glass Rift',      min: 10800, max: 13800, asteroidDensity: 0.15, debrisCount: 1,
       nebulaColors: [0x22cc77, 0x66ffaa, 0x116644],
-      entities: ['cloud','cloud','artifact','artifact','boost'] },
-    { name: 'Rust Expanse',    min: 12600, max: 16200, asteroidDensity: 0.40, debrisCount: 1,
+      entities: ['cloud','artifact','boost'] },
+    { name: 'Rust Expanse',    min: 13800, max: 17400, asteroidDensity: 0.28, debrisCount: 1,
       nebulaColors: [0xccaa66, 0x997744, 0x553311],
-      entities: ['ruin','ruin','cloud','asteroid','boost'] },
-    { name: 'The Fold',        min: 16200, max: 21000, asteroidDensity: 0.18, debrisCount: 1,
+      entities: ['ruin','cloud','asteroid','boost'] },
+    { name: 'The Fold',        min: 17400, max: 22000, asteroidDensity: 0.12, debrisCount: 1,
       nebulaColors: [0xaa22cc, 0x22ffdd, 0x7711aa], wormhole: true,
-      entities: ['cloud','cloud','asteroid','boost'] },
+      entities: ['cloud','asteroid','boost'] },
   ],
-  CYCLE_LENGTH: 18000,
-  INTENSITY_DIVISOR: 10000,
-  INTENSITY_MAX: 2.75,
+  CYCLE_LENGTH: 24000,
+  INTENSITY_DIVISOR: 12000,
+  INTENSITY_MAX: 2.2,
 };
 
 // --- Planets ------------------------------------------------------------------
@@ -168,11 +168,11 @@ export const PLANET = {
 // --- Chunks ------------------------------------------------------------------
 export const CHUNK = {
   SIZE: 960,
-  SPAWN_AHEAD: 5,
-  CLEANUP_BEHIND: 4,
+  SPAWN_AHEAD: 4,
+  CLEANUP_BEHIND: 3,
   ORIGIN_SAFETY_RADIUS: 30,
   ASTEROID_COUNT_BASE: 0,
-  ASTEROID_COUNT_VAR: 4,
+  ASTEROID_COUNT_VAR: 2,
   KEEP_OUT_RADIUS: 280,
 };
 
@@ -193,8 +193,8 @@ export const NPC = {
 export const SHOOTING_STAR = {
   CHECK_INTERVAL: 0.6,
   SPAWN_CHANCE: 0.65,
-  MIN_POINTS: 12,
-  MAX_POINTS: 32,
+  MIN_POINTS: 8,
+  MAX_POINTS: 22,
   MIN_SPEED: 40,
   MAX_SPEED: 90,
   MIN_LIFE: 1.2,
@@ -202,12 +202,12 @@ export const SHOOTING_STAR = {
   MIN_OPACITY: 0.35,
   MAX_OPACITY: 0.85,
   VARIANTS: {
-    'Open Space':      { color: 0xcceeff, speedMin: 40, speedMax: 90, lifeMin: 1.2, lifeMax: 2.6, opacityMin: 0.35, opacityMax: 0.85, pointsMin: 12, pointsMax: 32 },
-    'Asteroid Belt':   { color: 0xffccaa, speedMin: 70, speedMax: 130, lifeMin: 0.8, lifeMax: 1.6, opacityMin: 0.45, opacityMax: 0.95, pointsMin: 16, pointsMax: 36 },
-    'Nebula Corridor': { color: 0xcc99ff, speedMin: 28, speedMax: 65, lifeMin: 1.6, lifeMax: 3.2, opacityMin: 0.3, opacityMax: 0.75, pointsMin: 18, pointsMax: 40 },
-    'Crystal Rift':    { color: 0x88ffdd, speedMin: 32, speedMax: 72, lifeMin: 1.8, lifeMax: 3.6, opacityMin: 0.3, opacityMax: 0.8, pointsMin: 20, pointsMax: 44 },
-    'Ruin Field':      { color: 0xffbb77, speedMin: 50, speedMax: 100, lifeMin: 1.0, lifeMax: 2.0, opacityMin: 0.4, opacityMax: 0.9, pointsMin: 14, pointsMax: 30 },
-    'Wormhole Tunnel': { color: 0xff88ff, speedMin: 90, speedMax: 160, lifeMin: 0.6, lifeMax: 1.4, opacityMin: 0.5, opacityMax: 1.0, pointsMin: 18, pointsMax: 38 },
+    'Open Space':      { color: 0xcceeff, speedMin: 40, speedMax: 90, lifeMin: 1.2, lifeMax: 2.6, opacityMin: 0.35, opacityMax: 0.85, pointsMin: 10, pointsMax: 24 },
+    'Asteroid Belt':   { color: 0xffccaa, speedMin: 70, speedMax: 130, lifeMin: 0.8, lifeMax: 1.6, opacityMin: 0.45, opacityMax: 0.95, pointsMin: 12, pointsMax: 28 },
+    'Nebula Corridor': { color: 0xcc99ff, speedMin: 28, speedMax: 65, lifeMin: 1.6, lifeMax: 3.2, opacityMin: 0.3, opacityMax: 0.75, pointsMin: 14, pointsMax: 32 },
+    'Crystal Rift':    { color: 0x88ffdd, speedMin: 32, speedMax: 72, lifeMin: 1.8, lifeMax: 3.6, opacityMin: 0.3, opacityMax: 0.8, pointsMin: 16, pointsMax: 36 },
+    'Ruin Field':      { color: 0xffbb77, speedMin: 50, speedMax: 100, lifeMin: 1.0, lifeMax: 2.0, opacityMin: 0.4, opacityMax: 0.9, pointsMin: 12, pointsMax: 26 },
+    'Wormhole Tunnel': { color: 0xff88ff, speedMin: 90, speedMax: 160, lifeMin: 0.6, lifeMax: 1.4, opacityMin: 0.5, opacityMax: 1.0, pointsMin: 14, pointsMax: 30 },
   },
 };
 
@@ -277,11 +277,11 @@ export const POST = {
 
 // --- Particles ----------------------------------------------------------------
 export const PARTICLES = {
-  EXHAUST_POOL: 220,
+  EXHAUST_POOL: 120,
   EXHAUST_LIFE_MIN: 0.3,
   EXHAUST_LIFE_MAX: 0.7,
   EXHAUST_DAMPING: 0.95,
-  EXPLOSION_COUNT: 90,
+  EXPLOSION_COUNT: 50,
   EXPLOSION_LIFE: 0.9,
 };
 

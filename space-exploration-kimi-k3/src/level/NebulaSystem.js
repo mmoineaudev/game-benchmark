@@ -14,7 +14,7 @@ export class NebulaSystem {
 
   generateChunk(center, rng, cloudCount, colors, isSafe) {
     if (isSafe || cloudCount <= 0) return;
-    const total = Math.max(cloudCount * 4, 8);
+    const total = Math.max(Math.floor(cloudCount * 2.5), 6);
     for (let i = 0; i < total; i++) {
       const color = new THREE.Color(colors[i % colors.length]);
       const color2 = new THREE.Color(colors[(i + 1) % colors.length]);
@@ -36,7 +36,7 @@ export class NebulaSystem {
       });
 
       const radius = 28 + rng() * 55;
-      const geo = new THREE.SphereGeometry(radius, 14, 10);
+      const geo = new THREE.SphereGeometry(radius, 16, 10);
       const mesh = new THREE.Mesh(geo, mat);
 
       // Flatten into wide discs / puffs rather than spheres.

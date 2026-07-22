@@ -28,8 +28,6 @@ export class ShootingStarManager {
     );
     const origin = shipPos.clone().add(offset);
 
-    this._ensureGeometry();
-
     // Trail ribbon.
     const positions = new Float32Array(pointCount * 3);
     const sizes = new Float32Array(pointCount);

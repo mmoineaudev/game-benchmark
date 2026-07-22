@@ -134,12 +134,18 @@ export class AsteroidField {
     if (ridx >= 0) this._rotators.splice(ridx, 1);
   }
 
-  update(dt) {
+  update(dt, blackHoleGravity) {
     for (const r of this._rotators) {
       r.obj.rotation.x += r.rx * dt;
       r.obj.rotation.y += r.ry * dt;
       if (r.obj.userData.driftVelocity) {
         r.obj.position.addScaledVector(r.obj.userData.driftVelocity, dt);
+      }
+      if (typeof blackHoleGravity === 'function') {
+        const pull = blackHoleGravity(r.obj.position, dt);
+        if (pull && pull.isVector3 && pull.lengthSq() > 0) {
+          r.obj.position.addScaledVector(pull, 0.35);
+        }
       }
     }
   }

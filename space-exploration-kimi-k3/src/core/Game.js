@@ -293,7 +293,7 @@ export class Game {
     this.shootingStars.update(shipPos, gameTime, dt);
     this.planets.update(shipPos, dt);
     this.npcs.update(shipPos, dt);
-    this.asteroids.update(dt);
+    this.asteroids.update(dt, this.blackHoles.applyGravityToWorld);
     this.nebula.update(dt, this.camera);
     this.blackHoles.update(shipPos, gameTime, dt);
     const pickups = this.collectibles.update(dt, gameTime, shipPos);

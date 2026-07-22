@@ -49,7 +49,7 @@ export class ChunkManager {
     if (allowed.has('asteroid')) this._sub.asteroids.tagChunk(key);
     if (allowed.has('debris'))   { this._sub.debris.generateChunk(center, rng, params.debrisCount, isSafe); this._sub.debris.tagChunk(key); }
     if (allowed.has('crystal') || allowed.has('ruin') || allowed.has('boost')) {
-      this._sub.collectibles.generateChunk(center, rng, isSafe, allowed);
+      this._sub.collectibles.generateChunk(center, rng, isSafe, allowed, key);
       this._sub.collectibles.tagChunk(key);
     }
     if (allowed.has('cloud'))    { this._sub.nebula.generateChunk(center, rng, params.nebulaCount || 1, params.nebulaColors, isSafe); this._sub.nebula.tagChunk(key); }

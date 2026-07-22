@@ -30,7 +30,7 @@ export class CollectibleSystem {
     this._items = [];   // { mesh, type, chunkKey, baseY }
   }
 
-  generateChunk(center, rng, isSafe, allowed) {
+  generateChunk(center, rng, isSafe, allowed, chunkKey) {
     if (isSafe) return;
     const types = [];
     if ((allowed || new Set()).has('crystal')) types.push('crystal');
@@ -53,10 +53,10 @@ export class CollectibleSystem {
         center.z + (rng() - 0.5) * Constants.CHUNK.SIZE);
       mesh.rotation.set(rng() * Math.PI, rng() * Math.PI, rng() * Math.PI);
       mesh.visible = true;
-      mesh.userData = { isChunkObject: true };
+      mesh.userData = { isChunkObject: true, chunkKey };
       this._scene.add(mesh);
       const baseY = mesh.position.y;
-      this._items.push({ mesh, type, baseY, phase: rng() * Math.PI * 2 });
+      this._items.push({ mesh, type, baseY, phase: rng() * Math.PI * 2, chunkKey });
     }
   }
 

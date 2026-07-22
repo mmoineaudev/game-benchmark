@@ -235,6 +235,7 @@ export class Game {
     const preset = GameState.game.selectedPreset || Constants.SHIP.PRESETS[0];
     if (this.playerShip._preset !== preset) this.playerShip.setPreset(preset);
     GameState.game.isPaused = false;
+    console.log('[Game] Starting run with preset:', preset.label);
     this._hideStartScreen();
     this._hidePauseScreen();
     this.audio.resume();
@@ -293,7 +294,9 @@ export class Game {
     this.shootingStars.update(shipPos, gameTime, dt);
     this.planets.update(shipPos, dt);
     this.npcs.update(shipPos, dt);
-    this.asteroids.update(dt, this.blackHoles.applyGravityToWorld);
+    if (this.blackHoles && typeof this.blackHoles.applyGravityToWorld === 'function') {
+      this.asteroids.update(dt, this.blackHoles.applyGravityToWorld.bind(this.blackHoles));
+    }
     this.nebula.update(dt, this.camera);
     this.blackHoles.update(shipPos, gameTime, dt);
     const pickups = this.collectibles.update(dt, gameTime, shipPos);
@@ -361,8 +364,6 @@ export class Game {
     // HUD + scoring.
     this.hud.update();
     this.score.updateDistanceScore();
-
-    this._enforceBlackHoleGravity(dt);
 
     // Death check.
     if (!GameState.player.isAlive) {

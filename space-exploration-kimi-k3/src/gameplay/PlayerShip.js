@@ -48,8 +48,9 @@ export class PlayerShip {
     const tailMat = mat({
       color: 0x330000, emissive: p.tail, emissiveIntensity: 2.0,
     });
+    const wingtipEmissive = S.WINGTIP_EMISSIVE == null ? 2.0 : S.WINGTIP_EMISSIVE;
     const wingtipMat = mat({
-      color: 0x111111, emissive: p.accent, emissiveIntensity: S.WINGTIP_EMISSIVE,
+      color: 0x111111, emissive: p.accent, emissiveIntensity: wingtipEmissive,
     });
 
     // Fuselage: long low box + hemisphere nose.
@@ -122,8 +123,9 @@ export class PlayerShip {
       this._flames.push({ mesh: flame, mat: flameMat, side });
 
       // Reactor glow sprite (subtle).
+      const engineColor = S.ENGINE_COLOR || 0x44aaff;
       const glowMat = new THREE.SpriteMaterial({
-        color: S.ENGINE_COLOR, transparent: true, opacity: 0.12,
+        color: engineColor, transparent: true, opacity: 0.12,
         blending: THREE.AdditiveBlending, depthWrite: false,
       });
       this._materials.push(glowMat);
@@ -146,15 +148,19 @@ export class PlayerShip {
     }
 
     // Headlight: small, focused, restrained.
+    const headlightIntensity = S.HEADLIGHT_INTENSITY == null ? 1.4 : S.HEADLIGHT_INTENSITY;
+    const headlightDistance = S.HEADLIGHT_DISTANCE == null ? 80 : S.HEADLIGHT_DISTANCE;
     this._headlight = new THREE.SpotLight(
-      0xffffff, S.HEADLIGHT_INTENSITY, S.HEADLIGHT_DISTANCE, Math.PI / 6, 0.6, 1.5);
+      0xffffff, headlightIntensity, headlightDistance, Math.PI / 6, 0.6, 1.5);
     this._headlight.position.set(0, 0, -1.5);
     this._headlight.target.position.set(0, 0, -15);
     this.mesh.add(this._headlight);
     this.mesh.add(this._headlight.target);
 
-    // Accent light near cockpit (subtle blue rim).
-    this._accentLight = new THREE.PointLight(S.ACCENT_COLOR, S.ACCENT_INTENSITY, S.ACCENT_DISTANCE);
+    const accentColor = S.ACCENT_COLOR || 0x4488ff;
+    const accentIntensity = S.ACCENT_INTENSITY == null ? 0.9 : S.ACCENT_INTENSITY;
+    const accentDistance = S.ACCENT_DISTANCE == null ? 35 : S.ACCENT_DISTANCE;
+    this._accentLight = new THREE.PointLight(accentColor, accentIntensity, accentDistance);
     this._accentLight.position.set(0, 0.8, 0);
     this.mesh.add(this._accentLight);
 

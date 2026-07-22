@@ -20,6 +20,7 @@ export class BlackHoleSystem {
     this._tmp = new THREE.Vector3();
     this._grav = new THREE.Vector3();
     this._shipDir = new THREE.Vector3();
+    this._lastHoleSpawnDir = null;
   }
 
   init() {
@@ -78,14 +79,42 @@ export class BlackHoleSystem {
     group.add(ring);
     group.add(ring2);
 
-    const scaleBase = 6 + Math.random() * 10;
+    // Larger accretion disk so the black hole is visually readable at long range.
+    const diskGeo = new THREE.TorusGeometry(3.8, 0.22, 16, 120);
+    const diskMat = new THREE.MeshBasicMaterial({
+      color: 0x772200,
+      transparent: true,
+      opacity: 0.7,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const disk = new THREE.Mesh(diskGeo, diskMat);
+    disk.renderOrder = 995;
+    group.add(disk);
+
+    // Bright inner rim to mark the edge of the event horizon.
+    const rimGeo = new THREE.TorusGeometry(1.25, 0.06, 16, 80);
+    const rimMat = new THREE.MeshBasicMaterial({
+      color: 0xff7314,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const rim = new THREE.Mesh(rimGeo, rimMat);
+    rim.renderOrder = 1000;
+    group.add(rim);
+
+    const scaleBase = 9 + Math.random() * 8;
     group.scale.setScalar(scaleBase);
     const hole = {
       group,
       eventHorizon,
       inner,
+      rim,
       ring,
       ring2,
+      disk,
       scaleBase,
       age: 0,
       lifetime: 12 + Math.random() * 18,
@@ -126,14 +155,17 @@ export class BlackHoleSystem {
       return;
     }
 
-    const dir = new THREE.Vector3(
+    const baseDir = new THREE.Vector3(
       Math.sin(time * 0.17 + this._frame),
       Math.cos(time * 0.13 + this._frame),
       Math.sin(time * 0.11 + this._frame * 0.5)
     ).normalize();
-
-    const dist = 4000 + Math.random() * 14000;
+    const dir = this._lastHoleSpawnDir
+      ? baseDir.clone().multiplyScalar(-1)
+      : baseDir;
+    const dist = Constants.BLACK_HOLE.SPAWN_MIN + Math.random() * (Constants.BLACK_HOLE.SPAWN_MAX - Constants.BLACK_HOLE.SPAWN_MIN);
     const pos = shipPos.clone().addScaledVector(dir, dist);
+    this._lastHoleSpawnDir = pos.clone().sub(shipPos).normalize();
     this._createBlackHole(pos);
     this._cooldown = 300 + Math.floor(Math.random() * 500);
   }
@@ -233,6 +265,7 @@ export class BlackHoleSystem {
 
   clearAll() {
     for (const hole of this._holes.slice()) this._remove(hole);
+    this._lastHoleSpawnDir = null;
   }
 
   destroy() {

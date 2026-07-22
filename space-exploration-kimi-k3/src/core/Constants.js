@@ -201,10 +201,11 @@ export const STARFIELD = {
 // ----------------------------------------------------------------------------
 export const BLACK_HOLE = Object.freeze({
   MAX_ACTIVE: 3,
-  PULL: 42,
-  VIEW_DISTANCE: 18000,
-  SPAWN_MIN: 3500,
-  SPAWN_MAX: 16000,
+  PULL: 14,
+  VIEW_DISTANCE: 24000,
+  SPAWN_MIN: 4000,
+  SPAWN_MAX: 18000,
+  ACTIVE_BONUS_MULTIPLIER: 3.4,
 });
 
 // --- Audio -------------------------------------------------------------------

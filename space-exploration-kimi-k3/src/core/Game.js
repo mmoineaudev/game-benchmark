@@ -299,8 +299,11 @@ export class Game {
     const pickups = this.collectibles.update(dt, gameTime, shipPos);
     for (const p of pickups) {
       this.score.awardCollectible(p.type);
-      this.particles.spawnSparkle(p.position, p.type === 'crystal' ? 0x55ffaa : 0xddbb77);
+      this.particles.spawnSparkle(p.position, p.type === 'crystal' ? 0x55ffaa : p.type === 'boost' ? 0x44aaff : 0xddbb77);
       this.audio.playPickup();
+      if (p.type === 'boost') {
+        GameState.beginBoost();
+      }
     }
 
     // Exhaust while thrusting: two jets from the nacelles.

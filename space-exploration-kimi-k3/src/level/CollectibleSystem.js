@@ -23,6 +23,11 @@ export class CollectibleSystem {
       color: 0xaa9977, metalness: 0.1, roughness: 0.9,
       emissive: 0x332211, emissiveIntensity: 0.4,
     });
+    this._boostGeo = new THREE.BoxGeometry(0.6, 0.6, 0.6);
+    this._boostMat = new THREE.MeshStandardMaterial({
+      color: 0x112244, metalness: 0.1, roughness: 0.2,
+      emissive: 0x0088ff, emissiveIntensity: 2.8,
+    });
     this._items = [];   // { mesh, type, chunkKey, baseY }
   }
 
@@ -30,6 +35,7 @@ export class CollectibleSystem {
     if (isSafe) return;
     const crystals = Constants.CHUNK.CRYSTALS_MIN + Math.floor(rng() * Constants.CHUNK.CRYSTALS_VAR);
     const ruins = Constants.CHUNK.RUINS_MIN + Math.floor(rng() * Constants.CHUNK.RUINS_VAR);
+    const boosts = Constants.CHUNK.BOOST_MIN + Math.floor(rng() * Constants.CHUNK.BOOST_VAR);
     for (let i = 0; i < crystals; i++) {
       const mesh = new THREE.Mesh(this._crystalGeo, this._crystalMat);
       mesh.position.set(
@@ -52,6 +58,18 @@ export class CollectibleSystem {
       mesh.userData = { isChunkObject: true };
       this._scene.add(mesh);
       this._items.push({ mesh, type: 'ruin', baseY: mesh.position.y, phase: rng() * Math.PI * 2 });
+    }
+    for (let i = 0; i < boosts; i++) {
+      const mesh = new THREE.Mesh(this._boostGeo, this._boostMat);
+      mesh.position.set(
+        center.x + (rng() - 0.5) * Constants.CHUNK.SIZE,
+        center.y + (rng() - 0.5) * Constants.CHUNK.SIZE,
+        center.z + (rng() - 0.5) * Constants.CHUNK.SIZE);
+      mesh.rotation.set(rng() * Math.PI, rng() * Math.PI, rng() * Math.PI);
+      mesh.visible = true;
+      mesh.userData = { isChunkObject: true };
+      this._scene.add(mesh);
+      this._items.push({ mesh, type: 'boost', baseY: mesh.position.y, phase: rng() * Math.PI * 2 });
     }
   }
 

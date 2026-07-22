@@ -112,6 +112,12 @@ export const SCORE = {
   DISTANCE_RATE: 0.1,
 };
 
+// --- Boost pickup ------------------------------------------------------------
+export const BOOST = {
+  DURATION: 5,
+  MULTIPLIER: 10,
+};
+
 // --- Biomes ------------------------------------------------------------------
 export const BIOME = {
   ZONES: [
@@ -149,6 +155,8 @@ export const CHUNK = {
   CRYSTALS_VAR: 2,
   RUINS_MIN: 0,
   RUINS_VAR: 2,
+  BOOST_MIN: 0,
+  BOOST_VAR: 2,
 };
 
 // --- Level entities ----------------------------------------------------------

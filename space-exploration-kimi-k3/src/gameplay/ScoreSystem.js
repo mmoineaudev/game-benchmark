@@ -25,6 +25,9 @@ export class ScoreSystem {
   }
 
   awardCollectible(type) {
+    if (type === 'boost') {
+      return 0;
+    }
     const pts = type === 'crystal' ? Constants.SCORE.CRYSTAL : Constants.SCORE.RUIN;
     GameState.addScore(pts);
     return pts;
@@ -32,7 +35,9 @@ export class ScoreSystem {
 
   /** Distance score: integer-floored accumulation. */
   updateDistanceScore() {
-    const target = GameState.player.distance * Constants.SCORE.DISTANCE_RATE;
+    const rawTarget = GameState.player.distance * Constants.SCORE.DISTANCE_RATE;
+    const multiplier = GameState.getBoostMultiplier();
+    const target = rawTarget * multiplier;
     const delta = Math.floor(target - this._distanceAccum);
     if (delta > 0) {
       this._distanceAccum += delta;

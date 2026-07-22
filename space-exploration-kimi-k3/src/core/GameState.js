@@ -26,7 +26,7 @@ class GameStateClass {
     };
     this.combat = {
       lastFireTime: 0,
-      projectiles: new Map(),   // uuid -> { id, mesh, velocity, bornAt, distanceTraveled }
+      projectiles: new Map(),
       explosions: [],
     };
     this.game = {
@@ -36,6 +36,22 @@ class GameStateClass {
       highScore: this.game ? this.game.highScore : 0,
     };
     this.muted = this._loadMuted();
+    this._boostEnd = 0;
+  }
+
+  get isBoostActive() {
+    return this.game.time < this._boostEnd;
+  }
+
+  beginBoost() {
+    const now = this.game.time;
+    const end = now + (Constants.BOOST.DURATION || 5);
+    if (end > this._boostEnd) this._boostEnd = end;
+  }
+
+  getBoostMultiplier() {
+    if (!this.isBoostActive) return 1;
+    return Constants.BOOST.MULTIPLIER || 10;
   }
 
   takeDamage(n) {

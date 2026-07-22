@@ -239,6 +239,10 @@ export class BlackHoleSystem {
 
   /** Expose force for arbitrary world objects (asteroids). */
   applyGravityToWorld(position, radius, dt, out) {
+    if (!this || !this._holes) {
+      console.error('[BlackHoleSystem] applyGravityToWorld called with invalid this/holes');
+      return out || new THREE.Vector3();
+    }
     const target = out || new THREE.Vector3();
     target.set(0, 0, 0);
     const pos = position instanceof THREE.Vector3 ? position : new THREE.Vector3(position.x, position.y, position.z);

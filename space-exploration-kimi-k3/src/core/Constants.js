@@ -222,8 +222,14 @@ export const STARFIELD = {
 // Wormholes
 // ----------------------------------------------------------------------------
 export const WORMHOLE = {
-  TELEPORT_RADIUS: 22,
-  COOLDOWN: 2.5,
+  TELEPORT_RADIUS: 55,
+  TELEPORT_COOLDOWN: 2.5,
+  MIN_SPAWN_DIST: 2000,
+  MAX_SPAWN_DIST: 20000,
+  VIEW_DISTANCE: 26000,
+  SPAWN_CHANCE: 0.12,
+  PULL: 0,
+  PULL_RADIUS: 0,
 };
 
 // ----------------------------------------------------------------------------

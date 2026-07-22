@@ -22,12 +22,12 @@ export class WormholeSystem {
     this._holes = this._holes.filter(h => h.chunkKey !== chunkKey);
   }
 
-  update(shipPos, dt) {
+  update(shipPos, shipMesh, dt) {
     if (this._teleportCooldown > 0) this._teleportCooldown -= dt;
-    if (!shipPos || this._holes.length < 2) return null;
+    if (!shipPos || this._holes.length < 2 || !shipMesh) return null;
 
     const trigger = Constants.WORMHOLE || {};
-    const radius = trigger.TELEPORT_RADIUS || 22;
+    const radius = trigger.TELEPORT_RADIUS || 40;
     const cooldown = trigger.COOLDOWN || 2.5;
 
     for (const h of this._holes) {

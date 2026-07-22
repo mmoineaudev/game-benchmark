@@ -38,7 +38,7 @@ export class ChunkManager {
     const isSafe = shipDistance < Constants.CHUNK.ORIGIN_SAFETY_RADIUS + Constants.CHUNK.SIZE;
 
     let wormhole = null;
-    if (params.wormhole && !isSafe) {
+    if (!isSafe && Math.random() < (Constants.WORMHOLE.SPAWN_CHANCE || 0.12)) {
       wormhole = this._spawnWormhole(center, rng, params.nebulaColors);
       wormhole.userData.chunkKey = key;
       this._wormholes.register(wormhole, center, key);

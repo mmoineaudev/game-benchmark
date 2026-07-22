@@ -304,7 +304,7 @@ export class Game {
     this.blackHoles.update(shipPos, gameTime, dt);
     const pickups = this.collectibles.update(dt, gameTime, shipPos);
 
-    const teleport = this.wormholes.update(shipPos, dt);
+    const teleport = this.wormholes.update(shipPos, this.playerShip.mesh, dt);
     if (teleport) this.wormholes.applyTeleport({ from: teleport.from, to: teleport.to, shipMesh: this.playerShip.mesh, cameraSystem: this.cameraSystem });
 
     for (const p of pickups) {
@@ -332,7 +332,12 @@ export class Game {
     const collidables = this.chunkManager.getCollidables(shipPos);
 
     const shipHits = this.physics.checkShipCollisions(this.playerShip.mesh, collidables);
+    let wormholeTeleport = null;
     for (const hit of shipHits) {
+      if (hit.mesh && hit.mesh.userData && hit.mesh.userData.isWormhole) {
+        wormholeTeleport = hit;
+        continue;
+      }
       if (hit.kind === 'planet' || (hit.mesh && hit.mesh.userData && hit.mesh.userData.kind === 'planet')) {
         GameState.takeDamage(Constants.HEALTH.MAX);
       } else {
@@ -344,10 +349,20 @@ export class Game {
         this.physics.handleCollision(this.playerShip.mesh, hit);
       }
       this.playerShip.hitFlash();
-      this.cameraSystem.addShake(hit.size > 2 ? 0.8 : 0.3);
+      this.cameraSystem.addShake((hit.size || 1) > 2 ? 0.8 : 0.3);
       this.hud.damageFlash();
       this.audio.playCollision();
       if (GameState.isLowHealth) this.audio.playWarning();
+    }
+    if (wormholeTeleport) {
+      const hit = wormholeTeleport;
+      const worm = this.wormholes;
+      const from = worm._holes.find(h => h.center.distanceTo(this.playerShip.mesh.position) < Constants.WORMHOLE.TELEPORT_RADIUS);
+      if (from) {
+        const targets = worm._holes.filter(h => h.chunkKey !== from.chunkKey);
+        const to = targets.length ? targets[Math.floor(Math.random() * targets.length)] : null;
+        if (to) this.wormholes.applyTeleport({ from, to, shipMesh: this.playerShip.mesh, cameraSystem: this.cameraSystem });
+      }
     }
 
     const projHits = this.physics.checkProjectileCollisions(

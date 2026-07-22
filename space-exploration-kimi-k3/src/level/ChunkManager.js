@@ -37,15 +37,6 @@ export class ChunkManager {
     // Origin safety: no hostile content near spawn.
     const isSafe = center.length() < Constants.CHUNK.ORIGIN_SAFETY_RADIUS + Constants.CHUNK.SIZE;
 
-    this._sub.asteroids.generateChunk(center, rng, params.asteroidDensity, isSafe);
-    this._sub.asteroids.tagChunk(key);
-    this._sub.debris.generateChunk(center, rng, params.debrisCount, isSafe);
-    this._sub.debris.tagChunk(key);
-    this._sub.collectibles.generateChunk(center, rng, isSafe);
-    this._sub.collectibles.tagChunk(key);
-    this._sub.nebula.generateChunk(center, rng, params.nebulaCount, params.nebulaColors, false);
-    this._sub.nebula.tagChunk(key);
-
     let wormhole = null;
     if (params.wormhole && !isSafe) {
       wormhole = this._spawnWormhole(center, rng, params.nebulaColors);
@@ -53,6 +44,16 @@ export class ChunkManager {
     }
 
     this._chunks.set(key, { cx, cy, cz, center, wormhole });
+
+    const allowed = new Set(params.entities || []);
+    if (allowed.has('asteroid')) this._sub.asteroids.generateChunk(center, rng, params.asteroidDensity, isSafe);
+    if (allowed.has('asteroid')) this._sub.asteroids.tagChunk(key);
+    if (allowed.has('debris'))   { this._sub.debris.generateChunk(center, rng, params.debrisCount, isSafe); this._sub.debris.tagChunk(key); }
+    if (allowed.has('crystal') || allowed.has('ruin') || allowed.has('boost')) {
+      this._sub.collectibles.generateChunk(center, rng, isSafe, allowed);
+      this._sub.collectibles.tagChunk(key);
+    }
+    if (allowed.has('cloud'))    { this._sub.nebula.generateChunk(center, rng, params.nebulaCount || 1, params.nebulaColors, isSafe); this._sub.nebula.tagChunk(key); }
   }
 
   _spawnWormhole(center, rng, colors) {

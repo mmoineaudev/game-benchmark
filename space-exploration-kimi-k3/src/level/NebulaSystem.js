@@ -1,23 +1,21 @@
 // VOID DRIFT — NebulaSystem.js
-// GLSL billboard nebula clusters, additive, camera-facing. Per-chunk quads,
-// shared geometry owned by this system (explicit lifecycle).
+// 3D volumetric cloud shells around chunk centers, translucent additive volumes.
+// Explicit lifecycle.
 
 import * as THREE from 'three';
 import * as Constants from '../core/Constants.js';
-import { SIMPLEX_3D_GLSL, NEBULA_FRAGMENT_BODY, NEBULA_VERTEX } from '../utils/ShaderHelpers.js';
+import { SIMPLEX_3D_GLSL, NEBULA_VERTEX, NEBULA_FRAGMENT_BODY } from '../utils/ShaderHelpers.js';
 
 export class NebulaSystem {
   constructor(scene) {
     this._scene = scene;
-    // Shared quad geometry — this class is the sole owner.
-    this._sharedGeo = new THREE.PlaneGeometry(1, 1);
-    this._quads = [];   // { mesh, mat, chunkKey }
+    this._clouds = [];   // { mesh, mat, chunkKey }
   }
 
-  generateChunk(center, rng, nebulaCount, colors, isSafe) {
-    if (isSafe || nebulaCount <= 0) return;
-    const clusters = nebulaCount * 3;   // a few billboards per cluster
-    for (let i = 0; i < clusters; i++) {
+  generateChunk(center, rng, cloudCount, colors, isSafe) {
+    if (isSafe || cloudCount <= 0) return;
+    const total = cloudCount * 3;
+    for (let i = 0; i < total; i++) {
       const color = new THREE.Color(colors[i % colors.length]);
       const color2 = new THREE.Color(colors[(i + 1) % colors.length]);
       const color3 = new THREE.Color(colors[(i + 2) % colors.length]);
@@ -29,61 +27,65 @@ export class NebulaSystem {
           uColor1: { value: color },
           uColor2: { value: color2 },
           uColor3: { value: color3 },
-          uOpacity: { value: 0.28 + rng() * 0.18 },
+          uOpacity: { value: 0.18 + rng() * 0.15 },
         },
         transparent: true,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
         side: THREE.DoubleSide,
       });
-      const mesh = new THREE.Mesh(this._sharedGeo, mat);
-      const scale = 45 + rng() * 65;
-      mesh.scale.set(scale, scale, 1);
+
+      // 3D shell instead of 2D plane.
+      const radius = 22 + rng() * 38;
+      const geo = new THREE.SphereGeometry(radius, 16, 12);
+      const mesh = new THREE.Mesh(geo, mat);
       mesh.position.set(
-        center.x + (rng() - 0.5) * Constants.CHUNK.SIZE,
-        center.y + (rng() - 0.5) * Constants.CHUNK.SIZE,
-        center.z + (rng() - 0.5) * Constants.CHUNK.SIZE);
+        center.x + (rng() - 0.5) * Constants.CHUNK.SIZE * 0.8,
+        center.y + (rng() - 0.5) * Constants.CHUNK.SIZE * 0.8,
+        center.z + (rng() - 0.5) * Constants.CHUNK.SIZE * 0.8
+      );
       mesh.userData = { isChunkObject: true, isNebula: true };
       this._scene.add(mesh);
-      this._quads.push({ mesh, mat });
+      this._clouds.push({ mesh, mat });
     }
   }
 
-  /** Billboards face the camera; time advances. */
   update(dt, camera) {
-    for (const q of this._quads) {
-      q.mesh.quaternion.copy(camera.quaternion);
-      q.mat.uniforms.uTime.value += dt;
+    for (const c of this._clouds) {
+      c.mesh.rotation.y += dt * 0.06;
+      c.mesh.rotation.x += dt * 0.03;
+      c.mat.uniforms.uTime.value += dt;
     }
   }
 
   clearChunk(chunkKey) {
-    for (let i = this._quads.length - 1; i >= 0; i--) {
-      const q = this._quads[i];
-      if (q.mesh.userData.chunkKey === chunkKey) {
-        this._scene.remove(q.mesh);
-        q.mat.dispose();   // material per-quad; geometry is shared, not disposed
-        this._quads.splice(i, 1);
+    for (let i = this._clouds.length - 1; i >= 0; i--) {
+      const c = this._clouds[i];
+      if (c.mesh.userData.chunkKey === chunkKey) {
+        this._scene.remove(c.mesh);
+        c.mat.dispose();
+        c.mesh.geometry.dispose();
+        this._clouds.splice(i, 1);
       }
     }
   }
 
   tagChunk(chunkKey) {
-    for (const q of this._quads) {
-      if (q.mesh.userData.chunkKey == null) q.mesh.userData.chunkKey = chunkKey;
+    for (const c of this._clouds) {
+      if (c.mesh.userData.chunkKey == null) c.mesh.userData.chunkKey = chunkKey;
     }
   }
 
   clearAll() {
-    for (const q of this._quads) {
-      this._scene.remove(q.mesh);
-      q.mat.dispose();
+    for (const c of this._clouds) {
+      this._scene.remove(c.mesh);
+      c.mat.dispose();
+      c.mesh.geometry.dispose();
     }
-    this._quads = [];
+    this._clouds = [];
   }
 
   destroy() {
     this.clearAll();
-    this._sharedGeo.dispose();   // sole owner disposes shared geometry
   }
 }

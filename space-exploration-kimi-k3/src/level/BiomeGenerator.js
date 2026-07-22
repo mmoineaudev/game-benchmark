@@ -30,6 +30,7 @@ export class BiomeGenerator {
       asteroidDensity: Math.min(zone.asteroidDensity * intensity, 2.0),
       debrisCount: Math.floor(zone.debrisCount * intensity),
       wormhole: zone.wormhole,
+      entities: zone.entities || [],
     };
   }
 }

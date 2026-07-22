@@ -48,8 +48,8 @@ export class NPCShipManager {
     }
     const color = NPC_COLORS[Math.floor(rng() * NPC_COLORS.length)];
     const mat = new THREE.MeshStandardMaterial({
-      color: 0x222833, metalness: 0.7, roughness: 0.4,
-      emissive: color, emissiveIntensity: 0.8,
+      color: 0x2a3342, metalness: 0.7, roughness: 0.35,
+      emissive: color, emissiveIntensity: 1.6,
     });
     return new THREE.Mesh(geo, mat);
   }

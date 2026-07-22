@@ -27,11 +27,13 @@ export class ShootingStarManager {
     const life = S.MIN_LIFE + Math.random() * (S.MAX_LIFE - S.MIN_LIFE);
     const baseOpacity = S.MIN_OPACITY + Math.random() * (S.MAX_OPACITY - S.MIN_OPACITY);
 
-    const dir = new THREE.Vector3(Math.random() * 2 - 1, (Math.random() - 0.5) * 0.35, Math.random() * 2 - 1).normalize();
-    const offset = new THREE.Vector3(
-      (Math.random() - 0.5) * 1400,
-      160 + Math.random() * 500,
-      (Math.random() - 0.5) * 1400);
+    const dir = new THREE.Vector3(Math.random() * 2 - 1, (Math.random() - 0.5) * 0.25, Math.random() * 2 - 1).normalize();
+
+    // Far shell around ship: always apparent as a sky object.
+    const dist = 5000 + Math.random() * 12000;
+    const offset = dir.clone().multiplyScalar(dist).add(
+      new THREE.Vector3(0, 200 + Math.random() * 1200, 0)
+    );
     const origin = shipPos.clone().add(offset);
 
     this._ensureGeometry();
@@ -41,11 +43,11 @@ export class ShootingStarManager {
     const sizes = new Float32Array(pointCount);
     for (let i = 0; i < pointCount; i++) {
       const t = i / (pointCount - 1);
-      const back = origin.clone().addScaledVector(dir, -t * 18);
+      const back = origin.clone().addScaledVector(dir, -t * 140);
       positions[i * 3] = back.x;
       positions[i * 3 + 1] = back.y;
       positions[i * 3 + 2] = back.z;
-      sizes[i] = (1 - t) * 2.4 + 0.4;
+      sizes[i] = (1 - t) * 3.2 + 0.6;
     }
     const trailGeo = new THREE.BufferGeometry();
     trailGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));

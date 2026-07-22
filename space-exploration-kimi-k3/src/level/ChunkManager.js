@@ -213,7 +213,7 @@ export class ChunkManager {
         const dx = shipPos.x - chunk.center.x;
         const dy = shipPos.y - chunk.center.y;
         const dz = shipPos.z - chunk.center.z;
-        if (Math.abs(dx) < S && Math.abs(dy) < S && Math.abs(dz) < S) list.push(chunk.wormhole);
+        if (Math.abs(dx) < S && Math.abs(dy) < S && Math.abs(dz) < S) list.push(chunk.wormhole.outer || chunk.wormhole);
       }
     }
     return list;

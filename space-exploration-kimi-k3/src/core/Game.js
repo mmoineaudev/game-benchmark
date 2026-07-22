@@ -290,7 +290,7 @@ export class Game {
 
     this.starfield.update(shipPos, speedRatio);
     this.chunkManager.update(shipPos, gameTime);
-    this.shootingStars.update(shipPos, gameTime, dt);
+    this.shootingStars.update(shipPos, gameTime, dt, this.chunkManager.currentBiomeName);
     this.planets.update(shipPos, dt);
     this.npcs.update(shipPos, dt);
     if (this.blackHoles && typeof this.blackHoles.applyGravityToWorld === 'function') {

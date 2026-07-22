@@ -3,21 +3,34 @@
 
 import * as THREE from 'three';
 import * as Constants from '../core/Constants.js';
+import { BiomeGenerator } from './BiomeGenerator.js';
 
 export class ShootingStarManager {
   constructor(scene) {
     this._scene = scene;
     this._stars = [];
     this._lastCheck = 0;
+    this._biome = new BiomeGenerator();
   }
 
-  _maybeSpawn(shipPos, time) {
+  _resolveVariant(biomeName) {
+    const base = Constants.SHOOTING_STAR;
+    const v = biomeName && base.VARIANTS && base.VARIANTS[biomeName]
+      ? base.VARIANTS[biomeName]
+      : base.VARIANTS && base.VARIANTS['Open Space']
+        ? base.VARIANTS['Open Space']
+        : null;
+    if (!v) return { speedMin: base.MIN_SPEED, speedMax: base.MAX_SPEED, lifeMin: base.MIN_LIFE, lifeMax: base.MAX_LIFE, opacityMin: base.MIN_OPACITY, opacityMax: base.MAX_OPACITY, pointsMin: base.MIN_POINTS, pointsMax: base.MAX_POINTS, color: 0xcceeff };
+    return v;
+  }
+
+  _maybeSpawn(shipPos, time, biomeName) {
     if (Math.random() > Constants.SHOOTING_STAR.SPAWN_CHANCE) return;
-    const S = Constants.SHOOTING_STAR;
-    const pointCount = S.MIN_POINTS + Math.floor(Math.random() * (S.MAX_POINTS - S.MIN_POINTS));
-    const speed = S.MIN_SPEED + Math.random() * (S.MAX_SPEED - S.MIN_SPEED);
-    const life = S.MIN_LIFE + Math.random() * (S.MAX_LIFE - S.MIN_LIFE);
-    const baseOpacity = S.MIN_OPACITY + Math.random() * (S.MAX_OPACITY - S.MIN_OPACITY);
+    const v = this._resolveVariant(biomeName);
+    const pointCount = v.pointsMin + Math.floor(Math.random() * (v.pointsMax - v.pointsMin));
+    const speed = v.speedMin + Math.random() * (v.speedMax - v.speedMin);
+    const life = v.lifeMin + Math.random() * (v.lifeMax - v.lifeMin);
+    const baseOpacity = v.opacityMin + Math.random() * (v.opacityMax - v.opacityMin);
 
     const dir = new THREE.Vector3(Math.random() * 2 - 1, (Math.random() - 0.5) * 0.25, Math.random() * 2 - 1).normalize();
 
@@ -43,7 +56,7 @@ export class ShootingStarManager {
     trailGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     trailGeo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
     const trailMat = new THREE.PointsMaterial({
-      color: 0xcceeff,
+      color: v.color,
       size: 1.8,
       transparent: true,
       opacity: baseOpacity,
@@ -57,7 +70,7 @@ export class ShootingStarManager {
 
     // Head glow sprite.
     const glowMat = new THREE.SpriteMaterial({
-      color: 0xffffff,
+      color: v.color,
       transparent: true,
       opacity: baseOpacity,
       blending: THREE.AdditiveBlending,
@@ -84,10 +97,10 @@ export class ShootingStarManager {
     });
   }
 
-  update(shipPos, time, dt) {
+  update(shipPos, time, dt, biomeName) {
     if (time - this._lastCheck > Constants.SHOOTING_STAR.CHECK_INTERVAL) {
       this._lastCheck = time;
-      this._maybeSpawn(shipPos, time);
+      this._maybeSpawn(shipPos, time, biomeName);
     }
     for (let i = this._stars.length - 1; i >= 0; i--) {
       const s = this._stars[i];

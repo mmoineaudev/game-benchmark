@@ -198,6 +198,14 @@ export const SHOOTING_STAR = {
   MAX_LIFE: 2.6,
   MIN_OPACITY: 0.35,
   MAX_OPACITY: 0.85,
+  VARIANTS: {
+    'Open Space':      { color: 0xcceeff, speedMin: 40, speedMax: 90, lifeMin: 1.2, lifeMax: 2.6, opacityMin: 0.35, opacityMax: 0.85, pointsMin: 12, pointsMax: 32 },
+    'Asteroid Belt':   { color: 0xffccaa, speedMin: 70, speedMax: 130, lifeMin: 0.8, lifeMax: 1.6, opacityMin: 0.45, opacityMax: 0.95, pointsMin: 16, pointsMax: 36 },
+    'Nebula Corridor': { color: 0xcc99ff, speedMin: 28, speedMax: 65, lifeMin: 1.6, lifeMax: 3.2, opacityMin: 0.3, opacityMax: 0.75, pointsMin: 18, pointsMax: 40 },
+    'Crystal Rift':    { color: 0x88ffdd, speedMin: 32, speedMax: 72, lifeMin: 1.8, lifeMax: 3.6, opacityMin: 0.3, opacityMax: 0.8, pointsMin: 20, pointsMax: 44 },
+    'Ruin Field':      { color: 0xffbb77, speedMin: 50, speedMax: 100, lifeMin: 1.0, lifeMax: 2.0, opacityMin: 0.4, opacityMax: 0.9, pointsMin: 14, pointsMax: 30 },
+    'Wormhole Tunnel': { color: 0xff88ff, speedMin: 90, speedMax: 160, lifeMin: 0.6, lifeMax: 1.4, opacityMin: 0.5, opacityMax: 1.0, pointsMin: 18, pointsMax: 38 },
+  },
 };
 
 export const STARFIELD = {

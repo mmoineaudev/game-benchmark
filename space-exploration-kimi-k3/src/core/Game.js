@@ -27,6 +27,7 @@ import { HUD } from '../ui/HUD.js';
 import { Crosshair } from '../ui/Crosshair.js';
 import { StartScreen } from '../ui/StartScreen.js';
 import { BlackHoleSystem } from '../level/BlackHoleSystem.js';
+import { WormholeSystem } from '../level/WormholeSystem.js';
 
 export class Game {
   constructor(containerId) {
@@ -139,6 +140,8 @@ export class Game {
     this.npcs = new NPCShipManager(this.scene);
     this.npcs.init();
 
+    this.wormholes = new WormholeSystem(this.scene);
+
     this.blackHoles = new BlackHoleSystem(this.scene);
     this.blackHoles.init();
 
@@ -149,6 +152,7 @@ export class Game {
       nebula: this.nebula,
       npcs: this.npcs,
       planets: this.planets,
+      wormholes: this.wormholes,
     });
     this.chunkManager.init();
 
@@ -299,6 +303,10 @@ export class Game {
     this.nebula.update(dt, this.camera);
     this.blackHoles.update(shipPos, gameTime, dt);
     const pickups = this.collectibles.update(dt, gameTime, shipPos);
+
+    const teleport = this.wormholes.update(shipPos, dt);
+    if (teleport) this.wormholes.applyTeleport({ from: teleport.from, to: teleport.to, shipMesh: this.playerShip.mesh, cameraSystem: this.cameraSystem });
+
     for (const p of pickups) {
       this.score.awardCollectible(p.type);
       this.particles.spawnSparkle(p.position, p.type === 'crystal' ? 0x55ffaa : p.type === 'boost' ? 0x44aaff : 0xddbb77);
@@ -330,7 +338,11 @@ export class Game {
       } else {
         GameState.takeDamage(Constants.HEALTH.COLLISION_DAMAGE);
       }
-      this.physics.handleCollision(this.playerShip.mesh, hit);
+      if (hit.mesh && hit.mesh.userData && hit.mesh.userData.kind === 'npc') {
+        this.chunkManager.resolveNpcHit(hit);
+      } else {
+        this.physics.handleCollision(this.playerShip.mesh, hit);
+      }
       this.playerShip.hitFlash();
       this.cameraSystem.addShake(hit.size > 2 ? 0.8 : 0.3);
       this.hud.damageFlash();
@@ -383,6 +395,7 @@ export class Game {
     this.chunkManager.clearAll();
     this.planets.clearAll();
     this.blackHoles.clearAll();
+    this.wormholes.clearAll();
     this.weapon.clear();
     this.particles.clear();
     this.shootingStars.destroy();
@@ -422,6 +435,7 @@ export class Game {
     this.nebula.destroy();
     this.npcs.destroy();
     this.blackHoles.destroy();
+    this.wormholes.destroy();
     this.hud.destroy();
     this.renderer.dispose();
   }

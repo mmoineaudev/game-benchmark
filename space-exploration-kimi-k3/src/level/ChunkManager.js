@@ -11,8 +11,9 @@ import { SIMPLEX_3D_GLSL, WORMHOLE_VERTEX, WORMHOLE_FRAGMENT } from '../utils/Sh
 export class ChunkManager {
   constructor(scene, subsystems) {
     this._scene = scene;
-    // subsystems: { asteroids, debris, collectibles, nebula, npcs }
+    // subsystems: { asteroids, debris, collectibles, nebula, npcs, planets, wormholes }
     this._sub = subsystems;
+    this._wormholes = subsystems.wormholes || { register(){}, unregister(){}, update(){}, applyTeleport(){} };
     this._biome = new BiomeGenerator();
     this._chunks = new Map();   // "cx,cy,cz" -> { cx, cy, cz, center, wormhole? }
     this.currentBiomeName = '';
@@ -22,37 +23,50 @@ export class ChunkManager {
 
   _chunkKey(cx, cy, cz) { return `${cx},${cy},${cz}`; }
 
-  _spawnChunk(cx, cy, cz) {
+  _spawnChunk(cx, cy, cz, shipPos) {
     const key = this._chunkKey(cx, cy, cz);
     if (this._chunks.has(key)) return;
     const S = Constants.CHUNK.SIZE;
     const center = new THREE.Vector3(cx * S + S / 2, cy * S + S / 2, cz * S + S / 2);
+    const shipDistance = shipPos ? shipPos.length() : center.length();
 
-    // Biome from distance of chunk center.
-    const distance = center.length();
-    const params = this._biome.getBiomeParams(distance);
+    // Biome from ship distance so transitions follow player progress.
+    const params = this._biome.getBiomeParams(shipDistance);
     const rng = mulberry32(chunkSeed(cx, cy, cz));
 
     // Origin safety: no hostile content near spawn.
-    const isSafe = center.length() < Constants.CHUNK.ORIGIN_SAFETY_RADIUS + Constants.CHUNK.SIZE;
+    const isSafe = shipDistance < Constants.CHUNK.ORIGIN_SAFETY_RADIUS + Constants.CHUNK.SIZE;
 
     let wormhole = null;
     if (params.wormhole && !isSafe) {
       wormhole = this._spawnWormhole(center, rng, params.nebulaColors);
       wormhole.userData.chunkKey = key;
+      this._wormholes.register(wormhole, center, key);
     }
 
     this._chunks.set(key, { cx, cy, cz, center, wormhole });
 
+    // Ship-relative spawning: entities live near the ship shell, not the chunk center.
+    const spawnRadius = Constants.CHUNK.SIZE * 0.5;
+    const keepOutRadius = Constants.CHUNK.KEEP_OUT_RADIUS || 0;
+
     const allowed = new Set(params.entities || []);
-    if (allowed.has('asteroid')) this._sub.asteroids.generateChunk(center, rng, params.asteroidDensity, isSafe);
-    if (allowed.has('asteroid')) this._sub.asteroids.tagChunk(key);
-    if (allowed.has('debris'))   { this._sub.debris.generateChunk(center, rng, params.debrisCount, isSafe); this._sub.debris.tagChunk(key); }
+    if (allowed.has('asteroid')) {
+      this._sub.asteroids.generateChunk(center, rng, params.asteroidDensity, isSafe, shipPos, spawnRadius, keepOutRadius);
+      this._sub.asteroids.tagChunk(key);
+    }
+    if (allowed.has('debris')) {
+      this._sub.debris.generateChunk(center, rng, params.debrisCount, isSafe, shipPos, spawnRadius, keepOutRadius);
+      this._sub.debris.tagChunk(key);
+    }
     if (allowed.has('crystal') || allowed.has('ruin') || allowed.has('boost')) {
-      this._sub.collectibles.generateChunk(center, rng, isSafe, allowed, key);
+      this._sub.collectibles.generateChunk(center, rng, isSafe, allowed, key, shipPos, spawnRadius, keepOutRadius);
       this._sub.collectibles.tagChunk(key);
     }
-    if (allowed.has('cloud'))    { this._sub.nebula.generateChunk(center, rng, params.nebulaCount || 1, params.nebulaColors, isSafe); this._sub.nebula.tagChunk(key); }
+    if (allowed.has('cloud')) {
+      this._sub.nebula.generateChunk(center, rng, params.nebulaCount || 1, params.nebulaColors, isSafe);
+      this._sub.nebula.tagChunk(key);
+    }
   }
 
   _spawnWormhole(center, rng, colors) {
@@ -113,6 +127,7 @@ export class ChunkManager {
       w.outerMat.dispose();
       w.inner.geometry.dispose();
       w.innerMat.dispose();
+      this._wormholes.unregister(chunk.wormhole.userData.chunkKey);
     }
     this._chunks.delete(key);
   }
@@ -192,6 +207,14 @@ export class ChunkManager {
           Math.abs(npcMesh.position.y - shipPos.y) < S &&
           Math.abs(npcMesh.position.z - shipPos.z) < S) list.push(npcMesh);
     }
+    for (const [, chunk] of this._chunks) {
+      if (chunk.wormhole) {
+        const dx = shipPos.x - chunk.wormhole.position.x;
+        const dy = shipPos.y - chunk.wormhole.position.y;
+        const dz = shipPos.z - chunk.wormhole.position.z;
+        if (Math.abs(dx) < S && Math.abs(dy) < S && Math.abs(dz) < S) list.push(chunk.wormhole);
+      }
+    }
     return list;
   }
 
@@ -207,14 +230,21 @@ export class ChunkManager {
       hit.instance.alive = false;
       return mesh.userData.tier === 'debris' ? 'debris' : 'asteroid';
     }
-    if (hit.kind === 'npc') {
-      this._sub.npcs.killNPC(hit.mesh);
-      return 'npc';
+    if (mesh.userData.kind === 'npc') {
+      return this._sub.npcs.buildShipHull(mesh.userData.npcPreset);
     }
     // Large asteroid mesh.
     hit.mesh.userData.isDestroyed = true;
     this._sub.asteroids.destroyMesh(hit.mesh);
     return 'asteroid';
+  }
+
+  resolveNpcHit(hit) {
+    if (hit && hit.mesh && hit.mesh.userData && hit.mesh.userData.kind === 'npc') {
+      this._sub.npcs.killNPC(hit.mesh);
+      return 'npc';
+    }
+    return null;
   }
 
   clearAll() {

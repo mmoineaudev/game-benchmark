@@ -19,6 +19,7 @@ export class NPCShipManager {
     this._trailPoints = null;
     this._trailCursor = 0;
     this._tmpVec = new THREE.Vector3();
+    this._presetIndex = 0;
   }
 
   init() {
@@ -38,20 +39,84 @@ export class NPCShipManager {
   }
 
   _buildShipMesh(rng) {
-    const type = Math.floor(rng() * 4);
-    let geo;
-    switch (type) {
-      case 0: geo = new THREE.ConeGeometry(0.9, 2.4, 6); geo.rotateX(-Math.PI / 2); break;
-      case 1: geo = new THREE.BoxGeometry(1.2, 0.8, 2.6); break;
-      case 2: geo = new THREE.DodecahedronGeometry(1.0, 0); break;
-      default: geo = new THREE.CylinderGeometry(0.5, 0.7, 2.4, 8); geo.rotateX(Math.PI / 2); break;
+    const preset = rng.__preset || Constants.SHIP.PRESETS[Math.floor(rng() * Constants.SHIP.PRESETS.length)];
+    const bodyMat = new THREE.MeshStandardMaterial({ color: preset.body, metalness: 0.75, roughness: 0.35 });
+    const trimMat = new THREE.MeshStandardMaterial({ color: preset.trim, metalness: 0.6, roughness: 0.5 });
+    const tailMat = new THREE.MeshStandardMaterial({ color: 0x330000, emissive: preset.tail, emissiveIntensity: 2.0 });
+    const wingtipEmissive = preset.wingtipEmissive == null ? 1.0 : preset.wingtipEmissive;
+    const wingtipMat = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: preset.accent, emissiveIntensity: wingtipEmissive });
+
+    const shape = preset.shape || 'interceptor';
+    const group = new THREE.Group();
+    const geo = (g) => g;
+    const add = (m) => group.add(m);
+
+    if (shape === 'claymore') {
+      const fuselage = new THREE.Mesh(geo(new THREE.BoxGeometry(2.2, 1.2, 5.2)), bodyMat); fuselage.position.set(0, 0.1, 0); add(fuselage);
+      const nose = new THREE.Mesh(geo(new THREE.SphereGeometry(1.05, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2)), bodyMat); nose.rotation.x = -Math.PI / 2; nose.scale.set(1.05, 1.05, 0.95); nose.position.set(0, 0.1, -2.7); add(nose);
+      const hood = new THREE.Mesh(geo(new THREE.BoxGeometry(1.8, 0.18, 1.9)), trimMat); hood.position.set(0, 0.85, -1.5); add(hood);
+      const trunk = new THREE.Mesh(geo(new THREE.BoxGeometry(1.8, 0.18, 1.2)), trimMat); trunk.position.set(0, 0.85, 1.9); add(trunk);
+      const wingGeo = geo(new THREE.BoxGeometry(4.2, 0.18, 1.6));
+      for (const side of [-1, 1]) {
+        const wing = new THREE.Mesh(wingGeo, bodyMat); wing.position.set(side * 2.7, -0.15, 0.7); wing.rotation.z = side * -0.08; add(wing);
+        const tip = new THREE.Mesh(geo(new THREE.BoxGeometry(0.9, 0.2, 0.7)), wingtipMat); tip.position.set(side * 5.1, -0.15, 0.7); add(tip);
+        const nacelle = new THREE.Mesh(geo(new THREE.CylinderGeometry(0.47, 0.53, 2.3, 12)), trimMat); nacelle.rotation.x = Math.PI / 2; nacelle.position.set(side * 4.5, -0.15, 0.7); add(nacelle);
+        const fin = new THREE.Mesh(geo(new THREE.BoxGeometry(0.12, 1.05, 1.15)), bodyMat); fin.position.set(side * 0.85, 0.72, 2.25); fin.rotation.x = -0.25; add(fin);
+        const tailLight = new THREE.Mesh(geo(new THREE.SphereGeometry(0.11, 8, 6)), tailMat); tailLight.position.set(side * 0.95, -0.05, 2.55); add(tailLight);
+      }
+      for (const side of [-1, 1]) { const v = new THREE.Mesh(geo(new THREE.BoxGeometry(0.12, 1.2, 1.4)), trimMat); v.position.set(side * 0.7, 1.25, 2.1); v.rotation.x = -0.2; add(v); }
+    } else if (shape === 'vanguard') {
+      const fuselage = new THREE.Mesh(geo(new THREE.BoxGeometry(1.1, 0.55, 5.8)), bodyMat); fuselage.position.set(0, 0, 0); add(fuselage);
+      const nose = new THREE.Mesh(geo(new THREE.SphereGeometry(0.65, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2)), bodyMat); nose.rotation.x = -Math.PI / 2; nose.scale.set(1.0, 1.0, 1.05); nose.position.set(0, 0, -2.95); add(nose);
+      const hood = new THREE.Mesh(geo(new THREE.BoxGeometry(0.9, 0.1, 2.0)), trimMat); hood.position.set(0, 0.38, -1.7); add(hood);
+      const trunk = new THREE.Mesh(geo(new THREE.BoxGeometry(0.9, 0.1, 1.4)), trimMat); trunk.position.set(0, 0.38, 2.0); add(trunk);
+      const podGeo = geo(new THREE.BoxGeometry(0.95, 0.95, 2.9)); const podWingGeo = geo(new THREE.BoxGeometry(2.9, 0.12, 1.4));
+      for (const side of [-1, 1]) {
+        const pod = new THREE.Mesh(podGeo, bodyMat); pod.position.set(side * 1.85, -0.05, 0.1); add(pod);
+        const podWing = new THREE.Mesh(podWingGeo, trimMat); podWing.position.set(side * 1.85, -0.45, 0.6); podWing.rotation.z = side * 0.08; add(podWing);
+        const tip = new THREE.Mesh(geo(new THREE.BoxGeometry(0.6, 0.14, 0.5)), wingtipMat); tip.position.set(side * 3.35, -0.45, 0.6); add(tip);
+        const nacelle = new THREE.Mesh(geo(new THREE.CylinderGeometry(0.34, 0.40, 1.8, 12)), trimMat); nacelle.rotation.x = Math.PI / 2; nacelle.position.set(side * 1.85, -0.05, 1.65); add(nacelle);
+        const fin = new THREE.Mesh(geo(new THREE.BoxGeometry(0.1, 0.65, 0.85)), bodyMat); fin.position.set(side * 0.9, 0.5, 2.35); fin.rotation.x = -0.25; add(fin);
+        const tailLight = new THREE.Mesh(geo(new THREE.SphereGeometry(0.09, 8, 6)), tailMat); tailLight.position.set(side * 1.0, 0.05, 2.7); add(tailLight);
+      }
+    } else if (shape === 'sprinter') {
+      const fuselage = new THREE.Mesh(geo(new THREE.BoxGeometry(0.8, 0.52, 3.35)), bodyMat); fuselage.position.set(0, 0, 0); add(fuselage);
+      const nose = new THREE.Mesh(geo(new THREE.SphereGeometry(0.5, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2)), bodyMat); nose.rotation.x = -Math.PI / 2; nose.scale.set(1.0, 1.0, 1.05); nose.position.set(0, 0, -1.8); add(nose);
+      const hood = new THREE.Mesh(geo(new THREE.BoxGeometry(0.65, 0.1, 1.45)), trimMat); hood.position.set(0, 0.36, -1.2); add(hood);
+      const trunk = new THREE.Mesh(geo(new THREE.BoxGeometry(0.65, 0.1, 0.9)), trimMat); trunk.position.set(0, 0.36, 1.25); add(trunk);
+      const canardGeo = geo(new THREE.BoxGeometry(1.35, 0.09, 0.72));
+      for (const side of [-1, 1]) {
+        const canard = new THREE.Mesh(canardGeo, trimMat); canard.position.set(side * 1.05, 0.05, -0.55); canard.rotation.z = side * -0.22; add(canard);
+        const tip = new THREE.Mesh(geo(new THREE.BoxGeometry(0.26, 0.11, 0.55)), wingtipMat); tip.position.set(side * 2.05, 0.05, 0.15); add(tip);
+        const nacelle = new THREE.Mesh(geo(new THREE.CylinderGeometry(0.30, 0.36, 1.6, 12)), trimMat); nacelle.rotation.x = Math.PI / 2; nacelle.position.set(side * 1.25, 0.05, 0.15); add(nacelle);
+        const fin = new THREE.Mesh(geo(new THREE.BoxGeometry(0.09, 0.55, 0.72)), bodyMat); fin.position.set(side * 0.65, 0.45, 1.7); fin.rotation.x = -0.22; add(fin);
+        const tailLight = new THREE.Mesh(geo(new THREE.SphereGeometry(0.07, 8, 6)), tailMat); tailLight.position.set(side * 0.75, 0.0, 2.05); add(tailLight);
+      }
+    } else {
+      const fuselage = new THREE.Mesh(geo(new THREE.BoxGeometry(1.6, 0.7, 4.2)), bodyMat); fuselage.position.set(0, 0, 0); add(fuselage);
+      const nose = new THREE.Mesh(geo(new THREE.SphereGeometry(0.8, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2)), bodyMat); nose.rotation.x = -Math.PI / 2; nose.scale.set(1.0, 1.0, 0.9); nose.position.set(0, 0, -2.1); add(nose);
+      const hood = new THREE.Mesh(geo(new THREE.BoxGeometry(1.3, 0.12, 1.6)), trimMat); hood.position.set(0, 0.4, -1.3); add(hood);
+      const trunk = new THREE.Mesh(geo(new THREE.BoxGeometry(1.3, 0.12, 1.0)), trimMat); trunk.position.set(0, 0.4, 1.6); add(trunk);
+      const wingGeo = geo(new THREE.BoxGeometry(2.6, 0.1, 1.1));
+      for (const side of [-1, 1]) {
+        const wing = new THREE.Mesh(wingGeo, bodyMat); wing.position.set(side * 1.9, -0.05, 0.9); wing.rotation.z = side * -0.06; add(wing);
+        const tip = new THREE.Mesh(geo(new THREE.BoxGeometry(0.18, 0.14, 0.5)), wingtipMat); tip.position.set(side * 3.2, -0.05, 0.9); add(tip);
+        const nacelle = new THREE.Mesh(geo(new THREE.CylinderGeometry(0.34, 0.40, 1.8, 12)), trimMat); nacelle.rotation.x = Math.PI / 2; nacelle.position.set(side * 2.9, -0.05, 0.9); add(nacelle);
+        const fin = new THREE.Mesh(geo(new THREE.BoxGeometry(0.1, 0.7, 0.9)), bodyMat); fin.position.set(side * 0.6, 0.55, 1.9); fin.rotation.x = -0.2; add(fin);
+        const tailLight = new THREE.Mesh(geo(new THREE.SphereGeometry(0.09, 8, 6)), tailMat); tailLight.position.set(side * 0.7, 0.1, 2.15); add(tailLight);
+      }
     }
-    const color = NPC_COLORS[Math.floor(rng() * NPC_COLORS.length)];
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0x2a3342, metalness: 0.7, roughness: 0.35,
-      emissive: color, emissiveIntensity: 1.6,
-    });
-    return new THREE.Mesh(geo, mat);
+
+    group.position.set(0, 0, 0);
+    return group;
+  }
+
+  buildShipHull(preset) {
+    const rng = { __preset: preset, value: () => 0.5 };
+    const mesh = this._buildShipMesh(rng);
+    mesh.scale.setScalar(preset.scale || 1);
+    mesh.userData = { velocity: new THREE.Vector3() };
+    return mesh;
   }
 
   _spawnNPC(gx, gy, gz, key) {

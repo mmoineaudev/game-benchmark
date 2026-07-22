@@ -36,20 +36,17 @@ export class CollectibleSystem {
     if ((allowed || new Set()).has('crystal')) types.push('crystal');
     if ((allowed || new Set()).has('ruin')) types.push('ruin');
     if ((allowed || new Set()).has('boost')) types.push('boost');
+    if (types.length === 0) return;
 
-    const pickRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
-    const count = Math.max(1, Math.floor(rng() * 3) + 1);
-
+    const count = 1 + Math.floor(rng() * 3);
     for (let i = 0; i < count; i++) {
-      const type = pickRandom(types);
-      let mesh, baseY;
-      if (type === 'crystal') {
-        mesh = new THREE.Mesh(this._crystalGeo, this._crystalMat);
-      } else if (type === 'boost') {
-        mesh = new THREE.Mesh(this._boostGeo, this._boostMat);
-      } else {
-        mesh = new THREE.Mesh(this._ruinGeo, this._ruinMat);
-      }
+      const idx = Math.floor(rng() * types.length);
+      const type = types[idx];
+      let mesh;
+      if (type === 'crystal') mesh = new THREE.Mesh(this._crystalGeo, this._crystalMat);
+      else if (type === 'boost') mesh = new THREE.Mesh(this._boostGeo, this._boostMat);
+      else mesh = new THREE.Mesh(this._ruinGeo, this._ruinMat);
+
       mesh.position.set(
         center.x + (rng() - 0.5) * Constants.CHUNK.SIZE,
         center.y + (rng() - 0.5) * Constants.CHUNK.SIZE,
@@ -58,7 +55,7 @@ export class CollectibleSystem {
       mesh.visible = true;
       mesh.userData = { isChunkObject: true };
       this._scene.add(mesh);
-      baseY = mesh.position.y;
+      const baseY = mesh.position.y;
       this._items.push({ mesh, type, baseY, phase: rng() * Math.PI * 2 });
     }
   }

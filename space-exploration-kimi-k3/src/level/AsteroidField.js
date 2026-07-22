@@ -49,7 +49,6 @@ export class AsteroidField {
       (Constants.CHUNK.ASTEROID_COUNT_BASE + rng() * Constants.CHUNK.ASTEROID_COUNT_VAR) * density));
     if (count === 0) return;
 
-    const half = Constants.CHUNK.SIZE / 2;
     const mediums = [];
     const smalls = [];
 

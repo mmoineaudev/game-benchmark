@@ -25,7 +25,6 @@ export class BiomeGenerator {
     const intensity = this.getIntensity(distance);
     return {
       name: zone.name,
-      nebulaCount: zone.nebulaCount,
       nebulaColors: zone.nebulaColors,
       asteroidDensity: Math.min(zone.asteroidDensity * intensity, 2.0),
       debrisCount: Math.floor(zone.debrisCount * intensity),

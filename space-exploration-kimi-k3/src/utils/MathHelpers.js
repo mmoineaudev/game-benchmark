@@ -1,6 +1,8 @@
 // VOID DRIFT — MathHelpers.js
 // Seeded PRNG + small scalar helpers.
 
+import * as THREE from 'three';
+
 /** mulberry32 — deterministic seeded PRNG. */
 export function mulberry32(seed) {
   let a = seed >>> 0;

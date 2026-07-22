@@ -24,9 +24,11 @@ export class PlanetManager {
   _spawnPlanet(gx, gy, gz, key) {
     const rng = mulberry32(hashKey(key) * 1e9);
     const grid = Constants.PLANET.GRID_SIZE;
-    const radius = Constants.PLANET.MIN_RADIUS +
-      rng() * (Constants.PLANET.MAX_RADIUS - Constants.PLANET.MIN_RADIUS);
-    const detail = Math.max(2, Math.floor(3 + radius * 0.02));
+    const isMega = rng() < 0.12;
+    const minR = isMega ? Constants.PLANET.MAX_RADIUS * 1.1 : Constants.PLANET.MIN_RADIUS;
+    const maxR = isMega ? Constants.PLANET.MAX_MEGA_RADIUS : Constants.PLANET.MAX_RADIUS;
+    const radius = minR + Math.pow(rng(), 0.6) * (maxR - minR);
+    const detail = Math.max(2, Math.floor(3 + radius * 0.018));
 
     const palette = PALETTES[Math.floor(rng() * PALETTES.length)];
     const mat = new THREE.ShaderMaterial({

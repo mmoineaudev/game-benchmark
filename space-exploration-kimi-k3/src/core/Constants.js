@@ -128,22 +128,22 @@ export const BOOST = {
 // --- Biomes ------------------------------------------------------------------
 export const BIOME = {
   ZONES: [
-    { name: 'Open Space',      min: 0,    max: 1800, asteroidDensity: 0.40, debrisCount: 4,
+    { name: 'Open Space',      min: 0,    max: 2000, asteroidDensity: 0.35, debrisCount: 2,
       nebulaColors: [0x2244aa, 0x3355cc, 0x1133aa], wormhole: false,
       entities: ['asteroid','debris','crystal','boost'] },
-    { name: 'Asteroid Belt',   min: 1800, max: 5400, asteroidDensity: 1.05, debrisCount: 3,
+    { name: 'Asteroid Belt',   min: 2000, max: 5500, asteroidDensity: 1.35, debrisCount: 2,
       nebulaColors: [0xaa6633, 0x885522, 0xcc7744], wormhole: false,
       entities: ['asteroid','asteroid','asteroid','debris'] },
-    { name: 'Nebula Corridor', min: 5400, max: 9000, asteroidDensity: 0.25, debrisCount: 3,
+    { name: 'Nebula Corridor', min: 5500, max: 8000, asteroidDensity: 0.18, debrisCount: 2,
       nebulaColors: [0x8833cc, 0x22ccdd, 0x6622aa], wormhole: false,
-      entities: ['cloud','asteroid','debris','crystal'] },
-    { name: 'Crystal Rift',    min: 9000, max: 12000, asteroidDensity: 0.18, debrisCount: 2,
+      entities: ['cloud','cloud','asteroid','crystal'] },
+    { name: 'Crystal Rift',    min: 8000, max: 10500, asteroidDensity: 0.15, debrisCount: 1,
       nebulaColors: [0x22cc77, 0x66ffaa, 0x116644], wormhole: false,
-      entities: ['crystal','ruin','boost'] },
-    { name: 'Ruin Field',      min: 12000, max: 15000, asteroidDensity: 0.35, debrisCount: 2,
+      entities: ['crystal','crystal','ruin','boost'] },
+    { name: 'Ruin Field',      min: 10500, max: 13000, asteroidDensity: 0.30, debrisCount: 1,
       nebulaColors: [0xccaa66, 0x997744, 0x553311], wormhole: false,
-      entities: ['ruin','asteroid','crystal','boost'] },
-    { name: 'Wormhole Tunnel', min: 15000, max: 18000, asteroidDensity: 0.12, debrisCount: 2,
+      entities: ['ruin','ruin','asteroid','boost'] },
+    { name: 'Wormhole Tunnel', min: 13000, max: 18000, asteroidDensity: 0.12, debrisCount: 1,
       nebulaColors: [0xaa22cc, 0x22ffdd, 0x7711aa], wormhole: true,
       entities: ['cloud','asteroid','boost'] },
   ],
@@ -152,35 +152,38 @@ export const BIOME = {
   INTENSITY_MAX: 2.75,
 };
 
+// --- Planets ------------------------------------------------------------------
+export const PLANET = {
+  GRID_SIZE: 4800,
+  VIEW_DISTANCE: 20000,
+  SPAWN_CHANCE: 0.28,
+  MIN_RADIUS: 80,
+  MAX_RADIUS: 520,
+  MAX_MEGA_RADIUS: 880,
+  ATMOSPHERE_RATIO: 1.18,
+  ATMOSPHERE_MIN_RADIUS: 18,
+  ATMOSPHERE_OPACITY: 0.09,
+};
+
 // --- Chunks ------------------------------------------------------------------
 export const CHUNK = {
-  SIZE: 720,
-  SPAWN_AHEAD: 3,
-  CLEANUP_BEHIND: 3,
+  SIZE: 960,
+  SPAWN_AHEAD: 5,
+  CLEANUP_BEHIND: 4,
   ORIGIN_SAFETY_RADIUS: 30,
   ASTEROID_COUNT_BASE: 0,
   ASTEROID_COUNT_VAR: 4,
+  KEEP_OUT_RADIUS: 280,
 };
 
 // --- Level entities ----------------------------------------------------------
-export const PLANET = {
-  GRID_SIZE: 4800,
-  VIEW_DISTANCE: 18750,
-  SPAWN_CHANCE: 0.38,
-  MIN_RADIUS: 60,
-  MAX_RADIUS: 320,
-  ATMOSPHERE_RATIO: 1.12,
-  ATMOSPHERE_MIN_RADIUS: 12,
-  ATMOSPHERE_OPACITY: 0.07,
-};
-
 export const NPC = {
-  MAX_COUNT: 40,
-  GRID_SIZE: 2200,
-  VIEW_DISTANCE: 14000,
-  SPAWN_CHANCE: 0.28,               // deterministic per-cell (raised)
-  WANDER_SPAWN_CHANCE: 0.30,        // per-second random encounter near ship path
-  SPEED: 18,
+  MAX_COUNT: 90,
+  GRID_SIZE: 1600,
+  VIEW_DISTANCE: 20000,
+  SPAWN_CHANCE: 0.28,               // deterministic per-cell
+  WANDER_SPAWN_CHANCE: 0.80,        // per-second random encounter near ship path
+  SPEED: 20,
   TRAIL_POOL: 256,
   TRAIL_CADENCE: 0.04,
   TRAIL_DECAY: 0.9,
@@ -219,11 +222,11 @@ export const STARFIELD = {
 // Black holes
 // ----------------------------------------------------------------------------
 export const BLACK_HOLE = Object.freeze({
-  MAX_ACTIVE: 3,
+  MAX_ACTIVE: 4,
   PULL: 14,
-  VIEW_DISTANCE: 24000,
-  SPAWN_MIN: 4000,
-  SPAWN_MAX: 18000,
+  VIEW_DISTANCE: 36000,
+  SPAWN_MIN: 3000,
+  SPAWN_MAX: 26000,
   ACTIVE_BONUS_MULTIPLIER: 3.4,
 });
 
@@ -247,14 +250,14 @@ export const AUDIO = {
 
 // --- Post-processing ----------------------------------------------------------
 export const POST = {
-  BLOOM_MIN: 0.55,
-  BLOOM_MAX: 1.1,
-  BLOOM_RADIUS: 0.4,
-  BLOOM_THRESHOLD: 0.5,
-  CHROMATIC_MAX_OFFSET: 0.012,
-  VIGNETTE_DARKNESS: 0.6,
+  BLOOM_MIN: 0.7,
+  BLOOM_MAX: 1.45,
+  BLOOM_RADIUS: 0.45,
+  BLOOM_THRESHOLD: 0.45,
+  CHROMATIC_MAX_OFFSET: 0.014,
+  VIGNETTE_DARKNESS: 0.55,
   VIGNETTE_OFFSET: 0.22,
-  GRAIN_INTENSITY: 0.025,
+  GRAIN_INTENSITY: 0.022,
   LOW_END_CORES: 4,
 };
 
@@ -277,14 +280,14 @@ export const STORAGE = {
 // --- Lighting rig ---------------------------------------------------------------
 export const LIGHTING = {
   AMBIENT_COLOR: 0x161e33,
-  AMBIENT_INTENSITY: 0.85,
+  AMBIENT_INTENSITY: 0.95,
   SUN_COLOR: 0xddeeff,
-  SUN_INTENSITY: 1.1,
+  SUN_INTENSITY: 1.6,
   FILL_COLOR: 0x5577aa,
-  FILL_INTENSITY: 0.6,
+  FILL_INTENSITY: 0.85,
   RIM_COLOR: 0x335577,
-  RIM_INTENSITY: 0.4,
+  RIM_INTENSITY: 0.6,
   HEMI_SKY: 0x334466,
   HEMI_GROUND: 0x0a0a0a,
-  HEMI_INTENSITY: 0.35,
+  HEMI_INTENSITY: 0.4,
 };

@@ -43,25 +43,25 @@ export class AsteroidField {
    * @param density biome asteroid density
    * @param isSafe when true, skip (origin safety radius)
    */
-  generateChunk(center, rng, density, isSafe) {
+  generateChunk(center, rng, density, isSafe, shipPos, spawnRadius, keepOutRadius) {
     if (isSafe) return;
     const count = Math.max(0, Math.floor(
-      (Constants.CHUNK.ASTEROID_COUNT_BASE + rng() * Constants.CHUNK.ASTEROID_COUNT_VAR) * density));
+      (Constants.CHUNK.ASTEROID_COUNT_BASE + rng() * Constants.CHUNK.ASTEROID_COUNT_VAR) * density * 1.35));
     if (count === 0) return;
 
     const mediums = [];
     const smalls = [];
 
     for (let i = 0; i < count; i++) {
-      const px = center.x + (rng() - 0.5) * Constants.CHUNK.SIZE;
-      const py = center.y + (rng() - 0.5) * Constants.CHUNK.SIZE;
-      const pz = center.z + (rng() - 0.5) * Constants.CHUNK.SIZE;
+      let px = center.x + (rng() - 0.5) * (shipPos ? spawnRadius * 2 : Constants.CHUNK.SIZE);
+      let py = center.y + (rng() - 0.5) * (shipPos ? spawnRadius * 2 : Constants.CHUNK.SIZE);
+      let pz = center.z + (rng() - 0.5) * (shipPos ? spawnRadius * 2 : Constants.CHUNK.SIZE);
       const roll = rng();
 
-      if (roll < 0.22) {
-        // Large individual asteroid (size 3–7).
-        const size = 3 + rng() * 4;
-        const geo = displaceGeometry(this._baseGeoLarge.clone(), 0.6, rng);
+      if (roll < 0.18) {
+        // Large individual asteroid (size 3–9, occasional giant).
+        const size = 3 + Math.pow(rng(), 0.5) * 6;
+        const geo = displaceGeometry(this._baseGeoLarge.clone(), 0.55 + rng() * 0.35, rng);
         const mesh = new THREE.Mesh(geo, this._material);
         mesh.scale.setScalar(size);
         mesh.position.set(px, py, pz);
@@ -76,9 +76,9 @@ export class AsteroidField {
           rx: (rng() - 0.5) * 0.4, ry: (rng() - 0.5) * 0.4,
         });
       } else if (roll < 0.6) {
-        mediums.push({ x: px, y: py, z: pz, size: 1.2 + rng() * 1.8 });
+        mediums.push({ x: px, y: py, z: pz, size: 1.2 + Math.pow(rng(), 0.7) * 2.6 });
       } else {
-        smalls.push({ x: px, y: py, z: pz, size: 0.5 + rng() * 1.0 });
+        smalls.push({ x: px, y: py, z: pz, size: 0.4 + Math.pow(rng(), 0.6) * 1.4 });
       }
     }
 

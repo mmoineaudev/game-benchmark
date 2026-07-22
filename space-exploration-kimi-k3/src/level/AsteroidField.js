@@ -60,9 +60,9 @@ export class AsteroidField {
       const roll = rng();
 
       if (roll < 0.22) {
-        // Large individual asteroid (size 2–5).
-        const size = 2 + rng() * 3;
-        const geo = displaceGeometry(this._baseGeoLarge.clone(), 0.55, rng);
+        // Large individual asteroid (size 3–7).
+        const size = 3 + rng() * 4;
+        const geo = displaceGeometry(this._baseGeoLarge.clone(), 0.6, rng);
         const mesh = new THREE.Mesh(geo, this._material);
         mesh.scale.setScalar(size);
         mesh.position.set(px, py, pz);
@@ -77,9 +77,9 @@ export class AsteroidField {
           rx: (rng() - 0.5) * 0.4, ry: (rng() - 0.5) * 0.4,
         });
       } else if (roll < 0.6) {
-        mediums.push({ x: px, y: py, z: pz, size: 0.5 + rng() * 1.0 });
+        mediums.push({ x: px, y: py, z: pz, size: 1.2 + rng() * 1.8 });
       } else {
-        smalls.push({ x: px, y: py, z: pz, size: 0.2 + rng() * 0.4 });
+        smalls.push({ x: px, y: py, z: pz, size: 0.5 + rng() * 1.0 });
       }
     }
 

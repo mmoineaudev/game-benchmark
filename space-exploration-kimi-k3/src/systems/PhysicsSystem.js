@@ -46,11 +46,6 @@ export class PhysicsSystem {
     const maxReverse = -Constants.SHIP.MAX_SPEED * Constants.SHIP.REVERSE_RATIO;
     if (this._forwardSpeed > Constants.SHIP.MAX_SPEED) this._forwardSpeed = Constants.SHIP.MAX_SPEED;
     if (this._forwardSpeed < maxReverse) this._forwardSpeed = maxReverse;
-    // Gentle decay toward 0 when neither thrust nor brake held.
-    if (!input.thrust && !input.brake) {
-      this._forwardSpeed *= Math.pow(0.6, dt);
-      if (Math.abs(this._forwardSpeed) < 0.05) this._forwardSpeed = 0;
-    }
 
     // Strafe / vertical with drag (SHIP.LATERAL_DRAG — formerly dead constant).
     const strafeMax = Constants.SHIP.MAX_SPEED * Constants.SHIP.STRAFE_SPEED_RATIO;

@@ -45,9 +45,9 @@ export const CONTROLS_LEGEND = [
 
 // --- Ship --------------------------------------------------------------------
 export const SHIP = {
-  MAX_SPEED: 140,
-  ACCELERATION: 70,
-  DECELERATION: 50,
+  MAX_SPEED: 1400,
+  ACCELERATION: 700,
+  DECELERATION: 600,
   REVERSE_RATIO: 0.3,               // reverse capped at 0.3 × MAX_SPEED
   STRAFE_SPEED_RATIO: 0.6,          // lateral/vertical thrust vs MAX_SPEED
   LATERAL_DRAG: 0.97,               // per-frame damping of strafe/vertical

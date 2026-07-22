@@ -144,6 +144,7 @@ export class Game {
       collectibles: this.collectibles,
       nebula: this.nebula,
       npcs: this.npcs,
+      planets: this.planets,
     });
     this.chunkManager.init();
 

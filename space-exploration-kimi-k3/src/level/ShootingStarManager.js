@@ -1,5 +1,5 @@
 // VOID DRIFT — ShootingStarManager.js
-// Rare transient additive point-trails streaking across the sky.
+// Longer, more visible meteor streaks with head glow, trail ribbon, and fadeout.
 
 import * as THREE from 'three';
 import * as Constants from '../core/Constants.js';
@@ -9,39 +9,85 @@ export class ShootingStarManager {
     this._scene = scene;
     this._stars = [];
     this._lastCheck = 0;
-    this._tmpDir = new THREE.Vector3();
+    this._sharedGeoTrail = null;
+    this._sharedGeoGlow = null;
+  }
+
+  _ensureGeometry() {
+    if (this._sharedGeoTrail) return;
+    this._sharedGeoTrail = new THREE.BufferGeometry();
+    this._sharedGeoGlow = new THREE.SphereGeometry(1, 8, 8);
   }
 
   _maybeSpawn(shipPos, time) {
     if (Math.random() > Constants.SHOOTING_STAR.SPAWN_CHANCE) return;
     const S = Constants.SHOOTING_STAR;
-    const count = S.MIN_POINTS + Math.floor(Math.random() * (S.MAX_POINTS - S.MIN_POINTS));
+    const pointCount = S.MIN_POINTS + Math.floor(Math.random() * (S.MAX_POINTS - S.MIN_POINTS));
     const speed = S.MIN_SPEED + Math.random() * (S.MAX_SPEED - S.MIN_SPEED);
     const life = S.MIN_LIFE + Math.random() * (S.MAX_LIFE - S.MIN_LIFE);
-    const opacity = S.MIN_OPACITY + Math.random() * (S.MAX_OPACITY - S.MIN_OPACITY);
+    const baseOpacity = S.MIN_OPACITY + Math.random() * (S.MAX_OPACITY - S.MIN_OPACITY);
 
     const dir = new THREE.Vector3(Math.random() * 2 - 1, (Math.random() - 0.5) * 0.4, Math.random() * 2 - 1).normalize();
     const origin = new THREE.Vector3(
-      shipPos.x + (Math.random() - 0.5) * 400,
-      shipPos.y + 40 + Math.random() * 160,
-      shipPos.z + (Math.random() - 0.5) * 400);
+      shipPos.x + (Math.random() - 0.5) * 420,
+      shipPos.y + 50 + Math.random() * 180,
+      shipPos.z + (Math.random() - 0.5) * 420);
 
-    const positions = new Float32Array(count * 3);
-    for (let i = 0; i < count; i++) {
-      positions[i * 3] = origin.x - dir.x * i * 1.5;
-      positions[i * 3 + 1] = origin.y - dir.y * i * 1.5;
-      positions[i * 3 + 2] = origin.z - dir.z * i * 1.5;
+    this._ensureGeometry();
+
+    // Trail ribbon.
+    const positions = new Float32Array(pointCount * 3);
+    const sizes = new Float32Array(pointCount);
+    for (let i = 0; i < pointCount; i++) {
+      const t = i / (pointCount - 1);
+      const back = origin.clone().addScaledVector(dir, -t * 18);
+      positions[i * 3] = back.x;
+      positions[i * 3 + 1] = back.y;
+      positions[i * 3 + 2] = back.z;
+      sizes[i] = (1 - t) * 2.4 + 0.4;
     }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    const mat = new THREE.PointsMaterial({
-      color: 0xcceeff, size: 1.8, transparent: true, opacity,
-      blending: THREE.AdditiveBlending, depthWrite: false,
+    const trailGeo = new THREE.BufferGeometry();
+    trailGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    trailGeo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+    const trailMat = new THREE.PointsMaterial({
+      color: 0xcceeff,
+      size: 1.8,
+      transparent: true,
+      opacity: baseOpacity,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
     });
-    const points = new THREE.Points(geo, mat);
-    points.frustumCulled = false;
-    this._scene.add(points);
-    this._stars.push({ points, dir, speed, born: time, life, baseOpacity: opacity });
+    const trail = new THREE.Points(trailGeo, trailMat);
+    trail.frustumCulled = false;
+    this._scene.add(trail);
+
+    // Head glow sprite.
+    const glowMat = new THREE.SpriteMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: baseOpacity,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const glow = new THREE.Sprite(glowMat);
+    glow.scale.setScalar(4.5);
+    glow.position.copy(origin);
+    this._scene.add(glow);
+
+    this._stars.push({
+      trail,
+      trailMat,
+      glow,
+      glowMat,
+      dir,
+      speed,
+      born: time,
+      life,
+      baseOpacity,
+      origin: origin.clone(),
+      forward: dir.clone(),
+      positions,
+    });
   }
 
   update(shipPos, time, dt) {
@@ -53,25 +99,49 @@ export class ShootingStarManager {
       const s = this._stars[i];
       const age = time - s.born;
       if (age > s.life) {
-        this._scene.remove(s.points);
-        s.points.geometry.dispose();
-        s.points.material.dispose();
+        this._scene.remove(s.trail);
+        s.trail.geometry.dispose();
+        s.trailMat.dispose();
+        this._scene.remove(s.glow);
+        s.glowMat.dispose();
         this._stars.splice(i, 1);
         continue;
       }
-      // Advance the whole streak; fade near end of life.
-      this._tmpDir.copy(s.dir).multiplyScalar(s.speed * dt);
-      s.points.position.add(this._tmpDir);
+
+      // Whole streak advances.
+      s.forward.copy(s.dir).multiplyScalar(s.speed * dt);
+      s.trail.position.add(s.forward);
+      s.glow.position.add(s.forward);
+
+      // Slow fadeout.
       const fade = 1 - Math.pow(age / s.life, 2);
-      s.points.material.opacity = s.baseOpacity * fade;
+      s.trailMat.opacity = s.baseOpacity * fade;
+      s.glowMat.opacity = s.baseOpacity * fade * 0.9;
+      s.glow.scale.setScalar(4.5 * (0.6 + 0.4 * Math.max(age / s.life, 0)));
+
+      // Trailing birth effect on trail head.
+      const arr = s.trail.geometry.attributes.position.array;
+      const len = arr.length / 3;
+      for (let j = len - 1; j > 0; j--) {
+        arr[j * 3] = arr[(j - 1) * 3];
+        arr[j * 3 + 1] = arr[(j - 1) * 3 + 1];
+        arr[j * 3 + 2] = arr[(j - 1) * 3 + 2];
+      }
+      const head = s.trail.position;
+      arr[0] = head.x;
+      arr[1] = head.y;
+      arr[2] = head.z;
+      s.trail.geometry.attributes.position.needsUpdate = true;
     }
   }
 
   destroy() {
     for (const s of this._stars) {
-      this._scene.remove(s.points);
-      s.points.geometry.dispose();
-      s.points.material.dispose();
+      this._scene.remove(s.trail);
+      s.trail.geometry.dispose();
+      s.trailMat.dispose();
+      this._scene.remove(s.glow);
+      s.glowMat.dispose();
     }
     this._stars = [];
   }

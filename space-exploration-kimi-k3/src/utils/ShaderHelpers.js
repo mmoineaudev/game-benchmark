@@ -150,21 +150,43 @@ void main(){
 // Wormhole tunnel cylinder.
 export const WORMHOLE_VERTEX = /* glsl */`
 varying vec2 vUv;
+varying vec3 vViewPos;
 void main(){
   vUv = uv;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  vViewPos = mv.xyz;
+  gl_Position = projectionMatrix * mv;
 }
 `;
 export const WORMHOLE_FRAGMENT = /* glsl */`
 varying vec2 vUv;
+varying vec3 vViewPos;
 uniform float uTime;
 uniform vec3 uColor1;
 uniform vec3 uColor2;
 void main(){
-  float swirl = fbm(vec3(vUv * vec2(6.0, 2.0), uTime * 0.3));
-  float bands = sin(vUv.y * 40.0 - uTime * 3.0 + swirl * 6.0);
+  vec2 uv = vUv;
+  vec3 view = normalize(vViewPos);
+  vec2 centered = uv - 0.5;
+  float dist = length(centered);
+  float rim = pow(1.0 - dist, 2.5);
+
+  float swirl = fbm(vec3(centered * vec2(8.0, 2.5), uTime * 0.18));
+  float bands = sin(uv.y * 30.0 - uTime * 1.8 + swirl * 8.0);
+  float rings = sin(centered.x * 38.0 + sin(centered.y * 26.0 - uTime * 2.2) * 1.4);
+  float pulse = 0.85 + 0.15 * sin(uTime * 3.3 + dist * 12.0);
+
+  float core = smoothstep(0.0, 0.08, dist);
+  float outer = smoothstep(0.35, 0.0, dist - rim * 0.28);
+
   vec3 color = mix(uColor1, uColor2, smoothstep(-0.8, 0.8, bands));
-  float alpha = 0.22 + 0.18 * smoothstep(-0.5, 1.0, bands);
+  color = mix(color, uColor2 * 1.4, smoothstep(0.2, 1.0, rings) * 0.35);
+  color += uColor1 * pulse * outer * 0.55;
+  color *= 1.1 + 0.35 * rim;
+
+  float alpha = (0.45 + 0.35 * rim + 0.25 * smoothstep(-0.5, 0.9, swirl)) * core;
+  alpha *= 0.75 + 0.25 * pulse;
+  if (alpha < 0.01) discard;
   gl_FragColor = vec4(color, alpha);
 }
 `;

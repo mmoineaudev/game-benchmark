@@ -56,9 +56,9 @@ export class ChunkManager {
   }
 
   _spawnWormhole(center, rng, colors) {
-    const length = Constants.CHUNK.SIZE * 1.6;
-    const geo = new THREE.CylinderGeometry(28, 28, length, 24, 1, true);
-    const mat = new THREE.ShaderMaterial({
+    const length = Constants.CHUNK.SIZE * 3.5;
+    const outerGeo = new THREE.CylinderGeometry(32, 32, length, 28, 8, true);
+    const outerMat = new THREE.ShaderMaterial({
       vertexShader: WORMHOLE_VERTEX,
       fragmentShader: `${SIMPLEX_3D_GLSL}\n${WORMHOLE_FRAGMENT}`,
       uniforms: {
@@ -70,12 +70,34 @@ export class ChunkManager {
       side: THREE.BackSide,
       depthWrite: false,
     });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.copy(center);
-    mesh.rotation.set(rng() * Math.PI, rng() * Math.PI, rng() * Math.PI);
-    mesh.userData = { isChunkObject: true, isWormhole: true };
-    this._scene.add(mesh);
-    return mesh;
+    const outer = new THREE.Mesh(outerGeo, outerMat);
+    outer.position.copy(center);
+    outer.rotation.set(rng() * Math.PI, rng() * Math.PI, rng() * Math.PI);
+    outer.userData = { isChunkObject: true, isWormhole: true };
+    this._scene.add(outer);
+
+    const innerGeo = new THREE.CylinderGeometry(18, 18, length, 24, 6, true);
+    const innerMat = new THREE.ShaderMaterial({
+      vertexShader: WORMHOLE_VERTEX,
+      fragmentShader: `${SIMPLEX_3D_GLSL}\n${WORMHOLE_FRAGMENT}`,
+      uniforms: {
+        uTime: { value: outerMat.uniforms.uTime.value },
+        uColor1: { value: new THREE.Color(colors[1 % colors.length]) },
+        uColor2: { value: new THREE.Color(colors[0]) },
+      },
+      transparent: true,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const inner = new THREE.Mesh(innerGeo, innerMat);
+    inner.position.copy(center);
+    inner.rotation.copy(outer.rotation);
+    inner.userData = { isChunkObject: true, isWormholeInner: true };
+    this._scene.add(inner);
+
+    const group = { outer, outerMat, inner, innerMat, rotation: outer.rotation };
+    group.userData = { isChunkObject: true, isWormhole: true };
+    return group;
   }
 
   _evictChunk(key, chunk) {
@@ -84,9 +106,13 @@ export class ChunkManager {
     this._sub.collectibles.clearChunk(key);
     this._sub.nebula.clearChunk(key);
     if (chunk.wormhole) {
-      this._scene.remove(chunk.wormhole);
-      chunk.wormhole.geometry.dispose();
-      chunk.wormhole.material.dispose();
+      const w = chunk.wormhole;
+      this._scene.remove(w.outer);
+      this._scene.remove(w.inner);
+      w.outer.geometry.dispose();
+      w.outerMat.dispose();
+      w.inner.geometry.dispose();
+      w.innerMat.dispose();
     }
     this._chunks.delete(key);
   }
@@ -127,7 +153,11 @@ export class ChunkManager {
 
     // Animate wormholes.
     for (const [, chunk] of this._chunks) {
-      if (chunk.wormhole) chunk.wormhole.material.uniforms.uTime.value = time;
+      if (chunk.wormhole) {
+        const t = time;
+        chunk.wormhole.outerMat.uniforms.uTime.value = t;
+        chunk.wormhole.innerMat.uniforms.uTime.value = t;
+      }
     }
   }
 
@@ -149,10 +179,13 @@ export class ChunkManager {
           Math.abs(m.position.y - shipPos.y) < S &&
           Math.abs(m.position.z - shipPos.z) < S) list.push(m);
     }
-    for (const [, p] of this._planets) {
-      if (Math.abs(p.mesh.position.x - shipPos.x) < S &&
-          Math.abs(p.mesh.position.y - shipPos.y) < S &&
-          Math.abs(p.mesh.position.z - shipPos.z) < S) list.push(p.mesh);
+    const planets = this._sub.planets && this._sub.planets._planets;
+    if (planets) {
+      for (const [, p] of planets) {
+        if (Math.abs(p.mesh.position.x - shipPos.x) < S &&
+            Math.abs(p.mesh.position.y - shipPos.y) < S &&
+            Math.abs(p.mesh.position.z - shipPos.z) < S) list.push(p.mesh);
+      }
     }
     for (const npcMesh of this._sub.npcs.getCollidables()) {
       if (Math.abs(npcMesh.position.x - shipPos.x) < S &&

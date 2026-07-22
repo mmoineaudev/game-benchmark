@@ -27,11 +27,12 @@ export class ShootingStarManager {
     const life = S.MIN_LIFE + Math.random() * (S.MAX_LIFE - S.MIN_LIFE);
     const baseOpacity = S.MIN_OPACITY + Math.random() * (S.MAX_OPACITY - S.MIN_OPACITY);
 
-    const dir = new THREE.Vector3(Math.random() * 2 - 1, (Math.random() - 0.5) * 0.4, Math.random() * 2 - 1).normalize();
-    const origin = new THREE.Vector3(
-      shipPos.x + (Math.random() - 0.5) * 420,
-      shipPos.y + 50 + Math.random() * 180,
-      shipPos.z + (Math.random() - 0.5) * 420);
+    const dir = new THREE.Vector3(Math.random() * 2 - 1, (Math.random() - 0.5) * 0.35, Math.random() * 2 - 1).normalize();
+    const offset = new THREE.Vector3(
+      (Math.random() - 0.5) * 1400,
+      160 + Math.random() * 500,
+      (Math.random() - 0.5) * 1400);
+    const origin = shipPos.clone().add(offset);
 
     this._ensureGeometry();
 

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mining Descent</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+    canvas { display: block; }
+    #ui-overlay {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none; font-family: monospace; color: #fff;
+    }
+    #ui-overlay > * { pointer-events: auto; }
+    #hud { position: absolute; top: 8px; left: 8px; font-size: 14px; line-height: 1.6; }
+    #hud .bar-container { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
+    #hud .bar-bg { width: 120px; height: 10px; background: #222; border: 1px solid #555; }
+    #hud .bar-fill { height: 100%; transition: width 0.15s; }
+    #hud .fuel { background: #f90; }
+    #hud .oxygen { background: #09f; }
+    #hud .hull { background: #0f0; }
+    #depth-display { position: absolute; top: 8px; right: 8px; font-size: 18px; color: #aaa; }
+    #ore-counter { position: absolute; bottom: 8px; left: 8px; font-size: 13px; }
+    #ore-counter .ore-item { display: inline-block; margin-right: 12px; }
+    #minimap { position: absolute; bottom: 8px; right: 8px; width: 140px; height: 140px;
+      background: rgba(0,0,0,0.6); border: 1px solid #444; border-radius: 4px; }
+    #minimap canvas { width: 100%; height: 100%; border-radius: 4px; }
+    #message { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      font-size: 22px; color: #ff0; text-align: center; pointer-events: none;
+      opacity: 0; transition: opacity 0.3s; text-shadow: 0 0 8px rgba(255,255,0,0.5); }
+    #message.show { opacity: 1; }
+    #workshop { position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.85); display: none; flex-direction: column;
+      align-items: center; justify-content: center; }
+    #workshop.show { display: flex; }
+    #workshop h1 { color: #f90; font-size: 28px; margin-bottom: 20px; }
+    #workshop .upgrade-list { width: 360px; }
+    #workshop .upgrade-item { padding: 10px; margin: 6px 0; background: #1a1a2e;
+      border: 1px solid #333; border-radius: 6px; cursor: pointer; display: flex;
+      justify-content: space-between; }
+    #workshop .upgrade-item:hover { border-color: #f90; }
+    #workshop .upgrade-item.owned { opacity: 0.5; border-color: #0a0; }
+    #workshop .upgrade-item.locked { opacity: 0.3; cursor: default; }
+    #deathsreen { position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.85); display: none; flex-direction: column;
+      align-items: center; justify-content: center; }
+    #deathsreen.show { display: flex; }
+    #deathsreen h1 { color: #f33; font-size: 32px; }
+    #deathsreen .stats { color: #aaa; font-size: 16px; margin: 16px 0; line-height: 1.8; }
+    #deathsreen .btn { padding: 10px 28px; background: #333; border: 1px solid #666;
+      border-radius: 6px; color: #fff; cursor: pointer; font-size: 16px; }
+    #deathsreen .btn:hover { background: #555; }
+    #controls-hint { position: absolute; bottom: 50%; left: 8px; font-size: 11px;
+      color: #555; line-height: 1.5; }
+    #hub-return { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      color: #0a0; font-size: 20px; display: none; text-shadow: 0 0 12px rgba(0,255,0,0.5); }
+  </style>
+</head>
+<body>
+  <div id="ui-overlay">
+    <div id="hud"></div>
+    <div id="depth-display">0m</div>
+    <div id="ore-counter"></div>
+    <div id="minimap"><canvas id="minimap-canvas" width="140" height="140"></canvas></div>
+    <div id="message"></div>
+    <div id="controls-hint">WASD move | S+Shift dig | Space climb | E mine</div>
+    <div id="hub-return">Press B to return to surface base</div>
+    <div id="workshop">
+      <h1>✦ SURFACE WORKSHOP ✦</h1>
+      <div id="ore-balance" style="color:#aaa;margin-bottom:12px;">Ore: 0</div>
+      <div class="upgrade-list" id="upgrade-list"></div>
+      <div style="margin-top:20px;">
+        <button class="btn" id="btn-descend">Descend</button>
+      </div>
+      <div style="margin-top:8px;font-size:12px;color:#555;">Press D or click Descend to start a run</div>
+    </div>
+    <div id="deathsreen">
+      <h1>☠ PERISHED ☠</h1>
+      <div class="stats" id="death-stats"></div>
+      <button class="btn" id="btn-hub">Return to Workshop</button>
+    </div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "three/build/three.module.js",
+      "three/addons/": "three/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

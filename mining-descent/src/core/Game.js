@@ -32,8 +32,9 @@ export class Game {
     document.body.prepend(this._renderer.domElement);
 
     // Bloom
+    this.camera = new CameraSystem();
     this._composer = new EffectComposer(this._renderer);
-    const renderPass = new RenderPass(this._scene, null);
+    const renderPass = new RenderPass(this._scene, this.camera.getCamera());
     this._composer.addPass(renderPass);
     const bloomPass = new UnrealBloomPass(
       new THREE.Vector2(window.innerWidth, window.innerHeight),
@@ -51,7 +52,6 @@ export class Game {
     this._setupLighting();
 
     // Systems
-    this.camera = new CameraSystem();
     this._particles = new ParticleSystem(this._scene);
     this._enemyManager = new EnemyManager(this._scene);
     this._terrainRenderer = new TerrainRenderer(this._scene);

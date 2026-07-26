@@ -3,8 +3,8 @@ import { RESOURCE, UPGRADES } from './Constants.js';
 
 class GameState {
   constructor() {
-    this.reset();
     this._meta = this._loadMeta();
+    this.reset();
   }
 
   reset() {

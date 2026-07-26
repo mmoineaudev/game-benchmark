@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pixel Sentinel — Neon Lanes</title>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "three/build/three.module.js",
+      "three/addons/": "three/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="app">
+    <canvas id="gameCanvas"></canvas>
+    <div id="hud"></div>
+    <div id="pauseOverlay" class="overlay hidden"></div>
+    <div id="tooltipMenu" class="overlay hidden"></div>
+    <div id="contextMenu" class="overlay hidden"></div>
+    <div id="deathOverlay" class="overlay hidden"></div>
+    <div id="visualFX" style="position:fixed;inset:0;pointer-events:none;z-index:3;"></div>
+  </div>
+  <link rel="stylesheet" href="/src/styles/game.css" />
+  <script>window.__PS_LOADING=true;</script><script type="module" src="/src/main.js"></script>
+</body>
+</html>

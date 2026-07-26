@@ -43,8 +43,10 @@ export const INPUT = {
   RIGHT: 'KeyD',
   UP: 'KeyE',
   DOWN: 'KeyQ',
-  FIRE: 'Space',
+  FIRE: 'Mouse0',
   RESTART: 'KeyR',
+  PAUSE: 'KeyP',
+  ALT_PAUSE: 'Space',
 };
 
 export const WEAPON = {
@@ -101,6 +103,11 @@ export const SCORE = {
   ASTEROID_SMALL: 10,
   DEBRIS: 1,
   DISTANCE_PER_UNIT: 0.1,
+};
+
+export const ECONOMY = {
+  STARTING_CREDITS: 0,
+  CREDIT_PER_KILOMETER: 1,
 };
 
 export const HEALTH = {

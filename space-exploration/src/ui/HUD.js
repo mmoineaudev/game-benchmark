@@ -91,6 +91,20 @@ class HUD {
     });
   }
 
+  showContextFeedback(action) {
+    if (!action) return;
+    const label = action.replace(':', ' ').toUpperCase();
+    const flash = document.createElement('div');
+    flash.textContent = label;
+    flash.style.cssText = 'position: fixed; top: 50%; left: 18px; transform: translateY(-50%); z-index: 40; padding: 10px 14px; background: rgba(4, 14, 28, 0.8); border: 1px solid rgba(90, 170, 255, 0.45); border-radius: 10px; color: #aaccff; font-family: Courier New, monospace; font-size: 14px; letter-spacing: 2px;';
+    document.body.appendChild(flash);
+    setTimeout(() => {
+      flash.style.transition = 'opacity 0.4s ease-out';
+      flash.style.opacity = '0';
+      setTimeout(() => flash.remove(), 450);
+    }, 1200);
+  }
+
   showGameOver(score, highScore) {
     if (!this._gameOver) return;
     this._gameOver.classList.add('active');

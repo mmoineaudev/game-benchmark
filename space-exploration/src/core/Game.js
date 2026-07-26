@@ -24,13 +24,15 @@ class Game {
   constructor(containerId) {
     this.container = document.getElementById(containerId);
     this._isRunning = false;
-    this._isPaused = true;
+    this._isPaused = false;
+    this.isGameOver = false;
     this._clock = performance.now();
     this._delta = 0;
     this._fpsCounter = { frames: 0, lastTime: 0 };
     this._unsubscribers = [];
     this._lastHealth = 100;
     this._projectileHitsProcessed = new Set();
+    this._pauseElement = null;
   }
 
   init() {
@@ -60,9 +62,9 @@ class Game {
     this._setupLighting();
     this._initSystems();
     this._setupEvents();
-    this._showPauseScreen();
+    this._showStartScreen();
 
-    console.log('[Game] Initialized (paused). Press SPACE to start.');
+    console.log('[Game] Initialized. Press SPACE to start.');
   }
 
   _setupLighting() {
@@ -139,6 +141,9 @@ class Game {
       if (code === Constants.INPUT.RESTART && !GameState.isAlive) {
         this._restart();
       }
+      if (code === Constants.INPUT.PAUSE && GameState.isAlive) {
+        this.togglePause();
+      }
       if (code === 'KeyM') {
         this.audio.toggleMute();
       }
@@ -157,6 +162,7 @@ class Game {
     this._unsubscribers.push(EventBus.on('camera:shake', (amount) => this.cameraSystem.triggerShake(amount)));
 
     this._unsubscribers.push(EventBus.on('weapon:destroy', (data) => this.score.awardDestruction(data.type, data.size)));
+    this._unsubscribers.push(EventBus.on('input:contextmenu', (pos) => this._showContextMenu(pos.x, pos.y)));
   }
 
   _attemptFire() {
@@ -197,7 +203,6 @@ class Game {
       this._attemptFire();
     }
     this.weapon.update(this._delta, this.particles);
-
     this.starfield.update(this.playerShip.mesh.position, speedRatio, this._delta);
     this.chunkManager.update(this.playerShip.mesh.position, this._delta);
 
@@ -283,28 +288,113 @@ class Game {
     this.postProcessing.render();
   }
 
-  _showPauseScreen() {
+  _showStartScreen() {
     const pauseDiv = document.createElement('div');
     pauseDiv.id = 'pause-screen';
     pauseDiv.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.35); z-index: 50; display: flex; align-items: center; justify-content: center; flex-direction: column; color: #aaccff; font-family: Courier New, monospace; text-shadow: 0 0 12px rgba(100,150,255,0.8); pointer-events: none;';
-    pauseDiv.innerHTML = '<h1 style="font-size: 44px; margin-bottom: 18px;">PAUSED - Press SPACE to start</h1><p style="font-size: 18px; opacity: 0.8;">Mouse to steer | Z=forward, S=backward | Q/D=strafe | A/E=up/down | Space=fire</p>';
+    pauseDiv.innerHTML = '<h1 style="font-size: 44px; margin-bottom: 18px;">VOID DRIFT</h1><p style="font-size: 18px; opacity: 0.8;">Press SPACE to launch</p><p style="font-size: 14px; opacity: 0.7; margin-top: 10px;">WASD/Arrows move | Space brake | Shift thrust | Left click fire</p>';
     document.body.appendChild(pauseDiv);
 
-    this._unpauseHandler = (e) => {
+    this._startHandler = (e) => {
       if (e.code === 'Space') {
         e.preventDefault();
         const el = document.getElementById('pause-screen');
         if (el) document.body.removeChild(el);
-        window.removeEventListener('keydown', this._unpauseHandler);
+        window.removeEventListener('keydown', this._startHandler);
         this._isPaused = false;
         this._isRunning = true;
         this._lastTime = performance.now();
         this._animate();
       }
     };
-    window.addEventListener('keydown', this._unpauseHandler);
+    window.addEventListener('keydown', this._startHandler);
 
     this.renderer.render(this.scene, this.camera);
+  }
+
+  togglePause() {
+    if (!GameState.isAlive || this.isGameOver) return;
+    this._isPaused = !this._isPaused;
+
+    if (this._isPaused) {
+      this._showPauseOverlay();
+    } else {
+      this._hidePauseOverlay();
+      this._lastTime = performance.now();
+      this._animate();
+    }
+  }
+
+  _showPauseOverlay() {
+    if (this._pauseElement) return;
+    const distance = Math.floor(GameState.distance);
+    const credits = Math.floor(distance * Constants.ECONOMY.CREDIT_PER_KILOMETER);
+    const summary = [
+      'PAUSED',
+      `Distance : ${distance.toLocaleString()} units`,
+      `Credits  : ${credits}`,
+      `Score    : ${GameState.score.toLocaleString()}`,
+      `Hull     : ${Math.max(0, Math.ceil(GameState.health))}%`,
+    ].join('<br>');
+    const pauseDiv = document.createElement('div');
+    pauseDiv.id = 'pause-screen';
+    pauseDiv.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.45); z-index: 50; display: flex; align-items: center; justify-content: center; flex-direction: column; color: #aaccff; font-family: Courier New, monospace; text-shadow: 0 0 12px rgba(100,150,255,0.8); pointer-events: none;';
+    pauseDiv.innerHTML = `<h1 style="font-size: 44px; margin-bottom: 18px;">PAUSED</h1><p style="font-size: 16px; opacity: 0.85; line-height: 1.7;">${summary}</p><p style="font-size: 18px; opacity: 0.8; margin-top: 10px;">Press SPACE to resume</p>`;
+    document.body.appendChild(pauseDiv);
+    this._pauseElement = pauseDiv;
+  }
+
+  _hideContextMenu() {
+    const el = document.getElementById('context-menu');
+    if (el) document.body.removeChild(el);
+  }
+
+  _showContextMenu(x, y) {
+    this._hideContextMenu();
+    const menu = document.createElement('div');
+    menu.id = 'context-menu';
+    menu.style.cssText = `position: fixed; left: ${x}px; top: ${y}px; z-index: 60; min-width: 180px; background: rgba(4, 14, 28, 0.9); border: 1px solid rgba(90, 170, 255, 0.45); border-radius: 10px; padding: 8px 0; color: #aaccff; font-family: Courier New, monospace; text-shadow: 0 0 10px rgba(100,150,255,0.7); backdrop-filter: blur(6px);`;
+    const items = [
+      { label: 'Scan Target', action: 'scan' },
+      { label: 'Hold Position', action: 'hold' },
+      { label: 'Silence Audio', action: 'audio:toggle' },
+      { label: 'Toggle Bloom', action: 'bloom:toggle' },
+    ];
+    const frag = document.createDocumentFragment();
+    for (const item of items) {
+      const row = document.createElement('div');
+      row.textContent = item.label;
+      row.style.cssText = 'padding: 9px 16px; cursor: pointer; transition: background 0.15s;';
+      row.addEventListener('mouseenter', () => { row.style.background = 'rgba(90, 170, 255, 0.18)'; });
+      row.addEventListener('mouseleave', () => { row.style.background = 'transparent'; });
+      row.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._onContextMenuAction(item.action);
+        this._hideContextMenu();
+      });
+      frag.appendChild(row);
+    }
+    menu.appendChild(frag);
+    document.body.appendChild(menu);
+
+    const onClick = () => {
+      this._hideContextMenu();
+      window.removeEventListener('mousedown', onClick);
+    };
+    window.addEventListener('mousedown', onClick);
+  }
+
+  _onContextMenuAction(action) {
+    EventBus.emit('game:contextmenu', action);
+    if (action === 'audio:toggle') {
+      this.audio.toggleMute();
+    }
+  }
+
+  _hidePauseOverlay() {
+    const el = document.getElementById('pause-screen');
+    if (el) document.body.removeChild(el);
+    this._pauseElement = null;
   }
 
   _restart() {

@@ -14,6 +14,8 @@ class InputSystem {
     this.mouseY = 0;
     this._boundHandlers = new Map();
     this._invertY = false;
+    this._contextMenu = null;
+    this._mouseButtons = {};
   }
 
   setInvertY(v) {
@@ -64,15 +66,26 @@ class InputSystem {
       this.rawMouseX = (e.clientX / window.innerWidth) * 2 - 1;
       this.rawMouseY = (e.clientY / window.innerHeight) * 2 - 1;
     };
+    const onMouseDown = (e) => {
+      EventBus.emit('input:mousedown', e);
+      if (e.button === 2) {
+        EventBus.emit('input:contextmenu', { x: e.clientX, y: e.clientY });
+      }
+    };
 
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('mousemove', onMouseMove);
+    this._onContextMenu = (e) => e.preventDefault();
+    window.addEventListener('contextmenu', this._onContextMenu);
+    window.addEventListener('mousedown', onMouseDown);
 
     this._boundHandlers.set('destroy', () => {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('contextmenu', this._onContextMenu);
+      window.removeEventListener('mousedown', onMouseDown);
     });
   }
 

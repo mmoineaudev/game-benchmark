@@ -21,8 +21,8 @@ import { DeathScreen } from '../ui/DeathScreen.js';
 export class Game {
   constructor() {
     this._scene = new THREE.Scene();
-    this._scene.background = new THREE.Color(0x050510);
-    this._scene.fog = new THREE.Fog(0x0a0a1a, 8, 25);
+    this._scene.background = new THREE.Color(0x151525);
+    this._scene.fog = new THREE.Fog(0x151525, 12, 40);
 
     this._renderer = new THREE.WebGLRenderer({ antialias: true });
     this._renderer.setSize(window.innerWidth, window.innerHeight);

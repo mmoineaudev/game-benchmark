@@ -36,9 +36,9 @@ export class TerrainRenderer {
 
     const count = tiles.length;
     const geometry = new THREE.BoxGeometry(0.98, 0.98, 0.98);
-    const material = new THREE.MeshLambertMaterial({
-      vertexColors: false,
+    const material = new THREE.MeshStandardMaterial({
       roughness: 0.8,
+      metalness: 0.1,
     });
 
     this._mesh = new THREE.InstancedMesh(geometry, material, count);

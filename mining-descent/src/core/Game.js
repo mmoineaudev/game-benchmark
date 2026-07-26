@@ -109,7 +109,9 @@ export class Game {
     const dir = new THREE.DirectionalLight(0xffeedd, 0.8);
     dir.position.set(10, 30, 10);
     this._scene.add(dir);
-    this._scene.add(new THREE.DirectionalLight(0x8888ff, 0.3).position.set(-10, 20, -10));
+    const fill = new THREE.DirectionalLight(0x8888ff, 0.3);
+    fill.position.set(-10, 20, -10);
+    this._scene.add(fill);
   }
 
   _goToHub() {

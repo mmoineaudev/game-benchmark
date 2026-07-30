@@ -10,227 +10,279 @@ The entire gameplay is **vertical** — you dig down, find treasures, and desper
 
 ## Visual Style
 
-- **Low-poly pixel-retro 3D** — flat-shaded terrain layers with vertex-colored gradients. Think a cross-section of the earth in GameCube-era polygons.
-- **Top-down 3/4 view** — camera angled at 45-60 degrees, follows the vehicle. The terrain is exposed like a cutaway — walls on all sides reveal the dirt/stone/crystal layers you're digging through.
-- **Layered biomes** — distinct color bands as you go deeper:
-  - Topsoil (0-50m): brown/green, roots, small stones
-  - Rock layer (50-150m): gray/blue, compact stone, coal veins
-  - Crystal caverns (150-300m): cyan/purple, glowing crystal formations, open voids
-  - Magma core (300-500m): red/orange, lava pools, obsidian pillars, heat damage
-  - Alien remains (500m+): organic purple/green, bioluminescent, unknown structures
-- **Vehicle headlights** — cone-shaped spotlights that cut through fog. Essential for seeing at depth. Upgradable range and width.
-- **Drill effect** — particles and brief screen shake when digging. The terrain chunk pops away with a small dust burst.
-- **Ore glow** — rare ore veins emit a colored glow (blue for crystals, gold for rare minerals, green for alien artifacts).
-- **Bloom** — on glowing ores, lava, alien bioluminescence, and the player's headlights at max range.
-- **Fog** — heavy at depth. You can only see ~10 tiles in any direction. Headlights extend this to ~15 tiles.
+- **Low-poly pixel-retro 3D** — flat-shaded terrain layers with vertex-colored gradients.
+- **Angled top-down camera** — 47° angle (PI/3.8), distance 30 units, height 24 units, smooth lerp factor 4. Mouse drag orbits horizontally, A/E keys orbit, ZQSD pans camera, mouse wheel zooms (10–60 range).
+- **Cutaway rendering** — terrain is half-sectioned: tiles in the camera-direction quadrant are hidden (moved to transparent InstancedMesh with depthWrite=false) so the player can always see their vehicle and nearby enemies/ores.
+- **Layered biomes** — distinct color bands with depth thresholds:
+  - Topsoil (y=0): brown/green, roots, small stones
+  - Rock layer (y=1-25): gray-blue, compact stone, coal veins
+  - Crystal caverns (y=25-40): cyan/purple, glowing crystal formations, open voids
+  - Magma core (y=40-45): red/orange, lava pools, heat damage
+  - Alien remains (y=45-49): organic purple/green, bioluminescent
+- **Vehicle headlights** — cone spotlight from vehicle (range 15, angle 30°, intensity 1.2, color #ffffcc). Extends visible range beyond standard fog.
+- **Drill effect** — dust burst particles on dig (8 particles, 0.6s lifetime, 0.3 spread, additively blended).
+- **Ore glow** — pulsing emissive on ore tiles (speed 2.5 rad/s, intensity 0.15–0.55).
+- **Bloom** — threshold 0.5, strength 1.0 on glowing ores and headlights. Keeps it moody without washing out.
+- **Fog** — near 8 tiles, far 18 tiles. Color shifts from sky blue at surface to deep dark at depth.
 
 ## Tech Stack
 
 - Vite + Three.js (ES modules, `src/` directory)
-- No physics engine — simple grid-based movement and AABB collision
-- Terrain is a 3D grid of voxel-like cubes rendered as instanced meshes per layer
-- PostProcessing: bloom, optionally tone mapping for darkness adaptation
-- Constants.js, EventBus.js, GameState.js pattern (from game-architecture skill)
-- localStorage for meta-progression
+- No physics engine — simple grid-based movement (tile-by-tile lerp)
+- Terrain: dual InstancedMesh per layer (opaque + transparent cutaway), instances moved between meshes on camera rotation
+- PostProcessing: bloom (threshold 0.5, strength 1.0)
+- EventBus.js, GameState.js pattern (from game-architecture skill)
+- Logger.js for structured debug logging
+- localStorage for meta-progression (with validation + parse-failure fallback)
 
-## Core Mechanics
+## Controls
 
-### Movement & Digging
+All input uses **event.code**:
 
-- **Grid-based movement** — the vehicle occupies a 1x1 tile on a 3D grid. Move in 4 directions (up/down/left/right relative to camera) or dig downward.
-- **Digging** — press down while on a diggable tile. The vehicle drills through the tile below, consuming fuel and creating an open space.
-- **Vertical shaft** — you can also dig sideways (into the wall) to create horizontal tunnels. The terrain is fully destructible within reason.
-- **Falling** — if you dig under yourself or walk off an edge, you fall. Fall damage based on distance. Grapple (upgrade) stops fall damage.
-- **Ladder/climb** — you can climb back up through your own tunnels. Walking against a wall with no floor above = climb mode (consumes oxygen, slower).
-- **Jump jets** (upgrade) — brief vertical boost to reach higher ledges or escape pits.
+| Action | Key | Notes |
+|--------|-----|-------|
+| Move vehicle | Arrow keys | Camera-relative: up=away from cam, down=toward cam |
+| Dig | ArrowDown against solid tile | Consumes 1 fuel, 0.3s duration |
+| Climb | ArrowUp against wall (tile above is air) | Consumes O2 at climbing rate, 0.5s duration |
+| Pause | Escape | Toggle pause overlay |
+| Orbit camera left | A key | Rotates view CCW |
+| Orbit camera right | E key | Rotates view CW |
+| Pan camera | ZQSD | Z=forward, Q=left, S=back, D=right (AZERTY) |
+| Zoom camera | Mouse wheel | Range 10–60 |
+| Orbit camera (mouse) | Mouse drag (left button) | Horizontal orbit |
 
-### Terrain Generation
+Vehicle sits **on top** of tiles (worldY = -tileY). Movement is grid-based with 8 tiles/s lerp speed.
 
-The world is a vertical column of chunks, each chunk being a 16x16x(terrain height) grid of tiles. Generate top-down:
+## World & Terrain
 
-1. **Surface terrain** — gentle hills, resource outpost at center, cave entrance somewhere on the surface
-2. **Layer boundaries** — depth thresholds where biome transitions happen. Each layer has its own tile palette.
-3. **Ore vein placement** — Poisson disk sampling for ore clusters. Rarer ores spawn deeper. Veins are blob-shaped (cellular automata growth from a seed tile).
-4. **Cave networks** — carve open spaces using a cellular automata or drunkard's walk. Caves create shortcuts between depth layers.
-5. **Pocket rooms** — larger open chambers at key depths. These contain special content: a crashed probe (loot), a creature nest, an alien artifact, a geothermal vent (free energy).
-6. **Enemy spawns** — per-biome creature tables. Spawn distance from player and density based on depth and danger level.
-7. **Exit guarantee** — the descent shaft must be survivable. There's always a path back up (you dig it yourself, mostly).
-8. **Vertical connectivity** — cave networks that cross biome boundaries create natural routes for ambitious runs.
+### Dimensions
+- World: 40 wide × 40 deep × 50 tall tiles (W×D×H)
+- Surface at y=0, deepest at y=49
+- Cave entrance at grid center (20, 0, 20)
+- Tile size: 1 unit (each tile is a 1×1×1 box)
+- Surface layer: all tiles at y=0 are solid SURFACE
 
-### Resources
+### Tile types
+```
+AIR = 0       — empty space (dug out or never filled)
+SURFACE = 1   — grass/green, indestructible
+ROCK = 2      — diggable stone (gray-blue)
+COAL_ORE = 3  — dark brown, coal vein
+COPPER_ORE = 4 — warm orange, copper vein
+```
+Future: CRYSTAL_ORE, GOLD_ORE, LAVA, ALIEN_ORE.
 
-Spend resources to descend further. Manage all three:
+### Generation algorithm
+1. Fill all tiles at y=0 with SURFACE (indestructible, blocks digging upward)
+2. Fill y=1 through y=WORLD_MAX_Y with ROCK
+3. Carve entrance shaft: clear 3×3 column at cave entrance from y=0 to y=3
+4. Place ore veins: for each ore type, pick a random seed tile within depth range, then grow via 4-directional flood fill (Poisson-like spreading, each neighbor has 70% chance to become ore). Repeat for veinCount iterations per ore type.
+5. Cave pockets: for each ore type's depth range, carve a few large open chambers (3-5 tiles radius) using cellular automata smoothing
 
-| Resource | Use | Starts with | Replenish |
-|----------|-----|-------------|-----------|
-| **Fuel** | Digging each tile costs 1 fuel. Moving on open tiles costs 0. | 50 | Buy at surface outpost, find fuel caches in caves, drill into fuel deposits |
-| **Oxygen** | Passive drain per second (0.5/sec sitting, 1/sec moving, 2/sec climbing). | 120 (2 min) | Buy at surface, find emergency tanks in caves, extract from alien flora |
-| **Hull** | Your HP. Creature attacks, rockfalls, lava contact, fall damage. | 100 | Buy repairs at surface, rare hull repair kits in deep caves |
+### Digging
+- Moving onto a ROCK or ORE tile triggers dig action
+- Dig costs 1 fuel per tile, takes 0.3s
+- Dug tile becomes AIR (open space)
+- Surface tiles (y=0) cannot be dug (prevents digging upward out of the world)
+- Digging sideways (horizontal) creates tunnels
+- Digging downward: you fall into the new space
 
-Run ends when any reaches 0 (fuel = stranded, oxygen = suffocate, hull = destroy).
+### Falling
+- If vehicle is on an AIR tile (below was just dug, or walked into a void), it falls
+- Fall damage: 5 hull per tile fallen beyond 2 tiles
+- Falls are instant (no animation during fall, just reposition)
 
-### Ore Types & Value
+### Climbing
+- ArrowUp against a wall tile (adjacent has ROCK/ORE/SURFACE, tile above you is AIR)
+- Consumes O2 at 2.0/sec during climb
+- Takes 0.5s to climb up one tile
+- Vehicle tilts visually during climb
 
-| Ore | Depth Range | Color | Per-unit value | Use |
-|-----|-------------|-------|----------------|-----|
-| Coal | 0-100m | Dark brown/black | 1 | Fuel (can burn 1 coal = +5 fuel) |
-| Copper | 50-200m | Orange | 5 | Meta-progression currency (common upgrades) |
-| Silver | 100-300m | Grey/white metallic | 15 | Meta-progression (mid-level upgrades) |
-| Gold | 200-400m | Yellow glow | 30 | Meta-progression (high-level upgrades) |
-| Crystal | 150-350m | Cyan glow | 20 | Meta-progression + crafted into headlight upgrades |
-| Alien Artifact | 400m+ | Green/purple glow | 100 | Meta-progression (rare, unlocks special upgrades) |
+## Resources
 
-Each ore vein yields 3-8 units. Carried in cargo hold (max 20 units base, upgradable).
+| Resource | Start | Drain | Dig cost | Replenish |
+|----------|-------|-------|----------|-----------|
+| Fuel | 50 | 0 (only on dig) | 1/tile | Coal burning (post-MVP), fuel caches (post-MVP) |
+| Oxygen | 120s worth | 0.5/s idle, 1.0/s moving, 2.0/s climbing | — | O2 tanks (post-MVP) |
+| Hull | 100 | Enemy hits, falls (>2 tiles) | — | Repair kits (post-MVP), surface repair (post-MVP) |
 
-### Enemies
+Run ends instantly when any resource reaches 0:
+- Fuel=0 → "ENGINE STALLED — STRANDED"
+- Oxygen=0 → "OXYGEN DEPLETED — SUFFOCATED"  
+- Hull=0 → "HULL BREACH — DESTROYED"
 
-| Creature | Biomes | Shape | Behavior | HP | Damage |
-|----------|--------|-------|----------|----|--------|
-| Stone Mite | Rock, Crystal | Sphere with legs | Scuttles toward player, small, fast | 1 | 5 |
-| Crystal Shard | Crystal | Sharp tetrahedron | Stationary turret, fires crystal shards when player is near | 2 | 10 |
-| Lava Leech | Magma | Elongated snake-like | Burrows through lava, emerges to attack | 3 | 20 |
-| Alien Spore | Alien Remains | Floating orb with tendrils | Drifts toward player, explodes on death (AoE) | 1 | 15 |
-| Guardian Golem | Cross-biome (deep) | Large box + pillar legs | Slow, charges when hit. Boss-tier. | 8 | 30 |
+## Ores & Cargo
 
-Enemies are simple low-poly models with fresnel rim shaders and biome-tinted rim colors.
+| Ore | Depth | Color | Per-unit value | Vein size | Vein count | Glow |
+|-----|-------|-------|----------------|-----------|------------|------|
+| Coal | y=1-25 | 0x3a2a1a | 5 (MVP) | 4-8 | 12 | 0x8b6914 |
+| Copper | y=20-49 | 0xd4842a | 5 (MVP) | 3-7 | 10 | 0xd4842a |
 
-### Meta-Progression (Surface Base)
+MVP simplifies: both ores worth 5 currency. Full game uses differentiated values (coal=1, copper=5, silver=15, gold=30, crystal=20, alien=100).
 
-The **Surface Outpost** is the hub — a small collection of domes and equipment bays on the planet surface. Purchase permanent upgrades with ore brought back from successful descents.
+- Cargo hold: max 20 units base
+- Ore conversion to currency: 1:1 in MVP (full game uses per-ore values)
+- Inventory tracked as `{ oreType: count }` per type
 
-**Workshop** — vehicle upgrades:
-- Drill power (faster dig, -1 fuel per tile → -2 at max)
-- Fuel tank (+25 per level, 3 levels)
-- Oxygen tank (+60 per level, 3 levels)  
+## Enemies
+
+| Creature | Biomes | Shape | HP | Damage | Speed | Aggro range | Special |
+|----------|--------|-------|----|--------|-------|-------------|---------|
+| Stone Mite | Rock | Sphere + legs | 1 | 5 | 2.5 tiles/s | 10 tiles | Scuttles directly toward player |
+| Crystal Shard | Crystal | Sharp tetrahedron | 2 | 10 | 0 | 8 tiles | Stationary, fires projectile when player near |
+| Lava Leech | Magma | Elongated snake | 3 | 20 | 3.0 | 12 tiles | Burrows through lava, emerges to attack |
+| Alien Spore | Alien | Floating orb + tendrils | 1 | 15 | 2.0 | 10 tiles | Explodes on death (AoE 3 tiles) |
+| Guardian Golem | Cross-biome | Box + pillar legs | 8 | 30 | 1.0 | 15 tiles | Charges when hit, boss-tier |
+
+Enemy spawn: placed during terrain generation at random positions in valid depth ranges, at least 8 tiles from player start position. Enemies remain dormant until player enters aggro range, then activate AI.
+
+All enemies use fresnel rim shaders. Death animation: scale to 0 + fade over 0.4s.
+
+## Meta-Progression (Surface Outpost)
+
+Stored in localStorage key `mining_descent_meta` with JSON validation (parse failure → reset to defaults).
+
+### Per-run flow
+1. Player arrives at surface with ore cargo
+2. Ore converted to currency at 1:1 ratio
+3. Currency can be spent on permanent upgrades in the workshop
+4. Run stats recorded: deepest depth, ores collected, enemies killed
+
+### MVP upgrades (Workshop)
+| Upgrade | Effect | Cost | Max level |
+|---------|--------|------|-----------|
+| Fuel Tank +25 | +25 max fuel per level | 50 currency | 3 |
+
+### Post-MVP upgrades
+- Oxygen tank (+60 per level, 3 levels)
 - Hull plating (+25 per level, 4 levels)
 - Cargo hold (+5 slots per level, 3 levels)
-- Headlights (range +3 tiles, width +2 tiles per level, 3 levels)
-- Jump jets (unlock, then +1 height per level, 2 levels)
-- Grapple (unlock — stop fall damage, traverse gaps)
+- Headlights (range +3, width +2 per level, 3 levels)
+- Jump jets (unlock 150, +1 height per level, 2 levels)
+- Grapple (unlock 200 — negate fall damage, traverse gaps)
 
-**Crafting station** — crafted tools from rare ores:
-- Emergency beacon (survive one death-per-run, teleport to surface with current cargo)
-- Sonic repeller (enemies flee for 30s)
-- Deep drill (dig 2 tiles simultaneously for 3x fuel cost)
-- Scanner pod (reveals all ores within 15 tiles for 60s)
+### Post-MVP: Crafting station
+- Emergency beacon: survive one death per run (cost: 5 crystal + 10 silver)
+- Sonic repeller: enemies flee 30s (cost: 3 crystal)
+- Deep drill: dig 2 tiles at once for 3× fuel (cost: 10 copper + 5 silver)
+- Scanner pod: reveal ores within 15 tiles for 60s (cost: 3 gold)
 
-**Hangar** — alternate vehicles (unlock with rare ore):
-- "Mole" — +20 hull, +40 fuel, slower movement, cargo 15
-- "Scarab" — +30 fuel, +60 oxygen, faster movement, cargo 10, built-in headlight upgrade
-- "Reaper" — +40 hull, built-in ram attack (damages enemies on contact), cargo 8
+### Post-MVP: Hangar vehicles
+- "Mole": +20 hull, +40 fuel, slower, cargo 15 (cost: 100 currency)
+- "Scarab": +30 fuel, +60 O2, faster, cargo 10, built-in headlights (cost: 150)
+- "Reaper": +40 hull, ram attack damages enemies on contact, cargo 8 (cost: 200)
 
-**Data terminal** — run history records: deepest depth reached, most ore hauled, creatures killed, total runs. Achievements unlock cosmetic upgrades (vehicle colors, trail colors, hub decorations).
+### Post-MVP: Run history
+Data terminal tracks: deepest depth, most ore hauled, creatures killed, total runs. Cosmetic unlocks at milestones.
 
 ## Architecture
 
 ```
 src/
   core/
-    Game.js              — orchestrator, state machine (HUB/DESCENT/SURFACE/DEATH)
-    EventBus.js          — singleton
-    GameState.js         — singleton, per-run state (depth, fuel, O2, hull, inventory, position, discovered tiles)
-    Constants.js         — ALL tile types, ore defs, enemy stats, upgrade costs, biome colors
+    Game.js              — orchestrator: init, RAF loop, state machine (hub/descent/death)
+    EventBus.js          — singleton: domain:action events + Events constants
+    GameState.js         — singleton: per-run state + meta state, clean reset, localStorage
+    Constants.js         — ALL config: world size, tiles, ores, enemies, resources, camera, particles
+    Logger.js            — structured debug logging with tags + levels
   systems/
-    Input.js             — event.code, camera-relative 4-direction movement
-    Camera.js            — angled top-down follow, smooth lerp, zoom on hub
-    TerrainGenerator.js  — procedural world: chunk generation, biome layers, ore veins, cave networks, pocket rooms
-    DigSystem.js         — tile removal, chunk updates, falling, climbing, drill animation triggers
-    ResourceSystem.js    — fuel/O2/hull tracking, passive drain, resource pickup processing
-    OreManager.js        — ore vein state, mining yield, inventory management, cargo limit
-    EnemyManager.js      — spawn per biome, AI (scuttle/turret/burrow/drift/charge), death drops, respawn avoidance
-    CaveGenerator.js     — cellular automata for cave voids, drunkard's walk for tunnels, room pocket carving
-    MetaProgression.js   — localStorage persistence, upgrade levels, unlocked vehicles, run history
-    ParticleSystem.js    — drill dust, ore pickup sparkle, creature death burst, lava bubble, engine particle
+    Input.js             — event.code: Arrow keys (vehicle), ZQSD (camera pan), A/E (orbit), mouse (drag orbit), wheel (zoom)
+    Camera.js            — angled follow (47°), cutaway-aware, smooth lerp, pan offset tracking
+    TerrainGenerator.js  — procedural 3D grid: surface layer, rock fill, ore veins (flood-fill spread), cave carving, entrance shaft
+    DigSystem.js         — tile removal trigger, falling detection, climbing trigger, dig animation
+    ResourceSystem.js    — fuel/O2/hull tracking with passive drain per state
+    OreManager.js        — inventory tracking, cargo limit enforcement, pickup processing
+    EnemyManager.js      — per-enemy AI (scuttle/turret/drift), aggro range activation, death handling
+    MetaProgression.js   — localStorage persistence, JSON validation, upgrade purchase, run history
+    ParticleSystem.js    — drill dust, ore glow pulse, death burst, engine exhaust
   entities/
-    Vehicle.js           — player vehicle model, movement, states (idle/dig/climb/fall/jump/hurt/dead)
-    Creature.js          — enemy base class with configurable AI patterns
-    OreDeposit.js        — visual ore cluster with glow, collision trigger for mining
-    Pickup.js            — fuel cans, O2 tanks, repair kits, ore chunks (for display-only)
+    Vehicle.js           — player model, grid movement, state machine (idle/move/dig/climb/fall/hurt/dead)
+    Creature.js          — enemy base: patrol, aggro, chase, attack, death
+    OreDeposit.js        — visual ore cluster with glow shader, mining trigger zone
   visuals/
-    ModelFactory.js      — vehicle models (3 types), creature models (5 types), hub buildings, drill attachment
-    TerrainRenderer.js   — instanced mesh chunk rendering, tile type color mapping, dynamic updates on dig
-    CaveRenderer.js      — open space rendering (darker fog, ambient light from bioluminescence)
-    HeadlightEffect.js   — spotlight cone from vehicle, upgradable range/width, fog intensity reduction in cone
-    Shaders.js           — fresnel rim (enemies), ore glow pulse, lava emissive, crystal refraction effect
+    ModelFactory.js      — vehicle mesh (body + drill + wheels), enemy meshes (5 types)
+    TerrainRenderer.js   — dual InstancedMesh (opaque + transparent cutaway), instance migration on camera move
+    HeadlightEffect.js   — cone spotlight from vehicle, cuts through fog, upgradable params
+    Shaders.js           — fresnel rim, ore glow pulse (sine emissive), enemy dissolve
   ui/
-    HUD.js               — DOM overlay: depth meter, fuel/O2/hull bars, ore inventory (clickable to view types), minimap
-    Minimap.js           — DOM canvas: revealed tiles, ore markers, enemy blips, player position, depth layer color
-    WorkshopUI.js        — DOM overlay: upgrade tree with costs, current level, visual icons per upgrade
-    DeathScreen.js       — DOM overlay: depth reached, ores lost, meta-progression ore conversion, upgrade options
-    ReturnScreen.js      — DOM overlay: successful return summary, ore count per type, meta-progression earned
-    EncounterPopup.js    — DOM overlay: brief text popup for discoveries ("Ancient alien structure... +1 Artifact!")
+    HUD.js               — DOM overlay: depth, fuel/O2/hull bars, ore counter, phase indicator
+    Minimap.js           — DOM canvas: discovered tiles (white on black), player dot (yellow), ore markers
+    WorkshopUI.js        — DOM panel: upgrade list with costs, current levels, purchase buttons
+    DeathScreen.js       — DOM overlay: death cause, depth reached, ore lost, meta currency earned, "Return to Hub" button
 ```
 
 ## Game Flow
 
 ```
 SURFACE OUTPOST (hub)
-  → buy upgrades with brought-up ore from previous runs
-  → enter vehicle, approach cave entrance
+  → view workshop, buy upgrades with currency from previous runs
+  → press button to START DESCENT
   → DESCENT PHASE:
-    → dig down through layers
-    → manage fuel/O2/hull
-    → mine ore veins
-    → fight or avoid creatures
-    → discover cave pockets, shortcuts, secrets
-    → decide: go deeper for richer ore, or head back up with current haul
-  → RETURN PHASE (reversing the descent):
-    → climb back through your tunnel network
-    → if you die at depth, lose everything carried
-    → if you reach surface, convert ore to meta-progression credits
-  → SURFACE OUTPOST: spend credits, upgrade, launch next run
+    → start at cave entrance (20, 0, 20) at y=0
+    → ArrowDown to dig, Arrow keys to navigate tunnels
+    → manage fuel (digging), O2 (time + climbing), hull (enemies + falls)
+    → mine ore veins by digging into them (auto-added to cargo)
+    → fight or avoid creatures (aggro at 10 tiles)
+    → decide: go deeper or head back up?
+  → RETURN PHASE:
+    → climb back through your tunnel network (ArrowUp)
+    → climbing costs 2× O2 — plan your return
+    → reach surface (y=0 at entrance) → automatically transition to hub
+  → DEATH AT ANY POINT:
+    → death screen with cause + stats
+    → all carried ore is LOST
+    → press button → return to hub
+  → SUCCESSFUL RETURN:
+    → ore converted to currency (1:1)
+    → spend currency on upgrades
+    → next run: upgrades applied (fuel tank bonus, etc.)
+  → Repeat
 ```
-
-### The Return Tension
-
-The core roguelite tension: **go deeper for bigger rewards, but the return trip consumes resources too.** Climbing back up costs oxygen (slower than digging down) and leaves you vulnerable to enemies you didn't kill. The deeper you go, the harder the return. This creates natural decision points — "I'm at 30% O2 and 150m deep. The gold vein is 50m below but I might not make it back."
-
-Cave shortcuts and discovered tunnels reduce return costs. Jump jets and grapple mitigate fall damage. The smart player plans an efficient descent path.
 
 ## Scope-Limited MVP
 
-1. **1 biome** (Rock layer, 50-150m depth). No biome transition yet. Surface terrain is a flat green field with a cave hole.
-2. **1 enemy**: Stone Mite (scuttles toward player, 1 HP, 5 damage)
-3. **2 ores**: Coal (brown, common) and Copper (orange, common). Both worth 5 meta-currency.
-4. **Vehicle**: Base model only. Movement + dig + climb. No jump jets, no grapple.
-5. **Terrain**: 20x20 tile grid surface, descending 50 tiles deep. Each tile is a colored box (instanced mesh). Simple drill animation (brief shake + dust particles).
-6. **Resources**: Fuel (start 50, dig costs 1 per tile), O2 (start 120, drains at 0.5/sec). No hull damage yet (enemies do damage later).
-7. **1 upgrade**: Fuel tank +25 (1 level, costs 50 ore)
-8. **Visual**: Headlights (basic cone, fixed range), fog, ore glow shader (pulsing emissive on copper), simple starfield on surface
-9. **HUD**: fuel bar, O2 bar, ore counter, depth counter
-10. **Hub**: Single dome with one upgrade panel. No crafting, no hangar, no achievements.
-11. **Death**: Fuel = 0 → message "STARVED" → death screen with ore count → back to hub. O2 = 0 → "SUFFOCATED" → same.
-12. **Meta-progression**: ore carried to surface converts to persistent currency (1:1). Spent on fuel tank upgrade.
+1. **1 biome** (Rock layer, y=1-49, all gray-blue rock)
+2. **1 enemy**: Stone Mite (scuttles, 1 HP, 5 damage, 10 tile aggro)
+3. **2 ores**: Coal (y=1-25) and Copper (y=20-49), both worth 5 currency each
+4. **Vehicle**: base model, grid movement + dig + climb. No jump jets, no grapple.
+5. **World**: 40×40×50 grid, InstancedMesh rendering with cutaway
+6. **Resources**: Fuel start 50 (dig cost 1/tile), O2 start 120s (drain 0.5/1.0/2.0), Hull 100
+7. **1 upgrade**: Fuel Tank +25 (costs 50 currency, max 3 levels)
+8. **Visual**: headlights (spotlight cone, fixed), fog (near 8/far 18), ore glow shader, dust particles, starfield
+9. **HUD**: fuel bar, O2 bar, hull bar, ore counter, depth counter
+10. **Hub**: workshop panel (fuel tank upgrade)
+11. **Death**: any resource=0 → death screen with cause → back to hub. Ore lost on death.
+12. **Meta-progression**: ore→currency 1:1, localStorage with JSON validation, upgrades persist
 
 ## Visual Polish Checklist
 
-- [ ] Drill dust burst (small brown sphere particles on each dig, additive blending fast fade)
-- [ ] Ore glow pulse (emissive sine wave on ore cluster tiles, color-coded by type)
-- [ ] Headlight cone (spotlight following vehicle direction, visible fog cone intersects terrain)
-- [ ] Cave darkness (outside headlight cone, very dark fog; inside cone, clear visibility)
-- [ ] Enemy fresnel rim shader (colored edge glow, biome-tinted)
-- [ ] Enemy death burst (small colored particles + scale-to-zero fade)
-- [ ] Fuel pickup can (small metallic cylinder, yellow glow, appears in caves)
-- [ ] O2 pickup tank (white cylinder with blue stripe, blue glow)
-- [ ] Ore chunk visual (glowing small polyhedron in cargo, visible on vehicle)
-- [ ] Engine exhaust (small downward-facing particle stream while vehicle is active)
-- [ ] Fall effect (camera dips slightly, brief screen shake on landing, dust ring on impact)
-- [ ] Climb animation (vehicle tilts against wall, headlight points along climb direction)
-- [ ] Surface transition (light gets brighter as you approach z=0, fog color shifts from dark to sky blue)
-- [ ] Layer boundary visual (brief colored band transition when crossing biome depth threshold — for later)
-- [ ] Bloom on glowing ores and headlights (threshold 0.5, strength 1.0 to keep it moody, not washed out)
-- [ ] Distance fog that matches biome color (brown at rock layer, blue for crystal, red for magma)
-- [ ] Visible tunnel from above (surface hole shows darkness, depth visualized as the tunnel recedes)
-- [ ] Ore counter animation (on pickup, the UI counter ticks up with a bounce)
+- [ ] Drill dust burst (8 brown particles, 0.6s lifetime, additive blend)
+- [ ] Ore glow pulse (emissive sine wave 2.5 rad/s, intensity 0.15–0.55, color-coded)
+- [ ] Headlight cone (spotlight: angle 30°, range 15, intensity 1.2, color #ffffcc)
+- [ ] Cave darkness (fog near 8/far 18, headlight extends visibility)
+- [ ] Enemy fresnel rim shader (dark center, colored edge glow, biome-tinted)
+- [ ] Enemy death burst (particles + scale-to-zero fade 0.4s)
+- [ ] Engine exhaust (small downward particle stream while vehicle is active)
+- [ ] Fall effect (instant reposition, dust ring on impact)
+- [ ] Climb animation (vehicle tilts against wall, headlight adjusts)
+- [ ] Surface transition (fog color shifts from deep dark to sky blue near y=0)
+- [ ] Bloom on glowing ores and headlights (threshold 0.5, strength 1.0)
+- [ ] Distance fog matching biome (brown/gray at rock layer)
+- [ ] Visible tunnel from above (surface hole shows darkness below)
+- [ ] Ore counter animation (UI counter ticks up with bounce on pickup)
+- [ ] Cutaway terrain (quadrant hiding, dual InstancedMesh migration)
 
 ## Pitfalls to Avoid
 
-- **Getting lost in your own tunnels** — the minimap is essential from MVP. Without it, the player can't find their way back to the surface. Implement minimap showing dug tiles from day one.
-- **Fuel deadlock** — if digging costs fuel and fuel is found underground, there must always be at least one fuel cache within reach of the starting fuel. Guarantee a coal vein within 5 tiles of the entrance.
-- **Climbing oxygen tax** — climbing back up costs 2x O2 per second. This is intentional for tension, but make sure the player can see their O2 rate clearly so they can plan their return.
-- **Ore-to-credit balance** — a successful MVP run should net ~15-25 ore (5-8 veins, 3 ore each). Fuel tank upgrade costs 50. That means 2-3 successful runs for the first upgrade. Adjust if it feels grindy.
-- **Terrain render performance** — 50 deep x 20 wide x 20 deep = 20,000 tiles. Use InstancedMesh (one draw call per material/tile-type combo), not individual Mesh objects. Update instance matrices on dig, don't recreate geometry.
-- **Dig through surface** — prevent digging up through the surface (z=0). The exit is the cave entrance, not a hole in the ground.
-- **Camera collision** — camera is top-down and can clip through terrain cleverly. Use an orbit angle that's high enough to see into the tunnel but not blocked by overhangs. The cutaway approach (terrain is half-sectioned) avoids this entirely.
-- **event.key breaks AZERTY** — use `event.code` for movement (arrow keys or WASD in camera-relative orientation).
-- **Restart cleanup** — terrain regenerates, vehicle resets, inventory empties, all event listeners removed. Test 3x restart.
+- **Getting lost** — minimap is mandatory from day one. Shows discovered tiles (white), player dot (yellow), ore markers. 150×150px DOM canvas.
+- **Fuel deadlock** — guarantee a coal vein within 5 tiles of entrance. If the player somehow mines all fuel and can't reach any, they die (intentional design — go back up earlier next time).
+- **Climbing oxygen tax** — climbing uses 2× O2. Player must see O2 drain rate clearly in HUD so they can plan returns.
+- **Ore balance** — successful MVP run should net ~15-25 ore (3-5 veins, 3-7 ore each). Fuel tank costs 50 = 2-3 successful runs. Tune if grindy.
+- **Terrain performance** — 40×40×50 = 80,000 tiles. Use dual InstancedMesh (one draw call per material/tile-type). Update instance matrices on dig; don't recreate geometry. Transparent mesh uses depthWrite=false.
+- **Dig through surface** — surface tiles (y=0, TILE_SURFACE) are indestructible. Prevents digging a new exit anywhere.
+- **Camera collision** — cutaway approach (hide tiles in camera quadrant) eliminates all camera-vs-terrain issues. Tiles are hidden before the camera can clip them.
+- **AZERTY** — use event.code throughout. Vehicle: Arrow keys. Camera: ZQSD + A/E. All documented in both layouts.
+- **Restart cleanup** — terrain regenerates, vehicle resets, inventory empties, all event listeners removed. Test 3× restart.
+- **Cutaway direction** — the hidden quadrant is determined by camera angle mod PI/2. Tiles in that quadrant get moved from opaque to transparent InstancedMesh. Update on every camera rotation change.
+- **Falling is instant** — no smooth fall animation in MVP. If vehicle is on AIR tile, immediately resolve fall: calculate distance to first solid tile below, apply damage, snap position.
+- **localStorage corruption** — wrap JSON.parse in try/catch, reset to _metaDefault() on failure. Never crash on corrupted save data.

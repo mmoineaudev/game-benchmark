@@ -8,222 +8,337 @@ The camera is an angled top-down third-person view (like Diablo or Hades), follo
 
 ## Visual Style
 
-- **GameCube pixel-retro 3D** — low-poly geometry, flat-shaded or vertex-colored. Think Wind Waker dungeons but darker. Limited color palette per biome (earth tones for crypt, blues/cyan for ice, reds/oranges for lava).
-- **Angled top-down camera** — 45-60 degree angle, follows player. Room interiors are visible with walls that lower or become transparent when the player enters (classic dungeon crawler camera trick). Alternatively, use a true 3D camera that clips through near walls.
-- **Fog** — distance fog in each room. Close rooms feel moody and atmospheric; distant geometry fades. Fog color matches the biome.
-- **Bloom** — subtle bloom on glow elements (torches, magic effects, health pickups, portal to next floor). Keeps the retro glow without washing out the scene.
-- **Dynamic lighting** — the player carries a small torch/glow that lights the immediate area. Torches on walls provide ambient light. Dark rooms exist where only the player's light reveals enemies.
-- **Enemies** — low-poly geometric creatures (spheres, boxes, cones, octahedra) with fresnel rim shaders. Colored edges pop against dark stone floors.
-- **Player** — a simple low-poly knight/character: body, head, shield arm, sword arm, legs. Named children for animation hooks (`_body`, `_head`, `_swordArm`, `_shieldArm`, `_legs`). Idle bob, walk cycle, attack swing, hurt stagger.
-- **Dungeon architecture** — floors are tiled with a grid texture (stone/moss/ice/lava pattern). Walls are extruded boxes or merged geometry. Doors are archways with a different colored frame. Corridors are 2-3 tiles wide with wall sconces.
+- **GameCube pixel-retro 3D** — low-poly geometry, flat-shaded or vertex-colored. Limited color palette per biome (earth tones for crypt, blues/cyan for ice, reds/oranges for lava).
+- **Angled top-down camera** — 55° angle, position offset (0, 18, -12) from player, FOV 60, looking at player + (0, 0, 2). Smooth lerp follow. Walls between camera and player become semi-transparent (camera-clip-through approach — simpler than wall lowering).
+- **Fog** — exponential fog, density 0.008, color matches biome. Hides distant geometry, moody atmosphere.
+- **Bloom** — threshold 0.3, strength 0.6, radius 0.5. Torches glow, white geometry stays readable.
+- **Dynamic lighting** — player carries torch (point light: #ffcc88, intensity 0.8, range 6, decay 2). Wall torches provide ambient light (point light: #ff9944, intensity 1.5, range 8, decay 2). Torch flicker: intensity × sin(time × 8 + seed) × 0.15 + light position jitter ±0.05.
+- **Enemies** — low-poly geometric creatures with fresnel rim shaders. Dark center, colored edge glow.
+- **Player** — low-poly knight: body, head, shield arm, sword arm, legs. Named children: `_body`, `_head`, `_swordArm`, `_shieldArm`, `_legs`. States: idle (gentle bob), run (bob ×1.5), dodge (tuck + roll), attack (swing arm), hurt (stagger + flash), dead (dissolve).
+- **Dungeon architecture** — tiled floors (grid texture), walls 3 units tall (extruded boxes), doors as archways, corridors 2 tiles wide with wall sconces.
 
 ## Tech Stack
 
-- Vite + Three.js (ES modules, no bundler complexity)
-- `src/` directory structure following game-architecture patterns
-- PostProcessing via three/addons (`EffectComposer`, `UnrealBloomPass`, `RenderPass`)
-- No physics engine — simple AABB collision on the 2D grid (player and enemies move in the XZ plane)
-- All constants in `Constants.js` — zero magic numbers in game logic
-- All cross-module communication via `EventBus.js` (singleton, `domain:action` format)
-- Game state in `GameState.js` (singleton, clean `.reset()`, persistent meta-progression in localStorage)
-- Systems: `Input.js`, `Player.js`, `Camera.js`, `DungeonGenerator.js`, `RoomManager.js`, `EnemyManager.js`, `LootManager.js`, `MetaProgression.js`, `UIManager.js`
-- Orchestrator: `Game.js` — initializes all systems, main loop, state machine (BOOT → HUB → DUNGEON → DEATH → HUB)
+- Vite + Three.js (ES modules)
+- `src/` directory following game-architecture patterns
+- PostProcessing via three/addons (EffectComposer, UnrealBloomPass, RenderPass)
+- No physics engine — simple AABB collision on XZ plane
+- All constants in `Constants.js`
+- All cross-module communication via EventBus.js (`domain:action` format)
+- GameState.js singleton with clean `.reset()`, meta-progression in localStorage
 
-## Core Mechanics
+## Controls
 
-### Movement (top-down XZ plane)
-- WASD movement in 8 directions, relative to camera angle (so W always moves "up" on screen)
-- Dodge roll (Space) — brief invincibility frames, short dash in movement direction, cooldown ~2s
-- Attack (left click or E) — melee swing in facing direction, hitbox is an arc in front of player
-- Interact (F) — open chests, pick up items, descend stairs
-- All input bound by `event.code` for AZERTY/QWERTY compatibility
+All input uses **event.code** for AZERTY/QWERTY compatibility:
 
-### Procedural Dungeon Generation
+| Action | AZERTY | QWERTY (equivalent) | Notes |
+|--------|--------|---------------------|-------|
+| Move | ZQSD | WASD | Camera-relative, 8-directional |
+| Dodge roll | Space | Space | Dash in movement direction, 2s cooldown |
+| Attack | E or Left Click | E or Left Click | Melee swing in facing direction |
+| Interact | F | F | Open chests, pick up items, descend stairs, talk to NPCs |
+| Pause | Escape | Escape | Pause overlay |
 
-1. **Floor layout** — a grid of rooms (e.g. 5x5 for small, 7x7 for larger). Each floor picks N rooms from a pool and places them with guaranteed connectivity.
-2. **Room types**:
-   - **Spawn room** — safe, no enemies, has a shopkeeper or starting gear pedestal
-   - **Combat room** — 3-8 enemies of 1-2 types, some with environmental hazards (spikes, pits)
-   - **Treasure room** — 0-1 enemies, guaranteed chest with weapon/upgrade/gold
-   - **Challenge room** — locked until cleared, harder enemies, better reward (e.g. heart container)
-   - **Shop room** — NPC vendor, spend gold on upgrades between floors
-   - **Boss room** — unique boss enemy, 2 attack patterns, guaranteed ability upgrade or heart container
-   - **Exit room** — stairs down to next floor (always placed last in the guaranteed path)
-3. **Connectivity guarantee** — A* path from spawn to exit via a spanning tree algorithm. Fill remaining cells with optional rooms. Corridors connect adjacent rooms.
-4. **Room templates** — each room type has 3-5 layout templates (wall positions, pillar positions, door positions, enemy spawn points, chest positions). Template choice is random per generation.
-5. **Difficulty scaling** — each floor increases enemy count, enemy HP, enemy speed, trap density. Every 5 floors is a "boss floor" with a major challenge.
+### Camera-relative movement
+```
+forward = normalize(cameraForward projected on XZ plane)
+right   = normalize(cameraRight projected on XZ plane)
+direction = normalize(forward × (Z-S) + right × (Q-D))
+```
 
-### Room Templates (data-driven)
+## Player Stats
 
+| Stat | Value | Notes |
+|------|-------|-------|
+| Collision radius | 0.4 units | Cylinder on XZ plane |
+| Move speed | 6.0 units/s | Base, +30% with speed boots |
+| Max hearts | 3 (base), 5 (max) | +1 per heart container from boss |
+| Dodge distance | 4 units | Over 0.2s, 0.15s iframes |
+| Dodge cooldown | 2.0s | |
+| Attack arc | 120° (base sword) | Varies by weapon |
+| Attack range | 1.5 units (base) | Varies by weapon |
+| Attack duration | 0.3s (base) | Varies by weapon |
+| Pickup range | 1.0 unit | 2.0 with magnet item |
+
+### Player state priority
+`dead` > `hurt` > `dodge` > `attack` > `interact` > `idle`/`run`
+Cannot attack during dodge or hurt. Cannot dodge during attack wind-down.
+
+## Weapons
+
+| Weapon | Arc | Range | Duration | Damage | Special | Unlock cost |
+|--------|-----|-------|----------|--------|---------|-------------|
+| Short Sword | 120° | 1.5u | 0.3s | 1 | Starting weapon | Free |
+| Broadsword | 150° | 1.8u | 0.5s | 2 | Wide sweep | 150g |
+| Dagger | 60° | 1.2u | 0.15s | 0.5 | 3-hit combo (0.5→0.75→1.0 dmg) | 100g |
+| Spear | 30° | 2.5u | 0.4s | 1.5 | Long reach | 200g |
+| Hammer | 180° | 1.5u | 0.7s | 3 | Stuns enemies 1s | 300g |
+
+Only one weapon equipped at a time. Equipment found mid-run is lost on death.
+
+## Passive Items
+
+| Item | Effect | Found in |
+|------|--------|----------|
+| Speed Boots | +30% move speed | Treasure chests |
+| Thornmail | Reflect 30% of taken damage | Treasure chests, bosses |
+| Lifesteal Ring | Heal 0.5 heart per kill | Treasure chests, bosses |
+| Magnet | Double pickup range (1→2 units) | Treasure chests |
+
+## Consumables
+
+| Item | Effect | Max stack |
+|------|--------|-----------|
+| Health Potion | Heal 1 heart | 3 |
+| Bomb | 3u explosion, 3 damage, breaks cracked walls | 3 |
+| Key | Opens one locked door or chest | 3 |
+
+## Enemy Types
+
+Detection range: 8 units (all types). Patrol: random wander within room, change direction every 2-4s.
+
+| Type | Shape | HP | Dmg | Speed | Behavior |
+|------|-------|----|-----|-------|----------|
+| Grunt | Box + 4 cone spikes | 2 | 1 | 2.5 | Patrol, charge at 6u range (8u dash) |
+| Ranged | Octahedron + eye | 1 | 1 | 2.0 | Keeps 5u distance, fires projectile at 8u/s every 2s |
+| Shield | Sphere + torus | 3 | 1 | 2.0 | Blocks frontal 120° arc. Flank to damage. |
+| Sprinter | Cone (forward) | 2 | 1 | 4.0 | Dashes at 8u/s for 6u, 1.5s pause after miss |
+| Exploder | Spiky sphere | 1 | 2 | 3.5 | Rushes player, explodes when within 2u (0.5s fuse, 2u radius) |
+| Boss F5 | Dodecahedron + horns | 8 | 2 | 3.0 | Phase 1: charge 8u/s + AoE slam 3u radius. Phase 2 (≤50% HP): spawns 2 Grunts every 8s |
+| Boss F10 | Sphere + spike ring | 12 | 2 | 2.5 | Phase 1: spin 3u radius at 3u/s + 8-projectile burst every 4s. Phase 2 (≤50%): spin 5u/s + 12 projectiles |
+
+All enemies have fresnel rim shader with per-type rim color. Death: dissolve animation (scale to 0 + fade over 0.4s).
+
+## Procedural Dungeon Generation
+
+### Grid system
+- 1 tile = 1 world unit
+- Room templates define width × depth in tiles
+- All positions use `{ x, z }` coordinates in the XZ plane
+
+### Floor layout
+1. Create room grid (e.g. 5×5 for small, 7×7 for larger)
+2. Place spawn room at one edge, exit room at opposite edge
+3. Place boss room (every 5th floor), challenge room, treasure room, shop room (post-MVP)
+4. Fill remaining with combat rooms
+5. Build spanning tree from spawn to exit (guaranteed connectivity)
+6. Add optional secondary connections for exploration
+7. Corridors: 2 tiles wide, length = distance between connected room edges
+8. Select templates randomly for each room type
+
+### Room templates (data-driven)
 ```javascript
 const ROOM_TEMPLATES = {
   combat: [
-    { width: 7, height: 7, walls: [[1,1,1,5], [5,1,1,5]], pillars: [[3,3]], enemies: [{ type: 'grunt', x: 2, y: 2 }, { type: 'grunt', x: 4, y: 4 }], doors: { north: [3,0], south: [3,6] } },
-    { width: 9, height: 7, walls: [[2,2,1,3], [6,2,1,3]], pillars: [[4,3], [4,5]], enemies: [{ type: 'grunt', x: 1, y: 3 }, { type: 'ranged', x: 7, y: 3 }], doors: { west: [0,3], east: [8,3] } },
-    // more templates...
+    {
+      width: 7, depth: 7,
+      walls: [[1,1,1,5], [5,1,1,5]],          // [x, z, width, depth]
+      pillars: [[3,3]],
+      enemies: [
+        { type: 'grunt', x: 2, z: 2 },
+        { type: 'grunt', x: 4, z: 4 }
+      ],
+      doors: { north: [3,0], south: [3,6] }   // [x, z] door center
+    },
+    {
+      width: 9, depth: 7,
+      walls: [[2,2,1,3], [6,2,1,3]],
+      pillars: [[4,3], [4,5]],
+      enemies: [
+        { type: 'grunt', x: 1, z: 3 },
+        { type: 'ranged', x: 7, z: 3 }
+      ],
+      doors: { west: [0,3], east: [8,3] }
+    },
   ],
   treasure: [
-    { width: 5, height: 5, walls: [], pillars: [], enemies: [], chests: [{ x: 2, y: 2, loot: 'gold_50' }], doors: { south: [2,4] } },
-    // more templates...
+    {
+      width: 5, depth: 5,
+      walls: [], pillars: [], enemies: [],
+      chests: [{ x: 2, z: 2, loot: 'gold_50' }],
+      doors: { south: [2,4] }
+    },
   ],
-  // ... spawn, shop, challenge, boss, exit
+  spawn: [
+    {
+      width: 7, depth: 7,
+      walls: [], pillars: [[1,1], [5,1], [1,5], [5,5]],
+      enemies: [],
+      doors: { north: [3,0], east: [6,3] },
+      safe: true
+    },
+  ],
+  // ... shop, challenge, boss, exit templates
 };
 ```
 
-Each template defines wall segments (x, z, width, depth), pillar positions, enemy spawns, chests, door positions. Walls and pillars are extruded boxes. Floor is a plane with a grid texture.
+Walls and pillars are extruded boxes (wall height: 3 units). Floor is a textured plane. Doors are 2-tile-wide openings (archway frame).
 
-### Combat & Loot
+### Door mechanics
+- Player walks through door zone → triggers room transition (no button press)
+- Camera slides to new room over 0.3s
+- Previous room enemies deactivate (AI paused); new room enemies activate
+- Minimap updates to show discovered room
 
-- Player has 3 base hearts (HP), can upgrade to 5 via heart containers from bosses
-- Player has a starting weapon (short sword, slow but wide arc)
-- **Weapon drops**: broadsword (wide arc, slow), dagger (narrow arc, fast, 3-hit combo), spear (long reach, narrow), hammer (slow, wide, stuns)
-- **Passive items**: speed boots (faster move), thornmail (reflect damage), lifesteal ring (heal on kill), magnet (wider pickup range)
-- **Consumables**: health potion (heal 1 heart, max 3 carried), bomb (breaks cracked walls, damages enemies), key (opens locked doors/chests)
-- **Gold**: dropped by enemies, found in chests. Persists across runs (meta-progression currency)
-- Enemies drop loot on death with probability: 50% gold, 20% consumable, 5% equipment, 25% nothing
-- Rarity tiers: common → rare → legendary. Legendary items have a unique glow effect (golden rim shader).
-- Equipment found mid-run is lost on death. Only gold persists.
+### Corridors
+- 2 tiles wide, walls on both sides
+- Length = distance between connected room door positions
+- May contain wall torches but no enemies or loot
 
-### Meta-Progression (Roguelite Hub)
+### Stairs
+- Exit room contains stairs at room center
+- Player approaches + presses F → fade to black 0.5s → load next floor
+- MVP: stairs lead to "DEMO COMPLETE" screen, then hub
 
-Between runs, the player is in a **Hub** (a single safe room with NPCs):
-- **Blacksmith** — spend gold to unlock better starting weapons for future runs (daggers at 100g, broadsword 150g, spear 200g, hammer 300g)
-- **Merchant** — spend gold to unlock starting consumables (always start with 1 health potion for 50g, start with 2 bombs for 75g)
-- **Trainer** — spend gold to upgrade base stats (start with +1 heart for 200g, start with speed bonus for 150g)
-- **Shrine** — spend gold to raise / lower difficulty modifiers (enemy HP multiplier, gold drop multiplier)
-- The Hub is rendered in 3D with the same visual style — a cozy dungeon chamber with NPC stands and ambient torches
+## Combat & Loot
 
-Meta-progression is stored in `localStorage`. On first run, the player starts with nothing (short sword, 3 hearts, no items).
+- Each enemy kill drops loot: 50% gold (5-15), 20% consumable, 5% equipment, 25% nothing
+- Equipment rarity within 5% drop: 60% common, 30% rare, 10% legendary
+- Chest loot table: gold_25, gold_50, gold_100, health_potion, bomb, key, equipment_common, equipment_rare
+- Boss drop: heart container (first kill) + guaranteed equipment + 50 gold
 
-### Enemy Types
+### Gold
+- Single pool — collected during run, persists across runs
+- On death: all run gold is permanently saved to meta-progression
+- In hub: spend meta gold on permanent upgrades
+- Gold pickups float toward player when within pickup range
 
-| Type | Shape | Behavior | HP | Damage |
-|------|-------|----------|----|--------|
-| Grunt | Box + 4 cone spikes | Patrols a path, charges when player is in range | 2 | 1 |
-| Ranged | Octahedron + eye | Keeps distance, fires slow projectile | 1 | 1 |
-| Shield | Sphere + torus shield | Blocks frontal attacks, flank to damage | 3 | 1 |
-| Sprinter | Cone (forward) | Dashes toward player, pauses after miss | 2 | 1 |
-| Exploder | Spiky sphere | Rushes player, explodes (damages nearby enemies too) | 1 | 2 |
-| Boss (Floor 5) | Large dodecahedron + horns + eye | Phase 1: charge + AoE slam. Phase 2: spawns grunts. | 8 | 2 |
-| Boss (Floor 10) | Large sphere + rotating spike ring | Phase 1: spinning spike attack + projectile burst. Phase 2: faster spin + more projectiles | 12 | 2 |
+## Camera & Rendering
 
-Each enemy has a fresnel rim shader with a unique rim color matching their type.
+| Parameter | Value |
+|-----------|-------|
+| FOV | 60 |
+| Offset from player | (0, 18, -12) |
+| Look target | player position + (0, 0, 2) |
+| Smooth lerp | 0.1 factor |
+| Near plane | 0.5 |
+| Far plane | 50 |
+| Near-wall opacity | 0.2 (walls between camera and player) |
+| Fog type | Exponential |
+| Fog density | 0.008 |
+| Canvas | Full window, responsive resize, HiDPI (max 2× pixel ratio) |
+
+## Post-Processing
+
+```js
+// EffectComposer pipeline
+RenderPass → UnrealBloomPass({ threshold: 0.3, strength: 0.6, radius: 0.5 }) → OutputPass
+```
+
+## Meta-Progression (Roguelite Hub)
+
+Hub is a 10×10 tile room, cozy dungeon chamber with ambient torches and NPC stands. Rendered in 3D.
+
+**Interaction**: walk up to NPC (within 2 units), press F → menu overlay opens.
+
+| NPC | Upgrades | Cost |
+|-----|----------|------|
+| Blacksmith | Unlock Dagger (start with it) | 100g |
+| Blacksmith | Unlock Broadsword | 150g |
+| Blacksmith | Unlock Spear | 200g |
+| Blacksmith | Unlock Hammer | 300g |
+| Trainer | +1 starting heart (max 5) | 200g |
+| Trainer | Start with Speed Boots | 150g |
+| Merchant | Start with 1 Health Potion | 50g |
+| Merchant | Start with 2 Bombs | 75g |
+
+Meta-progression stored in localStorage with validation (parse failure → reset to defaults).
 
 ## Architecture
 
 ```
 src/
   core/
-    Game.js              — orchestrator, main loop, state machine (BOOT/HUB/DUNGEON/DEATH)
+    Game.js              — orchestrator: init, RAF loop, state machine (BOOT/HUB/DUNGEON/DEATH)
     EventBus.js          — singleton, domain:action events
-    GameState.js         — singleton, clean .reset(), per-run state (health, items, floor, gold)
-    Constants.js         — ALL magic numbers, balance values, timings, enemy defs, item defs
+    GameState.js         — singleton, clean .reset(), per-run + meta state
+    Constants.js         — ALL magic numbers, balance, enemy/item/weapon defs
   systems/
-    Input.js             — event.code based, camera-relative WASD direction calculation
-    Camera.js            — angled top-down follow, smooth lerp, zoom on hub vs dungeon
-    DungeonGenerator.js  — procedural floor generation: room graph → template placement → connectivity
-    RoomManager.js       — loads/unloads room geometry, manages active room, room transitions
-    EnemyManager.js      — spawns enemies per room template, updates AI, handles death/loot
-    LootManager.js       — manages item drops, pickups, equipment system, rarity rolls
-    ParticleSystem.js    — particle effects (hit sparks, death burst, pickup glow, heal)
-    MetaProgression.js   — localStorage persistence, hub upgrade unlocks, gold tracking
+    Input.js             — event.code, camera-relative movement calc
+    Camera.js            — angled top-down follow, near-wall transparency, smooth lerp
+    DungeonGenerator.js  — floor layout, spanning tree, template selection, connectivity
+    RoomManager.js       — loads/unloads room geometry, activation, transitions
+    EnemyManager.js      — spawns per template, AI behaviors, death/loot
+    LootManager.js       — drops, pickups, equipment, rarity, consumables
+    ParticleSystem.js    — hit sparks, death burst, pickup glow, heal particles
+    MetaProgression.js   — localStorage persistence, validation, hub upgrades
   entities/
-    Player.js            — movement, dodge roll, attack, damage, death, states (idle/run/dodge/attack/hurt/dead)
-    Enemy.js             — generic enemy AI with configurable behavior (patrol/charge/ranged/explode)
-    Item.js              — pickups (gold, hearts, keys, bombs, potions, equipment)
-    Projectile.js        — enemy ranged attack projectiles
+    Player.js            — movement, dodge, attack, damage, state machine
+    Enemy.js             — generic AI with configurable behavior (patrol/charge/ranged/explode)
+    Item.js              — gold, hearts, keys, bombs, potions, equipment pickups
+    Projectile.js        — enemy ranged projectiles (8 units/s, destroyed on wall hit)
   visuals/
-    ModelFactory.js      — procedural geometry builders (player, every enemy type, items, hub NPCs, chests)
-    Shaders.js           — custom GLSL: fresnel rim, toon shading, glow pulse, dissolve
+    ModelFactory.js      — procedural: player, enemies, items, NPCs, chests
+    Shaders.js           — fresnel rim, glow pulse, dissolve
     DungeonArchitecture.js — builds room geometry from templates (walls, floor, pillars, doors, torches)
   ui/
-    HUD.js               — DOM overlay: hearts, gold counter, current equipment icon, floor number, minimap
-    HubUI.js             — DOM overlay: hub NPC interaction panels, upgrade shop, stat display
-    DeathScreen.js       — DOM overlay: run summary (floor reached, enemies killed, gold earned), return to hub button
-    DamageNumbers.js     — floating DOM text on hits
-    ItemTooltip.js       — floating DOM tooltip on hover/loot pickup
-    Minimap.js           — DOM canvas: discovered rooms, player position, exit marker, unvisited rooms
+    HUD.js               — DOM: hearts, gold, equipment icon, floor number, consumables
+    HubUI.js             — DOM: NPC interaction panels, upgrade shop
+    DeathScreen.js       — DOM: floor reached, enemies killed, gold earned, "Return to Hub"
+    DamageNumbers.js     — floating DOM text on hits (red for player dmg, white for enemy dmg)
+    ItemTooltip.js       — floating DOM tooltip on nearby loot
+    Minimap.js           — 150×150px DOM canvas, bottom-right, 3×3 rooms around player
 ```
 
 ## Game Flow
 
 ```
 BOOT → HUB (upgrade shop, equip starting items)
-      → ENTER DUNGEON (Floor 1 spawn room)
-      → Explore rooms: clear enemies → loot chests → find exit
-      → Descend stairs to next floor
-      → Repeat until death or final boss
-      → DEATH SCREEN (run summary, gold earned)
-      → Return to HUB (spend gold on permanent upgrades)
-      → Repeat
+     → ENTER DUNGEON (Floor 1 spawn room)
+     → Explore rooms: clear enemies → loot chests → find exit
+     → Descend stairs to next floor
+     → Repeat until death or demo complete
+     → DEATH SCREEN (run summary, gold permanent save)
+     → Return to HUB (spend gold)
+     → Repeat
 ```
 
+### Hub to dungeon
+Player walks to dungeon entrance door → press F → confirm → fade 0.5s → load Floor 1
+
 ### Room transitions
-- Player reaches room edge (north/south/east/west door) → camera slides to next room → enemies in new room activate
-- Corridors render as narrow rooms between main rooms
-- Stairs: player approaches stair tile → fade to black → spawn on next floor's spawn room
-- Hub to dungeon: player approaches dungeon entrance → fade + load Floor 1
+Player walks through door zone → camera slides 0.3s → enemies activate in new room, deactivate in old. No loading screen.
 
-## Room transition trick (seamless)
+### Stairs transition
+Player approaches stair tile → press F → fade to black 0.5s → spawn on next floor's spawn room.
 
-Instead of loading/unloading rooms with visible seams, keep all generated rooms in the scene but only render the current room + adjacent rooms with distance fog hiding the rest. This gives a seamless dungeon feel without loading screens.
-
-Alternatively (simpler MVP): unload the previous room and load the new room with a 0.2s fade. No visible geometry loading stutter if pre-built.
+### Death
+HP reaches 0 → death state (dissolve 0.4s) → fade 0.5s → death screen → save all run gold → press Space → return to hub.
 
 ## Scope-Limited MVP
 
-Build this first, nothing more:
-
-1. **Floor 1 only** — 5 rooms (spawn → 2 combat → treasure → exit). Hand-placed templates, not full procedural yet.
-2. **2 enemy types**: Grunt (patrol + charge) and Ranged (keep distance + shoot projectile)
-3. **3 items**: gold pickup, health pickup, one weapon upgrade (broadsword)
-4. **1 boss**: none for MVP (exit room just has stairs, no boss fight yet)
-5. **Simple hub**: rendered in 3D, single NPC (blacksmith) with 2 upgrades (start with broadsword for 100g, +1 heart for 200g)
-6. **Visual**: 2 room templates per type, fog, bloom, one wall torch light per room, enemy fresnel rim shader
+1. **Floor 1 only** — 5 rooms (spawn → 2 combat → treasure → exit). Hand-placed templates.
+2. **2 enemy types**: Grunt and Ranged
+3. **3 items**: gold pickup (5-15), health pickup, broadsword (equipment)
+4. **No boss** — exit room has stairs → "DEMO COMPLETE" screen → hub
+5. **Simple hub**: 10×10 room, blacksmith NPC with 2 upgrades (broadsword 150g, +1 heart 200g)
+6. **Visual**: 2 room templates per type, fog, bloom, one wall torch per room, enemy fresnel rim
 7. **HUD**: hearts (3), gold counter, floor number, equipment slot
-8. **Death**: health hits 0 → fade to death screen → show gold earned → press Space → back to hub
-9. **Meta-progression**: gold persisted in localStorage, upgrades unlock on next run
-10. **Restart**: clean .reset() on new run, all state wiped except meta-progression
+8. **Death**: HP=0 → dissolve → death screen → gold saved → Space → hub
+9. **Meta-progression**: gold in localStorage with validation
+10. **Restart**: clean .reset(), 3× restart test with no console errors
 
-## Visual Polish Checklist
+## Audio (Web Audio oscillator beeps, minimal)
 
-- [ ] Enemy fresnel rim shader (dark center, colored edge glow, hit flash)
-- [ ] Player hit flash (white overlay on damage, decays over 200ms)
-- [ ] Death dissolve (player scales to 0 + fades over 0.4s, enemies same)
-- [ ] Hit particles (small colored sparks on weapon impact, additive blending)
-- [ ] Gold pickup effect (brief golden ring burst + float to HUD counter)
-- [ ] Health pickup effect (red glow pulse + float to HUD heart)
-- [ ] Screen shake on player hit (translate jitter from countdown timer)
-- [ ] Damage numbers (floating DOM text on hits, color-coded by damage type)
-- [ ] Torch light flicker (point light intensity sine wave + slight position jitter)
-- [ ] Distance fog (matches biome color, hides room edges)
-- [ ] Bloom post-processing (subtle, retro glow on light sources and items)
-- [ ] Room transition (camera slide or 0.2s fade)
-- [ ] Dodge roll ghost trail (brief afterimage every 50ms during dodge)
-- [ ] Weapon swing trail (arc-shaped mesh or particles during attack)
-- [ ] Minimap (DOM canvas showing discovered room shapes, doors, player dot)
-- [ ] Ambient dust particles (floating specks visible against dark backgrounds)
-- [ ] Biome color shift between floors (crypt=earthy browns → ice=blues/cyan → lava=reds/oranges)
-- [ ] Item rarity glow (common=no glow, rare=blue rim, legendary=golden rim with rotating halo)
+| Event | Sound |
+|-------|-------|
+| Player attack | Short high blip (400Hz, 50ms) |
+| Player hit | Low buzz (150Hz, 80ms) |
+| Enemy death | Descending chirp (600→200Hz, 100ms) |
+| Item pickup | Rising ping (800Hz, 60ms) |
+| Door transition | Soft whoosh (white noise, 100ms) |
 
 ## Pitfalls to Avoid
 
-- **Camera-relative movement wrong** — WASD must be relative to camera angle, not world axes. Compute: `forward = cameraForward projected on XZ plane, right = cameraRight projected on XZ plane`, then `direction = forward * (W-S) + right * (A-D)`, normalize.
-- **Room transition ghosting** — deactivate enemies when leaving a room (set their AI to paused/idle state). Reactivate on re-entry. Don't remove them unless the room is far away.
-- **Collision resolution order** — resolve player-vs-wall first, then player-vs-enemy, then enemy-vs-wall. If you do it in the wrong order, enemies clip through walls.
-- **Dodge roll through enemies** — check `player.isDodging` in enemy collision handler. Skip damage while dodging. Don't skip wall collision during dodge (players expect to bounce off walls).
-- **Meta-progression save corruption** — validate the localStorage JSON on load. If it fails to parse, reset to defaults instead of crashing.
-- **Gold earned on death** — save gold earned during the run to meta-progression at the moment of death, not during the run. If the player exits the tab mid-run, they lose the run's gold. This is intentional roguelite design.
-- **Floor generation performance** — generate the entire floor's room layout at once when the player descends the stairs, not room-by-room. Room geometry can be built lazily when first entered.
-- **Item stacking** — equipment is not stackable (one slot, replace on pickup). Consumables stack to 3. Gold is an unbounded counter. Test that picking up gold when you already have gold doesn't eat the pickup.
-- **Bloom over-brightness** — tune bloom threshold so torches glow but white geometry doesn't wash out. Start with `threshold: 0.3, strength: 0.6, radius: 0.5`.
-- **event.key breaks AZERTY** — use `event.code`. Always.
-- **Restart cleanup** — all event listeners, timers, scene children, interval handles must be cleaned on death. Test restart 3x in a row with no console errors.
-
-## Delivery
-
-- Vite + Three.js project in `~/Documents/games-benchmarks/dungeon-crawler/`
-- Verify in browser: player moves camera-relatively, attacks, takes damage, picks up items, dies, returns to hub, gold persists
-- MVP rooms are selected from a small pool of hand-authored templates, not fully procedural yet
-- After MVP works, add full procedural generation in a second pass (random template selection, connectivity algorithm, difficulty scaling per floor)
-- Every commit describes the working feature
+- **Camera-relative movement** — must be relative to camera angle, not world axes. Compute forward/right from camera XZ projection.
+- **Room transition ghosting** — deactivate enemy AI when leaving room, don't destroy them.
+- **Collision resolution order** — player-vs-wall → player-vs-enemy → enemy-vs-wall. Wrong order = enemies clip walls.
+- **Dodge roll** — skip damage during dodge (0.15s iframes), but still collide with walls.
+- **Meta-progression corruption** — validate localStorage JSON on load, reset to defaults on parse failure.
+- **Gold on death** — save at death moment. Tab-close mid-run = lose run gold (intentional roguelite design).
+- **Floor generation** — generate full room layout on stair descent, build geometry lazily on first enter.
+- **Item stacking** — equipment: 1 slot, replace on pickup. Consumables: stack to 3. Gold: unbounded counter.
+- **Bloom over-brightness** — threshold 0.3 so torches glow but white geometry doesn't wash out.
+- **event.key → event.code** — always use event.code. Primary controls documented as ZQSD.
+- **Restart cleanup** — all listeners, timers, scene children, intervals cleaned on death. 3× restart test.
+- **Wall transparency** — walls between camera and player get opacity 0.2. Check via raycaster from camera to player — any wall hit gets transparent material swap.

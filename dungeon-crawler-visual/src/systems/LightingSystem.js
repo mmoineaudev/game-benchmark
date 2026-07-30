@@ -18,6 +18,7 @@ export class LightingSystem {
     this.scene.fog = new THREE.FogExp2(LIGHTING.FOG_COLOR, LIGHTING.FOG_DENSITY);
 
     this._placeAllTorches(dungeonData);
+    this._placeGodRays(dungeonData);
     this._updateShadowCasting(null); // initial: no shadows until player moves
   }
 
@@ -152,8 +153,40 @@ export class LightingSystem {
       if (t.flame.geometry) t.flame.geometry.dispose();
       if (t.bracket.geometry) t.bracket.geometry.dispose();
     }
+    for (const gr of this.godRays) {
+      gr.geometry.dispose();
+      gr.material.dispose();
+      this.scene.remove(gr);
+    }
     this.flameMaterial.dispose();
     this.bracketMaterial.dispose();
     this.torches = [];
+    this.godRays = [];
+  }
+
+  _placeGodRays(dungeonData) {
+    this.godRays = [];
+    // Only place god rays in vault rooms
+    for (const t of this.torches) {
+      const cx = Math.floor(t.x / dungeonData.cellSize);
+      const cz = Math.floor(t.z / dungeonData.cellSize);
+      if (cz < 0 || cz >= dungeonData.gridSize || cx < 0 || cx >= dungeonData.gridSize) continue;
+      const meta = dungeonData.metadata[cz][cx];
+      if (meta && meta.type === 'room' && meta.roomType === 'VAULT') {
+        const geo = new THREE.CylinderGeometry(0.3, 1.5, 4, 8, 1, true);
+        const mat = new THREE.MeshBasicMaterial({
+          color: 0xffaa44,
+          transparent: true,
+          opacity: 0.06,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+        });
+        const ray = new THREE.Mesh(geo, mat);
+        ray.position.set(t.x, t.y - 2, t.z);
+        this.scene.add(ray);
+        this.godRays.push(ray);
+      }
+    }
   }
 }

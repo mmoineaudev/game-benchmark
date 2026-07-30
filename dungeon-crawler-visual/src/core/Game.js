@@ -6,6 +6,8 @@ import { WorldBuilder } from '../world/WorldBuilder.js';
 import { LightingSystem } from '../systems/LightingSystem.js';
 import { InputSystem } from '../systems/InputSystem.js';
 import { PostProcessing } from '../systems/PostProcessing.js';
+import { ParticleSystem } from '../systems/ParticleSystem.js';
+import { RuneSystem } from '../systems/RuneSystem.js';
 
 export class Game {
   constructor(containerId) {
@@ -26,6 +28,8 @@ export class Game {
     this._generateDungeon();
     this._buildWorld();
     this._initLighting();
+    this._initParticles();
+    this._initRunes();
     this._setupPlayerStart();
     this._updateHUD();
     this._isRunning = true;
@@ -97,6 +101,16 @@ export class Game {
     this.lighting.init(this.dungeonData);
   }
 
+  _initParticles() {
+    this.particles = new ParticleSystem(this.scene);
+    this.particles.init();
+  }
+
+  _initRunes() {
+    this.runes = new RuneSystem(this.scene, this.dungeonData);
+    this.runes.init();
+  }
+
   _setupPlayerStart() {
     const { x, z } = this.dungeonData.entranceCell;
     const cs = this.dungeonData.cellSize;
@@ -118,6 +132,8 @@ export class Game {
     this._updateCamera();
     this._handleToggles();
     this.lighting.update(now * 0.001, this.state.player);
+    this.particles.update(this._delta, this.state.player, this.lighting.torches);
+    this.runes.update(now * 0.001);
     this._updateHUD();
     this.post.render();
   }
@@ -185,6 +201,8 @@ export class Game {
     window.removeEventListener('resize', this._onResize);
     this.input.dispose();
     this.post.dispose();
+    this.particles.dispose();
+    this.runes.dispose();
     this.lighting.dispose();
     this._disposeScene();
     this.renderer.dispose();

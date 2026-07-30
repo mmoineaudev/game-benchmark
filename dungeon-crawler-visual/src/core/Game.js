@@ -27,6 +27,8 @@ export class Game {
     this._prevOrbCount = 0;
     this._prevInExit = false;
     this._welcomeShown = false;
+    this._lastHintTime = 0;
+    this._nextOrbMsgTime = 0;
   }
 
   init() {
@@ -43,7 +45,7 @@ export class Game {
     this._placeWaterPuddles();
     this._setupPlayerStart();
     this._showMessage('Find the ' + this.state.totalOrbs + ' glowing blue orbs', 'goal');
-    this._showMessage('WASD to move, mouse to look', 'goal');
+    this._showMessage('Follow the torch-lit corridors', 'goal');
     this._updateHUD();
     this._isRunning = true;
     this._lastTime = performance.now();
@@ -256,14 +258,62 @@ export class Game {
     // All orbs found
     if (this._prevOrbCount < this.state.totalOrbs && this.state.collectedOrbs >= this.state.totalOrbs) {
       this._showMessage('All orbs found! Head to the golden exit', 'success');
+      this._nextOrbMsgTime = 0; // trigger immediate exit direction
     }
     // Entered exit room
     if (this.state.inExitRoom && !this._prevInExit) {
       this._showMessage('The depths await — press E to descend', 'goal');
     }
 
+    // Periodic directional hints (every 8 seconds after 3s initial delay)
+    const now = this._lastTime * 0.001;
+    if (now - this._lastHintTime > 8) {
+      this._lastHintTime = now;
+      this._showDirectionalHint();
+    }
+
     this._prevOrbCount = this.state.collectedOrbs;
     this._prevInExit = this.state.inExitRoom;
+  }
+
+  _showDirectionalHint() {
+    const p = this.state.player;
+    // If all orbs collected, point to exit
+    if (this.state.collectedOrbs >= this.state.totalOrbs && this.state.totalOrbs > 0) {
+      const ex = this.dungeonData.exitCell.x * this.dungeonData.cellSize + this.dungeonData.cellSize / 2;
+      const ez = this.dungeonData.exitCell.z * this.dungeonData.cellSize + this.dungeonData.cellSize / 2;
+      const dx = ex - p.x, dz = ez - p.z;
+      const dist = Math.sqrt(dx * dx + dz * dz).toFixed(0);
+      const dir = this._compassDir(dx, dz);
+      this._showMessage('Golden exit lies ' + dir + ' (' + dist + 'm)', 'goal');
+      return;
+    }
+    // Point to nearest orb
+    if (!this.orbs) return;
+    let nearest = null, nearestDist = Infinity;
+    for (const orb of this.orbs.orbs) {
+      if (orb.collected) continue;
+      const dx = orb.x - p.x, dz = orb.z - p.z;
+      const d = Math.sqrt(dx * dx + dz * dz);
+      if (d < nearestDist) { nearestDist = d; nearest = orb; }
+    }
+    if (nearest) {
+      const dx = nearest.x - p.x, dz = nearest.z - p.z;
+      const dir = this._compassDir(dx, dz);
+      this._showMessage('Nearest orb lies ' + dir, 'goal');
+    }
+  }
+
+  _compassDir(dx, dz) {
+    const angle = Math.atan2(dx, dz) * 180 / Math.PI;
+    if (angle > 157.5 || angle <= -157.5) return 'north';
+    if (angle > 112.5) return 'northwest';
+    if (angle > 67.5) return 'west';
+    if (angle > 22.5) return 'southwest';
+    if (angle > -22.5) return 'south';
+    if (angle > -67.5) return 'southeast';
+    if (angle > -112.5) return 'east';
+    return 'northeast';
   }
 
   _regenerateDungeon() {

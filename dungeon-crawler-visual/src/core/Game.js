@@ -8,6 +8,7 @@ import { InputSystem } from '../systems/InputSystem.js';
 import { PostProcessing } from '../systems/PostProcessing.js';
 import { ParticleSystem } from '../systems/ParticleSystem.js';
 import { RuneSystem } from '../systems/RuneSystem.js';
+import { OrbSystem } from '../entities/OrbSystem.js';
 
 export class Game {
   constructor(containerId) {
@@ -17,7 +18,11 @@ export class Game {
     this._lastTime = 0;
     this._delta = 0;
     this._pKeyWasDown = false;
+    this._eKeyWasDown = false;
     this._promptEl = document.getElementById('prompt');
+    this._orbCountEl = document.getElementById('orb-count');
+    this._interactEl = document.getElementById('interact-prompt');
+    this._exitEl = document.getElementById('exit-prompt');
   }
 
   init() {
@@ -30,6 +35,8 @@ export class Game {
     this._initLighting();
     this._initParticles();
     this._initRunes();
+    this._initOrbs();
+    this._placeWaterPuddles();
     this._setupPlayerStart();
     this._updateHUD();
     this._isRunning = true;
@@ -64,10 +71,7 @@ export class Game {
 
   _initCamera() {
     this.camera = new THREE.PerspectiveCamera(
-      CAMERA.FOV,
-      window.innerWidth / window.innerHeight,
-      CAMERA.NEAR,
-      CAMERA.FAR,
+      CAMERA.FOV, window.innerWidth / window.innerHeight, CAMERA.NEAR, CAMERA.FAR,
     );
     this.scene.add(this.camera);
   }
@@ -111,6 +115,32 @@ export class Game {
     this.runes.init();
   }
 
+  _initOrbs() {
+    this.orbs = new OrbSystem(this.scene, this.dungeonData, this.state);
+    this.orbs.init();
+  }
+
+  _placeWaterPuddles() {
+    this._waterPuddles = [];
+    const cs = this.dungeonData.cellSize;
+    for (const room of this.dungeonData.rooms) {
+      if (room.type !== 'VAULT') continue;
+      const x = (room.cx + room.w / 2) * cs;
+      const z = (room.cz + room.h / 2) * cs;
+      const geo = new THREE.PlaneGeometry(3, 2);
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0x1a2a4a, roughness: 0.15, metalness: 0.9,
+        transparent: true, opacity: 0.7,
+      });
+      const puddle = new THREE.Mesh(geo, mat);
+      puddle.rotation.x = -Math.PI / 2;
+      puddle.position.set(x, 0.02, z);
+      puddle.receiveShadow = true;
+      this.scene.add(puddle);
+      this._waterPuddles.push({ mesh: puddle, vertices: geo.attributes.position.array.slice() });
+    }
+  }
+
   _setupPlayerStart() {
     const { x, z } = this.dungeonData.entranceCell;
     const cs = this.dungeonData.cellSize;
@@ -127,13 +157,18 @@ export class Game {
     const now = performance.now();
     this._delta = Math.min((now - this._lastTime) / 1000, 0.1);
     this._lastTime = now;
+    const t = now * 0.001;
 
     this._updateInput();
     this._updateCamera();
     this._handleToggles();
-    this.lighting.update(now * 0.001, this.state.player);
+    this.lighting.update(t, this.state.player);
     this.particles.update(this._delta, this.state.player, this.lighting.torches);
-    this.runes.update(now * 0.001);
+    this.runes.update(t);
+    this.orbs.update(t, this.state.player,
+      this.input.isPressed('KeyE'), this._eKeyWasDown);
+
+    this._animateWater(t);
     this._updateHUD();
     this.post.render();
   }
@@ -177,22 +212,43 @@ export class Game {
   }
 
   _handleToggles() {
-    // P key toggle post-processing
+    // P key toggle
     const pDown = this.input.isPressed('KeyP');
     if (pDown && !this._pKeyWasDown) {
-      const on = this.post.toggle();
-      this.state.effectsEnabled = on;
+      this.state.effectsEnabled = this.post.toggle();
     }
     this._pKeyWasDown = pDown;
+    this._eKeyWasDown = this.input.isPressed('KeyE');
+  }
+
+  _animateWater(t) {
+    for (const puddle of this._waterPuddles) {
+      const pos = puddle.mesh.geometry.attributes.position;
+      const orig = puddle.vertices;
+      for (let i = 0; i < pos.count; i++) {
+        pos.array[i * 3 + 2] = orig[i * 3 + 2] + Math.sin(t * 2 + i) * 0.03;
+      }
+      pos.needsUpdate = true;
+    }
   }
 
   _updateHUD() {
-    if (!this._promptEl) return;
-    if (this.input.isPointerLocked()) {
-      this._promptEl.style.display = 'none';
-    } else {
-      this._promptEl.style.display = 'block';
-      this._promptEl.textContent = 'Click to explore';
+    // Orb counter
+    if (this._orbCountEl) {
+      this._orbCountEl.textContent = `Orbs: ${this.state.collectedOrbs}/${this.state.totalOrbs}`;
+    }
+    // Interaction prompt
+    if (this._interactEl) {
+      const dist = this.orbs ? this.orbs.nearestOrbDist(this.state.player) : Infinity;
+      this._interactEl.style.display = (dist < 1.5) ? 'block' : 'none';
+    }
+    // Exit prompt
+    if (this._exitEl) {
+      this._exitEl.style.display = this.state.inExitRoom ? 'block' : 'none';
+    }
+    // Click prompt
+    if (this._promptEl) {
+      this._promptEl.style.display = this.input.isPointerLocked() ? 'none' : 'block';
     }
   }
 
@@ -203,7 +259,13 @@ export class Game {
     this.post.dispose();
     this.particles.dispose();
     this.runes.dispose();
+    this.orbs.dispose();
     this.lighting.dispose();
+    for (const p of this._waterPuddles) {
+      p.mesh.geometry.dispose();
+      p.mesh.material.dispose();
+      this.scene.remove(p.mesh);
+    }
     this._disposeScene();
     this.renderer.dispose();
     this.container.removeChild(this.renderer.domElement);
@@ -214,10 +276,7 @@ export class Game {
       if (obj.geometry) obj.geometry.dispose();
       if (obj.material) {
         if (Array.isArray(obj.material)) {
-          obj.material.forEach((m) => {
-            if (m.map) m.map.dispose();
-            m.dispose();
-          });
+          obj.material.forEach((m) => { if (m.map) m.map.dispose(); m.dispose(); });
         } else {
           if (obj.material.map) obj.material.map.dispose();
           obj.material.dispose();

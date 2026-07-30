@@ -171,6 +171,7 @@ export class Game {
 
     this._animateWater(t);
     this._updateHUD();
+    this._eKeyWasDown = this.input.isPressed('KeyE');
     this.post.render();
   }
 
@@ -218,7 +219,6 @@ export class Game {
       this.state.effectsEnabled = this.post.toggle();
     }
     this._pKeyWasDown = pDown;
-    this._eKeyWasDown = this.input.isPressed('KeyE');
   }
 
   _handleExitRegeneration() {

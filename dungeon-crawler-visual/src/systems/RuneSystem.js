@@ -15,19 +15,30 @@ export class RuneSystem {
     const cs = this.data.cellSize;
     const gs = this.data.gridSize;
     const wh = WORLD.WALL_HEIGHT;
+    const visitedRooms = new Set();
 
     for (let cz = 0; cz < gs; cz++) {
       for (let cx = 0; cx < gs; cx++) {
         const cell = this.data.metadata[cz][cx];
         if (cell.type !== 'room') continue;
 
+        // Only place runes once per room (not per cell)
+        const roomKey = `${cx},${cz}`;
+        // Find the room this cell belongs to by checking neighbors
+        // Simple approach: use the top-left corner of each room as the key
+        let rx = cx, rz = cz;
+        // Walk to top-left of room
+        while (rz > 0 && this.data.metadata[rz - 1][cx].type === 'room') rz--;
+        while (rx > 0 && this.data.metadata[cz][rx - 1].type === 'room') rx--;
+        const key = `${rx},${rz}`;
+        if (visitedRooms.has(key)) continue;
+        visitedRooms.add(key);
+
         const roomType = cell.roomType || 'CHAMBER';
         const count = RUNES_PER_ROOM[roomType] || 10;
-        const wx = cx * cs;
-        const wz = cz * cs;
 
         for (let i = 0; i < count; i++) {
-          this._placeRune(wx, wz, cs, wh);
+          this._placeRune(cx * cs, cz * cs, cs, wh);
         }
       }
     }

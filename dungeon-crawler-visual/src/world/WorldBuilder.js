@@ -20,14 +20,12 @@ export class WorldBuilder {
       roughness: MATERIALS.CEILING_ROUGHNESS,
       metalness: 0,
     });
-    this.torchPositions = []; // { x, y, z } world coords
   }
 
   build() {
     this._buildFloors();
     this._buildWalls();
     this._buildCeilings();
-    return { torchPositions: this.torchPositions };
   }
 
   _cellToWorld(cx, cz) {
@@ -116,55 +114,9 @@ export class WorldBuilder {
     }
   }
 
-  _placeTorches() {
-    // Place torches along corridor walls and room walls
-    this.torchPositions = [];
-    const cs = this.data.cellSize;
-    const spacing = 8;
-    const torchY = 2.5;
-
-    for (let cz = 0; cz < this.data.gridSize; cz++) {
-      for (let cx = 0; cx < this.data.gridSize; cx++) {
-        if (this.data.grid[cz][cx] === 'empty') continue;
-        const wx = cx * cs;
-        const wz = cz * cs;
-
-        // Check edges facing empty cells (interior walls don't get torches on both sides)
-        // North edge
-        if (cz === 0 || this.data.grid[cz - 1][cx] === 'empty') {
-          this._placeTorchesOnEdge(wx, wz, wx + cs, wz, torchY, 'north');
-        }
-        // East edge
-        if (cx === this.data.gridSize - 1 || this.data.grid[cz][cx + 1] === 'empty') {
-          this._placeTorchesOnEdge(wx + cs, wz, wx + cs, wz + cs, torchY, 'east');
-        }
-      }
-    }
-  }
-
-  _placeTorchesOnEdge(x1, z1, x2, z2, y, dir) {
-    const spacing = 8;
-    const dist = Math.sqrt((x2 - x1) ** 2 + (z2 - z1) ** 2);
-    const count = Math.max(1, Math.floor(dist / spacing));
-    const offset = (dist - (count - 1) * spacing) / 2; // center torches along edge
-
-    for (let i = 0; i < count; i++) {
-      const t = (offset + i * spacing) / dist;
-      const x = x1 + (x2 - x1) * t;
-      const z = z1 + (z2 - z1) * t;
-      // Slight offset from wall
-      if (dir === 'north') {
-        this.torchPositions.push({ x, y, z: z + 0.3 });
-      } else if (dir === 'east') {
-        this.torchPositions.push({ x: x - 0.3, y, z });
-      }
-    }
-  }
-
   dispose() {
     this.wallMaterial.dispose();
     this.floorMaterial.dispose();
     this.ceilingMaterial.dispose();
-    // Scene cleaning handled by Game._disposeScene
   }
 }

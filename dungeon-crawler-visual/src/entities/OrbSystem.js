@@ -26,7 +26,6 @@ export class OrbSystem {
       }
     }
 
-    const orbGeo = new THREE.SphereGeometry(0.25, 32, 32);
     const orbMat = new THREE.MeshStandardMaterial({
       color: 0x44aaff,
       emissive: 0x44aaff,
@@ -44,6 +43,7 @@ export class OrbSystem {
       const z = cz * cs + cs / 2 + (Math.random() - 0.5) * (cs * 0.5);
       const y = 1.2;
 
+      const orbGeo = new THREE.SphereGeometry(0.25, 32, 32);
       const mesh = new THREE.Mesh(orbGeo, orbMat);
       mesh.position.set(x, y, z);
       this.scene.add(mesh);
@@ -78,8 +78,6 @@ export class OrbSystem {
         // Shrink and remove animation
         orb.mesh.scale.set(0, 0, 0);
         this.scene.remove(orb.mesh);
-        orb.mesh.geometry.dispose();
-        orb.mesh.material.dispose();
       }
     }
 
@@ -103,12 +101,17 @@ export class OrbSystem {
   }
 
   dispose() {
+    // Dispose shared material once
     for (const orb of this.orbs) {
       if (!orb.collected) {
         orb.mesh.geometry.dispose();
-        orb.mesh.material.dispose();
         this.scene.remove(orb.mesh);
       }
+    }
+    // Find and dispose material from any mesh
+    if (this.orbs.length > 0) {
+      const m = this.orbs[0].mesh.material;
+      if (m && !m._disposed) { m.dispose(); m._disposed = true; }
     }
     this.orbs = [];
   }

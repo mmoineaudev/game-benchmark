@@ -19,6 +19,7 @@ export class LightingSystem {
 
     this._placeAllTorches(dungeonData);
     this._placeGodRays(dungeonData);
+    this._placeExitMarker(dungeonData);
     this._updateShadowCasting(null); // initial: no shadows until player moves
   }
 
@@ -111,8 +112,11 @@ export class LightingSystem {
       t.flame.scale.setScalar(1 + flicker * 0.5);
     }
 
-    // Update shadow casting: nearest 8 torches to player
-    this._updateShadowCasting(playerPos);
+    // Update shadow casting: nearest 8 torches to player (throttled to 500ms)
+    if (!this._lastShadowUpdate || time - this._lastShadowUpdate > 0.5) {
+      this._updateShadowCasting(playerPos);
+      this._lastShadowUpdate = time;
+    }
   }
 
   _updateShadowCasting(playerPos) {
@@ -158,6 +162,11 @@ export class LightingSystem {
       gr.material.dispose();
       this.scene.remove(gr);
     }
+    if (this.exitMarker) {
+      this.exitMarker.geometry.dispose();
+      this.exitMarker.material.dispose();
+      this.scene.remove(this.exitMarker);
+    }
     this.flameMaterial.dispose();
     this.bracketMaterial.dispose();
     this.torches = [];
@@ -188,5 +197,24 @@ export class LightingSystem {
         this.godRays.push(ray);
       }
     }
+  }
+
+  _placeExitMarker(dungeonData) {
+    const exit = dungeonData.exitCell;
+    const cs = dungeonData.cellSize;
+    const x = exit.x * cs + cs / 2;
+    const z = exit.z * cs + cs / 2;
+    const geo = new THREE.RingGeometry(1.2, 1.5, 32);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xffaa00,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.7,
+      depthWrite: false,
+    });
+    this.exitMarker = new THREE.Mesh(geo, mat);
+    this.exitMarker.rotation.x = -Math.PI / 2;
+    this.exitMarker.position.set(x, 0.03, z);
+    this.scene.add(this.exitMarker);
   }
 }

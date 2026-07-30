@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dungeon Crawler — Visual Showcase</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { overflow: hidden; background: #0a0a15; width: 100%; height: 100%; }
+      #app { width: 100%; height: 100%; }
+      #hud {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        pointer-events: none; font-family: monospace; color: #ccc; z-index: 10;
+      }
+      #crosshair {
+        position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+        width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.5);
+      }
+      #prompt {
+        position: absolute; bottom: 20%; left: 50%; transform: translateX(-50%);
+        color: #888; font-size: 14px; text-align: center;
+      }
+      #hint {
+        position: absolute; bottom: 10px; right: 10px;
+        color: #444; font-size: 11px;
+      }
+    </style>
+    <script type="module" crossorigin src="/assets/index-peYsDhIO.js"></script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="hud">
+      <div id="crosshair"></div>
+      <div id="prompt">Click to explore</div>
+      <div id="hint">WASD move · Mouse look · P effects</div>
+    </div>
+  </body>
+</html>

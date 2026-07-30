@@ -1,10 +1,11 @@
 import * as THREE from 'three';
-import { WORLD, PLAYER, CAMERA, RENDERER, DUNGEON } from './Constants.js';
+import { WORLD, PLAYER, CAMERA, RENDERER } from './Constants.js';
 import { GameState } from './GameState.js';
 import { DungeonGenerator } from '../world/DungeonGenerator.js';
 import { WorldBuilder } from '../world/WorldBuilder.js';
 import { LightingSystem } from '../systems/LightingSystem.js';
 import { InputSystem } from '../systems/InputSystem.js';
+import { PostProcessing } from '../systems/PostProcessing.js';
 
 export class Game {
   constructor(containerId) {
@@ -13,16 +14,20 @@ export class Game {
     this._isRunning = false;
     this._lastTime = 0;
     this._delta = 0;
+    this._pKeyWasDown = false;
+    this._promptEl = document.getElementById('prompt');
   }
 
   init() {
     this._initRenderer();
     this._initCamera();
+    this._initPostProcessing();
     this._initInput();
     this._generateDungeon();
     this._buildWorld();
     this._initLighting();
     this._setupPlayerStart();
+    this._updateHUD();
     this._isRunning = true;
     this._lastTime = performance.now();
     this._animate();
@@ -42,11 +47,15 @@ export class Game {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(RENDERER.BACKGROUND_COLOR);
 
-    window.addEventListener('resize', () => {
-      this.camera.aspect = window.innerWidth / window.innerHeight;
+    this._onResize = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      this.camera.aspect = w / h;
       this.camera.updateProjectionMatrix();
-      this.renderer.setSize(window.innerWidth, window.innerHeight);
-    });
+      this.renderer.setSize(w, h);
+      if (this.post) this.post.resize(w, h);
+    };
+    window.addEventListener('resize', this._onResize);
   }
 
   _initCamera() {
@@ -57,6 +66,12 @@ export class Game {
       CAMERA.FAR,
     );
     this.scene.add(this.camera);
+  }
+
+  _initPostProcessing() {
+    this.post = new PostProcessing(this.renderer, this.scene, this.camera);
+    this.post.init();
+    this.state.effectsEnabled = true;
   }
 
   _initInput() {
@@ -87,7 +102,7 @@ export class Game {
     const cs = this.dungeonData.cellSize;
     this.state.player.x = x * cs + cs / 2;
     this.state.player.z = z * cs + cs / 2;
-    this.state.player.yaw = Math.PI; // face toward dungeon center
+    this.state.player.yaw = Math.PI;
     this.state.player.pitch = 0;
   }
 
@@ -101,8 +116,10 @@ export class Game {
 
     this._updateInput();
     this._updateCamera();
+    this._handleToggles();
     this.lighting.update(now * 0.001, this.state.player);
-    this.renderer.render(this.scene, this.camera);
+    this._updateHUD();
+    this.post.render();
   }
 
   _updateInput() {
@@ -110,13 +127,11 @@ export class Game {
     const p = this.state.player;
     const speed = PLAYER.SPEED * dt;
 
-    // Mouse look
     const mouse = this.input.consumeMouse();
     p.yaw -= mouse.x * PLAYER.MOUSE_SENSITIVITY;
     p.pitch -= mouse.y * PLAYER.MOUSE_SENSITIVITY;
     p.pitch = Math.max(-PLAYER.PITCH_CLAMP, Math.min(PLAYER.PITCH_CLAMP, p.pitch));
 
-    // Movement — screen-relative
     const forward = new THREE.Vector3(-Math.sin(p.yaw), 0, -Math.cos(p.yaw));
     const right = new THREE.Vector3(Math.cos(p.yaw), 0, -Math.sin(p.yaw));
 
@@ -125,21 +140,18 @@ export class Game {
     if (this.input.isPressed('KeyA')) { p.x -= right.x * speed; p.z -= right.z * speed; }
     if (this.input.isPressed('KeyD')) { p.x += right.x * speed; p.z += right.z * speed; }
 
-    // Exit check
     const exit = this.dungeonData.exitCell;
     const cs = this.dungeonData.cellSize;
     const ex = exit.x * cs + cs / 2;
     const ez = exit.z * cs + cs / 2;
     const dx = p.x - ex;
     const dz = p.z - ez;
-    this.state.inExitRoom = (dx * dx + dz * dz) < 4; // within 2 units
+    this.state.inExitRoom = (dx * dx + dz * dz) < 4;
   }
 
   _updateCamera() {
     const p = this.state.player;
     this.camera.position.set(p.x, WORLD.PLAYER_EYE_HEIGHT, p.z);
-
-    // Build look direction from yaw/pitch
     const dir = new THREE.Vector3(
       -Math.sin(p.yaw) * Math.cos(p.pitch),
       Math.sin(p.pitch),
@@ -148,9 +160,31 @@ export class Game {
     this.camera.lookAt(this.camera.position.clone().add(dir));
   }
 
+  _handleToggles() {
+    // P key toggle post-processing
+    const pDown = this.input.isPressed('KeyP');
+    if (pDown && !this._pKeyWasDown) {
+      const on = this.post.toggle();
+      this.state.effectsEnabled = on;
+    }
+    this._pKeyWasDown = pDown;
+  }
+
+  _updateHUD() {
+    if (!this._promptEl) return;
+    if (this.input.isPointerLocked()) {
+      this._promptEl.style.display = 'none';
+    } else {
+      this._promptEl.style.display = 'block';
+      this._promptEl.textContent = 'Click to explore';
+    }
+  }
+
   dispose() {
     this._isRunning = false;
+    window.removeEventListener('resize', this._onResize);
     this.input.dispose();
+    this.post.dispose();
     this.lighting.dispose();
     this._disposeScene();
     this.renderer.dispose();

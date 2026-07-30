@@ -162,6 +162,7 @@ export class Game {
     this._updateInput();
     this._updateCamera();
     this._handleToggles();
+    this._handleExitRegeneration();
     this.lighting.update(t, this.state.player);
     this.particles.update(this._delta, this.state.player, this.lighting.torches);
     this.runes.update(t);
@@ -212,13 +213,50 @@ export class Game {
   }
 
   _handleToggles() {
-    // P key toggle
     const pDown = this.input.isPressed('KeyP');
     if (pDown && !this._pKeyWasDown) {
       this.state.effectsEnabled = this.post.toggle();
     }
     this._pKeyWasDown = pDown;
     this._eKeyWasDown = this.input.isPressed('KeyE');
+  }
+
+  _handleExitRegeneration() {
+    if (!this.state.inExitRoom) return;
+    const eDown = this.input.isPressed('KeyE');
+    if (eDown && !this._eKeyWasDown) {
+      this._regenerateDungeon();
+    }
+  }
+
+  _regenerateDungeon() {
+    this._isRunning = false;
+    this.orbs.dispose();
+    this.runes.dispose();
+    this.particles.dispose();
+    this.lighting.dispose();
+    for (const p of (this._waterPuddles || [])) {
+      p.mesh.geometry.dispose();
+      p.mesh.material.dispose();
+      this.scene.remove(p.mesh);
+    }
+    this._disposeScene();
+
+    this.state = new GameState();
+    this._generateDungeon();
+    this._buildWorld();
+    this.lighting = new LightingSystem(this.scene);
+    this.lighting.init(this.dungeonData);
+    this.particles = new ParticleSystem(this.scene);
+    this.particles.init();
+    this.runes = new RuneSystem(this.scene, this.dungeonData);
+    this.runes.init();
+    this.orbs = new OrbSystem(this.scene, this.dungeonData, this.state);
+    this.orbs.init();
+    this._placeWaterPuddles();
+    this._setupPlayerStart();
+    this._isRunning = true;
+    this._lastTime = performance.now();
   }
 
   _animateWater(t) {

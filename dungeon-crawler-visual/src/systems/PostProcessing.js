@@ -31,8 +31,6 @@ export class PostProcessing {
     this.vignettePass.uniforms['offset'].value = 0.95;
     this.composer.addPass(this.vignettePass);
 
-    // OutputPass is the last pass in newer Three.js, handles tone mapping
-    // We skip it since we do tone mapping on the renderer directly
     this.composer.renderToScreen = true;
   }
 

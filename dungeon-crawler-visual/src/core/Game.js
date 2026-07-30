@@ -114,7 +114,8 @@ export class Game {
 
   _buildWorld() {
     this.worldBuilder = new WorldBuilder(this.scene, this.dungeonData);
-    this.worldBuilder.build();
+    const result = this.worldBuilder.build();
+    this._collisionBoxes = result.collisionBoxes || [];
   }
 
   _initLighting() {
@@ -211,6 +212,9 @@ export class Game {
     if (this.input.isPressed('KeyA')) { p.x -= right.x * speed; p.z -= right.z * speed; }
     if (this.input.isPressed('KeyD')) { p.x += right.x * speed; p.z += right.z * speed; }
 
+    // Collision resolution
+    this._resolveCollisions(p);
+
     const exit = this.dungeonData.exitCell;
     const cs = this.dungeonData.cellSize;
     const ex = exit.x * cs + cs / 2;
@@ -218,6 +222,26 @@ export class Game {
     const dx = p.x - ex;
     const dz = p.z - ez;
     this.state.inExitRoom = (dx * dx + dz * dz) < 4;
+  }
+
+  _resolveCollisions(p) {
+    const margin = 0.35; // player radius
+    for (const box of this._collisionBoxes) {
+      // Find closest point on box to player
+      const cx = Math.max(box.minX, Math.min(p.x, box.maxX));
+      const cz = Math.max(box.minZ, Math.min(p.z, box.maxZ));
+      const dx = p.x - cx;
+      const dz = p.z - cz;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist < margin) {
+        // Push player out
+        const overlap = margin - dist;
+        const nx = dist > 0.001 ? dx / dist : 0;
+        const nz = dist > 0.001 ? dz / dist : 1;
+        p.x += nx * overlap;
+        p.z += nz * overlap;
+      }
+    }
   }
 
   _updateCamera() {

@@ -235,6 +235,21 @@ export class LightingSystem {
     inner.position.set(x, 0.04, z);
     this.scene.add(inner);
     this._exitInner = inner;
+
+    // Vertical light beam — tall transparent cylinder
+    const beamGeo = new THREE.CylinderGeometry(0.3, 0.3, 6, 16, 1, true);
+    const beamMat = new THREE.MeshBasicMaterial({
+      color: 0xffcc44, transparent: true, opacity: 0.08,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    });
+    this._exitBeam = new THREE.Mesh(beamGeo, beamMat);
+    this._exitBeam.position.set(x, 3, z);
+    this.scene.add(this._exitBeam);
+
+    // Point light at exit for visibility
+    this._exitLight = new THREE.PointLight(0xffaa00, 2, 10, 1.5);
+    this._exitLight.position.set(x, 1.5, z);
+    this.scene.add(this._exitLight);
   }
 
   dispose() {
@@ -258,6 +273,14 @@ export class LightingSystem {
     if (this._exitInner) {
       this._exitInner.geometry.dispose(); this._exitInner.material.dispose();
       this.scene.remove(this._exitInner);
+    }
+    if (this._exitBeam) {
+      this._exitBeam.geometry.dispose(); this._exitBeam.material.dispose();
+      this.scene.remove(this._exitBeam);
+    }
+    if (this._exitLight) {
+      this._exitLight.dispose?.();
+      this.scene.remove(this._exitLight);
     }
     if (this._glowTex) this._glowTex.dispose();
     if (this._glowMat) this._glowMat.dispose();

@@ -34,6 +34,7 @@ export class WorldBuilder {
       roughness: MATERIALS.CEILING_ROUGHNESS,
       metalness: 0,
     });
+    this._collisionBoxes = []; // { minX, maxX, minZ, maxZ }
   }
 
   build() {
@@ -42,6 +43,7 @@ export class WorldBuilder {
     this._buildCeilings();
     this._addCeilingBeams();
     this._addFloorDebris();
+    return { collisionBoxes: this._collisionBoxes };
   }
 
   _cellToWorld(cx, cz) {
@@ -105,6 +107,15 @@ export class WorldBuilder {
     mesh.receiveShadow = true;
     mesh.userData = { isWall: true };
     this.scene.add(mesh);
+
+    // Collision box (slightly thinner than visual for forgiving gameplay)
+    const halfW = w / 2;
+    const halfD = d / 2 * 0.6;
+    if (ry === 0) {
+      this._collisionBoxes.push({ minX: x - halfW, maxX: x + halfW, minZ: z - halfD, maxZ: z + halfD });
+    } else {
+      this._collisionBoxes.push({ minX: x - halfD, maxX: x + halfD, minZ: z - halfW, maxZ: z + halfW });
+    }
   }
 
   _buildCeilings() {

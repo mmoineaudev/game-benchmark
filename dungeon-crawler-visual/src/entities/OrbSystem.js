@@ -51,10 +51,14 @@ export class OrbSystem {
       glow.position.set(x, y, z);
       this.scene.add(glow);
 
-      // Small orbiting particles around the orb
+      // Point light on orb for visibility
+      const orbLight = new THREE.PointLight(0x44aaff, 2, 8, 1.5);
+      orbLight.position.set(x, y, z);
+      this.scene.add(orbLight);
+
       const particles = this._createOrbParticles(x, y, z);
 
-      this.orbs.push({ mesh, glow, particles, x, y, z, collected: false, baseY: y });
+      this.orbs.push({ mesh, glow, light: orbLight, particles, x, y, z, collected: false, baseY: y });
     }
 
     this.state.totalOrbs = this.orbs.length;
@@ -108,8 +112,10 @@ export class OrbSystem {
         this.state.collectedOrbs++;
         orb.mesh.scale.set(0, 0, 0);
         orb.glow.scale.set(0, 0, 0);
+        orb.light.intensity = 0;
         this.scene.remove(orb.mesh);
         this.scene.remove(orb.glow);
+        this.scene.remove(orb.light);
         if (orb.particles) {
           orb.particles.geometry.dispose();
           orb.particles.material.dispose();
@@ -138,8 +144,10 @@ export class OrbSystem {
       if (!orb.collected) {
         orb.mesh.geometry.dispose();
         orb.glow.geometry.dispose();
+        orb.light.dispose?.();
         this.scene.remove(orb.mesh);
         this.scene.remove(orb.glow);
+        this.scene.remove(orb.light);
         if (orb.particles) {
           orb.particles.geometry.dispose();
           orb.particles.material.dispose();

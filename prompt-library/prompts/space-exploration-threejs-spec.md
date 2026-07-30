@@ -25,7 +25,6 @@ triggers:
 |------|-----------------|---------------------|
 | Node.js | ≥ 18.0.0 | `node --version` |
 | npm | ≥ 9.0.0 | `npm --version` |
-| uv (optional) | latest | `uv --version` |
 
 ### 1.2 Project Initialization
 
@@ -49,35 +48,53 @@ export default defineConfig({
 
 ### 1.4 Entry Point (`index.html`)
 
-Single-page HTML with a full-screen `<canvas>` container (`#game-container`).
-No title screen — the game boots directly into the scene.
+Single-page HTML with a full-screen `<canvas>` container (`#game-container`). HiDPI support: `renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))`. Responsive resize handler updates camera aspect and renderer size. No title screen — game boots directly into the scene.
+
+Canvas: full window, background color `0x000011`, exponential fog `new THREE.FogExp2(0x000011, 0.008)`.
 
 ### 1.5 Acceptance Criteria — Setup
 
 - [ ] `npm install` completes without errors or warnings.
 - [ ] `npm run dev` launches a dev server on `localhost:5173`.
 - [ ] `npm run build` succeeds with exit code 0.
-- [ ] Opening `localhost:5173` shows a black screen (scene is wired but no objects yet). No console errors.
+- [ ] Opening `localhost:5173` shows a dark starfield — no console errors, no black screen.
 
 ---
 
-## 2. Project Structure
+## 2. Controls
 
-All paths are relative to project root.
+All input uses **event.code** for AZERTY/QWERTY compatibility:
+
+| Action | AZERTY | QWERTY (equivalent) | Notes |
+|--------|--------|---------------------|-------|
+| Move forward / thrust | Z | W | Hold for continuous acceleration |
+| Move left | Q | A | Strafe |
+| Move right | D | D | Strafe |
+| Move backward | S | S | Decelerate |
+| Roll left | A | A | Smooth interpolated roll rotation |
+| Roll right | E | E | Smooth interpolated roll rotation |
+| Fire weapon | Space or Left Click | Space or Left Click | Single laser burst, rate-limited |
+| Pause | Escape | Escape | |
+| Mute audio | M | M | Toggle all sound |
+| Restart (on death) | R | R | |
+
+**Arrow keys** also work as aliases: Up=Z, Down=S, Left=Q, Right=D.
+
+**Touch/mobile**: virtual joystick overlay (left half = movement, right half = aim). Tap to fire. Swipe to roll.
+
+**Mouse**: X-axis movement controls roll (smooth interpolation, `SHIP_ROLL_SPEED` sensitivity). Left click to fire.
+
+Game boots directly into gameplay — no title screen. Press R on death screen to restart.
+
+---
+
+## 3. Project Structure
 
 ```
 space-exploration/
 ├── index.html
 ├── vite.config.js
 ├── package.json
-├── public/
-│   └── assets/
-│       ├── audio/
-│       │   ├── engine-rumble.ogg
-│       │   ├── laser-shot.ogg
-│       │   └── explosion.ogg
-│       └── textures/
-│           └── star-texture.png          # procedural canvas-generated fallback
 ├── src/
 │   ├── main.js                           # Bootstraps Game, mounts canvas
 │   ├── core/
@@ -86,471 +103,375 @@ space-exploration/
 │   │   ├── GameState.js                  # Centralized state: player, combat, game
 │   │   └── Constants.js                  # All magic numbers, colors, timings, configs
 │   ├── systems/
-│   │   ├── InputSystem.js                # Keyboard + mouse/pointer mapping
+│   │   ├── InputSystem.js                # event.code keyboard + mouse/pointer mapping
 │   │   ├── CameraSystem.js               # Follow-cam, damping, FOV speed effect
-│   │   ├── PhysicsSystem.js              # Collision detection, bounding volumes
-│   │   ├── AudioSystem.js                # Web Audio API wrapper, spatial audio
+│   │   ├── PhysicsSystem.js              # Collision detection, bounding volumes (AABB)
+│   │   ├── AudioSystem.js                # Web Audio API procedural synthesis (no audio files)
 │   │   ├── ParticleSystem.js             # Pool-based particle manager (trails, explosions)
-│   │   └── PostProcessingSystem.js       # UnrealBloomPass, chromatic aberration, vignette, film grain
+│   │   └── PostProcessingSystem.js       # UnrealBloomPass, vignette (custom ShaderPass), film grain (custom), chromatic aberration (custom or skip on low-end)
 │   ├── gameplay/
-│   │   ├── PlayerShip.js                 # Ship mesh, movement logic, thrust, steering
+│   │   ├── PlayerShip.js                 # Ship mesh, movement logic, thrust, steering, health
 │   │   ├── WeaponSystem.js               # Laser projectiles, firing rate, cooldown
-│   │   ├── ScoreSystem.js                # Score tracking, high score persistence
+│   │   ├── ScoreSystem.js                # Score tracking, high score in localStorage
 │   │   └── BuffSystem.js                 # Time-based stat modifiers
 │   ├── level/
-│   │   ├── ChunkManager.js               # Chunk/segment spawn & cleanup for infinite world
-│   │   ├── Starfield.js                  # Multi-layer parallax particle starfield
-│   │   ├── NebulaSystem.js               # Volumetric-feel nebula clouds (custom shaders)
+│   │   ├── ChunkManager.js               # Chunk/segment spawn (ahead) & cleanup (behind)
+│   │   ├── Starfield.js                  # Multi-layer parallax particle starfield (3 layers)
+│   │   ├── NebulaSystem.js               # Volumetric-feel nebula clouds (billboard + custom shader)
 │   │   ├── AsteroidField.js              # Procedural asteroid generation (InstancedMesh)
 │   │   ├── DebrisSystem.js               # Floating debris, destructible objects
-│   │   └── BiomeGenerator.js             # Biome variant selection (open space, asteroid belts, nebula corridors, wormhole tunnels)
+│   │   └── BiomeGenerator.js             # Biome variant selection per distance zone
 │   ├── ui/
-│   │   ├── HUD.js                        # Score, distance, health overlay
-│   │   └── Crosshair.js                  # Reticle for targeting
+│   │   ├── HUD.js                        # DOM overlay: score, distance, health bar
+│   │   ├── DeathScreen.js                # DOM: final score, distance, high score, restart prompt
+│   │   └── Crosshair.js                  # Center reticle (circle + 4 dots)
 │   └── utils/
-│       ├── MathHelpers.js                # Vector pooling, random helpers, seeded RNG
-│       └── ShaderHelpers.js              # Common GLSL noise functions, gradient templates
+│       ├── MathHelpers.js                # Vector pooling, mulberry32 seeded RNG
+│       └── ShaderHelpers.js              # Common GLSL: snoise, fbm, gradient templates
 ```
+
+No external assets — all textures and audio are procedurally generated:
+- Star texture: `canvas`-generated soft round dot texture (avoids square PointsMaterial)
+- Audio: all Web Audio API oscillator/noise synthesis (no .ogg/.mp3 files)
+- Ship/asteroid meshes: procedural geometry
 
 ### Architecture Principles (from game-architecture skill)
 
-1. **Orchestrator Pattern** — `Game.js` initializes all systems, runs the main loop, manages flow. No self-initializing systems.
-2. **Event-Driven** — No direct cross-module imports for communication. All messaging through `EventBus` with `domain:action` events.
+1. **Orchestrator Pattern** — `Game.js` initializes all systems, runs main loop, manages flow.
+2. **Event-Driven** — No direct cross-module imports for communication. All messaging through `EventBus`.
 3. **Centralized State** — `GameState` singleton holds everything. Systems read/modify through events.
 4. **Configuration Centralization** — Every value in `Constants.js`. Zero hardcoded numbers in logic.
-5. **Restart-Safe** — `GameState.reset()` provides a clean slate. All listeners removed in shutdown. Test: restart 3× identically.
-6. **Delta-Time Normalized** — All movement uses `delta = Math.min(clock.getDelta(), 0.1)`. No frame-dependent logic.
+5. **Restart-Safe** — `GameState.reset()` provides clean slate. All listeners removed in shutdown. Test: restart 3×.
+6. **Delta-Time Normalized** — All movement uses `delta = Math.min(clock.getDelta(), 0.1)`. Capped to prevent tab-out death spiral.
 
 ---
 
-## 3. Visual Effects Master Plan
+## 4. Constants (all values)
 
-### 3.1 Starfield (Multi-Layer Parallax)
+```js
+export const Constants = {
+    // Game
+    GAME_NAME: 'Void Drift',
+    VERSION: '1.0.0',
 
-| Layer | Technique | Visual Goal |
-|-------|-----------|-------------|
-| Far background | ~5,000 particles, tiny size, slow parallax, white-blue tint | Distant stars, depth anchor |
-| Mid layer | ~2,000 particles, medium size, moderate parallax, slight color variation | Standard star field |
-| Near layer | ~500 particles, large size, fast parallax, occasional twinkle (perlin noise alpha) | Immediacy, speed sensation |
-| Bright stars | 20–50 special particles with bloom pass | Light sources, visual anchors |
+    // Ship
+    MAX_SHIP_SPEED: 80,           // units/s
+    SHIP_ACCELERATION: 40,        // units/s²
+    SHIP_DRAG: 0.98,              // per-frame multiplier (velocity *= drag when thrust released)
+    SHIP_ROLL_SPEED: 3.0,         // rad/s
+    SHIP_SPAWN: { x: 0, y: 2, z: 0 },
 
-**Implementation:** `THREE.Points` with custom `ShaderMaterial` (vertex + fragment). Use `InstancedBufferGeometry` or a single `BufferGeometry` with attribute-based size/color/alpha for a single draw call per layer.
+    // Camera
+    CAMERA_DISTANCE: 12,          // behind ship
+    CAMERA_HEIGHT: 5,             // above ship
+    CAMERA_FOV_REST: 75,          // normal FOV
+    CAMERA_FOV_MAX: 95,           // FOV at max thrust
+    CAMERA_DAMPING: 0.05,         // lerp factor per frame
 
-### 3.2 Nebula Clouds (Volumetric Feel)
+    // Weapon
+    FIRE_RATE: 8,                 // shots per second
+    PROJECTILE_SPEED: 200,        // units/s
+    PROJECTILE_LIFETIME: 3.0,     // seconds
+    PROJECTILE_RANGE: 200,        // units (whichever reached first)
+    PROJECTILE_DAMAGE: 25,
 
-**Technique:** Billboarded sprite clusters with custom GLSL fragment shader.
+    // Health
+    MAX_HEALTH: 100,
+    COLLISION_THRESHOLD_LARGE: 2.0,  // size > this = large asteroid damage
+    COLLISION_DAMAGE_LARGE: 20,
+    COLLISION_DAMAGE_SMALL: 5,
+    WARNING_HEALTH_THRESHOLD: 30,     // red vignette + warning beep below this
 
-- Procedural noise-based color gradients (fBm / Perlin noise in GLSL).
-- Alpha blending with additive mixing for glow.
-- 3–5 cloud clusters per chunk, each made of 8–12 overlapping billboards at varying scales.
-- Colors shift based on biome: blues/purples in open space, reds/oranges in asteroid belts, multi-hue in wormhole tunnels.
-- Subtle animation: uniforms `uTime` for slow drift and pulse.
+    // Screen shake
+    SHAKE_DAMAGE_INTENSITY: 0.5,      // units of random offset
+    SHAKE_DAMAGE_DURATION: 0.3,       // seconds
+    SHAKE_EXPLOSION_INTENSITY: 0.8,
+    SHAKE_EXPLOSION_DURATION: 0.5,
+    SHAKE_DECAY_RATE: 4.0,            // exponential decay factor
 
-**Shader Details:**
-```glsl
-// Fragment shader — volumetric nebula
-precision mediump float;
+    // World / chunks
+    CHUNK_SIZE: 200,                  // units per chunk (square)
+    CHUNKS_AHEAD: 3,                  // chunks spawned ahead of ship
+    CHUNKS_BEHIND: 2,                 // chunks retained behind ship
+    SHIP_FORWARD_AXIS: 'z',           // ship flies in -Z direction
 
-uniform float uTime;
-uniform vec3 uColor1;
-uniform vec3 uColor2;
-uniform vec3 uColor3;
-uniform float uDensity;
+    // Biomes (distance in units traveled)
+    BIOMES: {
+        OPEN_SPACE:       { range: [0, 1000],   asteroidDensity: 10,  nebulaCount: 2,  color: [0.1, 0.15, 0.3] },
+        ASTEROID_BELT:    { range: [1000, 3000], asteroidDensity: 40,  nebulaCount: 3,  color: [0.4, 0.2, 0.1] },
+        NEBULA_CORRIDOR:  { range: [3000, 5000], asteroidDensity: 20,  nebulaCount: 6,  color: [0.3, 0.15, 0.4] },
+        WORMHOLE:         { range: [5000, 7000], asteroidDensity: 60,  nebulaCount: 8,  color: [0.2, 0.1, 0.5] },
+    },
+    POST_7000_MULTIPLIER: 1.5,        // intensity multiplier for repeated biome cycles
 
-// 3D simplex noise (compact implementation)
-float snoise(vec3 v);
+    // Starfield
+    STAR_LAYERS: {
+        far:   { count: 5000, size: 0.5,  parallaxSpeed: 0.1,  color: [0.8, 0.85, 1.0] },
+        mid:   { count: 2000, size: 1.0,  parallaxSpeed: 0.3,  color: [1.0, 0.95, 0.8] },
+        near:  { count: 500,  size: 2.0,  parallaxSpeed: 0.8,  color: [1.0, 0.9, 0.7] },
+    },
+    BRIGHT_STAR_COUNT: 30,             // large stars with bloom pass
 
-void main() {
-    vec3 p = vUv * 3.0 + uTime * 0.05;
-    float n = snoise(p) * 0.5 + 0.5;
-    n = smoothstep(0.2, 0.9, n);
-    n = pow(n, 1.5); // Sharpen clouds
+    // Post-processing
+    BLOOM:   { strength: 1.5, radius: 0.4, threshold: 0.15 },
+    VIGNETTE: { darkness: 0.5, offset: 0.2 },
+    FILM_GRAIN: { intensity: 0.03 },
+    CHROMATIC_ABERRATION_MAX: 0.003,   // max offset at top speed
 
-    vec3 color = mix(uColor1, uColor2, n);
-    color = mix(color, uColor3, snoise(p * 2.0 + uTime * 0.02) * 0.5 + 0.5);
+    // Fog
+    FOG_COLOR: 0x000011,
+    FOG_DENSITY: 0.008,
 
-    float alpha = n * uDensity;
-    gl_FragColor = vec4(color, alpha);
-}
+    // Particles
+    PARTICLE_POOLS: {
+        exhaust:     { maxParticles: 200, lifetime: 0.8,  size: 0.3 },
+        laserSpark:  { maxParticles: 50,  lifetime: 0.3,  size: 0.15 },
+        explosion:   { maxParticles: 80,  lifetime: 1.2,  size: 0.4 },
+    },
+
+    // Scoring
+    SCORE_ASTEROID_BASE: 10,           // × size tier (small=1, medium=2, large=3)
+    SCORE_DEBRIS: 1,
+    SCORE_DISTANCE_DIVISOR: 10,        // 1 point per 10 units traveled
+
+    // Performance targets
+    MAX_DRAW_CALLS: 50,
+    MAX_TRIANGLES: 200000,
+    MAX_INSTANCED_OBJECTS: 2000,
+    DPR_MAX: 2,
+    TARGET_FPS: 60,
+    MIN_ACCEPTABLE_FPS: 30,
+};
 ```
 
-### 3.3 Dynamic Lighting
+---
 
-| Light | Type | Purpose |
-|-------|------|---------|
-| Ambient | `AmbientLight` (very dim, 0.05 intensity) | Base visibility |
-| Directional | `DirectionalLight` (from "sun" direction) | Shading on asteroids, shadows |
-| Point lights | `PointLight[]` (glowing nebula cores) | Local illumination, color accents |
-| Ship headlight | `SpotLight` (cone ahead of ship) | Illuminates path, reveals debris |
-| Ship accent | `PointLight` (blue/purple under ship) | Rim glow, cinematic feel |
+## 5. Visual Effects Master Plan
 
-**Note:** Limit active `PointLight` count to ≤ 4 per chunk to maintain performance. Use `MeshStandardMaterial` or `MeshPhysicalMaterial` for PBR responses.
+### 5.1 Starfield (Multi-Layer Parallax)
 
-### 3.4 Post-Processing Pipeline
+| Layer | Count | Size | Speed | Color | Visual Goal |
+|-------|-------|------|-------|-------|-------------|
+| Far background | 5,000 | 0.5 | 0.1× | Blue-white tint | Distant stars, depth anchor |
+| Mid layer | 2,000 | 1.0 | 0.3× | Slight warm variation | Standard star field |
+| Near layer | 500 | 2.0 | 0.8× | Warm white, perlin-noise twinkle | Speed sensation |
+| Bright stars | 30 | 3.0-5.0 | — | White, bloom pass | Light sources, visual anchors |
 
-Render through `EffectComposer` with passes in this order:
+**Implementation:** `THREE.Points` with custom `ShaderMaterial` (vertex + fragment). Single `BufferGeometry` with attributes for size, color, alpha per layer. Near-layer twinkle via perlin noise on alpha in fragment shader.
 
+### 5.2 Nebula Clouds (Volumetric Feel)
+
+Billboarded sprite clusters (8-12 overlapping billboards per cluster) with custom GLSL fragment shader using 3D simplex noise. 3-5 clusters per chunk. Biome-dependent color palettes. Animated via `uTime` uniform (slow drift + pulse). See §10 for GLSL reference.
+
+### 5.3 Dynamic Lighting
+
+| Light | Type | Intensity | Purpose |
+|-------|------|-----------|---------|
+| Ambient | AmbientLight | 0.05 | Base visibility |
+| Directional | DirectionalLight | 0.3 | Shading on asteroids |
+| Nebula cores | PointLight[] (≤4/chunk) | 0.8-1.5 | Local illumination, color accents |
+| Ship headlight | SpotLight (cone ahead) | 1.0, range 30 | Illuminates path, reveals debris |
+| Ship accent | PointLight (below ship) | 0.4, blue/purple | Rim glow, cinematic feel |
+
+Materials: `MeshStandardMaterial` with roughness 0.8-1.0, metalness 0.1-0.3.
+
+### 5.4 Post-Processing Pipeline
+
+Render through `EffectComposer`:
 1. **RenderPass** — Base scene render.
-2. **UnrealBloomPass** — Bloom for stars, nebulae, engine exhaust, light sources.
-   - Strength: 1.2–1.8
-   - Radius: 0.4
-   - Threshold: 0.15
-3. **ChromaticAberrationPass** — Simulates lens aberration at high speed.
-   - Offset scales with ship velocity (0 at rest, max at top speed).
-4. **Vignette** — Subtle darkening of edges for cinematic framing.
-   - Darkness: 0.5
-   - Offset: 0.2
-5. **FilmGrainPass** — Adds texture, reduces banding in gradients.
-   - Intensity: 0.02–0.04
+2. **UnrealBloomPass** — Strength 1.5, radius 0.4, threshold 0.15.
+3. **ChromaticAberrationPass** — Custom ShaderPass (RGB channel offset scaling with ship velocity, max 0.003 at top speed). Skip on low-end devices.
+4. **Vignette** — Custom ShaderPass: darken edges, darkness 0.5, offset 0.2.
+5. **FilmGrainPass** — Custom ShaderPass: noise overlay, intensity 0.03. Skip on low-end.
 
-**Performance:** On low-end devices, skip chromatic aberration and film grain. Detect via `navigator.hardwareConcurrency` or renderer capability check.
+Low-end device detection: `navigator.hardwareConcurrency < 4` → skip chromatic aberration and film grain.
 
-### 3.5 Particle Systems
+### 5.5 Particle Systems
 
-| System | Technique | Use Case |
-|--------|-----------|----------|
-| Ship exhaust trail | `THREE.Points` with velocity attribute, custom shader, pool of 200 particles | Continuous thrust visual |
-| Engine flame | Cone geometry with `ShaderMaterial` (flickering noise animation) | Dynamic flame shape |
-| Laser beams | Thin `CylinderGeometry` with `MeshBasicMaterial` + emissive + bloom | Projectile visual |
-| Laser impact spark | Burst of 10–20 particles, fade out in 0.3s | Hit feedback |
-| Destruction explosion | 40–80 particles, expanding sphere, color fade (yellow → red → black) | Asteroid/debris destruction |
-| Debris fragments | Small `InstancedMesh` shards with physics, fade out | Destruction secondary visual |
-| Wormhole distortion | Ring geometry with `ShaderMaterial` (time-based vertex displacement + color shift) | Biome transition marker |
-| Cosmic dust | Sparse `THREE.Points` in wormhole tunnels, swirling motion | Tunnel atmosphere |
+| System | Technique | Pool size | Lifetime | Size |
+|--------|-----------|-----------|----------|------|
+| Ship exhaust trail | Points + custom shader, velocity attribute | 200 | 0.8s | 0.3 |
+| Engine flame | Cone geometry + ShaderMaterial (flickering noise) | — | — | — |
+| Laser impact spark | Burst particles, fade out | 50 | 0.3s | 0.15 |
+| Destruction explosion | Expanding sphere, color fade yellow→red→black | 80 | 1.2s | 0.4 |
+| Debris fragments | Small InstancedMesh shards with simple physics | 100 | 2.0s | 0.1-0.5 |
 
-**Implementation:** Object pooling pattern. Pre-allocate particle pools. Reset particles to origin on reuse. Use `BufferAttribute` updates each frame (no `new THREE.Vector3()` in the loop).
+Object pooling: pre-allocate, reset to origin on reuse. Update via `BufferAttribute` each frame (no allocations in the loop).
 
-### 3.6 Ship Visual Design
+### 5.6 Ship Visual Design
 
-- Low-poly fighter aesthetic (procedural geometry, no external models needed).
-- Body: elongated fuselage with swept wings and tail fins.
-- Cockpit: small glass canopy with `MeshPhysicalMaterial` (transmission, roughness).
-- Engine nacelles: glowing exhaust cones on each side.
-- Wingtip lights: small emissive spheres (red/green).
-- All materials use PBR (`MeshStandardMaterial` / `MeshPhysicalMaterial`).
+- Low-poly fighter: elongated fuselage with swept wings and tail fins
+- Cockpit: small glass canopy with `MeshPhysicalMaterial` (transmission, roughness 0.1)
+- Engine nacelles: glowing exhaust cones (emissive) on each side
+- Wingtip lights: small emissive spheres (red port / green starboard)
+- All materials PBR: `MeshStandardMaterial` / `MeshPhysicalMaterial`
 
-### 3.7 Asteroid & Debris Generation
+### 5.7 Asteroid & Debris Generation
 
-| Type | Geometry | Scale |
-|------|----------|-------|
-| Large asteroid | IcosahedronGeometry with vertex displacement (random noise) | 2–5 units |
-| Medium asteroid | DodecahedronGeometry with vertex displacement | 0.8–2 units |
-| Small rocks | OctahedronGeometry with vertex displacement | 0.2–0.8 units |
-| Debris | BoxGeometry (random aspect ratios) | 0.05–0.3 units |
-| Space junk | CylinderGeometry (broken, rotated) | 0.1–0.5 units |
+| Type | Geometry | Scale range | Instanced |
+|------|----------|-------------|-----------|
+| Large asteroid | IcosahedronGeometry + vertex displacement (noise) | 2-5u | No (individual) |
+| Medium asteroid | DodecahedronGeometry + vertex displacement | 0.8-2u | Yes (InstancedMesh) |
+| Small rocks | OctahedronGeometry + vertex displacement | 0.2-0.8u | Yes (InstancedMesh) |
+| Debris | BoxGeometry (random aspect ratios) | 0.05-0.3u | Yes (InstancedMesh) |
+| Space junk | CylinderGeometry (broken, rotated) | 0.1-0.5u | Yes (InstancedMesh) |
 
-**Vertex displacement:** Apply a simplex noise function to vertex positions in the vertex shader or during geometry creation. Use `InstancedMesh` for medium and small objects (thousands of instances, single draw call).
+Vertex displacement via simplex noise during geometry creation. Per-instance color via `InstancedMesh.setColorAt()`.
 
-**Material:** `MeshStandardMaterial` with roughness 0.8–1.0, metalness 0.1–0.3, color variation per instance via `InstancedMesh.setColorAt()`.
+### 5.8 Biome-Specific Visuals
 
-### 3.8 Biome-Specific Visuals
+| Biome | Distance | Asteroid density | Nebula count | Colors | Visual signature |
+|-------|----------|-----------------|--------------|--------|-----------------|
+| Open space | 0-1000 | 10/chunk | 2 | Blue-black | Sparse stars, 1-2 small nebulae |
+| Asteroid belt | 1000-3000 | 40/chunk | 3 | Orange/red | Dense rocks, warm nebula, debris |
+| Nebula corridor | 3000-5000 | 20/chunk | 6 | Multi-hue | Tight passage of billowing clouds |
+| Wormhole | 5000-7000 | 60/chunk | 8 | Purple/blue/cyan | Curved tunnel, particle vortex, intense bloom |
+| 7000+ repeat | — | ×1.5 all | ×1.5 all | All | Biome cycle repeats with increased intensity |
 
-| Biome | Visual Signature |
-|-------|-----------------|
-| Open space | Sparse stars, 1–2 small nebulae, low debris density, deep blue-black background |
-| Asteroid belt | Dense asteroid field, warm-toned nebula, increased debris, orange/red ambient tint |
-| Nebula corridor | Tight passage of billowing nebula clouds, reduced star visibility, multi-hue palette |
-| Wormhole tunnel | Curved corridor geometry, swirling particle vortex, intense bloom, chromatic aberration at peak, purple/blue/cyan palette, speed distortion shader on tunnel walls |
+### 5.9 Speed & Motion Effects
 
-### 3.9 Speed & Motion Effects
+- **FOV breathing**: Camera FOV 75° → 95° proportional to thrust fraction
+- **Star streaking**: Near-layer particle size scales with speed
+- **Camera shake**: Random offset added to camera position, exponential decay (factor 4.0). Triggered on damage (intensity 0.5, 0.3s) or nearby explosion (intensity 0.8, 0.5s)
+- **Ship exhaust**: Visible particle trail during thrust, stops when thrust released
 
-- **FOV breathing:** Camera FOV expands from 75° to 95° under full thrust, contracts when decelerating.
-- **Star streaking:** Near-layer particle size increases with speed.
-- **Motion blur:** Optional additive-blur post-pass (accumulation buffer). Toggle based on performance.
-- **Camera shake:** Additive random offset to camera position, damped exponentially, triggered on:
-  - Ship taking damage
-  - Large explosion nearby
-  - Burst of acceleration
+### 5.10 Atmospheric Haze
 
-### 3.10 Atmospheric Haze / Depth Cues
-
-- `scene.fog = new THREE.FogExp2(0x000011, 0.008)` — exponential fog matching background color.
-- Distant objects fade into fog color, creating natural depth cutoff.
-- Nebula density increases slightly in fog to blend seamlessly.
+`scene.fog = new THREE.FogExp2(0x000011, 0.008)` — exponential fog. Distant objects fade naturally. Nebula density increases slightly with fog for seamless blending.
 
 ---
 
-## 4. Gameplay Systems
+## 6. Gameplay Systems
 
-### 4.1 Player Ship
+### 6.1 Player Ship
 
-- **Movement:** WASD / arrow keys for translation. Mouse/pointer for roll/yaw (optional).
-- **Inertia-based:** Ship has velocity vector. Input accelerates; no instant direction change.
-- **Thrust:** Hold forward key → constant acceleration. Release → velocity decays (small drag).
-- **Max speed:** Capped by `Constants.MAX_SHIP_SPEED`.
-- **Roll:** Mouse X or Q/E key adds roll rotation (smoothly interpolated).
+- **Movement**: Inertia-based. Thrust (Z key held) → acceleration at `SHIP_ACCELERATION`. Release → velocity decays at `SHIP_DRAG` multiplier per frame.
+- **Max speed**: Capped at `MAX_SHIP_SPEED` (80 units/s).
+- **Strafing**: Q/D for lateral movement at same acceleration/drag.
+- **Roll**: A/E keys or mouse X → smooth roll interpolation at `SHIP_ROLL_SPEED`.
+- **Forward direction**: Ship flies in -Z direction (into screen). Camera trails behind.
 
-### 4.2 Weapon System
+### 6.2 Weapon System
 
-- **Fire mode:** Click / spacebar → single laser burst.
-- **Fire rate:** Capped by `Constants.FIRE_RATE` (e.g., 8 shots/sec).
-- **Projectile speed:** Fast, travels forward relative to ship heading.
-- **Range:** Limited lifetime (e.g., 3 seconds) or distance (e.g., 200 units).
-- **Destructible targets:** Only asteroids, rocks, and debris. Non-destructible obstacles.
-- **Impact feedback:** Spark particles + sound + brief screen flash.
+- Fire: Space or left click → single laser burst. Rate-limited to `FIRE_RATE` (8 shots/s).
+- Projectile: visible glowing beam (thin CylinderGeometry, emissive + bloom), travels forward relative to ship heading.
+- Speed: 200 units/s. Lifetime: 3s OR range 200 units (whichever first).
+- Destructible targets: asteroids, rocks, debris. Non-destructible: large space stations, wormhole walls.
+- Impact feedback: spark particles (10-20, 0.3s fade) + screen flash + explosion sound.
 
-### 4.3 Procedural World Generation
+### 6.3 Procedural World Generation
 
 **Chunk-based infinite world:**
-
-```
-Chunk size: 200 units wide × 200 units long
-Spawn ahead: 3 chunks in front of ship
-Cleanup behind: 2 chunks behind ship
-```
+- Chunk size: 200×200 units
+- 3 chunks spawned ahead of ship, 2 retained behind
+- Seeded RNG (mulberry32) with chunk coordinates as seed → deterministic regeneration
 
 **Per-chunk content:**
-1. Starfield particles (full scene, not per-chunk).
-2. Nebula cloud clusters (0–3 per chunk, based on biome).
-3. Asteroid field (density × 5–50 asteroids).
-4. Debris objects (density × 10–100 pieces).
-5. Biome decorations (wormhole tunnel geometry, space stations, etc.).
+1. Starfield particles (full-scene, not per-chunk)
+2. Nebula cloud clusters (0-3 per chunk, biome-dependent)
+3. Asteroid field (density per biome × seeded randomization)
+4. Debris objects (density per biome × seeded randomization)
+5. Biome decorations (wormhole tunnel geometry for WORMHOLE biome)
 
-**Seeded RNG:** Use a seeded PRNG (e.g., mulberry32) with chunk coordinates as seed. Same coordinates → same generation → deterministic exploration.
+**Wormhole tunnel**: `TubeGeometry` along a curved CatmullRom path through the chunk. Walls use custom ShaderMaterial with swirling UV distortion. Particle vortex (200+ particles) spiraling through center. Ship must navigate through opening.
 
-### 4.4 Biome Generation Logic
+**Intensity scaling** (within each biome zone, linear interpolation):
+- Asteroid count × (1 + distance/5000)
+- Nebula density × (1 + distance/8000)
+- Asteroid speed × (1 + distance/6000)
 
-```
-distanceTraveled → determine biome zone
-zone 0–1000:   Open space
-zone 1000–3000: Asteroid belt
-zone 3000–5000: Nebula corridor
-zone 5000–7000: Wormhole tunnel
-zone 7000+:    Repeat with increasing intensity
-```
+### 6.4 Score System
 
-Intensity scaling:
-- Debris count × (1 + distance / 5000)
-- Nebula density × (1 + distance / 8000)
-- Asteroid speed × (1 + distance / 6000)
+- Asteroid destroyed: 10 × size tier (small=1, medium=2, large=3)
+- Debris destroyed: 1
+- Distance: 1 per 10 units traveled
+- High score persisted in `localStorage` key `void_drift_highscore`
 
-### 4.5 Score System
+### 6.5 Health System
 
-- **Asteroid destroyed:** 10 points × size tier
-- **Debris destroyed:** 1 point
-- **Distance traveled:** 1 point per 10 units
-- **High score:** Persisted in `localStorage`.
-
-### 4.6 Health System
-
-- **Health:** 100 points.
-- **Collision with large asteroid:** −20 health + screen shake + red flash.
-- **Collision with small debris:** −5 health.
-- **Health below 30:** Red vignette pulse, warning sound.
-- **Health at 0:** Game over → restart prompt.
+- Health: 100 points.
+- Collision with asteroid > 2 units: -20 + screen shake + red flash
+- Collision with asteroid ≤ 2 units or debris: -5
+- Health < 30: red vignette pulse overlay, warning beep
+- Health = 0: death dissolve → game over screen → Press R to restart
+- No health regeneration during gameplay
 
 ---
 
-## 5. UI / HUD
+## 7. UI / HUD
 
-### 5.1 HUD Overlay
-
-All UI is an HTML/CSS overlay on top of the canvas (not 3D objects).
+All UI is HTML/CSS DOM overlay on top of canvas (not 3D objects).
 
 | Element | Position | Content |
 |---------|----------|---------|
 | Score | Top-left | `SCORE: 12,450` |
-| Distance | Top-center | `DISTANCE: 3,200 units` |
-| Health bar | Bottom-center | Horizontal bar (green → yellow → red) |
-| Crosshair | Center | Subtle reticle (circle + 4 dots) |
+| Distance | Top-center | `DISTANCE: 3,200 u` |
+| Health bar | Bottom-center | Horizontal bar: green (>50) → yellow (30-50) → red (<30) with pulse animation |
+| Crosshair | Center | Subtle reticle: thin circle (radius 12px) + 4 dots (NSEW), white at 50% opacity |
+| Biome indicator | Top-right | Current biome name, fades in/out on transition |
+| Speed indicator | Bottom-left | Small bar showing thrust fraction |
 
-### 5.2 Game Over Screen
+### Death Screen
 
-Appears when health reaches 0. Shows:
+Appears when health reaches 0 after 1s delay. Shows:
+- "SHIP DESTROYED" title
 - Final score
 - Distance traveled
-- High score
-- "Press R to restart" prompt
+- High score (with "NEW!" if beaten)
+- "Press R to restart"
 
 ---
 
-## 6. Audio System
+## 8. Audio System
+
+All audio is procedurally synthesized via Web Audio API oscillators and noise. **No external audio files required.**
 
 | Sound | Trigger | Technique |
 |-------|---------|-----------|
-| Engine rumble | Always (while flying) | Web Audio oscillator (low freq sawtooth + low-pass filter), volume scales with thrust |
-| Laser shot | Fire event | Short noise burst + frequency sweep |
-| Explosion | Destruction event | Noise burst, low-pass, 0.5s decay |
-| Collision hit | Damage event | Low thud, 0.3s decay |
-| Warning beep | Health < 30 | 800 Hz sine, 3 short pulses |
+| Engine rumble | Always (while alive) | Low-freq sawtooth (60Hz) + low-pass filter (200Hz), volume scales with thrust fraction |
+| Laser shot | Fire event | Short white noise burst (50ms) + frequency sweep 800→200Hz |
+| Explosion | Destruction event | White noise burst, low-pass filter, 0.5s exponential decay |
+| Collision hit | Damage event | Low thud: sine 100Hz, 0.3s decay, slight distortion |
+| Warning beep | Health < 30 | 800Hz sine, 3 pulses (50ms on, 150ms off), repeating every 2s |
+| Biome transition | Zone change | Rising arpeggio: 3 sine tones (200, 300, 500Hz), 0.3s each |
 
-**Spatial audio:** Laser and explosion sounds pan based on direction from ship (optional, adds immersion).
+**Spatial audio**: explosion sounds panned based on direction from ship (optional).
+
+**Mute**: M key toggles all audio. Mute state indicated by small 🔊/🔇 icon top-right.
 
 ---
 
-## 7. Test Strategy
+## 9. Test Strategy
 
-### 7.1 Unit Tests (Jest + Vite)
-
-| Test File | Tests |
-|-----------|-------|
-| `GameState.test.js` | `reset()` clears all state; initial values are correct |
-| `EventBus.test.js` | Events emit and receive; duplicate listeners prevented |
-| `Constants.test.js` | All values are numbers or valid typed arrays; no NaN or Infinity |
-| `MathHelpers.test.js` | Seeded RNG produces deterministic output; vector pooling works |
-| `BuffSystem.test.js` | Buffs expire after duration; multipliers compose correctly |
-
-### 7.2 Integration Tests (Playwright / Puppeteer)
-
-| Test Scenario | Steps |
-|---------------|-------|
-| Game boots | Open page → scene renders → no console errors within 5s |
-| Ship responds | Press W → ship moves forward (position changes) |
-| Shooting works | Press space → laser projectile spawns → reaches range limit → despawns |
-| Destructibles respond | Shoot asteroid → asteroid removed → particle explosion spawns → score increases |
-| Restart works | Restart 3× → ship in same starting position → no memory growth (check heap snapshot) |
-| Visual effects active | Bloom pass renders → bloom intensity > 0 in composer output |
-| Performance | Run 60 seconds → FPS never drops below 30 (measure with performance API) |
-
-### 7.3 Visual Acceptance Tests
+### 9.1 Quick Verification
 
 | Criterion | Method |
 |-----------|--------|
-| Bloom is visible | Take screenshot → check that bright pixels have glow halos |
-| Nebulae are visible | Render in a nebula biome → verify nebula billboards are in scene graph |
-| Starfield has parallax | Move camera → far/mid/near layers move at different speeds |
-| Post-processing chain | Render a white object → verify it has bloom + possible chromatic fringe |
-| Fog exists | Render at distance → verify objects fade to fog color |
-| No black screen | After boot → scene is not completely black (stars visible) |
+| Boot | Open page → scene renders → stars visible → no console errors within 5s |
+| Ship moves | Press Z → ship position changes forward (-Z) |
+| Shooting | Press Space → laser spawns → travels → despawns at range |
+| Destruction | Shoot asteroid → removed → particles spawn → score increases |
+| Restart | Restart 3× → identical starting state → no memory growth |
+| Bloom | Bright objects have visible glow halos |
+| Fog | Distant objects fade to background color |
+| Parallax | Move ship → star layers move at different speeds |
+| Performance | 60s gameplay → FPS never drops below 30 |
 
-### 7.4 Performance Benchmarks
+### 9.2 Performance Benchmarks
 
 | Metric | Target | Measurement |
 |--------|--------|-------------|
-| Frame rate | ≥ 60fps on mid-range GPU | `performance.now()` delta between frames |
-| Draw calls | ≤ 50 in typical scene | `renderer.info.render.calls` |
-| Triangles | ≤ 200K active | `renderer.info.render.triangles` |
-| Memory growth | < 10MB over 5 minutes | Check `performance.memory` or DevTools |
-| Load time | < 3 seconds to first frame | `performance.mark('boot')` to `performance.mark('firstFrame')` |
-
----
-
-## 8. Acceptance Criteria (Agent Advancement Checklist)
-
-An agent building this project should verify each criterion as it completes. Mark as done only when the criterion passes in a live browser.
-
-### Phase 1 — Foundation
-
-- [ ] **P1.1** Project initializes: `npm install` succeeds, `npm run dev` serves on port 5173, `npm run build` succeeds.
-- [ ] **P1.2** Canvas renders: `index.html` contains a full-screen canvas, no console errors on load.
-- [ ] **P1.3** Scene is black but valid: Scene, camera, and renderer are instantiated. Camera can see something (even if empty).
-- [ ] **P1.4** Animation loop runs: `requestAnimationFrame` fires, `renderer.render()` executes, delta-time is measured.
-- [ ] **P1.5** Resize handling: Window resize updates camera aspect and renderer size. DPR is clamped to 2.
-
-### Phase 2 — Core Architecture
-
-- [ ] **P2.1** `Game.js` orchestrator exists: Initializes all systems in order, runs the loop, handles shutdown.
-- [ ] **P2.2** `EventBus` singleton works: Modules can emit and listen to events without importing each other.
-- [ ] **P2.3** `GameState` singleton exists: Holds player, combat, and game state domains. `reset()` clears all state.
-- [ ] **P2.4** `Constants.js` centralizes all values: No magic numbers in game logic files. Verified by grep for bare literals.
-- [ ] **P2.5** Delta-time normalization: Movement uses `delta`, capped at 0.1s. Tab-out does not cause death spiral.
-
-### Phase 3 — Ship & Controls
-
-- [ ] **P3.1** Ship mesh exists: Visible in scene, has fuselage, wings, engines, and cockpit.
-- [ ] **P3.2** WASD movement: Ship translates in the correct directions relative to heading.
-- [ ] **P3.3** Inertia-based physics: Ship accelerates smoothly, does not instant-turn. Velocity decays when thrust released.
-- [ ] **P3.4** Max speed cap: Ship cannot exceed `Constants.MAX_SHIP_SPEED`.
-- [ ] **P3.5** Mouse/pointer roll: Ship rotates (rolls) smoothly in the direction of mouse movement.
-- [ ] **P3.6** Camera follows ship: Camera tracks the ship with damping, maintains a cinematic offset.
-
-### Phase 4 — Starfield & Environment
-
-- [ ] **P4.1** Three-layer starfield: Far, mid, and near particle layers are visible and move at different parallax speeds.
-- [ ] **P4.2** Star particles use custom shader: Single draw call per layer, alpha-based twinkle for near layer.
-- [ ] **P4.3** Bright stars with bloom: At least 20 large star particles that glow via bloom pass.
-- [ ] **P4.4** Fog is active: Distant objects fade to background color, creating depth cues.
-- [ ] **P4.5** Background color: Scene background is dark (not pure black), e.g., `0x000011`.
-
-### Phase 5 — Nebulae & Clouds
-
-- [ ] **P5.1** Nebula billboards exist: At least 2 nebula clusters in the scene, each with 8–12 overlapping billboards.
-- [ ] **P5.2** Custom GLSL nebula shader: Noise-based color gradients, animated over time, alpha blending.
-- [ ] **P5.3** Biome color variation: Nebula colors differ between biomes (blue/purple in open space, red/orange in belts).
-- [ ] **P5.4** Nebula density scales: Nebulae become denser as distance increases.
-
-### Phase 6 — Asteroids & Debris
-
-- [ ] **P6.1** Procedural asteroids: At least 20 asteroids in the scene, each with randomized vertex displacement.
-- [ ] **P6.2** InstancedMesh usage: Medium and small objects use `InstancedMesh` (not individual meshes).
-- [ ] **P6.3** PBR materials: Asteroids use `MeshStandardMaterial` with roughness > 0.5 and per-instance color variation.
-- [ ] **P6.4** Debris objects: At least 10 small floating debris pieces with varied shapes and slow rotation.
-- [ ] **P6.5** Lighting response: Asteroids show shading from the directional light and ship spotlight.
-
-### Phase 7 — Shooting & Destruction
-
-- [ ] **P7.1** Laser fires: Pressing fire key spawns a laser projectile that travels forward from the ship.
-- [ ] **P7.2** Fire rate limiting: Projectiles spawn at most `Constants.FIRE_RATE` times per second.
-- [ ] **P7.3** Laser visual: Projectiles are visible (glowing beam with emissive material + bloom).
-- [ ] **P7.4** Destructible targets: Shooting an asteroid removes it from the scene.
-- [ ] **P7.5** Explosion particles: Destroying an asteroid spawns 40–80 particles expanding outward with color fade.
-- [ ] **P7.6** Impact feedback: Brief screen flash or camera shake on destruction.
-- [ ] **P7.7** Score updates: Score increases when objects are destroyed. HUD reflects the change.
-- [ ] **P7.8** Projectiles despawn: Projectiles are removed after reaching range limit or lifetime.
-
-### Phase 8 — Post-Processing & Visual Polish
-
-- [ ] **P8.1** Bloom is active: Bright objects (stars, engines, lasers) have visible glow halos.
-- [ ] **P8.2** Bloom parameters are tuned: Strength 1.2–1.8, radius 0.4, threshold 0.15.
-- [ ] **P8.3** Chromatic aberration: At high speed, bright edges show slight color separation.
-- [ ] **P8.4** Vignette: Screen edges are subtly darkened.
-- [ ] **P8.5** Film grain: Subtle noise texture visible in gradient areas (dark space).
-- [ ] **P8.6** FOV speed effect: Camera FOV widens from 75° to 95° under full thrust.
-- [ ] **P8.7** Ship exhaust trail: Visible particle trail behind the ship during thrust.
-- [ ] **P8.8** Engine flame: Dynamic cone geometry at ship engines with flickering shader.
-
-### Phase 9 — World Generation
-
-- [ ] **P9.1** Chunk system: New chunks spawn ahead of the ship, old chunks are cleaned up behind.
-- [ ] **P9.2** Seamless transitions: Chunk boundaries do not cause visible pops or gaps.
-- [ ] **P9.3** Seeded randomness: Visiting the same chunk coordinates regenerates the same content.
-- [ ] **P9.4** Biome variation: Different biomes have distinct visual signatures (density, colors, decorations).
-- [ ] **P9.5** Infinite exploration: Ship can fly indefinitely without running out of environment.
-
-### Phase 10 — Game Flow & Systems
-
-- [ ] **P10.1** Health system: Ship takes damage on collision. Health bar reflects current value.
-- [ ] **P10.2** Game over: At 0 health, game over screen appears with score and restart prompt.
-- [ ] **P10.3** Restart works: Pressing restart resets everything cleanly (ship position, score, health, scene objects).
-- [ ] **P10.4** Restart safety: Restarting 3× in a row produces identical results. No memory leaks.
-- [ ] **P10.5** Score persistence: High score survives page reload (localStorage).
-
-### Phase 11 — Audio
-
-- [ ] **P11.1** Engine rumble: Low-frequency sound plays continuously while flying, volume scales with thrust.
-- [ ] **P11.2** Laser sound: Distinct shooting sound on fire event.
-- [ ] **P11.3** Explosion sound: Distinct destruction sound on asteroid removal.
-- [ ] **P11.4** Warning beep: Audible alert when health drops below 30.
-- [ ] **P11.5** Mute toggle: Space/M key mutes/unmutes all audio.
-
-### Phase 12 — Performance & Polish
-
-- [ ] **P12.1** 60fps target: Sustained ≥ 60fps on the developer's machine for 60 seconds of gameplay.
-- [ ] **P12.2** Draw calls ≤ 50: Checked via `renderer.info.render.calls` during typical gameplay.
-- [ ] **P12.3** Triangle count ≤ 200K: Checked via `renderer.info.render.triangles` during typical gameplay.
-- [ ] **P12.4** No memory leaks: Heap snapshot after 5 minutes shows < 10MB growth.
-- [ ] **P12.5** Mobile input: Touch controls work (virtual joystick or swipe-based).
-- [ ] **P12.6** Responsive canvas: Window resize updates correctly without distortion.
-- [ ] **P12.7** No console errors: Zero uncaught exceptions or warnings in the browser console.
-- [ ] **P12.8** Build succeeds: `npm run build` produces a production bundle with no errors.
-- [ ] **P12.9** Visual "wow" factor: The scene looks dense, layered, atmospheric, and alive. A casual observer remarks "this is impressive for a browser."
-
----
-
-## 9. Visual Effects Implementation Priority
-
-When building, follow this priority to get the "wow" factor fastest:
-
-1. **Tier 1 (Core Visuals)** — Starfield, ship mesh, basic lighting, bloom post-processing. These give immediate visual impact.
-2. **Tier 2 (Immersion)** — Nebula shaders, exhaust trail, engine flame, fog, ship spotlight. These create atmosphere.
-3. **Tier 3 (Polish)** — Chromatic aberration, vignette, film grain, camera FOV effects, screen shake. These elevate quality.
-4. **Tier 4 (Wow)** — Wormhole tunnel shader, particle vortex, dynamic god rays, volumetric light shafts, holographic UI elements, speed distortion effects. These are the "look at this" moments.
+| Frame rate | ≥ 60fps on mid-range GPU | `performance.now()` delta |
+| Draw calls | ≤ 50 | `renderer.info.render.calls` |
+| Triangles | ≤ 200K | `renderer.info.render.triangles` |
+| Memory growth | < 10MB over 5 min | DevTools heap snapshot |
+| Load time | < 3s to first frame | `performance.mark` |
 
 ---
 
 ## 10. GLSL Reference Functions
 
-### 10.1 3D Simplex Noise (Compact)
+### 10.1 3D Simplex Noise
 
 ```glsl
 vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
@@ -561,55 +482,41 @@ vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
 float snoise(vec3 v) {
     const vec2 C = vec2(1.0/6.0, 1.0/3.0);
     const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
-
     vec3 i  = floor(v + dot(v, C.yyy));
     vec3 x0 = v - i + dot(i, C.xxx);
-
     vec3 g = step(x0.yzx, x0.xyz);
     vec3 l = 1.0 - g;
     vec3 i1 = min(g.xyz, l.zxy);
     vec3 i2 = max(g.xyz, l.zxy);
-
     vec3 x1 = x0 - i1 + C.xxx;
     vec3 x2 = x0 - i2 + C.yyy;
     vec3 x3 = x0 - D.yyy;
-
     i = mod289(i);
     vec4 p = permute(permute(permute(
         i.z + vec4(0.0, i1.z, i2.z, 1.0))
       + i.y + vec4(0.0, i1.y, i2.y, 1.0))
       + i.x + vec4(0.0, i1.x, i2.x, 1.0));
-
     float n_ = 0.142857142857;
     vec3 ns = n_ * D.wyz - D.xzx;
-
     vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
-
     vec4 x_ = floor(j * ns.z);
     vec4 y_ = floor(j - 7.0 * x_);
-
     vec4 x = x_ *ns.x + ns.yyyy;
     vec4 y = y_ *ns.x + ns.yyyy;
     vec4 h = 1.0 - abs(x) - abs(y);
-
     vec4 b0 = vec4( x.xy, y.xy );
     vec4 b1 = vec4( x.zw, y.zw );
-
     vec4 s0 = floor(b0)*2.0 + 1.0;
     vec4 s1 = floor(b1)*2.0 + 1.0;
     vec4 sh = -step(h, vec4(0.0));
-
     vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy;
     vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;
-
     vec3 p0 = vec3(a0.xy, h.x);
     vec3 p1 = vec3(a0.zw, h.y);
     vec3 p2 = vec3(a1.xy, h.z);
     vec3 p3 = vec3(a1.zw, h.w);
-
     vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
     p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
-
     vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
     m = m * m;
     return 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3) ) );
@@ -633,191 +540,193 @@ float fbm(vec3 p) {
 
 ---
 
-## 11. Constants.js Template
-
-```js
-export const Constants = {
-    // Game
-    GAME_NAME: 'Void Drift',
-    VERSION: '1.0.0',
-
-    // Ship
-    MAX_SHIP_SPEED: 80,
-    SHIP_ACCELERATION: 40,
-    SHIP_DRAG: 0.98,
-    SHIP_ROLL_SPEED: 3.0,
-    SHIP_BASIS: {
-        position: { x: 0, y: 2, z: 0 },
-        scale: 1.0,
-    },
-
-    // Camera
-    CAMERA_DISTANCE: 12,
-    CAMERA_HEIGHT: 5,
-    CAMERA_FOV_REST: 75,
-    CAMERA_FOV_MAX: 95,
-    CAMERA_DAMPING: 0.05,
-
-    // Weapon
-    FIRE_RATE: 8,
-    PROJECTILE_SPEED: 200,
-    PROJECTILE_LIFETIME: 3.0,
-    PROJECTILE_RANGE: 200,
-    PROJECTILE_DAMAGE: 25,
-
-    // Health
-    MAX_HEALTH: 100,
-    COLLISION_DAMAGE_LARGE: 20,
-    COLLISION_DAMAGE_SMALL: 5,
-    WARNING_HEALTH_THRESHOLD: 30,
-
-    // World
-    CHUNK_SIZE: 200,
-    CHUNKS_AHEAD: 3,
-    CHUNKS_BEHIND: 2,
-
-    // Biomes
-    BIOMES: {
-        OPEN_SPACE:    { range: [0, 1000],  debrisDensity: 1.0,  nebulaCount: 2,  color: [0.1, 0.15, 0.3] },
-        ASTEROID_BELT: { range: [1000, 3000], debrisDensity: 2.0, nebulaCount: 3, color: [0.4, 0.2, 0.1] },
-        NEBULA_CORRIDOR: { range: [3000, 5000], debrisDensity: 1.5, nebulaCount: 6, color: [0.3, 0.15, 0.4] },
-        WORMHOLE:      { range: [5000, 7000], debrisDensity: 3.0, nebulaCount: 8, color: [0.2, 0.1, 0.5] },
-    },
-
-    // Starfield
-    STAR_LAYERS: {
-        far:   { count: 5000, size: 0.5,  speed: 0.1,  color: [0.8, 0.85, 1.0] },
-        mid:   { count: 2000, size: 1.0,  speed: 0.3,  color: [1.0, 0.95, 0.8] },
-        near:  { count: 500,  size: 2.0,  speed: 0.8,  color: [1.0, 0.9, 0.7] },
-    },
-
-    // Post-processing
-    BLOOM: {
-        strength: 1.5,
-        radius: 0.4,
-        threshold: 0.15,
-    },
-    VIGNETTE: {
-        darkness: 0.5,
-        offset: 0.2,
-    },
-    FILM_GRAIN: {
-        intensity: 0.03,
-    },
-
-    // Particles
-    PARTICLE_POOLS: {
-        exhaust:   { maxParticles: 200, lifetime: 0.8,  size: 0.3 },
-        laserSpark:{ maxParticles: 50,  lifetime: 0.3,  size: 0.15 },
-        explosion: { maxParticles: 80,  lifetime: 1.2,  size: 0.4 },
-    },
-
-    // Performance
-    MAX_DRAW_CALLS: 50,
-    MAX_TRIANGLES: 200000,
-    MAX_INSTANCED_OBJECTS: 2000,
-    DPR_MAX: 2,
-};
-```
-
----
-
-## 12. EventBus Event Catalog
+## 11. EventBus Event Catalog
 
 ```js
 export const Events = {
     // Game flow
     GAME_STARTED:       'game:started',
     GAME_PAUSED:        'game:paused',
+    GAME_RESUMED:       'game:resumed',
     GAME_OVER:          'game:over',
     GAME_RESTART:       'game:restart',
 
     // Player
-    PLAYER_THRUST:      'player:thrust',
-    PLAYER_THRUST_END:  'player:thrust_end',
-    PLAYER_ROLL_LEFT:   'player:roll_left',
-    PLAYER_ROLL_RIGHT:  'player:roll_right',
-    PLAYER_DAMAGED:     'player:damaged',
-    PLAYER_DIED:        'player:died',
-    PLAYER_HEALTH_CHANGED: 'player:health_changed',
+    PLAYER_THRUST:      'player:thrust',          // { thrustFraction }
+    PLAYER_THRUST_END:  'player:thrustEnd',
+    PLAYER_DAMAGED:     'player:damaged',         // { amount, source, newHealth }
+    PLAYER_DIED:        'player:died',            // { reason }
+    PLAYER_HEALTH_CHANGED: 'player:healthChanged', // { health, maxHealth }
 
     // Weapon
-    WEAPON_FIRED:       'weapon:fired',
-    WEAPON_HIT:         'weapon:hit',
+    WEAPON_FIRED:       'weapon:fired',           // { position, direction }
+    WEAPON_HIT:         'weapon:hit',             // { target, position }
     WEAPON_DESPAWNED:   'weapon:despawned',
 
     // Environment
-    ASTEROID_DESTROYED: 'environment:asteroid_destroyed',
-    DEBRIS_DESTROYED:   'environment:debris_destroyed',
-    CHUNK_SPAWNED:      'environment:chunk_spawned',
-    CHUNK_CLEANED:      'environment:chunk_cleaned',
+    ASTEROID_DESTROYED: 'environment:asteroidDestroyed', // { position, size, score }
+    DEBRIS_DESTROYED:   'environment:debrisDestroyed',
+    CHUNK_SPAWNED:      'environment:chunkSpawned',     // { chunkX, chunkZ }
+    CHUNK_CLEANED:      'environment:chunkCleaned',
+    BIOME_CHANGED:      'environment:biomeChanged',     // { from, to }
 
     // Score
-    SCORE_CHANGED:      'score:changed',
-    HIGH_SCORE_SAVED:   'score:high_score_saved',
+    SCORE_CHANGED:      'score:changed',          // { score, delta, reason }
+    HIGH_SCORE_SAVED:   'score:highScoreSaved',   // { score }
 
     // Audio
-    AUDIO_PLAY:         'audio:play',
+    AUDIO_PLAY:         'audio:play',             // { sound, volume, pan }
     AUDIO_STOP:         'audio:stop',
-    AUDIO_MUTE:         'audio:mute',
+    AUDIO_MUTED:        'audio:muted',            // { muted }
 
     // Visual
-    SCREEN_SHAKE:       'visual:shake',
-    SCREEN_FLASH:       'visual:flash',
-    WARNING_PULSE:      'visual:warning_pulse',
+    SCREEN_SHAKE:       'visual:shake',           // { intensity, duration }
+    SCREEN_FLASH:       'visual:flash',           // { color, duration }
+    WARNING_PULSE:      'visual:warningPulse',    // { active }
 };
 ```
 
 ---
 
-## 13. Build & Run Commands
+## 12. Build & Run Commands
 
 ```bash
-# Development
-npm run dev
-
-# Production build
-npm run build
-
-# Preview production build
-npm run preview
-
-# Lint (optional, add eslint)
-npm run lint
-
-# Test
-npm test
+npm run dev       # Development with HMR
+npm run build     # Production build
+npm run preview   # Preview production build
 ```
 
 ---
 
-## 14. Known Pitfalls & Solutions
+## 13. Known Pitfalls & Solutions
 
 | Pitfall | Solution |
 |---------|----------|
-| Memory leaks from undisposed geometries/materials | Always call `.dispose()` on geometries, materials, textures when removing objects. Implement a cleanup pass in `Game.shutdown()`. |
-| GC stutters from creating objects in animation loop | Pre-allocate all vectors, matrices, and particle objects. Reuse via pooling. Never `new THREE.Vector3()` in the loop. |
-| Too many draw calls | Use `InstancedMesh` for repeated objects (asteroids, debris, stars). Merge static geometries where possible. |
-| Z-fighting with near plane too small | Use the largest `near` value possible (e.g., 0.1, not 0.001). Adjust `far` to cover the world. |
-| Mobile black screen from highp precision | Use `precision mediump float` in shaders, wrap highp in `#ifdef GL_FRAGMENT_PRECISION_HIGH`. |
-| WebGL context loss | Listen for `webglcontextlost` and `webglcontextrestored` events on the renderer canvas. Re-initialize resources on restore. |
-| High-DPI blur | Set `renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))`. |
-| Post-processing kills performance | Profile before and after each pass. Remove passes on low-end devices. Use `EffectComposer` efficiently. |
-| Tab-out death spiral | Always cap delta at 0.1s: `delta = Math.min(clock.getDelta(), 0.1)`. |
-| Stale event listeners on restart | Store unsubscribe functions from `eventBus.on()` and call them all in `shutdown()`. |
+| Memory leaks from undisposed geometries | `.dispose()` on all geometries, materials, textures in cleanup |
+| GC stutters from allocations in loop | Pre-allocate vectors/matrices/particles. Zero `new` in animation loop |
+| Too many draw calls | InstancedMesh for repeated objects. Merge static geometries |
+| Z-fighting | Use near=0.1 (not 0.001). Adjust far to cover world |
+| Mobile black screen (shader precision) | `precision mediump float` in shaders, wrap highp in `#ifdef` |
+| WebGL context loss | Listen for `webglcontextlost`/`restored`, re-init on restore |
+| HiDPI blur | `renderer.setPixelRatio(Math.min(devicePixelRatio, 2))` |
+| Tab-out death spiral | `delta = Math.min(clock.getDelta(), 0.1)` |
+| Stale event listeners on restart | Store unsubscribe functions, call all in `shutdown()` |
+| AZERTY keyboard issues | Use `event.code` everywhere. ZQSD + A/E documented as primary |
+| Space key fires AND mutes | Mute is M key only. Space is fire only. Documented separately |
+| No audio files | All audio is procedural Web Audio synthesis. No .ogg/.mp3 |
+| No external textures | Star texture generated via canvas. Ships/asteroids are procedural geometry |
+| Post-processing passes not in three/addons | Vignette, film grain, chromatic aberration are custom ShaderPass implementations |
 
 ---
 
-## 15. Stretch Goals (If Time/Performance Allows)
+## 14. Stretch Goals (Post-MVP)
 
-1. **Holographic UI elements** — Scanline-effect overlays on the HUD using a `ShaderMaterial` plane.
-2. **Dynamic god rays** — Volumetric light shafts from nebula cores using a screen-space post-process.
-3. **Speed distortion** — Vertex displacement shader on geometry near the ship when moving at high speed.
-4. **Cosmic background radiation** — Subtle static/noise texture overlay for texture.
-5. **Procedural music** — Web Audio API generative ambient soundscape that responds to biome and speed.
-6. **Speed run leaderboard** — Web-compatible leaderboard for distance-based records.
-7. **Photo mode** — Pause with free camera, screenshot capability.
-8. **Shader-based wormhole vortex** — Full-screen post-process that distorts the scene into a tunnel effect during wormhole biomes.
+1. Holographic UI elements — scanline-effect overlay shader
+2. Dynamic god rays — screen-space light shafts from nebula cores
+3. Speed distortion — vertex displacement near ship at high speed
+4. Cosmic background radiation — subtle static/noise texture overlay
+5. Procedural music — Web Audio generative ambient soundscape
+6. Speed run leaderboard — distance-based records
+7. Photo mode — pause + free camera + screenshot
+8. Shader-based wormhole vortex — full-screen tunnel distortion post-process
+
+---
+
+## 15. Acceptance Criteria (Agent Checklist)
+
+### Phase 1 — Foundation
+- [ ] P1.1 `npm install`, `npm run dev`, `npm run build` all succeed
+- [ ] P1.2 Full-screen canvas renders, HiDPI, responsive resize
+- [ ] P1.3 Scene with dark background + fog, camera + renderer instantiated
+- [ ] P1.4 RAF loop runs, delta-time measured and capped at 0.1s
+- [ ] P1.5 No console errors on boot
+
+### Phase 2 — Core Architecture
+- [ ] P2.1 Game.js orchestrator, EventBus, GameState, Constants all exist
+- [ ] P2.2 Event-driven communication (no direct cross-module imports)
+- [ ] P2.3 GameState.reset() clears all state cleanly
+- [ ] P2.4 Zero magic numbers in game logic (verify via grep)
+- [ ] P2.5 Delta-time normalization with 0.1s cap
+
+### Phase 3 — Ship & Controls
+- [ ] P3.1 Ship mesh visible: fuselage, wings, engines, cockpit
+- [ ] P3.2 ZQSD movement: translation in correct directions
+- [ ] P3.3 Inertia physics: smooth acceleration, no instant-turn
+- [ ] P3.4 Max speed cap enforced (80 units/s)
+- [ ] P3.5 A/E roll + mouse X roll: smooth interpolation
+- [ ] P3.6 Camera follows ship with damping, cinematic offset
+
+### Phase 4 — Starfield
+- [ ] P4.1 Three-layer parallax starfield visible
+- [ ] P4.2 Custom ShaderMaterial per layer, single draw call each
+- [ ] P4.3 30 bright stars with visible bloom halos
+- [ ] P4.4 Fog active: distant objects fade to background
+- [ ] P4.5 Scene background is dark (0x000011), not pure black
+
+### Phase 5 — Nebulae
+- [ ] P5.1 Nebula clusters visible: 8-12 billboards each
+- [ ] P5.2 Noise-based color gradients, animated via uTime
+- [ ] P5.3 Biome-dependent colors
+- [ ] P5.4 Nebula density increases with distance
+
+### Phase 6 — Asteroids & Debris
+- [ ] P6.1 Procedural asteroids with vertex displacement
+- [ ] P6.2 InstancedMesh for medium/small objects
+- [ ] P6.3 PBR materials with per-instance color variation
+- [ ] P6.4 Debris objects: varied shapes, slow rotation
+- [ ] P6.5 Directional light + ship spotlight visible on asteroids
+
+### Phase 7 — Shooting & Destruction
+- [ ] P7.1 Laser fires and travels forward from ship
+- [ ] P7.2 Fire rate limited to 8 shots/s
+- [ ] P7.3 Laser visual: glowing beam with emissive + bloom
+- [ ] P7.4 Shooting asteroid removes it from scene
+- [ ] P7.5 Explosion particles: 40-80 expanding, color fading
+- [ ] P7.6 Screen shake or flash on destruction
+- [ ] P7.7 Score updates in HUD
+- [ ] P7.8 Projectiles despawn at range limit or lifetime
+
+### Phase 8 — Post-Processing
+- [ ] P8.1 Bloom active: bright objects glow
+- [ ] P8.2 Bloom tuned: strength 1.5, radius 0.4, threshold 0.15
+- [ ] P8.3 Chromatic aberration at high speed (skip on low-end)
+- [ ] P8.4 Vignette: edges darkened
+- [ ] P8.5 Film grain visible (skip on low-end)
+- [ ] P8.6 FOV breathing: 75° → 95° under thrust
+- [ ] P8.7 Ship exhaust trail during thrust
+- [ ] P8.8 Engine flame with flickering shader
+
+### Phase 9 — World Generation
+- [ ] P9.1 Chunk system: spawn ahead, cleanup behind
+- [ ] P9.2 Seamless transitions at chunk boundaries
+- [ ] P9.3 Seeded RNG: same coords = same content
+- [ ] P9.4 Biome variation: distinct visual signatures
+- [ ] P9.5 Infinite exploration: no environment end
+
+### Phase 10 — Game Flow
+- [ ] P10.1 Health system: collision damage, health bar update
+- [ ] P10.2 Game over at 0 health: death screen with score
+- [ ] P10.3 Restart (R key): clean reset, all state fresh
+- [ ] P10.4 3× restart test: identical results, no memory leaks
+- [ ] P10.5 High score persists via localStorage
+
+### Phase 11 — Audio
+- [ ] P11.1 Engine rumble: continuous, volume scales with thrust
+- [ ] P11.2 Laser sound on fire
+- [ ] P11.3 Explosion sound on destruction
+- [ ] P11.4 Warning beep when health < 30
+- [ ] P11.5 M key toggles mute, indicator icon visible
+
+### Phase 12 — Performance & Polish
+- [ ] P12.1 ≥ 60fps sustained for 60s gameplay
+- [ ] P12.2 Draw calls ≤ 50
+- [ ] P12.3 Triangles ≤ 200K
+- [ ] P12.4 No memory leaks (< 10MB growth over 5 min)
+- [ ] P12.5 Touch controls functional
+- [ ] P12.6 Responsive canvas on window resize
+- [ ] P12.7 Zero console errors
+- [ ] P12.8 `npm run build` succeeds
+- [ ] P12.9 Visual "wow" factor: dense, layered, atmospheric
 
 ---
 

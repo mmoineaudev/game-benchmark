@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Procedural Metroidvania</title>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "three/build/three.module.js",
+      "three/addons/": "three/examples/jsm/"
+    }
+  }
+  </script>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:#05060d; overflow:hidden; font-family:monospace; }
+    #gameCanvas { display:block; width:100vw; height:100vh; }
+    #hud { position:fixed; inset:0; pointer-events:none; z-index:10; }
+    #overlay { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:20; pointer-events:none; }
+    #overlay.active { pointer-events:all; }
+    .hidden { display:none !important; }
+    .fx-layer { position:fixed; inset:0; pointer-events:none; z-index:5; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <canvas id="gameCanvas"></canvas>
+    <div id="hud"></div>
+    <div id="overlay"></div>
+    <div id="fxLayer" class="fx-layer"></div>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

@@ -1,21 +1,19 @@
 import * as THREE from 'three';
-import { WORLD } from '../core/Constants.js';
 
 export class OrbSystem {
   constructor(scene, dungeonData, state) {
     this.scene = scene;
     this.data = dungeonData;
     this.state = state;
-    this.orbs = []; // { mesh, x, y, z, collected }
+    this.orbs = [];
   }
 
   init() {
-    // Place 5 orbs in random rooms, preferring vaults
     const vaultCells = [];
     const otherCells = [];
-
     const gs = this.data.gridSize;
     const cs = this.data.cellSize;
+
     for (let cz = 0; cz < gs; cz++) {
       for (let cx = 0; cx < gs; cx++) {
         const meta = this.data.metadata[cz][cx];
@@ -27,20 +25,21 @@ export class OrbSystem {
     }
 
     const orbMat = new THREE.MeshStandardMaterial({
-      color: 0x44aaff,
-      emissive: 0x44aaff,
-      emissiveIntensity: 2.5,
-      roughness: 0.2,
-      metalness: 0.3,
+      color: 0x44aaff, emissive: 0x44aaff, emissiveIntensity: 2.5,
+      roughness: 0.15, metalness: 0.4,
     });
 
-    // Place at least 1 in vault, spread rest randomly
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: 0x44aaff, transparent: true, opacity: 0.15, depthWrite: false,
+    });
+    const glowGeo = new THREE.SphereGeometry(0.45, 16, 16);
+
     const cells = [...vaultCells, ...otherCells].sort(() => Math.random() - 0.5);
     const chosen = cells.slice(0, Math.min(5, cells.length));
 
     for (const { cx, cz } of chosen) {
-      const x = cx * cs + cs / 2 + (Math.random() - 0.5) * (cs * 0.5);
-      const z = cz * cs + cs / 2 + (Math.random() - 0.5) * (cs * 0.5);
+      const x = cx * cs + cs / 2 + (Math.random() - 0.5) * (cs * 0.4);
+      const z = cz * cs + cs / 2 + (Math.random() - 0.5) * (cs * 0.4);
       const y = 1.2;
 
       const orbGeo = new THREE.SphereGeometry(0.25, 32, 32);
@@ -48,24 +47,58 @@ export class OrbSystem {
       mesh.position.set(x, y, z);
       this.scene.add(mesh);
 
-      this.orbs.push({ mesh, x, y, z, collected: false, baseY: y });
+      const glow = new THREE.Mesh(glowGeo, glowMat);
+      glow.position.set(x, y, z);
+      this.scene.add(glow);
+
+      // Small orbiting particles around the orb
+      const particles = this._createOrbParticles(x, y, z);
+
+      this.orbs.push({ mesh, glow, particles, x, y, z, collected: false, baseY: y });
     }
 
     this.state.totalOrbs = this.orbs.length;
   }
 
+  _createOrbParticles(x, y, z) {
+    const count = 12;
+    const geo = new THREE.BufferGeometry();
+    const positions = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      positions[i * 3] = x + (Math.random() - 0.5) * 0.6;
+      positions[i * 3 + 1] = y + (Math.random() - 0.5) * 0.6;
+      positions[i * 3 + 2] = z + (Math.random() - 0.5) * 0.6;
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.PointsMaterial({
+      color: 0x88ccff, size: 0.04, blending: THREE.AdditiveBlending,
+      depthWrite: false, transparent: true, opacity: 0.7,
+    });
+    const points = new THREE.Points(geo, mat);
+    points.userData = { basePositions: new Float32Array(positions) };
+    this.scene.add(points);
+    return points;
+  }
+
   update(time, playerPos, isPressedE, wasPressedE) {
     const p = playerPos;
-    let collectedThisFrame = false;
 
     for (const orb of this.orbs) {
       if (orb.collected) continue;
 
-      // Bobbing animation
-      orb.mesh.position.y = orb.baseY + Math.sin(time * 3) * 0.15;
-      orb.mesh.rotation.y += 0.01;
+      orb.mesh.position.y = orb.baseY + Math.sin(time * 2.5) * 0.12;
+      orb.mesh.rotation.y += 0.015;
+      orb.mesh.rotation.x += 0.008;
+      orb.glow.position.copy(orb.mesh.position);
+      orb.glow.scale.setScalar(1 + Math.sin(time * 3) * 0.1);
 
-      // Collection check
+      // Orbit particles around orb
+      if (orb.particles && orb.particles.userData.basePositions) {
+        orb.particles.position.copy(orb.mesh.position);
+        orb.particles.rotation.y += 0.02;
+        orb.particles.rotation.x += 0.01;
+      }
+
       const dx = p.x - orb.x;
       const dz = p.z - orb.z;
       const dist = Math.sqrt(dx * dx + dz * dz);
@@ -73,15 +106,19 @@ export class OrbSystem {
       if (dist < 1.5 && isPressedE && !wasPressedE) {
         orb.collected = true;
         this.state.collectedOrbs++;
-        collectedThisFrame = true;
-
-        // Shrink and remove animation
         orb.mesh.scale.set(0, 0, 0);
+        orb.glow.scale.set(0, 0, 0);
         this.scene.remove(orb.mesh);
+        this.scene.remove(orb.glow);
+        if (orb.particles) {
+          orb.particles.geometry.dispose();
+          orb.particles.material.dispose();
+          this.scene.remove(orb.particles);
+        }
+        orb.mesh.geometry.dispose();
+        orb.glow.geometry.dispose();
       }
     }
-
-    return collectedThisFrame;
   }
 
   nearestOrbDist(playerPos) {
@@ -96,22 +133,26 @@ export class OrbSystem {
     return min;
   }
 
-  allCollected() {
-    return this.state.collectedOrbs >= this.state.totalOrbs && this.state.totalOrbs > 0;
-  }
-
   dispose() {
-    // Dispose shared material once
     for (const orb of this.orbs) {
       if (!orb.collected) {
         orb.mesh.geometry.dispose();
+        orb.glow.geometry.dispose();
         this.scene.remove(orb.mesh);
+        this.scene.remove(orb.glow);
+        if (orb.particles) {
+          orb.particles.geometry.dispose();
+          orb.particles.material.dispose();
+          this.scene.remove(orb.particles);
+        }
       }
     }
-    // Find and dispose material from any mesh
+    // Dispose shared materials
     if (this.orbs.length > 0) {
-      const m = this.orbs[0].mesh.material;
-      if (m && !m._disposed) { m.dispose(); m._disposed = true; }
+      const m0 = this.orbs[0].mesh.material;
+      if (m0 && !m0._disposed) { m0.dispose(); m0._disposed = true; }
+      const g0 = this.orbs[0].glow.material;
+      if (g0 && !g0._disposed) { g0.dispose(); g0._disposed = true; }
     }
     this.orbs = [];
   }

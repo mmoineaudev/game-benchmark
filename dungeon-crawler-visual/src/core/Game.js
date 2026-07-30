@@ -23,6 +23,10 @@ export class Game {
     this._orbCountEl = document.getElementById('orb-count');
     this._interactEl = document.getElementById('interact-prompt');
     this._exitEl = document.getElementById('exit-prompt');
+    this._messagesEl = document.getElementById('messages');
+    this._prevOrbCount = 0;
+    this._prevInExit = false;
+    this._welcomeShown = false;
   }
 
   init() {
@@ -38,10 +42,21 @@ export class Game {
     this._initOrbs();
     this._placeWaterPuddles();
     this._setupPlayerStart();
+    this._showMessage('Find the ' + this.state.totalOrbs + ' glowing blue orbs', 'goal');
+    this._showMessage('WASD to move, mouse to look', 'goal');
     this._updateHUD();
     this._isRunning = true;
     this._lastTime = performance.now();
     this._animate();
+  }
+
+  _showMessage(text, className) {
+    if (!this._messagesEl) return;
+    const el = document.createElement('div');
+    el.className = 'msg' + (className ? ' ' + className : '');
+    el.textContent = text;
+    this._messagesEl.appendChild(el);
+    setTimeout(() => { if (el.parentNode) el.remove(); }, 4200);
   }
 
   _initRenderer() {
@@ -170,6 +185,7 @@ export class Game {
       this.input.isPressed('KeyE'), this._eKeyWasDown);
 
     this._animateWater(t);
+    this._checkMessages();
     this._updateHUD();
     this._eKeyWasDown = this.input.isPressed('KeyE');
     this.post.render();
@@ -229,6 +245,27 @@ export class Game {
     }
   }
 
+  _checkMessages() {
+    // Orb collected
+    if (this.state.collectedOrbs > this._prevOrbCount) {
+      const remaining = this.state.totalOrbs - this.state.collectedOrbs;
+      if (remaining > 0) {
+        this._showMessage('Orb collected! ' + remaining + ' remaining', 'success');
+      }
+    }
+    // All orbs found
+    if (this._prevOrbCount < this.state.totalOrbs && this.state.collectedOrbs >= this.state.totalOrbs) {
+      this._showMessage('All orbs found! Head to the golden exit', 'success');
+    }
+    // Entered exit room
+    if (this.state.inExitRoom && !this._prevInExit) {
+      this._showMessage('The depths await — press E to descend', 'goal');
+    }
+
+    this._prevOrbCount = this.state.collectedOrbs;
+    this._prevInExit = this.state.inExitRoom;
+  }
+
   _regenerateDungeon() {
     this._isRunning = false;
     this.orbs.dispose();
@@ -243,6 +280,8 @@ export class Game {
     this._disposeScene();
 
     this.state = new GameState();
+    this._prevOrbCount = 0;
+    this._prevInExit = false;
     this._generateDungeon();
     this._buildWorld();
     this.lighting = new LightingSystem(this.scene);
@@ -255,6 +294,7 @@ export class Game {
     this.orbs.init();
     this._placeWaterPuddles();
     this._setupPlayerStart();
+    this._showMessage('Find the ' + this.state.totalOrbs + ' glowing blue orbs', 'goal');
     this._isRunning = true;
     this._lastTime = performance.now();
   }
@@ -271,20 +311,16 @@ export class Game {
   }
 
   _updateHUD() {
-    // Orb counter
     if (this._orbCountEl) {
       this._orbCountEl.textContent = `Orbs: ${this.state.collectedOrbs}/${this.state.totalOrbs}`;
     }
-    // Interaction prompt
     if (this._interactEl) {
       const dist = this.orbs ? this.orbs.nearestOrbDist(this.state.player) : Infinity;
       this._interactEl.style.display = (dist < 1.5) ? 'block' : 'none';
     }
-    // Exit prompt
     if (this._exitEl) {
       this._exitEl.style.display = this.state.inExitRoom ? 'block' : 'none';
     }
-    // Click prompt
     if (this._promptEl) {
       this._promptEl.style.display = this.input.isPointerLocked() ? 'none' : 'block';
     }

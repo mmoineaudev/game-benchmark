@@ -34,6 +34,21 @@
         color: #ffaa00; font-size: 16px; display: none;
         background: rgba(0,0,0,0.6); padding: 8px 16px; border-radius: 4px;
       }
+      #messages {
+        position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
+        display: flex; flex-direction: column; align-items: center; gap: 8px;
+      }
+      .msg {
+        background: rgba(0,0,0,0.7); color: #ffcc88; font-size: 13px;
+        padding: 8px 18px; border-radius: 6px;
+        animation: msgIn 0.3s ease-out, msgOut 0.5s ease-in forwards;
+        animation-delay: 0s, 3.5s;
+        white-space: nowrap;
+      }
+      .msg.goal { color: #88ccff; }
+      .msg.success { color: #88ff88; }
+      @keyframes msgIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+      @keyframes msgOut { to { opacity: 0; transform: translateY(-10px); } }
       #hint {
         position: absolute; bottom: 10px; right: 10px;
         color: #444; font-size: 11px;
@@ -45,6 +60,7 @@
     <div id="hud">
       <div id="crosshair"></div>
       <div id="orb-count">Orbs: 0/0</div>
+      <div id="messages"></div>
       <div id="prompt">Click to explore</div>
       <div id="interact-prompt">[E] Collect</div>
       <div id="exit-prompt">The depths beckon further... [E] to descend</div>

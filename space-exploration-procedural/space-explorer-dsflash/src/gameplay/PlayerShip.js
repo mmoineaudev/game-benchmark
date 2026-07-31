@@ -28,40 +28,27 @@ export class PlayerShip {
     this.headlight.target.position.set(0, 0, -20);
     this.group.add(this.headlight.target);
 
-    this.accentLight = new THREE.PointLight(0x6644ff, 0.4, 12, 2);
+    this.accentLight = new THREE.PointLight(0x6644ff, 1.2, 18, 2);
     this.accentLight.name = 'ship:underglow';
     this.accentLight.position.set(0, -0.8, 0.5);
     this.group.add(this.accentLight);
 
-    // Electromagnetic shield bubble (right-click) — v2.0: fresnel rim + ripple
-    this.shieldEnergy = Constants.SHIELD.energyMax;
-    this.shieldActive = false;
-    this.shieldMat = new THREE.MeshBasicMaterial({
-      color: 0x55ccff,
-      transparent: true,
-      opacity: 0,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-    this.shieldMesh = new THREE.Mesh(new THREE.SphereGeometry(Constants.SHIELD.radius, 24, 18), this.shieldMat);
-    this.shieldMesh.visible = false;
-    this.group.add(this.shieldMesh);
-    // outer fresnel rim (BackSide, always on while active)
-    this.shieldRimMat = new THREE.MeshBasicMaterial({
-      color: 0x88ddff,
-      transparent: true,
-      opacity: 0,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.BackSide,
-    });
-    this.shieldRim = new THREE.Mesh(new THREE.SphereGeometry(Constants.SHIELD.radius * 1.03, 24, 18), this.shieldRimMat);
-    this.shieldRim.visible = false;
-    this.group.add(this.shieldRim);
-    // ripple ring pool (on deflection)
+    // Wingtip running lights (red port / green starboard) — visibility markers
+    this.wingL = new THREE.PointLight(0xff3020, 1.4, 14, 2);
+    this.wingL.name = 'ship:wingtipL';
+    this.wingL.position.set(-3.6, 0.1, 0.5);
+    this.group.add(this.wingL);
+    this.wingR = new THREE.PointLight(0x20ff60, 1.4, 14, 2);
+    this.wingR.name = 'ship:wingtipR';
+    this.wingR.position.set(3.6, 0.1, 0.5);
+    this.group.add(this.wingR);
+
+    // Electronic deflagration (right-click burst) — v2.0: radial electric
+    // discharge that shoves asteroids away. 1s cooldown, no bubble.
+    this.shieldCooldown = 0; // seconds until next burst (0 = ready)
+    // ripple ring pool (burst visuals)
     this._ripples = [];
-    this._rippleTex = this._makeGlowTexture(0x88ddff);
+    this._rippleTex = this._makeGlowTexture(0xbfe8ff);
     for (let i = 0; i < 4; i++) {
       const mat = new THREE.SpriteMaterial({ map: this._rippleTex, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
       const spr = new THREE.Sprite(mat);
@@ -69,6 +56,22 @@ export class PlayerShip {
       this.group.add(spr);
       this._ripples.push({ spr, mat, life: 0 });
     }
+    // jagged electric arcs radiating outward (pooled LineSegments, no per-event alloc)
+    this._arcLife = 0;
+    this._arcGeo = new THREE.BufferGeometry();
+    this._arcPos = new Float32Array(8 * 6 * 2 * 3); // 8 arcs × 6 segments × 2 verts × xyz
+    this._arcGeo.setAttribute('position', new THREE.BufferAttribute(this._arcPos, 3).setUsage(THREE.DynamicDrawUsage));
+    this._arcGeo.setDrawRange(0, 0);
+    this._arcMat = new THREE.LineBasicMaterial({
+      color: 0xcfe8ff,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    this._arcLines = new THREE.LineSegments(this._arcGeo, this._arcMat);
+    this._arcLines.frustumCulled = false;
+    this.group.add(this._arcLines);
 
     // Emissive materials for flicker
     this._flameMeshes = [];
@@ -100,6 +103,53 @@ export class PlayerShip {
     ripple.life = 0.3;
     ripple.spr.position.set(x, y, z);
     ripple.spr.visible = true;
+  }
+
+  get shieldReady() {
+    return this.shieldCooldown <= 0;
+  }
+
+  /** Electronic deflagration: fire the jagged electric arcs outward. */
+  burstArcs() {
+    this._arcLife = 0.28;
+  }
+
+  _updateArcs(dt) {
+    if (this._arcLife > 0) {
+      this._arcLife -= dt;
+      const R = Constants.SHIELD.radius;
+      const segs = 6;
+      let vert = 0;
+      for (let a = 0; a < 8; a++) {
+        const ang = (a / 8) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
+        const elev = (Math.random() - 0.5) * 1.1;
+        const len = R * (0.55 + Math.random() * 0.45);
+        const dx = Math.cos(ang) * Math.cos(elev);
+        const dy = Math.sin(elev);
+        const dz = Math.sin(ang) * Math.cos(elev);
+        let px = 0, py = 0, pz = 0;
+        for (let i = 0; i < segs; i++) {
+          const t = (i + 1) / segs;
+          const jit = (1 - Math.abs(t - 0.5) * 2) * R * 0.22;
+          const cx = dx * len * t + (Math.random() - 0.5) * jit;
+          const cy = dy * len * t + (Math.random() - 0.5) * jit;
+          const cz = dz * len * t + (Math.random() - 0.5) * jit;
+          this._arcPos[vert++] = px; this._arcPos[vert++] = py; this._arcPos[vert++] = pz;
+          this._arcPos[vert++] = cx; this._arcPos[vert++] = cy; this._arcPos[vert++] = cz;
+          px = cx; py = cy; pz = cz;
+        }
+      }
+      this._arcGeo.setDrawRange(0, vert / 3);
+      this._arcGeo.attributes.position.needsUpdate = true;
+      this._arcMat.opacity = Math.min(1, Math.max(0, this._arcLife * 5));
+      if (this._arcLife <= 0) {
+        this._arcMat.opacity = 0;
+        this._arcGeo.setDrawRange(0, 0);
+      }
+    } else if (this._arcMat.opacity > 0) {
+      this._arcMat.opacity = 0;
+      this._arcGeo.setDrawRange(0, 0);
+    }
   }
 
   _buildMesh() {
@@ -331,25 +381,9 @@ export class PlayerShip {
       this.throttle = clamp(this.throttle + move.throttleDelta * C.THROTTLE_SCROLL_SENSITIVITY, 0, 1);
     }
 
-    // ---- Shield (right-click) --------------------------------------------
-    const S = C.SHIELD;
-    if (move.shieldHeld && this.shieldEnergy > 0) {
-      this.shieldActive = true;
-      this.shieldEnergy = Math.max(0, this.shieldEnergy - S.drainPerSec * dt);
-    } else {
-      this.shieldActive = false;
-      this.shieldEnergy = Math.min(S.energyMax, this.shieldEnergy + S.regenPerSec * dt);
-    }
-    this.shieldMesh.visible = this.shieldActive;
-    this.shieldRim.visible = this.shieldActive;
-    if (this.shieldActive) {
-      const pulse = 0.16 + 0.06 * Math.sin(this._time * 12);
-      this.shieldMat.opacity = pulse;
-      this.shieldRimMat.opacity = 0.1 + 0.05 * Math.sin(this._time * 12);
-    } else {
-      this.shieldMat.opacity = 0;
-      this.shieldRimMat.opacity = 0;
-    }
+    // ---- Deflagration cooldown (right-click burst) ------------------------
+    if (this.shieldCooldown > 0) this.shieldCooldown = Math.max(0, this.shieldCooldown - dt);
+    this._updateArcs(dt);
     // Ripple rings decay
     for (const r of this._ripples) {
       if (r.life > 0) {

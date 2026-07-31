@@ -41,7 +41,7 @@ const POOL_STYLE = {
   cometDust:  { color: [1.0, 0.95, 0.8], blending: THREE.AdditiveBlending,  curve: null, grow: 0.8 },
   cometSmoke: { color: [0.45, 0.42, 0.4], blending: THREE.NormalBlending,   curve: null, grow: 2.2 },
   ember:      { color: [0.9, 0.25, 0.08], blending: THREE.AdditiveBlending, curve: null, grow: 0.5 },
-  sparkle:    { color: [1.0, 0.95, 0.7], blending: THREE.AdditiveBlending, curve: null, grow: 0.8 },
+  sparkle:    { color: [0.9, 0.95, 1.0], blending: THREE.AdditiveBlending, curve: null, grow: 2.5 },
 };
 
 export class ParticleSystem {

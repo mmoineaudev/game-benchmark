@@ -19,11 +19,11 @@ export class InputSystem {
     this.right = false;
     this.rollLeft = false;
     this.rollRight = false;
-    this.shieldHeld = false;
     this.thrustHeld = false;
 
     // Edge-triggered flags (consumed by Game each frame)
     this.firePressed = false;
+    this.shieldPressed = false;
     this.pausePressed = false;
     this.mutePressed = false;
     this.restartPressed = false;
@@ -78,14 +78,11 @@ export class InputSystem {
     });
     document.addEventListener('mousedown', (e) => {
       if (e.button === 0 && this.pointerLocked) this.firePressed = true;
-      if (e.button === 2 && this.pointerLocked) this.shieldHeld = true;
-    });
-    document.addEventListener('mouseup', (e) => {
-      if (e.button === 2) this.shieldHeld = false;
+      if (e.button === 2 && this.pointerLocked) this.shieldPressed = true;
     });
     document.addEventListener('contextmenu', (e) => e.preventDefault());
     eventBus.on('input:shield', (e) => {
-      this.shieldHeld = e.active;
+      if (e.active) this.shieldPressed = true;
     });
 
     // Scroll wheel = throttle 0-100% (scroll up = more thrust)
@@ -186,6 +183,7 @@ export class InputSystem {
   consumeFrame() {
     const frame = {
       firePressed: this.firePressed,
+      shieldPressed: this.shieldPressed,
       pausePressed: this.pausePressed,
       mutePressed: this.mutePressed,
       restartPressed: this.restartPressed,
@@ -198,6 +196,7 @@ export class InputSystem {
       touchLook: this._touchLookActive ? { x: this.touchLook.x, y: this.touchLook.y } : null,
     };
     this.firePressed = false;
+    this.shieldPressed = false;
     this.pausePressed = false;
     this.mutePressed = false;
     this.restartPressed = false;
@@ -221,7 +220,6 @@ export class InputSystem {
       right: this.right,
       rollLeft: this.rollLeft,
       rollRight: this.rollRight,
-      shieldHeld: this.shieldHeld,
     };
   }
 }

@@ -87,7 +87,7 @@ export class HUD {
     const sb = this._el('div', '', sw); sb.id = 'hud-shield-bg';
     this.shieldFill = this._el('div', '', sb); this.shieldFill.id = 'hud-shield-fill';
     const sl = this._el('div', '', sw); sl.id = 'hud-shield-label';
-    sl.textContent = 'SHIELD (RIGHT CLICK)';
+    sl.textContent = 'DEFLAGRATION (RIGHT CLICK)';
 
     // Touch shield button (hidden on desktop)
     this.shieldBtn = this._el('div', '', this.root); this.shieldBtn.id = 'hud-shield-btn';

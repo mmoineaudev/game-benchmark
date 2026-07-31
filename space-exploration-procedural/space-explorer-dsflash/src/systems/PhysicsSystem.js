@@ -69,10 +69,6 @@ export class PhysicsSystem {
 
       // Resolve per type
       if (c.type === 'asteroid') {
-        if (ship.shieldActive) {
-          this._shieldDeflect(c, ship.position);
-          continue;
-        }
         const dmg = c.scale > Constants.COLLISION_THRESHOLD_LARGE ? Constants.COLLISION_DAMAGE_LARGE : Constants.COLLISION_DAMAGE_SMALL;
         const res = gameState.takeDamage(dmg, 'collision');
         this._bounce(ship, c, dt);
@@ -80,20 +76,12 @@ export class PhysicsSystem {
         this.game.onShipCollision(c, dmg);
         if (res === 'dead') { this._kill(ship, gameState, 'collision', c); return; }
       } else if (c.type === 'debris') {
-        if (ship.shieldActive) {
-          this._shieldDeflect(c, ship.position);
-          continue;
-        }
         const res = gameState.takeDamage(Constants.COLLISION_DAMAGE_SMALL, 'collision');
         this._bounce(ship, c, dt);
         if (c.owner) c.owner.remove(c);
         this.game.onShipCollision(c, Constants.COLLISION_DAMAGE_SMALL);
         if (res === 'dead') { this._kill(ship, gameState, 'collision', c); return; }
       } else if (c.type === 'comet') {
-        if (ship.shieldActive) {
-          this._shieldDeflect(c, ship.position);
-          continue;
-        }
         const res = gameState.takeDamage(Constants.COMET_DAMAGE, 'collision');
         // deflect comet, don't destroy it (spec open point: ship takes 25, comet survives)
         this._deflectBody(c, ship.position);
@@ -102,10 +90,6 @@ export class PhysicsSystem {
         if (res === 'dead') { this._kill(ship, gameState, 'collision', c); return; }
       } else if (c.type === 'crystal') {
         // Fragile: destroyed by impact, small damage (spec v2.0 §3.4.1)
-        if (ship.shieldActive) {
-          this._shieldDeflect(c, ship.position);
-          continue;
-        }
         const res = gameState.takeDamage(Constants.CRYSTAL.damage, 'collision');
         this._bounce(ship, c, dt);
         if (c.owner) c.owner.remove(c);
@@ -113,30 +97,18 @@ export class PhysicsSystem {
         if (res === 'dead') { this._kill(ship, gameState, 'collision', c); return; }
       } else if (c.type === 'hulk') {
         // Heavy but the hulk survives the impact (spec v2.0 §3.4.4)
-        if (ship.shieldActive) {
-          this._shieldDeflect(c, ship.position);
-          continue;
-        }
         const res = gameState.takeDamage(Constants.HULK.damage, 'collision');
         this._bounce(ship, c, dt);
         this.game.onShipCollision(c, Constants.HULK.damage);
         if (res === 'dead') { this._kill(ship, gameState, 'collision', c); return; }
       } else if (c.type === 'wreck') {
         // Finale wreck: 20 dmg, survives impact (spec v2.0 §3.4.5)
-        if (ship.shieldActive) {
-          this._shieldDeflect(c, ship.position);
-          continue;
-        }
         const res = gameState.takeDamage(Constants.CITY.wreckDamage, 'collision');
         this._bounce(ship, c, dt);
         this.game.onShipCollision(c, Constants.CITY.wreckDamage);
         if (res === 'dead') { this._kill(ship, gameState, 'collision', c); return; }
       } else if (c.type === 'cityFragment') {
         // Indestructible: bounce + 25 dmg (spec v2.0 §3.4.5)
-        if (ship.shieldActive) {
-          this._shieldDeflect(c, ship.position);
-          continue;
-        }
         const res = gameState.takeDamage(Constants.CITY.damage, 'collision');
         this._bounce(ship, c, dt);
         this.game.onShipCollision(c, Constants.CITY.damage);
@@ -161,10 +133,6 @@ export class PhysicsSystem {
         const d2 = qx * qx + qy * qy + qz * qz;
         const rr = Constants.PULSAR.beamTouchRadius + ship.radius;
         if (d2 < rr * rr) {
-          if (ship.shieldActive) {
-            this.game.onShieldDeflect(ship.position.x + qx, ship.position.y + qy, ship.position.z + qz);
-            continue;
-          }
           const res = gameState.takeDamage(Constants.PULSAR.damage, 'pulsarBeam');
           this.game.onShipCollision({ type: 'pulsarBeam' }, Constants.PULSAR.damage);
           if (res === 'dead') { this._kill(ship, gameState, 'pulsarBeam', { type: 'pulsarBeam' }); return; }
@@ -182,10 +150,6 @@ export class PhysicsSystem {
         const qx = ship.position.x - (b.ax + abx * t), qy = ship.position.y - (b.ay + aby * t), qz = ship.position.z - (b.az + abz * t);
         const d2 = qx * qx + qy * qy + qz * qz;
         if (d2 < Constants.STORM.strikeRadius * Constants.STORM.strikeRadius) {
-          if (ship.shieldActive) {
-            this.game.onShieldDeflect(ship.position.x + qx, ship.position.y + qy, ship.position.z + qz);
-            continue;
-          }
           const res = gameState.takeDamage(Constants.STORM.strikeDamage, 'lightning');
           this.game.onShipCollision({ type: 'lightning' }, Constants.STORM.strikeDamage);
           if (res === 'dead') { this._kill(ship, gameState, 'lightning', { type: 'lightning' }); return; }
@@ -313,15 +277,26 @@ export class PhysicsSystem {
     }
   }
 
-  /** Shield: strongly push the body away, no damage, no destruction. */
-  _shieldDeflect(c, shipPos) {
-    const nx = c.x - shipPos.x, ny = c.y - shipPos.y, nz = c.z - shipPos.z;
-    const len = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
-    const push = Constants.SHIELD.deflectPower;
-    c.vx += (nx / len) * push;
-    c.vy += (ny / len) * push;
-    c.vz += (nz / len) * push;
-    this.game.onShieldDeflect(c.x, c.y, c.z);
+  /** Electronic deflagration: radial impulse pushing light bodies (asteroids,
+   *  debris) away from the ship, strongest close to the hull. */
+  deflagrationPush(shipPos, radius) {
+    const r2 = radius * radius;
+    const systems = this.game.worldSystems;
+    for (const sys of [systems.asteroidField, systems.debrisSystem]) {
+      if (!sys || !sys.bodies) continue;
+      for (const b of sys.bodies) {
+        if (!b.active) continue;
+        const dx = b.x - shipPos.x, dy = b.y - shipPos.y, dz = b.z - shipPos.z;
+        const d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 >= r2) continue;
+        const len = Math.sqrt(d2) || 1;
+        const falloff = 0.35 + 0.65 * (1 - len / radius);
+        const push = Constants.SHIELD.deflectPower * falloff;
+        b.vx += (dx / len) * push;
+        b.vy += (dy / len) * push;
+        b.vz += (dz / len) * push;
+      }
+    }
   }
 
   _kill(ship, gameState, reason, source) {

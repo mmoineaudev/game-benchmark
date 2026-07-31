@@ -289,7 +289,6 @@ export class Game {
       right: mv.right || this.input.touchMove.x > 0.3,
       rollLeft: mv.rollLeft || this.input.touchRoll < -0.3,
       rollRight: mv.rollRight || this.input.touchRoll > 0.3,
-      shieldHeld: mv.shieldHeld,
       yawDelta,
       pitchDelta,
       throttleDelta: frame.throttleDelta,
@@ -376,6 +375,7 @@ export class Game {
 
     // Weapons + particles
     if (frame.firePressed) this.weaponSystem.fire(this._muzzlePos(), this.ship.heading);
+    if (frame.shieldPressed && this.ship.shieldReady) this._fireDeflagration();
     this.weaponSystem.update(dt);
     this.particles.update(dt);
 
@@ -391,8 +391,7 @@ export class Game {
 
     // Engine audio follows throttle
     this.audio.setThrust(thrustFraction);
-    this.audio.setShield(this.ship.shieldActive);
-    this.hud.setShield(this.ship.shieldEnergy / Constants.SHIELD.energyMax, this.ship.shieldActive);
+    this.hud.setShield(1 - this.ship.shieldCooldown / Constants.SHIELD.cooldown, this.ship.shieldCooldown <= 0);
 
     // Camera
     this.cameraSystem.update(dt, this.ship, thrustFraction);
@@ -419,15 +418,15 @@ export class Game {
     if (speedFraction > 0.9 && this.cameraSystem.camera.fov > 88) {
       this.particles.emitSpeedLines(this.camera.position, this.camera.quaternion, 3);
     }
-    // Max-speed sparkles: bright motes hugging the hull at full throttle.
-    // Particles inherit ~85% of ship velocity so they linger around the hull
-    // instead of instantly streaming off the tail (density ramps up to cap).
+    // Max-speed electric smoke: white crackling puffs hugging the hull at full
+    // throttle. Particles inherit ~85% of ship velocity so they linger around
+    // the hull instead of instantly streaming off the tail.
     if (speedFraction >= 0.97) {
       const sp = this.ship.position;
       const sv = this.ship.velocity;
       this.particles.emitStream('sparkle', sp.x, sp.y, sp.z, sv.x * 0.85, sv.y * 0.85, sv.z * 0.85, {
-        perFrame: Math.max(1, Math.round((speedFraction - 0.97) * 100)),
-        jitter: 3.0, size: 0.3, lifetime: 0.5, color: [1.0, 0.95, 0.7],
+        perFrame: Math.max(2, Math.round((speedFraction - 0.97) * 150)),
+        jitter: 4.0, size: 0.7, lifetime: 0.8, color: [0.9, 0.95, 1.0],
       });
     }
     if (this.worldSystems.stormSystem) {
@@ -549,11 +548,19 @@ export class Game {
     this._startDeathSequence();
   }
 
-  /** Shield deflection feedback: spark + ping + shield ripple at contact point. */
-  onShieldDeflect(x, y, z) {
-    this.particles.burst('laserSpark', x, y, z, 10, 10, { size: 0.2, color: [0.4, 0.8, 1.0] });
-    this.audio.play('shield', { volume: 0.4 });
-    if (this.ship.shieldPulse) this.ship.shieldPulse(x, y, z);
+  /** Electronic deflagration (right-click burst): shove asteroids/debris away
+   *  with a radial electric discharge. 1s cooldown (see Constants.SHIELD). */
+  _fireDeflagration() {
+    this.ship.shieldCooldown = Constants.SHIELD.cooldown;
+    const p = this.ship.position;
+    this.physics.deflagrationPush(p, Constants.SHIELD.radius);
+    this.particles.burstRing(p.x, p.y, p.z);
+    this.particles.burst('laserSpark', p.x, p.y, p.z, 26, 34, { size: 0.25, color: [0.7, 0.9, 1.0] });
+    if (this.ship.shieldPulse) this.ship.shieldPulse(p.x, p.y, p.z);
+    this.ship.burstArcs();
+    this.hud.flash('rgba(190,225,255,0.35)');
+    this.cameraSystem.addShake(0.5, 0.35);
+    this.audio.play('shield', { volume: 0.7 });
   }
 
   _startDeathSequence() {
@@ -597,8 +604,7 @@ export class Game {
     this.ship.heading.identity();
     this.ship.throttle = 0;
     this.ship.thrustFraction = 0;
-    this.ship.shieldEnergy = Constants.SHIELD.energyMax;
-    this.ship.shieldActive = false;
+    this.ship.shieldCooldown = 0;
     this.ship.alive = true;
     this.ship.group.visible = true;
     if (this.ship.setDamageLevel) this.ship.setDamageLevel(Constants.MAX_HEALTH, Constants.MAX_HEALTH);

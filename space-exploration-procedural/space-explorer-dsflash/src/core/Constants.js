@@ -17,13 +17,11 @@ export const Constants = {
   // Headlight (very powerful — reveals asteroids ahead)
   HEADLIGHT: { intensity: 6.5, range: 95, angle: 0.7, penumbra: 0.45, color: 0xffffff },
 
-  // Electromagnetic shield (right-click)
+  // Electronic deflagration (right-click burst): shoves asteroids/debris away.
   SHIELD: {
-    radius: 5.5,
-    energyMax: 100,
-    drainPerSec: 25,
-    regenPerSec: 15,
-    deflectPower: 25,
+    radius: 22,          // radial push radius (u)
+    deflectPower: 60,    // impulse on pushed bodies, falls off with distance
+    cooldown: 1.0,       // seconds between bursts
   },
 
   // Camera
@@ -169,7 +167,7 @@ export const Constants = {
 
   // Plasma Storm (v2.0 §3.4.3)
   STORM: {
-    density: 10, cloudRadiusMin: 20, cloudRadiusMax: 40,
+    density: 6, cloudRadiusMin: 20, cloudRadiusMax: 40,
     boltDistanceMax: 120, boltSegments: 6, boltLife: 0.15,
     boltReMin: 1.5, boltReMax: 3.5, telegraphTime: 0.5,
     strikeDamage: 40, strikeRadius: 25,
@@ -202,7 +200,7 @@ export const Constants = {
 
   // LightManager (v2.0 §6.3)
   LIGHT_MANAGER: {
-    capAuto: 14, capEco: 6, landmarkBudget: 4, signatureBudget: 4, reevalEvery: 6,
+    capAuto: 16, capEco: 6, landmarkBudget: 4, signatureBudget: 4, reevalEvery: 6,
     priorities: { pulsarSweep: 1, stormFlicker: 2, crystalCluster: 3, wreckStrobe: 4, cityWindow: 5, hulkEmergency: 6 },
     storageKey: 'void_drift_light_profile',
   },
@@ -248,7 +246,7 @@ export const Constants = {
     cometDust:  { maxParticles: 800, lifetime: 4.0, size: 0.8 },
     cometSmoke: { maxParticles: 300, lifetime: 6.0, size: 2.0 },
     ember:      { maxParticles: 100, lifetime: 2.0, size: 0.3 },
-    sparkle:    { maxParticles: 120, lifetime: 0.5, size: 0.3 },
+    sparkle:    { maxParticles: 160, lifetime: 0.8, size: 0.7 },
   },
 
   // Scoring
@@ -287,7 +285,7 @@ export const Constants = {
     { key: 'DEEP_VOID',            name: 'Deep Void',            range: [11000, 12500], scoreMult: 2.0, cfg: { ...VOID } },
     { key: 'PULSAR_REGION',        name: 'Pulsar Region',        range: [12500, 16000], scoreMult: 2.5, cfg: { asteroidDensity: 30, nebulaCount: 4, cometDensity: 9, blackHoleDensity: 2, deadStarDensity: 0, stationDensity: 2, crystalDensity: 0, pulsarDensity: 6, stormDensity: 0, hulkDensity: 0, wreckDensity: 0, cityChance: 0, color: [0.65, 0.7, 1.0] } },
     { key: 'DEEP_VOID',            name: 'Deep Void',            range: [16000, 18000], scoreMult: 2.5, cfg: { ...VOID } },
-    { key: 'PLASMA_STORM',         name: 'Plasma Storm',         range: [18000, 22000], scoreMult: 3.0, cfg: { asteroidDensity: 35, nebulaCount: 7, cometDensity: 9, blackHoleDensity: 4, deadStarDensity: 2, stationDensity: 1, crystalDensity: 0, pulsarDensity: 0, stormDensity: 10, hulkDensity: 0, wreckDensity: 0, cityChance: 0, color: [0.25, 0.55, 0.5] } },
+    { key: 'PLASMA_STORM',         name: 'Plasma Storm',         range: [18000, 22000], scoreMult: 3.0, cfg: { asteroidDensity: 35, nebulaCount: 7, cometDensity: 9, blackHoleDensity: 4, deadStarDensity: 2, stationDensity: 1, crystalDensity: 0, pulsarDensity: 0, stormDensity: 6, hulkDensity: 0, wreckDensity: 0, cityChance: 0, color: [0.25, 0.55, 0.5] } },
     { key: 'DEEP_VOID',            name: 'Deep Void',            range: [22000, 25000], scoreMult: 3.0, cfg: { ...VOID } },
     { key: 'DERELICT_GRAVEYARD',   name: 'Derelict Graveyard',   range: [25000, 29000], scoreMult: 3.5, cfg: { asteroidDensity: 20, nebulaCount: 3, cometDensity: 6, blackHoleDensity: 6, deadStarDensity: 2, stationDensity: 0, crystalDensity: 0, pulsarDensity: 0, stormDensity: 0, hulkDensity: 4, wreckDensity: 0, cityChance: 0, color: [0.35, 0.25, 0.2] } },
     { key: 'DEEP_VOID',            name: 'Deep Void',            range: [29000, 35000], scoreMult: 3.5, cfg: { ...VOID } },

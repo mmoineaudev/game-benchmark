@@ -112,6 +112,12 @@ export class CometSystem {
     ion.position.z = scale * 2.5;
     g.add(ion);
 
+    // Dim icy light (LightManager 'land:comet' — budget-culled by distance)
+    const CL = Constants.COMET_LIGHT;
+    const light = new THREE.PointLight(CL.color, CL.intensity, CL.range, CL.decay);
+    light.name = 'land:comet';
+    g.add(light);
+
     g.userData.ion = ion;
     g.userData.coma = coma;
     return g;
@@ -143,16 +149,21 @@ export class CometSystem {
         b.group.rotation.y = ang;
       }
 
-      // Trails: dust (warm additive) + smoke (dark expanding)
-      const spd = Math.hypot(b.vx, b.vy, b.vz);
-      const nx = -b.vx / (spd || 1), ny = -b.vy / (spd || 1), nz = -b.vz / (spd || 1);
+      // Trails (only within COMET_TRAIL_RADIUS — distant comets are specks and
+      // their emission would thrash the shared pools): warm dust + a long,
+      // slowly-drifting smoke tail that stretches far behind the comet.
       const px = b.group.position.x, py = b.group.position.y, pz = b.group.position.z;
-      this.particles.emitStream('cometDust', px, py, pz, nx * spd * 0.4, ny * spd * 0.4, nz * spd * 0.4, {
-        perFrame: 2, jitter: b.scale * 0.4, size: 0.5 + b.scale * 0.1,
-      });
-      this.particles.emitStream('cometSmoke', px, py, pz, nx * spd * 0.25, ny * spd * 0.25, nz * spd * 0.25, {
-        perFrame: 1, jitter: b.scale * 0.6, size: 1.5 + b.scale * 0.15,
-      });
+      const ds = Math.hypot(px - shipPos.x, py - shipPos.y, pz - shipPos.z);
+      if (ds <= Constants.COMET_TRAIL_RADIUS) {
+        const spd = Math.hypot(b.vx, b.vy, b.vz);
+        const nx = -b.vx / (spd || 1), ny = -b.vy / (spd || 1), nz = -b.vz / (spd || 1);
+        this.particles.emitStream('cometDust', px, py, pz, nx * spd * 0.35, ny * spd * 0.35, nz * spd * 0.35, {
+          perFrame: 3, jitter: b.scale * 0.4, size: 0.5 + b.scale * 0.1,
+        });
+        this.particles.emitStream('cometSmoke', px, py, pz, nx * spd * 0.12, ny * spd * 0.12, nz * spd * 0.12, {
+          perFrame: 2, jitter: b.scale * 0.8, size: 2.0 + b.scale * 0.2,
+        });
+      }
     }
   }
 

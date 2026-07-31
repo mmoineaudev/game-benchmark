@@ -67,12 +67,14 @@ export const Constants = {
   COMET_SCORE: 100,
   COMET_TUMBLE_SPEED: 0.3,
   COMET_TRAIL_POOL: 800,
-  COMET_SMOKE_POOL: 300,
+  COMET_SMOKE_POOL: 1200,
   COMET_CURVE_AMPLITUDE: 10,
   COMET_CURVE_WAVELENGTH: 150,
   COMET_MIN_DIST_FROM_SHIP: 150,
   COMET_TRAIL_LIFETIME: 4.0,
-  COMET_SMOKE_LIFETIME: 6.0,
+  COMET_SMOKE_LIFETIME: 8.0,
+  COMET_TRAIL_RADIUS: 300,   // emit trails only within this distance of the ship
+  COMET_LIGHT: { color: 0x88bbff, intensity: 1.0, range: 90, decay: 1.5 }, // dim icy glow
 
   // Black holes
   BLACK_HOLE_RADIUS: 8,
@@ -244,7 +246,7 @@ export const Constants = {
     laserSpark: { maxParticles: 50,  lifetime: 0.3, size: 0.15 },
     explosion:  { maxParticles: 80,  lifetime: 1.2, size: 0.4 },
     cometDust:  { maxParticles: 800, lifetime: 4.0, size: 0.8 },
-    cometSmoke: { maxParticles: 300, lifetime: 6.0, size: 2.0 },
+    cometSmoke: { maxParticles: 1200, lifetime: 8.0, size: 2.5 },
     ember:      { maxParticles: 100, lifetime: 2.0, size: 0.3 },
     sparkle:    { maxParticles: 256, lifetime: 0.8, size: 0.7 },
   },

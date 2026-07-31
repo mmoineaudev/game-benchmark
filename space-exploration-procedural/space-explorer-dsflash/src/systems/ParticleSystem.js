@@ -39,7 +39,7 @@ const POOL_STYLE = {
   laserSpark: { color: [1.0, 0.9, 0.6], blending: THREE.AdditiveBlending,   curve: null, grow: 0.4 },
   explosion:  { color: [1.0, 1.0, 1.0], blending: THREE.AdditiveBlending,   curve: [[1.0, 0.9, 0.2], [1.0, 0.3, 0.05], [0.1, 0.02, 0.0]], grow: 1.4 },
   cometDust:  { color: [1.0, 0.95, 0.8], blending: THREE.AdditiveBlending,  curve: null, grow: 0.8 },
-  cometSmoke: { color: [0.45, 0.42, 0.4], blending: THREE.NormalBlending,   curve: null, grow: 2.2 },
+  cometSmoke: { color: [0.62, 0.66, 0.74], blending: THREE.NormalBlending,   curve: null, grow: 3.0 },
   ember:      { color: [0.9, 0.25, 0.08], blending: THREE.AdditiveBlending, curve: null, grow: 0.5 },
   sparkle:    { color: [0.9, 0.95, 1.0], blending: THREE.AdditiveBlending, curve: null, grow: 2.5 },
 };

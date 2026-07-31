@@ -10,7 +10,7 @@ echo ""
 # Install deps if needed
 if [ ! -d "node_modules" ]; then
   echo "[launcher] Installing dependencies..."
-  npm install
+  npm install --include=dev
 fi
 
 # Kill any existing vite on port 5173

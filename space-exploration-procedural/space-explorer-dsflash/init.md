@@ -1,6 +1,6 @@
 # Space Explorer DSFlash — Init & Design Notes
 
-> Source of truth: `~/Documents/prompt-library/space-exploration-threejs-spec.md` *(fully decided: free flight + comets + black holes + dead stars + decorative stations; zero open points)*
+> Source of truth: **`docs/SPEC.md`** — *"Void Drift — Deep Space Expedition (Biome Ladder) & Remaster"* (v2.0: 9-rung ladder + Deep Voids + Spatial Graveyard finale at 35,000 u + ship/VFX/lighting remaster; zero open points). Supersedes the original `~/Documents/prompt-library/space-exploration-threejs-spec.md` for biome/world/visual sections; the original stays authoritative for everything not contradicted.
 > Working directory: `~/Documents/games-benchmarks/space-exploration-procedural/space-explorer-dsflash/`
 > Project name: **Void Drift** — Vite + Three.js 0.165, ES modules, zero external assets (procedural geometry, canvas textures, Web Audio synthesis).
 
@@ -80,20 +80,53 @@
 ### 1.14 HUD / UI (DOM overlay)
 - Score (top-left), distance odometer (top-center), health bar (bottom-center), crosshair (center), biome indicator (top-right), thrust bar (bottom-left), **event horizon** + **stellar remnant** warnings (center-bottom, pulsing red), mute icon. Death screen title by cause: "SHIP DESTROYED" / "CONSUMED BY A BLACK HOLE" / "VAPORIZED BY A DEAD STAR" — all with score/distance/high score + "Press R to restart".
 
-### 1.15 Biomes (world regions)
-| Biome | Distance (u) | Asteroids | Nebulae | Comets | Black holes | Dead stars | Stations | Colors |
-|-------|-------------|-----------|---------|--------|-------------|------------|----------|--------|
-| Open Space | 0–1000 | 10/chunk | 2 | 3/chunk | 0 | 1%/chunk | 0 | blue-black |
-| Asteroid Belt | 1000–3000 | 40/chunk | 3 | 6/chunk | 0 | 2%/chunk | 2%/chunk | orange/red |
-| Nebula Corridor | 3000–5000 | 20/chunk | 6 | 8/chunk | 4%/chunk | 3%/chunk | 3%/chunk | multi-hue |
-| Wormhole | 5000–7000 | 60/chunk | 8 | 10/chunk | 8%/chunk | 4%/chunk | 4%/chunk | purple/blue/cyan |
-| 7000+ | cycle repeats, ×1.5 intensity | | | | | | | |
+### 1.15 Biome Ladder (v2.0 — replaces the old band cycle)
+| Rung | Zone | Distance (u) | Score × | Asteroids | Nebulae | Comets | Black holes | Dead stars | Stations | New content |
+|------|------|-------------|---------|-----------|---------|--------|-------------|------------|----------|-------------|
+| 1 | Open Space | 0–1000 | 1.0 | 10/chunk | 2 | 3/chunk | 0 | 1%/chunk | 0 | — |
+| 2 | Asteroid Belt | 1000–3000 | 1.0 | 40/chunk | 3 | 6/chunk | 0 | 2%/chunk | 2%/chunk | — |
+| 3 | Nebula Corridor | 3000–5000 | 1.2 | 20/chunk | 6 | 8/chunk | 4%/chunk | 3%/chunk | 3%/chunk | — |
+| 4 | Wormhole | 5000–7000 | 1.5 | 60/chunk | 8 | 10/chunk | 8%/chunk | 4%/chunk | 4%/chunk | tunnels + blur |
+| — | Deep Void | 7000–8000 | 1.5 | 2/chunk | 0 | 3/chunk | 0 | 0 | 1%/chunk | empty travel |
+| 5 | Crystal Fields | 8000–11000 | 2.0 | 25/chunk | 5 | 7/chunk | 0 | 0 | 2%/chunk | crystal shards, beam-split |
+| — | Deep Void | 11000–12500 | 2.0 | 2/chunk | 0 | 3/chunk | 0 | 0 | 1%/chunk | empty travel |
+| 6 | Pulsar Region | 12500–16000 | 2.5 | 30/chunk | 4 | 9/chunk | 2%/chunk | 0 | 2%/chunk | pulsars + sweeping beams |
+| — | Deep Void | 16000–18000 | 2.5 | 2/chunk | 0 | 3/chunk | 0 | 0 | 1%/chunk | empty travel |
+| 7 | Plasma Storm | 18000–22000 | 3.0 | 35/chunk | 7 | 9/chunk | 4%/chunk | 2%/chunk | 1%/chunk | storm clouds + lightning |
+| — | Deep Void | 22000–25000 | 3.0 | 2/chunk | 0 | 3/chunk | 0 | 0 | 1%/chunk | empty travel |
+| 8 | Derelict Graveyard | 25000–29000 | 3.5 | 20/chunk | 3 | 6/chunk | 6%/chunk | 2%/chunk | 0 | ship hulks |
+| — | Deep Void | 29000–35000 | 3.5 | 2/chunk | 0 | 3/chunk | 0 | 0 | 1%/chunk | final approach |
+| 9 | **SPATIAL GRAVEYARD** | 35000 → ∞ | 4.0 | 40/chunk | 5 | 8/chunk | 8%/chunk | 4%/chunk | 0 | **city fragments + blinking wrecks (finale)** |
+
+Intensity multipliers are capped (asteroid ≤3.0, nebula ≤2.5, comet ≤2.5, BH pull ≤2.0); the finale's density is the endgame. Rung multiplier applies to all scores. Backward flight never regresses rungs (monotonic odometer). Full per-rung specs: `docs/SPEC.md` §3.
+
+### 1.16 Crystal Shard Clusters (Crystal Fields)
+- **Look:** 4–8 translucent instanced octahedra (1.2–2.5 u), cyan/magenta/mint palette, additive core glint sprite, slow drift + tumble.
+- **Interact:** 25 HP (1 beam hit), **40 pts**, 5 collision dmg. **Beam-split:** a beam hitting a shard spawns 2 child beams at ±18° (≤12 concurrent, no re-split). Event `environment:crystalDestroyed`.
+
+### 1.17 Pulsars (Pulsar Region)
+- **Look:** blue-white neutron star (18–26 u), pulsing emissive (1.5 Hz), 8× glow, PointLight 8/800 u, **two counter-rotating beam cones** (500 u long) with leading telegraph glow.
+- **Interact:** beam touch = **50 dmg** (invulnerability applies); body touch = instant death. Not destructible, no score. Spacing ≥ 800 u, ≥ 400 u from ship.
+
+### 1.18 Storm Clouds + Lightning (Plasma Storm)
+- **Look:** 3-stack billboard clouds (20–40 u, dark teal, flicker light), polyline lightning bolts between clouds ≤ 120 u apart, re-roll every 1.5–3.5 s.
+- **Interact:** strike telegraphed 0.5 s (cloud brightens) then **40 dmg** within 25 u of the bolt (shield deflects). HUD static overlay within 300 u (0.04 → 0.08 within 150 u). Event `environment:stormStrike`.
+
+### 1.19 Ship Hulks (Derelict Graveyard)
+- **Look:** procedural wrecks — rust hull + broken wings + snapped engine + flickering red emergency light; 3 shape variants; 4/chunk.
+- **Interact:** **250 HP** (4 beam hits) → **150 pts** + 12 scrap particles; collision 25 dmg; drift + tumble. Event `environment:hulkDestroyed`.
+
+### 1.20 City Fragments + Blinking Wrecks (SPATIAL GRAVEYARD — the finale)
+- **Look:** huge broken space-city remains — shattered ring segments, ruined superstructures, broken towers, **100–400 u** landmark-scale, flickering window strips (canvas texture, random dropout), landmark glow visible from 2,000 u. Blinking wrecks: 5 smaller wrecks/chunk with **staggered red/white strobes** (time-offset emissive pulses).
+- **Interact:** fragments **indestructible** (collision 25 + bounce); wrecks **200 HP** → **200 pts** + 16 scrap, collision 20. 5 wrecks/chunk. Entry announcement: **"SECTOR: DEAD CITY — you should not be here"** (once per run). Endless past 35,000 u. Events: `environment:cityFragmentSpawned`, `environment:wreckDestroyed`.
+
+### 1.21 Starfield (background)
+- **Look:** 3 parallax `Points` layers — far (5,000 × 0.5 u, blue-white), mid (2,000 × 1.0 u, warm), near (500 × 2.0 u, warm, noise twinkle) — plus 30 bright stars with bloom. Custom shader, one draw call per layer, **`fog: false`**. *(v2.0 remaster: color-temperature variety + shooting stars — see docs/SPEC.md §5.)*
+- **Interact:** none — depth and speed anchor.
 
 ---
 
 ## 2. Decisions — all closed
-
-All previously open points are now decided. Your answers are baked in; the spec has zero TBDs.
 
 | # | Topic | Decision |
 |---|-------|----------|
@@ -110,15 +143,15 @@ Also baked in from the review: asteroid HP (100/50/25), drift 1–4 u/s, debris 
 ## 3. Architecture Notes (non-negotiable per spec)
 
 - Orchestrator `Game.js`; all communication via `EventBus` (catalog in spec §11); `GameState` singleton with `reset()`; every number in `Constants.js` (zero magic numbers in logic).
-- Event namespaces: `game:*`, `player:*` (died reasons: `collision` | `black_hole` | `dead_star`), `weapon:*`, `environment:*` (incl. `cometDestroyed`, `objectConsumed`, `blackHoleSpawned`, `deadStarSpawned`, `stationSpawned`), `score:*`, `audio:*`, `visual:*`.
-- Chunked infinite world: 200 u chunks, **3 vertical layers** (below/current/above, `CHUNKS_VERTICAL_RADIUS` 1) × 5×5 horizontal grid, mulberry32 seeded by chunk coords → deterministic regeneration; per-layer density ×0.75; biome distance = monotonic odometer; content in `cy×200 ± 90 u`. Stations live in a persistent world registry (not chunk-owned).
+- Event namespaces: `game:*`, `player:*` (died reasons: `collision` | `black_hole` | `dead_star`), `weapon:*`, `environment:*` (incl. `cometDestroyed`, `objectConsumed`, `blackHoleSpawned`, `blackHoleCollapsed`, `deadStarSpawned`, `stationSpawned`, `crystalDestroyed`, `pulsarSpawned`, `stormStrike`, `hulkDestroyed`, `cityFragmentSpawned`, `wreckDestroyed`), `ladder:*` (`rungChanged`, `finaleReached`), `storm:*`, `score:*`, `audio:*`, `visual:*`.
+- Chunked infinite world: 200 u chunks, **3 vertical layers** (below/current/above, `CHUNKS_VERTICAL_RADIUS` 1) × 5×5 horizontal grid, mulberry32 seeded by chunk coords → deterministic regeneration; per-layer density ×0.75; content in `cy×200 ± 90 u`. **Biome ladder (v2.0): 9 rungs + 4 voids, monotonic odometer, capped intensity multipliers** — see docs/SPEC.md §3. Stations live in a persistent world registry (not chunk-owned). New rung systems: `CrystalSystem`, `PulsarSystem`, `StormSystem`, `HulkSystem`, `CitySystem` (all chunk-owned, dispose-safe).
 - Gravity (black holes): cap iterations (~32 bodies/frame), squared distances, skip beyond 450 u, cap acceleration at 120 u/s².
-- Post-processing: RenderPass → UnrealBloom (1.5 / 0.4 / 0.15) → chromatic aberration (speed-scaled) → vignette → film grain → **WormholeBlurPass (only while inside a wall shell)**; CA + grain skipped when `hardwareConcurrency < 4`.
-- Dynamic lights: dead star + nebula point lights only, cull by range, ≤8 active.
+- Post-processing: RenderPass → UnrealBloom (1.5 / 0.4 / per-rung threshold 0.11–0.15) → chromatic aberration (speed-scaled) → vignette → film grain → **WormholeBlurPass (only inside a wormhole wall shell)**; CA + grain skipped when `hardwareConcurrency < 4`; adaptive quality AQ1/AQ2 per docs/SPEC.md §7.2.5.
+- Dynamic lights: **LightManager (v2.0)** — priority-culled registry, ≤14 active (auto) / ≤6 (eco, `L` key), ship lights always on; dead star + nebula point lights included in budget.
 - Delta-time capped at 0.1 s; `setPixelRatio(min(dpr, 2))`; `near=0.1`; dispose everything on cleanup (restart-safe, tested 3×).
-- Performance targets: ≤50 draw calls, ≤200K triangles, ≥60 fps (min 30), <10 MB memory growth over 5 min.
+- Performance targets (v2.0, per-rung ceilings): draw calls ≤ 180–500 by rung, triangles ≤ 90–300 K, ≥60 fps (min 30), <15 MB memory growth over 5 min, live particles ≤ 1,400. Verified via `?perf=1` overlay + `npm run check:perf`.
 - **Environment quirk:** global npm sets `omit=dev` → use `npm install --include=dev` or vite won't install.
 
 ---
 
-**Implementation-ready.** Next step: scaffold the Vite + Three.js project in `space-explorer-dsflash/` and start Phase 1 (foundation) → Phase 13–15 (comets, black holes, dead stars, stations).
+**Implementation-ready (v2.0).** Next step: implement the Deep Space Expedition remaster per `docs/SPEC.md` — Phase P0 (perf tooling) → P1 (ladder core) → P2–P6 (new rungs → finale) → P7 (ship remaster) → P8 (VFX/lighting) → P9 (performance & release).

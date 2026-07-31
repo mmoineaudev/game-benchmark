@@ -1,7 +1,7 @@
 // All magic numbers from the dungeon crawler spec
 export const WORLD = {
-  GRID_MIN: 8,
-  GRID_MAX: 12,
+  GRID_MIN: 12,
+  GRID_MAX: 16,
   CELL_SIZE: 6,
   CORRIDOR_WIDTH: 1,
   WALL_HEIGHT: 4,
@@ -57,11 +57,11 @@ export const DUNGEON = {
   },
   MIN_ROOMS: 8,
   MAX_ROOMS: 12,
-  MIN_ROOM_DISTANCE: 2,
+  MIN_ROOM_DISTANCE: 1,
   TORCH_SPACING: 8,
   ARCH_PROBABILITY: 0.3,
   CRACK_PROBABILITY: 0.15,
-  DEAD_END_MAX: 2,
+  DEAD_END_MAX: 4,
 };
 
 export const RENDERER = {

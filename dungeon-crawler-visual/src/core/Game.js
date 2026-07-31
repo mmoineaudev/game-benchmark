@@ -30,6 +30,8 @@ export class Game {
     this._eKeyWasDown = false;
     this._promptEl = document.getElementById('prompt');
     this._orbCountEl = document.getElementById('orb-count');
+    this._biomeLabelEl = document.getElementById('biome-label');
+    this._comboPipsEl = document.getElementById('combo-pips');
     this._exitEl = document.getElementById('exit-prompt');
     this._messagesEl = document.getElementById('messages');
     this._prevOrbCount = 0;
@@ -83,6 +85,7 @@ export class Game {
     this._setupPlayerStart();
     this._showMessage('Skeletons hunt you — reach the golden exit!', 'goal');
     this._showMessage('Slay them for orbs — shoot or swing', 'goal');
+    this._bindEventToasts();
     this._emitLevelStart();
     this._updateHUD();
     this._isRunning = true;
@@ -267,6 +270,15 @@ export class Game {
     this.events.emit('level:start', {
       level: this.state.level,
       biome: this.state.biome,
+    });
+  }
+
+  _bindEventToasts() {
+    // Prop/interaction toasts (idempotent — subscribe once per Game lifetime)
+    if (this._toastsBound) return;
+    this._toastsBound = true;
+    this.events.on('prop:opened', () => {
+      this._showMessage('A sarcophagus stirs…', 'goal');
     });
   }
 
@@ -666,7 +678,7 @@ export class Game {
     this._initCombat();
     this._placeWaterPuddles();
     this._setupPlayerStart();
-    this._showMessage('Collect orbs — shoot the skeletons!', 'goal');
+    this._showMessage('Slay them for orbs — shoot or swing', 'goal');
     if (this.state.level > 1) this._showMessage(`Level ${this.state.level} — descend!`, 'goal');
     this._emitLevelStart();
     this._isRunning = true;
@@ -686,9 +698,22 @@ export class Game {
 
   _updateHUD() {
     if (this._orbCountEl) {
-      this._orbCountEl.textContent = `Orbs: ${this.state.collectedOrbs}`;
+      const scale = this.sword ? this.sword.scale : 1;
+      const suffix = scale > 1.01 ? ` · ×${scale.toFixed(1)}` : '';
+      this._orbCountEl.textContent = `Orbs: ${this.state.collectedOrbs}${suffix}`;
     }
     if (this.sword) this.sword.setOrbCount(this.state.collectedOrbs);
+    if (this._biomeLabelEl) {
+      const pal = this.biomes.current?.palette;
+      this._biomeLabelEl.textContent = pal?.label || 'STONE DUNGEON';
+      this._biomeLabelEl.style.borderBottomColor = pal ? `#${pal.fog.toString(16).padStart(6, '0')}` : '#444';
+    }
+    if (this._comboPipsEl) {
+      const step = this.sword ? this.sword.comboStep : 0;
+      const pips = this._comboPipsEl.querySelectorAll('.pip');
+      pips.forEach((el, i) => el.classList.toggle('lit', i < step));
+      this._comboPipsEl.style.opacity = step > 0 ? '1' : '0.25';
+    }
     if (this._heartsEl) {
       const h = Math.max(0, this.state.health);
       this._heartsEl.textContent = '♥'.repeat(h) + '♡'.repeat(Math.max(0, PLAYER.MAX_HEALTH - h));

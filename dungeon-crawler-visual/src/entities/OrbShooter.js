@@ -76,6 +76,12 @@ export class OrbShooter {
         continue;
       }
 
+      // Breakable prop hit (optional hook from Game)
+      if (this.onHitProp?.(p.mesh.position.x, p.mesh.position.z)) {
+        this._deactivate(p);
+        continue;
+      }
+
       // Skeleton hit
       let hit = false;
       for (const s of skeletons) {

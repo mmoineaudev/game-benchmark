@@ -286,6 +286,31 @@ export const DROP = {
   Y: 0.8,
 };
 
+// --- Extended spec: props --------------------------------------------------
+export const PROPS = {
+  BREAKABLE_HP: 1,
+  LAVA_DAMAGE: 1,
+  LAVA_INTERVAL: 0.8,
+  LAVA_RADIUS: 1.2,
+  SARCOPHAGUS_WRAITH_CHANCE: 0.3,
+  SARCOPHAGUS_TRIGGER: 2.5,
+  PROPS_PER_ROOM: {
+    CHAMBER: 6, HALL: 4, VAULT: 10, ARMORY: 8,
+    LIBRARY: 12, CRYPT: 10, MUSHROOM_GROVE: 12, ARENA: 6,
+  },
+  MAX_BREAKABLES_PER_ROOM: 3,
+  MAX_INTERACTIVE_PER_ROOM: 3,
+};
+
+export const LIGHT_SOURCES = {
+  CANDLE: { color: 0xffaa55, intensity: 0.6, distance: 5, decay: 1.8 },
+  CHANDELIER: { color: 0xff9944, intensity: 0.5, distance: 6, decay: 1.8 },
+  LAVA: { color: 0xff5522, intensity: 2.2, distance: 9, decay: 1.5 },
+  MUSHROOM: { color: 0x44ff88, intensity: 1.2, distance: 6, decay: 1.7 },
+  WISP: { color: 0x88ffcc, intensity: 1.0, distance: 7, decay: 1.8 },
+  ICE: { color: 0x66ccff, intensity: 1.4, distance: 7, decay: 1.5 },
+};
+
 export const TIMED_RUN = {
   LEVEL_TIME_LIMIT: 180, // seconds per level — tunable; avg exit is ~22 cells ≈ 20-30s at sprint, so 3min leaves room to explore/collect orbs
 };

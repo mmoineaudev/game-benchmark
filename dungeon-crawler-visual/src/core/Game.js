@@ -1,11 +1,12 @@
 import * as THREE from 'three';
-import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON, SWORD } from './Constants.js';
+import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON, SWORD, PROPS } from './Constants.js';
 import { GameState } from './GameState.js';
 import { Leaderboard } from './Leaderboard.js';
 import { EventBus } from './EventBus.js';
 import { DungeonGenerator } from '../world/DungeonGenerator.js';
 import { WorldBuilder } from '../world/WorldBuilder.js';
 import { BiomeSystem } from '../world/BiomeSystem.js';
+import { PropSystem } from '../world/PropSystem.js';
 import { LightingSystem } from '../systems/LightingSystem.js';
 import { InputSystem } from '../systems/InputSystem.js';
 import { PostProcessing } from '../systems/PostProcessing.js';
@@ -55,6 +56,7 @@ export class Game {
     this.skeletons = null;
     this.shooter = null;
     this.sword = null;
+    this.props = null;
     this._noAmmoWarned = false;
     this._shakeTime = 0;
     this._fireCooldown = 0;
@@ -70,6 +72,7 @@ export class Game {
     this._generateDungeon();
     this._buildWorld();
     this._initLighting();
+    this._initProps();
     this._initSmoke();
     this._initParticles();
     this._initRunes();
@@ -159,6 +162,26 @@ export class Game {
     this.lighting.init(this.dungeonData);
   }
 
+  _initProps() {
+    this.props = new PropSystem(this.scene, this.dungeonData, this.state.biome, this.events);
+    const result = this.props.place();
+    // Merge prop AABBs into the collision list BEFORE enemies spawn
+    this._collisionBoxes.push(...(result.collisionBoxes || []));
+    this.props.lavaHazard = ({ x, z }) => this._lavaDamage(x, z);
+  }
+
+  _lavaDamage(x, z) {
+    if (this._gameOverActive) return;
+    if (this.state.invulnTimer > 0 || this.state.health <= 0) return;
+    if (!this._lastLavaHit || performance.now() - this._lastLavaHit > PROPS.LAVA_INTERVAL * 1000) {
+      this._lastLavaHit = performance.now();
+      this.state.health -= PROPS.LAVA_DAMAGE;
+      this.state.invulnTimer = PLAYER.INVULN_TIME;
+      this._flashDamage();
+      if (this.state.health <= 0) this._gameOver('dead');
+    }
+  }
+
   _initSmoke() {
     this.smoke = new SmokeSystem(this.scene);
     this.smoke.init();
@@ -201,6 +224,10 @@ export class Game {
     this.skeletons.onPlayerDamaged = () => this._flashDamage();
     this.skeletons.onPlayerDeath = () => this._gameOver('dead');
     this.shooter.hitSkeleton = (skel) => this.skeletons.hitSkeleton(skel, ORB_WEAPON.DAMAGE);
+    this.shooter.onHitProp = (x, z) => {
+      if (!this.props) return false;
+      return this.props.hitBreakables(x, z);
+    };
   }
 
   _placeWaterPuddles() {
@@ -259,6 +286,7 @@ export class Game {
     this.smoke.update(this._delta, this.state.player);
     this.runes.update(t);
     this.orbs.update(t, this.state.player);
+    if (this.props) this.props.update(this._delta, t, this.state.player);
     this._handleShooting();
     this._handleSwordAttack();
     if (this.skeletons) this.skeletons.update(this._delta, t, this.state.player, this._collisionBoxes);
@@ -396,6 +424,16 @@ export class Game {
       const fz = -Math.cos(p.yaw);
       const maxDot = Math.cos(SWORD.ARC);
       const range = this.sword.range;
+      // Breakable props in the arc
+      if (this.props) {
+        for (const b of this.props.breakables) {
+          const dx = b.x - p.x;
+          const dz = b.z - p.z;
+          const dist = Math.hypot(dx, dz);
+          if (dist > range + 0.5) continue;
+          this.props.hitBreakables(b.x, b.z);
+        }
+      }
       for (const s of this.skeletons.skeletons) {
         if (s.skel.state === 'DEAD') continue;
         const dx = s.x - p.x;
@@ -550,6 +588,7 @@ export class Game {
     this.runes.dispose();
     this.particles.dispose();
     this.lighting.dispose();
+    if (this.props) this.props.dispose();
     this.smoke.dispose();
     if (this.skeletons) this.skeletons.dispose();
     if (this.shooter) this.shooter.dispose();
@@ -578,6 +617,7 @@ export class Game {
     this._buildWorld();
     this.lighting = new LightingSystem(this.scene, this.biomes.current.palette);
     this.lighting.init(this.dungeonData);
+    this._initProps();
     this.smoke = new SmokeSystem(this.scene);
     this.smoke.init();
     this._rebindSmokeEmitters();
@@ -639,6 +679,7 @@ export class Game {
     this.runes.dispose();
     this.orbs.dispose();
     this.lighting.dispose();
+    if (this.props) this.props.dispose();
     if (this.sword) this.sword.dispose();
     if (this.skeletons) this.skeletons.dispose();
     if (this.shooter) this.shooter.dispose();

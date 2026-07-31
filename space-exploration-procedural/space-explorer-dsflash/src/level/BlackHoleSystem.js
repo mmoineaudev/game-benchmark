@@ -28,6 +28,7 @@ export class BlackHoleSystem {
       type: 'blackHole',
       owner: this,
       x, y, z,
+      vx: 0, vy: 0, vz: 0,        // holes drift and attract each other
       radius: Constants.BLACK_HOLE_RADIUS,
       active: true,
       pullMult: mult.blackHolePull,
@@ -107,15 +108,91 @@ export class BlackHoleSystem {
   }
 
   update(dt) {
+    const C = Constants;
+    // ---- Mutual attraction between holes --------------------------------
+    for (let i = 0; i < this.holes.length; i++) {
+      for (let j = i + 1; j < this.holes.length; j++) {
+        const a = this.holes[i];
+        const b = this.holes[j];
+        const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+        const d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 > C.BLACK_HOLE_ATTRACT_RANGE * C.BLACK_HOLE_ATTRACT_RANGE || d2 < 1) continue;
+        const pull = Math.min(C.BLACK_HOLE_ATTRACT_STRENGTH / d2, C.BLACK_HOLE_MAX_PULL_BETWEEN);
+        const inv = pull / Math.sqrt(d2);
+        a.vx += dx * inv * dt; a.vy += dy * inv * dt; a.vz += dz * inv * dt;
+        b.vx -= dx * inv * dt; b.vy -= dy * inv * dt; b.vz -= dz * inv * dt;
+      }
+    }
+
+    // ---- Move + collapse check -------------------------------------------
     for (const h of this.holes) {
+      h.x += h.vx * dt;
+      h.y += h.vy * dt;
+      h.z += h.vz * dt;
+      h.group.position.set(h.x, h.y, h.z);
       h.group.userData.diskMat.uniforms.uTime.value += dt;
       h.group.rotation.y += dt * 0.05;
       if (h.flash > 0) {
         h.flash = Math.max(0, h.flash - dt / 0.2);
         h.group.userData.flashMat.opacity = h.flash;
-        h.group.userData.flash.scale.setScalar(Constants.BLACK_HOLE_RADIUS * (4 + h.flash * 4));
+        h.group.userData.flash.scale.setScalar(C.BLACK_HOLE_RADIUS * (4 + h.flash * 4));
       }
     }
+
+    // Collapse close pairs
+    for (let i = 0; i < this.holes.length; i++) {
+      for (let j = i + 1; j < this.holes.length; j++) {
+        const a = this.holes[i];
+        const b = this.holes[j];
+        const d2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2 + (b.z - a.z) ** 2;
+        if (d2 < C.BLACK_HOLE_MERGE_DISTANCE * C.BLACK_HOLE_MERGE_DISTANCE) {
+          this._collapse(a, b);
+          i = 0; j = 1; // restart scan (list changed)
+        }
+      }
+    }
+  }
+
+  /** Two holes merge: both vanish with a huge flash + shockwave. */
+  _collapse(a, b) {
+    const C = Constants;
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, mz = (a.z + b.z) / 2;
+    // Big flash sprite at the midpoint
+    const flashMat = new THREE.SpriteMaterial({
+      map: this._flashTex,
+      color: 0xffffff,
+      transparent: true,
+      opacity: 1,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const flash = new THREE.Sprite(flashMat);
+    flash.position.set(mx, my, mz);
+    flash.scale.setScalar(C.BLACK_HOLE_RADIUS * 10);
+    this._group.add(flash);
+    const start = performance.now();
+    const life = 0.8;
+    const tick = () => {
+      const t = (performance.now() - start) / 1000;
+      if (t >= life) { this._group.remove(flash); flashMat.dispose(); return; }
+      const k = 1 - t / life;
+      flashMat.opacity = k;
+      flash.scale.setScalar(C.BLACK_HOLE_RADIUS * (10 + t * 60));
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+
+    // Remove both holes
+    for (const h of [a, b]) {
+      this._group.remove(h.group);
+      h.group.traverse((o) => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) o.material.dispose();
+      });
+      const idx = this.holes.indexOf(h);
+      if (idx >= 0) this.holes.splice(idx, 1);
+    }
+    this.events.emit('environment:blackHoleCollapsed', { position: { x: mx, y: my, z: mz } });
   }
 
   cleanupChunk(chunk) {

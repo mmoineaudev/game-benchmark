@@ -149,6 +149,25 @@ export class Game {
     on(Events.OBJECT_CONSUMED, (e) => {
       this.audio.play('consumption', { volume: 0.5 });
     });
+    on(Events.BLACK_HOLE_COLLAPSED, (e) => {
+      const p = e.position;
+      // Huge flash + shockwave
+      this.particles.burst('explosion', p.x, p.y, p.z, 120, 40, { size: 0.8, color: [1, 1, 1] });
+      this.cameraSystem.addShake(2.0, 1.0);
+      this.hud.flash('rgba(255,255,255,0.6)');
+      this.audio.play('collapse', { volume: 1.0 });
+      // Heavy damage if the ship is caught in the shockwave
+      const d = Math.hypot(p.x - this.ship.position.x, p.y - this.ship.position.y, p.z - this.ship.position.z);
+      if (d < Constants.BLACK_HOLE_COLLAPSE_RADIUS && this.ship.alive) {
+        const res = gameState.takeDamage(50, 'collapse');
+        if (res === 'dead') {
+          this._startDeathSequence();
+        } else {
+          eventBus.emit(Events.PLAYER_DAMAGED, { amount: 50, source: 'blackHoleCollapse', newHealth: res });
+          eventBus.emit(Events.PLAYER_HEALTH_CHANGED, { health: res, maxHealth: Constants.MAX_HEALTH });
+        }
+      }
+    });
     on(Events.BIOME_CHANGED, (e) => {
       this.audio.play('biome', { volume: 0.4 });
     });

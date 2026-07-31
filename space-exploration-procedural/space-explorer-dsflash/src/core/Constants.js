@@ -79,11 +79,16 @@ export const Constants = {
   BLACK_HOLE_RADIUS: 8,
   BLACK_HOLE_GRAVITY_RADIUS: 450,    // tripled (was 150)
   BLACK_HOLE_GRAVITY_STRENGTH: 7500, // tripled (was 2500)
-  BLACK_HOLE_SHIP_PULL_FACTOR: 0.5,
+  BLACK_HOLE_SHIP_PULL_FACTOR: 1.0,  // ship feels FULL pull (real impact)
   BLACK_HOLE_MAX_PULL: 120,
   BLACK_HOLE_WARNING_RANGE: 40,
   BLACK_HOLE_DISK_SPEED: 0.5,
   BLACK_HOLE_MIN_DISTANCE: 3000,
+  BLACK_HOLE_ATTRACT_RANGE: 400,     // holes attract each other within this
+  BLACK_HOLE_ATTRACT_STRENGTH: 40000, // mutual acceleration = strength / d² (holes ~100 u apart merge in ~8 s)
+  BLACK_HOLE_MAX_PULL_BETWEEN: 80,   // cap on mutual pull
+  BLACK_HOLE_MERGE_DISTANCE: 24,     // collapse when two holes get this close
+  BLACK_HOLE_COLLAPSE_RADIUS: 60,    // ship within this of a collapse takes heavy damage
 
   // Dead stars
   DEAD_STAR_RADIUS_MIN: 25,

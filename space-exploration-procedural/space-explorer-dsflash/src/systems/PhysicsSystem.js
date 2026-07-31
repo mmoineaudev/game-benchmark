@@ -124,8 +124,8 @@ export class PhysicsSystem {
             }
           }
         }
-        // Ship pull (0.5×)
-        const dx = ship.position.x - cx, dy = ship.position.y - cy, dz = ship.position.z - cz;
+        // Ship pull (full strength) — direction FROM ship TO hole
+        const dx = cx - ship.position.x, dy = cy - ship.position.y, dz = cz - ship.position.z;
         const d2 = dx * dx + dy * dy + dz * dz;
         if (d2 < R * R && d2 > 1) {
           const a = Math.min((strength * Constants.BLACK_HOLE_SHIP_PULL_FACTOR) / d2, maxPull);

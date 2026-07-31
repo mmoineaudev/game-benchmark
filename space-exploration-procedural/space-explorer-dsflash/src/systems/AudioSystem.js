@@ -97,6 +97,7 @@ export class AudioSystem {
       case 'consumption': this._consumption(volume); break;
       case 'comet': this._comet(volume); break;
       case 'shield': this._shieldPing(volume); break;
+      case 'collapse': this._collapseBoom(volume); break;
       default: break;
     }
   }
@@ -258,6 +259,34 @@ export class AudioSystem {
     src.connect(nf).connect(ng).connect(this.master);
     src.start(t);
     src.stop(t + 0.06);
+  }
+
+  /** Black hole collapse: massive deep boom. */
+  _collapseBoom(vol) {
+    const t = this.ctx.currentTime;
+    const src = this.ctx.createBufferSource();
+    src.buffer = this._noiseBuffer();
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(1500, t);
+    filter.frequency.exponentialRampToValueAtTime(60, t + 1.2);
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 1.3);
+    src.connect(filter).connect(g).connect(this.master);
+    src.start(t);
+    src.stop(t + 1.35);
+    // sub drop 120→25 Hz
+    const osc = this.ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(120, t);
+    osc.frequency.exponentialRampToValueAtTime(25, t + 1.0);
+    const og = this.ctx.createGain();
+    og.gain.setValueAtTime(vol * 0.9, t);
+    og.gain.exponentialRampToValueAtTime(0.001, t + 1.1);
+    osc.connect(og).connect(this.master);
+    osc.start(t);
+    osc.stop(t + 1.15);
   }
 
   /** Warning beep loop while health < 30 (800Hz, 3 pulses, repeats 2s). */

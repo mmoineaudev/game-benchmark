@@ -26,6 +26,7 @@ export const Events = {
   COMET_DESTROYED:    'environment:cometDestroyed',
   OBJECT_CONSUMED:    'environment:objectConsumed',
   BLACK_HOLE_SPAWNED: 'environment:blackHoleSpawned',
+  BLACK_HOLE_COLLAPSED: 'environment:blackHoleCollapsed',
   DEAD_STAR_SPAWNED:  'environment:deadStarSpawned',
   STATION_SPAWNED:    'environment:stationSpawned',
   CHUNK_SPAWNED:      'environment:chunkSpawned',

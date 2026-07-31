@@ -40,8 +40,9 @@
 - **Look:** pure-black event-horizon sphere (8 u radius, renders black under all light), thin emissive orange-white **photon ring** with bloom, rotating **accretion disk** (ring shader: radial falloff, Doppler beaming, white→yellow→orange). Brief radial flash when something gets eaten.
 - **Interact:**
   - **Gravity:** asteroids, comets, debris within **450 u** accelerate toward the center with `a = 7500 / d²` (capped 120 u/s²) — **tripled range and strength; pull grows as you get closer**.
-  - **Ship:** pulled at **0.5×** strength (**confirmed**) — escapable with thrust. Pulsing red **"⚠ EVENT HORIZON"** warning within 40 u of the horizon surface.
+  - **Ship:** pulled at **FULL strength** (1.0×) — near the horizon the pull (up to 120 u/s²) overwhelms the engines: you get dragged in. Pulsing red **"⚠ EVENT HORIZON"** warning within 40 u of the horizon surface.
   - **Consumption:** anything touching the horizon (8 u) disappears with a flash + low descending sweep sound — asteroids, comets, debris, projectiles… and the ship (instant death, bypasses invulnerability).
+  - **Mutual attraction & collapse:** holes attract each other (40000/d², capped 80 u/s²); a close pair **collapses in a massive flash + shockwave** — white screen flash, big shake, deep boom, and **50 damage** if the ship is within 60 u. Emits `environment:blackHoleCollapsed`.
   - **Not destroyable**, no score. Spawn: never in Open Space/Asteroid Belt; 4% of chunks in Nebula Corridor, 8% in Wormhole.
 
 ### 1.7 Dead Stars

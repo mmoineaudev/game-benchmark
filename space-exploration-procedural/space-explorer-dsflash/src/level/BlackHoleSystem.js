@@ -24,15 +24,19 @@ export class BlackHoleSystem {
     const z = chunk.cz * Constants.CHUNK_SIZE + randRange(rng, 0, Constants.CHUNK_SIZE);
     const y = chunk.cy * Constants.CHUNK_SIZE + randRange(rng, -Constants.CONTENT_Y_BAND, Constants.CONTENT_Y_BAND);
 
+    // Variable size: bigger hole = wider gravity well + much stronger pull
+    const radius = randRange(rng, Constants.BLACK_HOLE_RADIUS_MIN, Constants.BLACK_HOLE_RADIUS_MAX);
     const hole = {
       type: 'blackHole',
       owner: this,
       x, y, z,
       vx: 0, vy: 0, vz: 0,        // holes drift and attract each other
-      radius: Constants.BLACK_HOLE_RADIUS,
+      radius,
+      gravityRadius: Constants.BLACK_HOLE_GRAVITY_RADIUS * (0.6 + radius / 30),
+      strength: Constants.BLACK_HOLE_GRAVITY_STRENGTH * (radius / 10) * (radius / 10),
       active: true,
       pullMult: mult.blackHolePull,
-      group: this._buildVisual(),
+      group: this._buildVisual(radius),
       flash: 0,
       chunkKey: chunk.key,
     };
@@ -43,9 +47,9 @@ export class BlackHoleSystem {
     this.events.emit('environment:blackHoleSpawned', { position: { x, y, z }, radius: hole.radius });
   }
 
-  _buildVisual() {
+  _buildVisual(radius) {
     const g = new THREE.Group();
-    const R = Constants.BLACK_HOLE_RADIUS;
+    const R = radius;
 
     // Event horizon: pure black, renders black under all light
     const horizon = new THREE.Mesh(
@@ -135,17 +139,18 @@ export class BlackHoleSystem {
       if (h.flash > 0) {
         h.flash = Math.max(0, h.flash - dt / 0.2);
         h.group.userData.flashMat.opacity = h.flash;
-        h.group.userData.flash.scale.setScalar(C.BLACK_HOLE_RADIUS * (4 + h.flash * 4));
+        h.group.userData.flash.scale.setScalar(h.radius * (4 + h.flash * 4));
       }
     }
 
-    // Collapse close pairs
+    // Collapse close pairs (merge distance scales with combined size)
     for (let i = 0; i < this.holes.length; i++) {
       for (let j = i + 1; j < this.holes.length; j++) {
         const a = this.holes[i];
         const b = this.holes[j];
         const d2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2 + (b.z - a.z) ** 2;
-        if (d2 < C.BLACK_HOLE_MERGE_DISTANCE * C.BLACK_HOLE_MERGE_DISTANCE) {
+        const mergeR = (a.radius + b.radius) * 1.2;
+        if (d2 < mergeR * mergeR) {
           this._collapse(a, b);
           i = 0; j = 1; // restart scan (list changed)
         }
@@ -168,7 +173,7 @@ export class BlackHoleSystem {
     });
     const flash = new THREE.Sprite(flashMat);
     flash.position.set(mx, my, mz);
-    flash.scale.setScalar(C.BLACK_HOLE_RADIUS * 10);
+    flash.scale.setScalar((a.radius + b.radius) * 6);
     this._group.add(flash);
     const start = performance.now();
     const life = 0.8;
@@ -177,7 +182,7 @@ export class BlackHoleSystem {
       if (t >= life) { this._group.remove(flash); flashMat.dispose(); return; }
       const k = 1 - t / life;
       flashMat.opacity = k;
-      flash.scale.setScalar(C.BLACK_HOLE_RADIUS * (10 + t * 60));
+      flash.scale.setScalar((a.radius + b.radius) * (6 + t * 36));
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);

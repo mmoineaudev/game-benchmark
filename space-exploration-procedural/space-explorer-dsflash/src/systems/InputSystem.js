@@ -20,6 +20,8 @@ export class InputSystem {
     this.rollLeft = false;
     this.rollRight = false;
     this.thrustHeld = false;
+    this.fireHeld = false;      // continuous fire (Space / left mouse held)
+    this._mouseFireDown = false;
 
     // Edge-triggered flags (consumed by Game each frame)
     this.firePressed = false;
@@ -77,8 +79,11 @@ export class InputSystem {
       }
     });
     document.addEventListener('mousedown', (e) => {
-      if (e.button === 0 && this.pointerLocked) this.firePressed = true;
+      if (e.button === 0 && this.pointerLocked) { this.firePressed = true; this._mouseFireDown = true; }
       if (e.button === 2 && this.pointerLocked) this.shieldPressed = true;
+    });
+    document.addEventListener('mouseup', (e) => {
+      if (e.button === 0) this._mouseFireDown = false;
     });
     document.addEventListener('contextmenu', (e) => e.preventDefault());
     eventBus.on('input:shield', (e) => {
@@ -177,6 +182,7 @@ export class InputSystem {
     this.rollLeft = k.has('KeyQ');
     this.rollRight = k.has('KeyE');
     this.thrustHeld = this.pitchUp || this.pitchDown || this.left || this.right;
+    this.fireHeld = k.has('Space') || this._mouseFireDown;
   }
 
   /** Consume one frame's worth of edge-triggered input. */
@@ -220,6 +226,7 @@ export class InputSystem {
       right: this.right,
       rollLeft: this.rollLeft,
       rollRight: this.rollRight,
+      fireHeld: this.fireHeld,
     };
   }
 }

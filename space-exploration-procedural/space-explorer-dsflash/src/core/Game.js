@@ -376,10 +376,11 @@ export class Game {
       return;
     }
 
-    // Weapons + particles
-    if (frame.firePressed) this.weaponSystem.fire(this._muzzlePos(), this.ship.heading);
+    // Weapons + particles — continuous quad beams while fire is held
+    const mvFire = frame.firePressed || mv.fireHeld;
+    this.weaponSystem.setFiring(mvFire);
+    this.weaponSystem.update(dt, this.ship.position, this.ship.heading);
     if (frame.shieldPressed && this.ship.shieldReady) this._fireDeflagration();
-    this.weaponSystem.update(dt);
     this.particles.update(dt);
 
     // Exhaust trail (throttle-driven)
@@ -476,7 +477,7 @@ export class Game {
 
     for (const h of this.worldSystems.blackHoleSystem.holes) {
       const d = Math.hypot(h.x - shipPos.x, h.y - shipPos.y, h.z - shipPos.z);
-      if (d < Constants.BLACK_HOLE_RADIUS + Constants.BLACK_HOLE_WARNING_RANGE) horizonWarn = true;
+      if (d < h.radius + Constants.BLACK_HOLE_WARNING_RANGE) horizonWarn = true;
     }
     for (const s of this.worldSystems.deadStarSystem.stars) {
       const d = Math.hypot(s.x - shipPos.x, s.y - shipPos.y, s.z - shipPos.z);

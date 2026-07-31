@@ -31,19 +31,27 @@ export const Constants = {
   CAMERA_FOV_MAX: 95,
   CAMERA_DAMPING: 5.0,      // smoothed: lerp factor per second
 
-  // Weapon — large green beam
-  FIRE_RATE: 8,
+  // Weapon — continuous quad beams (2 cockpit + 1 per wingtip, hold to fire)
+  FIRE_RATE: 6,
   PROJECTILE_SPEED: 200,
-  PROJECTILE_LIFETIME: 3.0,
+  PROJECTILE_LIFETIME: 1.5,
   PROJECTILE_RANGE: 200,
   PROJECTILE_DAMAGE: 25,
-  LASER_POOL: 44,               // 32 + 12 child beams (beam-split, spec v2.0 §3.4.1)
+  LASER_POOL: 96,               // 4 muzzles × sustained beams + 12 child beams
   LASER_LENGTH: 9,              // beam length (u)
   LASER_RADIUS: 0.18,           // beam core radius (u)
   LASER_GLOW_RADIUS: 0.5,       // outer glow radius (u)
   LASER_HIT_RADIUS: 1.8,        // collision radius (u)
   LASER_COLOR: 0x33ff66,        // green
   LASER_GLOW_COLOR: 0x22ff66,
+  // Muzzle offsets in ship-local space (x right, y up, z forward = -Z):
+  // two cockpit cannons + one per wing end.
+  WEAPON_MUZZLES: [
+    { x: -0.3, y: 0.45, z: -0.5 },
+    { x: 0.3, y: 0.45, z: -0.5 },
+    { x: -3.6, y: 0.05, z: 0.5 },
+    { x: 3.6, y: 0.05, z: 0.5 },
+  ],
 
   // Health
   MAX_HEALTH: 100,
@@ -71,20 +79,21 @@ export const Constants = {
   COMET_MIN_DIST_FROM_SHIP: 150,
   COMET_LIGHT: { color: 0x88bbff, intensity: 1.0, range: 90, decay: 1.5 }, // dim icy glow
 
-  // Black holes
-  BLACK_HOLE_RADIUS: 8,
-  BLACK_HOLE_GRAVITY_RADIUS: 450,    // tripled (was 150)
-  BLACK_HOLE_GRAVITY_STRENGTH: 7500, // tripled (was 2500)
-  BLACK_HOLE_SHIP_PULL_FACTOR: 1.0,  // ship feels FULL pull (real impact)
-  BLACK_HOLE_MAX_PULL: 120,
-  BLACK_HOLE_WARNING_RANGE: 40,
+  // Black holes — variable size: bigger = stronger pull (rework 2026-07)
+  BLACK_HOLE_RADIUS_MIN: 10,
+  BLACK_HOLE_RADIUS_MAX: 22,        // per-hole radius drawn in this range
+  BLACK_HOLE_GRAVITY_RADIUS: 450,   // base; per-hole = base * (0.6 + radius/30) → 420..600
+  BLACK_HOLE_GRAVITY_STRENGTH: 7500, // base; per-hole = base * (radius/10)² → 7500..36300
+  BLACK_HOLE_SHIP_PULL_FACTOR: 1.15, // ship feels FULL pull +15% (real impact)
+  BLACK_HOLE_MAX_PULL: 160,
+  BLACK_HOLE_WARNING_RANGE: 55,
   BLACK_HOLE_DISK_SPEED: 0.5,
   BLACK_HOLE_MIN_DISTANCE: 3000,
-  BLACK_HOLE_ATTRACT_RANGE: 400,     // holes attract each other within this
-  BLACK_HOLE_ATTRACT_STRENGTH: 40000, // mutual acceleration = strength / d² (holes ~100 u apart merge in ~8 s)
-  BLACK_HOLE_MAX_PULL_BETWEEN: 80,   // cap on mutual pull
-  BLACK_HOLE_MERGE_DISTANCE: 24,     // collapse when two holes get this close
-  BLACK_HOLE_COLLAPSE_RADIUS: 60,    // ship within this of a collapse takes heavy damage
+  BLACK_HOLE_ATTRACT_RANGE: 480,     // holes attract each other within this
+  BLACK_HOLE_ATTRACT_STRENGTH: 60000, // mutual acceleration = strength / d²
+  BLACK_HOLE_MAX_PULL_BETWEEN: 100,  // cap on mutual pull
+  BLACK_HOLE_MERGE_DISTANCE: 24,     // base; merge when d < (rA+rB)*1.2
+  BLACK_HOLE_COLLAPSE_RADIUS: 80,    // ship within this of a collapse takes heavy damage
 
   // Dead stars
   DEAD_STAR_RADIUS_MIN: 25,
@@ -152,44 +161,45 @@ export const Constants = {
     minDistFromShip: 150,
   },
 
-  // Pulsars (v2.0 §3.4.2)
+  // Pulsars (v2.0 §3.4.2) — reworked: bigger bodies, faster wider sweeps
   PULSAR: {
-    density: 6, radiusMin: 18, radiusMax: 26,
-    beamLength: 500, beamHalfAngle: 0.06, beamTouchRadius: 8,
-    damage: 50, speedA: 0.35, speedB: 0.28, leadAngle: 0.35,
+    density: 4, radiusMin: 22, radiusMax: 30,
+    beamLength: 500, beamHalfAngle: 0.06, beamTouchRadius: 9,
+    damage: 50, speedA: 0.45, speedB: 0.36, leadAngle: 0.45,
     lightIntensity: 8, lightRange: 800, lightColor: 0xbfd8ff,
     pulseRate: 1.5, minSpacing: 800, minDistFromShip: 400,
     bodyColor: 0xcfe8ff, beamColor: 0x9fd8ff,
   },
 
-  // Plasma Storm (v2.0 §3.4.3)
+  // Plasma Storm (v2.0 §3.4.3) — reworked: faster strikes, less telegraph
   STORM: {
-    density: 6, cloudRadiusMin: 20, cloudRadiusMax: 40,
+    density: 4, cloudRadiusMin: 20, cloudRadiusMax: 40,
     boltDistanceMax: 120, boltSegments: 6, boltLife: 0.15,
-    boltReMin: 1.5, boltReMax: 3.5, telegraphTime: 0.5,
-    strikeDamage: 40, strikeRadius: 25,
-    staticRange: 300, staticRangeIntense: 150, staticOpacity: 0.04, staticOpacityIntense: 0.08, staticHz: 20,
+    boltReMin: 1.2, boltReMax: 2.8, telegraphTime: 0.4,
+    strikeDamage: 45, strikeRadius: 28,
+    staticRange: 350, staticRangeIntense: 150, staticOpacity: 0.04, staticOpacityIntense: 0.08, staticHz: 20,
     flickerHz: 6, cloudColor: 0x0a1512, boltColor: 0x9fffe0, lightColor: 0x55ffcc,
     minDistFromShip: 200,
   },
 
-  // Derelict hulks (v2.0 §3.4.4)
+  // Derelict hulks (v2.0 §3.4.4) — reworked: faster drift, hits harder
   HULK: {
-    density: 4, hp: 100, damage: 25, score: 150,
-    driftMin: 0.3, driftMax: 1.0, tumble: 0.05,
-    minDistShip: 200, minSpacing: 80, scrapParticles: 12,
+    density: 4, hp: 100, damage: 30, score: 150,
+    driftMin: 0.6, driftMax: 1.8, tumble: 0.05,
+    minDistShip: 200, minSpacing: 80, scrapParticles: 16,
     hullColor: 0x5a4632, scrapColor: 0x8a6f4d, emergencyColor: 0xff5040,
   },
 
-  // Spatial Graveyard finale (v2.0 §3.4.5)
+  // Spatial Graveyard finale (v2.0 §3.4.5) — reworked: denser, drifting, menacing
   CITY: {
-    fragmentChance: 0.5, fragmentHp: 0, damage: 25,
-    driftMin: 0.2, driftMax: 0.5, rotMin: 0.01, rotMax: 0.03,
+    fragmentChance: 0.75, fragmentHp: 0, damage: 25,
+    driftMin: 0.4, driftMax: 0.9, rotMin: 0.01, rotMax: 0.03,
     minDistShip: 600, minSpacing: 500,
-    windowCount: 60, flickerFreq: 0.8, dropoutEvery: 2, dropoutLen: 0.2,
-    glowColor: 0x5aa88f, glowOpacity: 0.08, glowScale: 3,
+    windowCount: 90, flickerFreq: 0.8, dropoutEvery: 2, dropoutLen: 0.2,
+    glowColor: 0x5aa88f, glowOpacity: 0.08, glowScale: 4,
     hullColor: 0x2a3533, windowColor: 0x9fe8c8,
-    wreckDensity: 5, wreckHp: 100, wreckDamage: 20, wreckScore: 200,
+    fragmentRadius: 70, fragmentScale: 260,
+    wreckDensity: 5, wreckHp: 100, wreckDamage: 25, wreckScore: 200,
     wreckScaleMin: 0.5, wreckScaleMax: 0.9, wreckScrap: 16,
     strobeFreq: 3.0, strobeRed: 0xff5040, strobeWhite: 0xd8e8e0,
     wreckColor: 0x3a4a45,
@@ -266,24 +276,24 @@ export const Constants = {
 };
 
 // Ladder built after the literal (BIOMES must exist first) — spec v2.0 §3.1
+// Entity counts tuned for perf (2026-07): dense entities -30%, rare -10%.
 (() => {
-  const B = Constants.BIOMES;
   const V = { crystalDensity: 0, pulsarDensity: 0, stormDensity: 0, hulkDensity: 0, wreckDensity: 0, cityChance: 0 };
-  const VOID = { asteroidDensity: 2, nebulaCount: 0, cometDensity: 3, blackHoleDensity: 0, deadStarDensity: 0, stationDensity: 1, color: [0.05, 0.08, 0.15], crystalDensity: 0, pulsarDensity: 0, stormDensity: 0, hulkDensity: 0, wreckDensity: 0, cityChance: 0 };
+  const VOID = { asteroidDensity: 2, nebulaCount: 0, cometDensity: 2, blackHoleDensity: 0, deadStarDensity: 0, stationDensity: 1, color: [0.05, 0.08, 0.15], crystalDensity: 0, pulsarDensity: 0, stormDensity: 0, hulkDensity: 0, wreckDensity: 0, cityChance: 0 };
   Constants.LADDER = [
-    { key: 'OPEN_SPACE',           name: 'Open Space',           range: [0, 1000],     scoreMult: 1.0, cfg: { ...B.OPEN_SPACE, ...V } },
-    { key: 'ASTEROID_BELT',        name: 'Asteroid Belt',        range: [1000, 3000],  scoreMult: 1.0, cfg: { ...B.ASTEROID_BELT, ...V } },
-    { key: 'NEBULA_CORRIDOR',      name: 'Nebula Corridor',      range: [3000, 5000],  scoreMult: 1.2, cfg: { ...B.NEBULA_CORRIDOR, ...V } },
-    { key: 'WORMHOLE',             name: 'Wormhole',             range: [5000, 7000],  scoreMult: 1.5, cfg: { ...B.WORMHOLE, ...V } },
+    { key: 'OPEN_SPACE',           name: 'Open Space',           range: [0, 1000],     scoreMult: 1.0, cfg: { asteroidDensity: 7, nebulaCount: 2, cometDensity: 2, blackHoleDensity: 0, deadStarDensity: 1, stationDensity: 0, ...V, color: [0.1, 0.15, 0.3] } },
+    { key: 'ASTEROID_BELT',        name: 'Asteroid Belt',        range: [1000, 3000],  scoreMult: 1.0, cfg: { asteroidDensity: 28, nebulaCount: 3, cometDensity: 4, blackHoleDensity: 0, deadStarDensity: 2, stationDensity: 2, ...V, color: [0.4, 0.2, 0.1] } },
+    { key: 'NEBULA_CORRIDOR',      name: 'Nebula Corridor',      range: [3000, 5000],  scoreMult: 1.2, cfg: { asteroidDensity: 14, nebulaCount: 5, cometDensity: 6, blackHoleDensity: 3, deadStarDensity: 3, stationDensity: 3, ...V, color: [0.3, 0.15, 0.4] } },
+    { key: 'WORMHOLE',             name: 'Wormhole',             range: [5000, 7000],  scoreMult: 1.5, cfg: { asteroidDensity: 42, nebulaCount: 7, cometDensity: 7, blackHoleDensity: 7, deadStarDensity: 4, stationDensity: 4, ...V, color: [0.2, 0.1, 0.5] } },
     { key: 'DEEP_VOID',            name: 'Deep Void',            range: [7000, 8000],   scoreMult: 1.5, cfg: { ...VOID } },
-    { key: 'CRYSTAL_FIELDS',       name: 'Crystal Fields',       range: [8000, 11000],  scoreMult: 2.0, cfg: { asteroidDensity: 25, nebulaCount: 5, cometDensity: 7, blackHoleDensity: 0, deadStarDensity: 0, stationDensity: 2, crystalDensity: 8, pulsarDensity: 0, stormDensity: 0, hulkDensity: 0, wreckDensity: 0, cityChance: 0, color: [0.55, 0.85, 0.95] } },
+    { key: 'CRYSTAL_FIELDS',       name: 'Crystal Fields',       range: [8000, 11000],  scoreMult: 2.0, cfg: { asteroidDensity: 18, nebulaCount: 4, cometDensity: 5, blackHoleDensity: 0, deadStarDensity: 0, stationDensity: 2, crystalDensity: 6, pulsarDensity: 0, stormDensity: 0, hulkDensity: 0, wreckDensity: 0, cityChance: 0, color: [0.55, 0.85, 0.95] } },
     { key: 'DEEP_VOID',            name: 'Deep Void',            range: [11000, 12500], scoreMult: 2.0, cfg: { ...VOID } },
-    { key: 'PULSAR_REGION',        name: 'Pulsar Region',        range: [12500, 16000], scoreMult: 2.5, cfg: { asteroidDensity: 30, nebulaCount: 4, cometDensity: 9, blackHoleDensity: 2, deadStarDensity: 0, stationDensity: 2, crystalDensity: 0, pulsarDensity: 6, stormDensity: 0, hulkDensity: 0, wreckDensity: 0, cityChance: 0, color: [0.65, 0.7, 1.0] } },
+    { key: 'PULSAR_REGION',        name: 'Pulsar Region',        range: [12500, 16000], scoreMult: 2.5, cfg: { asteroidDensity: 21, nebulaCount: 3, cometDensity: 6, blackHoleDensity: 2, deadStarDensity: 0, stationDensity: 2, crystalDensity: 0, pulsarDensity: 4, stormDensity: 0, hulkDensity: 0, wreckDensity: 0, cityChance: 0, color: [0.65, 0.7, 1.0] } },
     { key: 'DEEP_VOID',            name: 'Deep Void',            range: [16000, 18000], scoreMult: 2.5, cfg: { ...VOID } },
-    { key: 'PLASMA_STORM',         name: 'Plasma Storm',         range: [18000, 22000], scoreMult: 3.0, cfg: { asteroidDensity: 35, nebulaCount: 7, cometDensity: 9, blackHoleDensity: 4, deadStarDensity: 2, stationDensity: 1, crystalDensity: 0, pulsarDensity: 0, stormDensity: 6, hulkDensity: 0, wreckDensity: 0, cityChance: 0, color: [0.25, 0.55, 0.5] } },
+    { key: 'PLASMA_STORM',         name: 'Plasma Storm',         range: [18000, 22000], scoreMult: 3.0, cfg: { asteroidDensity: 25, nebulaCount: 6, cometDensity: 6, blackHoleDensity: 3, deadStarDensity: 2, stationDensity: 1, crystalDensity: 0, pulsarDensity: 0, stormDensity: 4, hulkDensity: 0, wreckDensity: 0, cityChance: 0, color: [0.25, 0.55, 0.5] } },
     { key: 'DEEP_VOID',            name: 'Deep Void',            range: [22000, 25000], scoreMult: 3.0, cfg: { ...VOID } },
-    { key: 'DERELICT_GRAVEYARD',   name: 'Derelict Graveyard',   range: [25000, 29000], scoreMult: 3.5, cfg: { asteroidDensity: 20, nebulaCount: 3, cometDensity: 6, blackHoleDensity: 6, deadStarDensity: 2, stationDensity: 0, crystalDensity: 0, pulsarDensity: 0, stormDensity: 0, hulkDensity: 4, wreckDensity: 0, cityChance: 0, color: [0.35, 0.25, 0.2] } },
+    { key: 'DERELICT_GRAVEYARD',   name: 'Derelict Graveyard',   range: [25000, 29000], scoreMult: 3.5, cfg: { asteroidDensity: 14, nebulaCount: 3, cometDensity: 4, blackHoleDensity: 5, deadStarDensity: 2, stationDensity: 0, crystalDensity: 0, pulsarDensity: 0, stormDensity: 0, hulkDensity: 4, wreckDensity: 0, cityChance: 0, color: [0.35, 0.25, 0.2] } },
     { key: 'DEEP_VOID',            name: 'Deep Void',            range: [29000, 35000], scoreMult: 3.5, cfg: { ...VOID } },
-    { key: 'SPATIAL_GRAVEYARD',    name: 'Spatial Graveyard',    range: [35000, Infinity], scoreMult: 4.0, cfg: { asteroidDensity: 40, nebulaCount: 5, cometDensity: 8, blackHoleDensity: 8, deadStarDensity: 4, stationDensity: 0, crystalDensity: 0, pulsarDensity: 0, stormDensity: 0, hulkDensity: 0, wreckDensity: 5, cityChance: 0.5, color: [0.15, 0.45, 0.4] } },
+    { key: 'SPATIAL_GRAVEYARD',    name: 'Spatial Graveyard',    range: [35000, Infinity], scoreMult: 4.0, cfg: { asteroidDensity: 28, nebulaCount: 4, cometDensity: 6, blackHoleDensity: 7, deadStarDensity: 4, stationDensity: 0, crystalDensity: 0, pulsarDensity: 0, stormDensity: 0, hulkDensity: 0, wreckDensity: 5, cityChance: 0.75, color: [0.15, 0.45, 0.4] } },
   ];
 })();

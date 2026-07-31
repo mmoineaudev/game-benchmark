@@ -87,7 +87,7 @@ export class CitySystem {
           fog: false,
         });
         const glow = new THREE.Sprite(glowMat);
-        glow.scale.setScalar(240 * C.glowScale);
+        glow.scale.setScalar(C.fragmentScale * C.glowScale);
         built.group.add(glow);
 
         const fragment = {
@@ -97,7 +97,7 @@ export class CitySystem {
           vx: randRange(rng, C.driftMin, C.driftMax) * (rng() < 0.5 ? -1 : 1),
           vy: randRange(rng, C.driftMin, C.driftMax) * (rng() < 0.5 ? -1 : 1),
           vz: randRange(rng, C.driftMin, C.driftMax) * (rng() < 0.5 ? -1 : 1),
-          radius: 60,
+          radius: C.fragmentRadius,
           hp: C.fragmentHp, // 0 = indestructible
           score: 0,
           active: true,
@@ -107,7 +107,7 @@ export class CitySystem {
           windowMats: built.windowMats,
           phase: built.phase,
           rotSpeed: randRange(rng, C.rotMin, C.rotMax) * (rng() < 0.5 ? -1 : 1),
-          scale: 240,
+          scale: C.fragmentScale,
         };
         this.fragments.push(fragment);
         chunk.cityFragment = fragment;

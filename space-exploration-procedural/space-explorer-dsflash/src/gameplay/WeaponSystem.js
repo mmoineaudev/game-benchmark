@@ -14,6 +14,7 @@ export class WeaponSystem {
 
     this.pool = [];
     this._cooldown = 0;
+    this._firing = false;
     this._childCount = 0;
     this._buildPool();
   }
@@ -71,11 +72,37 @@ export class WeaponSystem {
     }
   }
 
-  /** Fire a laser from ship position along heading (rate-limited). */
+  /** Hold-to-fire state: spawns a quad-beam volley every FIRE_RATE while on. */
+  setFiring(on) {
+    this._firing = on;
+  }
+
+  /**
+   * Fire a volley from all 4 muzzles (2 cockpit cannons + 1 per wing end)
+   * along the ship heading, rate-limited by FIRE_RATE. Emits ONE 'weapon:fired'
+   * per volley (sound/flash feedback), not per beam.
+   */
+  fireVolley(shipPos, heading) {
+    if (this._cooldown > 0) return;
+    this._cooldown = 1 / Constants.FIRE_RATE;
+    let first = true;
+    for (const m of Constants.WEAPON_MUZZLES) {
+      const off = new THREE.Vector3(m.x, m.y, m.z).applyQuaternion(heading);
+      const pos = shipPos.clone().add(off);
+      this._spawnBeam(pos, heading, false);
+      if (first) {
+        this.events.emit('weapon:fired', { position: pos.clone(), direction: new THREE.Vector3(0, 0, -1).applyQuaternion(heading) });
+        first = false;
+      }
+    }
+  }
+
+  /** Single-shot fire (legacy edge path / touch tap). */
   fire(position, heading) {
     if (this._cooldown > 0) return;
     this._cooldown = 1 / Constants.FIRE_RATE;
     this._spawnBeam(position, heading, false);
+    this.events.emit('weapon:fired', { position: position.clone(), direction: new THREE.Vector3(0, 0, -1).applyQuaternion(heading) });
   }
 
   /** Raw beam spawn (no cooldown) — also used for beam-split children (v2.0 §3.4.1). */
@@ -93,11 +120,11 @@ export class WeaponSystem {
     laser.mesh.position.copy(position);
     laser.mesh.quaternion.copy(heading);
     if (isChild) this._childCount++;
-    this.events.emit('weapon:fired', { position: position.clone(), direction: laser.dir.clone() });
   }
 
-  update(dt) {
+  update(dt, shipPos, shipHeading) {
     this._cooldown = Math.max(0, this._cooldown - dt);
+    if (this._firing && shipPos && shipHeading) this.fireVolley(shipPos, shipHeading);
     for (const l of this.pool) {
       if (!l.active) continue;
       l.life -= dt;

@@ -162,17 +162,17 @@ export class PhysicsSystem {
       const holes = systems.blackHoleSystem.holes;
       for (const hole of holes) {
         const cx = hole.x, cy = hole.y, cz = hole.z;
-        const R = Constants.BLACK_HOLE_GRAVITY_RADIUS;
-        const strength = Constants.BLACK_HOLE_GRAVITY_STRENGTH * hole.pullMult;
+        const R = hole.gravityRadius;                       // per-hole, size-scaled
+        const strength = hole.strength * hole.pullMult;     // per-hole, size-scaled
         const maxPull = Constants.BLACK_HOLE_MAX_PULL;
         for (const sys of [systems.asteroidField, systems.debrisSystem, systems.cometSystem]) {
           if (!sys || !sys.applyGravity) continue;
           sys.applyGravity({ x: cx, y: cy, z: cz }, strength, maxPull, dt);
-          // consumption check
+          // consumption check (horizon scales with hole size)
           for (const b of sys.getGravityBodies()) {
             if (!b.active) continue;
             const dx = b.x - cx, dy = b.y - cy, dz = b.z - cz;
-            if (dx * dx + dy * dy + dz * dz < Constants.BLACK_HOLE_RADIUS * Constants.BLACK_HOLE_RADIUS) {
+            if (dx * dx + dy * dy + dz * dz < hole.radius * hole.radius) {
               sys.remove(b, { silent: true });
               systems.blackHoleSystem.onConsume(b.type, b.x, b.y, b.z);
             }
@@ -186,8 +186,8 @@ export class PhysicsSystem {
           const inv = a / Math.sqrt(d2);
           ship.applyAcceleration({ x: dx * inv, y: dy * inv, z: dz * inv }, dt);
         }
-        // Ship consumed
-        if (d2 < Constants.BLACK_HOLE_RADIUS * Constants.BLACK_HOLE_RADIUS) {
+        // Ship consumed (horizon scales with hole size)
+        if (d2 < hole.radius * hole.radius) {
           this._kill(ship, gameState, 'black_hole', hole);
           return;
         }

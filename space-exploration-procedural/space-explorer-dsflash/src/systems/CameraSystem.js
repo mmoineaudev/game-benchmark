@@ -11,7 +11,7 @@ export class CameraSystem {
     this.camera.far = 4000;
     this.camera.updateProjectionMatrix();
 
-    this._pos = new THREE.Vector3(0, 8, 18); // smoothed position
+    this._pos = new THREE.Vector3(0, Constants.CAMERA_HEIGHT, Constants.CAMERA_DISTANCE); // smoothed position
     this._shake = 0;
     this._shakeOffset = new THREE.Vector3();
   }

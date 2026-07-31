@@ -14,8 +14,8 @@ export const Constants = {
   PITCH_LIMIT: 1.2,         // rad, prevents gimbal flip
   SHIP_SPAWN: { x: 0, y: 2, z: 0 },
 
-  // Headlight (powerful — reveals asteroids ahead)
-  HEADLIGHT: { intensity: 4.0, range: 70, angle: 0.65, penumbra: 0.5, color: 0xffffff },
+  // Headlight (very powerful — reveals asteroids ahead)
+  HEADLIGHT: { intensity: 6.5, range: 95, angle: 0.7, penumbra: 0.45, color: 0xffffff },
 
   // Electromagnetic shield (right-click)
   SHIELD: {
@@ -27,19 +27,25 @@ export const Constants = {
   },
 
   // Camera
-  CAMERA_DISTANCE: 12,
-  CAMERA_HEIGHT: 5,
+  CAMERA_DISTANCE: 6,           // behind ship (half of original 12)
+  CAMERA_HEIGHT: 3,             // above ship (half of original 5)
   CAMERA_FOV_REST: 75,
   CAMERA_FOV_MAX: 95,
   CAMERA_DAMPING: 5.0,      // smoothed: lerp factor per second
 
-  // Weapon
+  // Weapon — large green beam
   FIRE_RATE: 8,
   PROJECTILE_SPEED: 200,
   PROJECTILE_LIFETIME: 3.0,
   PROJECTILE_RANGE: 200,
   PROJECTILE_DAMAGE: 25,
   LASER_POOL: 32,
+  LASER_LENGTH: 9,              // beam length (u)
+  LASER_RADIUS: 0.18,           // beam core radius (u)
+  LASER_GLOW_RADIUS: 0.5,       // outer glow radius (u)
+  LASER_HIT_RADIUS: 1.8,        // collision radius (u)
+  LASER_COLOR: 0x33ff66,        // green
+  LASER_GLOW_COLOR: 0x22ff66,
 
   // Health
   MAX_HEALTH: 100,

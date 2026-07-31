@@ -124,7 +124,11 @@ export class Game {
     const on = (ev, fn) => this._unsubs.push(eventBus.on(ev, fn));
 
     // Feedback: particles / shake / audio
-    on(Events.WEAPON_FIRED, () => this.audio.play('laser', { volume: 0.35 }));
+    on(Events.WEAPON_FIRED, (e) => {
+      this.audio.play('laser', { volume: 0.35 });
+      // green muzzle flash
+      this.particles.burst('laserSpark', e.position.x, e.position.y, e.position.z, 8, 10, { size: 0.3, color: [0.3, 1.0, 0.55] });
+    });
     on(Events.WEAPON_HIT, (e) => {
       this.particles.burst('laserSpark', e.position.x, e.position.y, e.position.z, 10, 6, { size: 0.15 });
     });
@@ -334,9 +338,9 @@ export class Game {
   _muzzlePos() {
     const f = this.ship.forward;
     return new THREE.Vector3(
-      this.ship.position.x - f.x * 3.2,
-      this.ship.position.y - f.y * 3.2,
-      this.ship.position.z - f.z * 3.2,
+      this.ship.position.x - f.x * 5.0,
+      this.ship.position.y - f.y * 5.0,
+      this.ship.position.z - f.z * 5.0,
     );
   }
 

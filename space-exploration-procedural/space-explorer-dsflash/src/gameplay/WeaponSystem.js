@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { Constants } from '../core/Constants.js';
+import { softDotTexture } from '../utils/ShaderHelpers.js';
 
-// Laser projectiles: pooled glowing beams (spec §6.2).
+// Laser projectiles: large green beams (spec §6.2).
 export class WeaponSystem {
   constructor(scene, events, physics) {
     this.scene = scene;
@@ -17,28 +18,43 @@ export class WeaponSystem {
   }
 
   _buildPool() {
-    const geo = new THREE.CylinderGeometry(0.05, 0.05, 2.6, 6);
-    geo.rotateX(Math.PI / 2); // length along Z
-    const mat = new THREE.MeshBasicMaterial({
-      color: 0xff6644,
+    const C = Constants;
+    const coreGeo = new THREE.CylinderGeometry(C.LASER_RADIUS, C.LASER_RADIUS, C.LASER_LENGTH, 8);
+    coreGeo.rotateX(Math.PI / 2); // length along Z
+    const glowGeo = new THREE.CylinderGeometry(C.LASER_GLOW_RADIUS, C.LASER_GLOW_RADIUS, C.LASER_LENGTH, 10);
+    glowGeo.rotateX(Math.PI / 2);
+    const coreMat = new THREE.MeshBasicMaterial({
+      color: C.LASER_COLOR,
       transparent: true,
       opacity: 0.95,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
     const glowMat = new THREE.MeshBasicMaterial({
-      color: 0xffaa66,
+      color: C.LASER_GLOW_COLOR,
       transparent: true,
       opacity: 0.35,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
-    for (let i = 0; i < Constants.LASER_POOL; i++) {
+    const tipMat = new THREE.SpriteMaterial({
+      map: softDotTexture(),
+      color: 0x88ffaa,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    for (let i = 0; i < C.LASER_POOL; i++) {
       const laser = new THREE.Group();
-      const core = new THREE.Mesh(geo, mat);
+      const core = new THREE.Mesh(coreGeo, coreMat);
       laser.add(core);
-      const glow = new THREE.Mesh(new THREE.SphereGeometry(0.16, 6, 6), glowMat);
+      const glow = new THREE.Mesh(glowGeo, glowMat);
       laser.add(glow);
+      const tip = new THREE.Sprite(tipMat);
+      tip.position.set(0, 0, -C.LASER_LENGTH / 2);
+      tip.scale.setScalar(C.LASER_GLOW_RADIUS * 6);
+      laser.add(tip);
       laser.visible = false;
       this.group.add(laser);
       this.pool.push({
@@ -84,8 +100,8 @@ export class WeaponSystem {
       l.pos.addScaledVector(l.vel, dt);
       l.mesh.position.copy(l.pos);
 
-      // Collision vs world bodies (asteroid/debris/comet)
-      const hit = this.physics.querySphere(l.pos, 1.0);
+      // Collision vs world bodies (asteroid/debris/comet) — large beam, generous radius
+      const hit = this.physics.querySphere(l.pos, Constants.LASER_HIT_RADIUS);
       if (hit.length > 0) {
         const target = hit[0];
         this._onHit(l, target);

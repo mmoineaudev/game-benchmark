@@ -88,17 +88,21 @@ export class OrbSystem {
     }
   }
 
-  // Spawn an auto-collect orb at a skeleton's death position.
+  // Spawn one or more auto-collect orbs at a kill position (drop-on-kill).
   // Uses shared geometry/material — no allocation per drop.
-  spawnDrop(x, z) {
+  spawnDrop(x, z, count = 1) {
     const y = DROP.Y;
-    const mesh = new THREE.Mesh(this._dropGeo, this._dropMat);
-    mesh.position.set(x, y, z);
-    this.scene.add(mesh);
-    const glow = new THREE.Mesh(this._dropGlowGeo, this._dropGlowMat);
-    glow.position.set(x, y, z);
-    this.scene.add(glow);
-    this.drops.push({ mesh, glow, x, z, y, phase: Math.random() * Math.PI * 2 });
+    for (let i = 0; i < count; i++) {
+      const mesh = new THREE.Mesh(this._dropGeo, this._dropMat);
+      const ox = (Math.random() - 0.5) * 0.8;
+      const oz = (Math.random() - 0.5) * 0.8;
+      mesh.position.set(x + ox, y, z + oz);
+      this.scene.add(mesh);
+      const glow = new THREE.Mesh(this._dropGlowGeo, this._dropGlowMat);
+      glow.position.copy(mesh.position);
+      this.scene.add(glow);
+      this.drops.push({ mesh, glow, x: x + ox, z: z + oz, y, phase: Math.random() * Math.PI * 2 });
+    }
   }
 
   // Reuse a pooled ring — no geometry/material creation at pickup time

@@ -1,42 +1,52 @@
 import * as THREE from 'three';
 import { Skeleton } from './Skeleton.js';
-import { SKELETON, PLAYER, MAGICIAN } from '../core/Constants.js';
+import { ArmoredSkeleton } from './enemies/ArmoredSkeleton.js';
+import { ArcherSkeleton } from './enemies/ArcherSkeleton.js';
+import { Brute } from './enemies/Brute.js';
+import { Rat } from './enemies/Rat.js';
+import { Wraith } from './enemies/Wraith.js';
+import {
+  SKELETON, PLAYER, MAGICIAN, ENEMY, ENEMY_SPAWN_WEIGHTS, ENEMY_TYPES,
+  ROOM_ENEMY_MODIFIERS, ARCHER, BRUTE,
+} from '../core/Constants.js';
 import { resolveCircleCollisions, circleHitsBox } from '../core/Collision.js';
 import { generateGlowTexture } from '../world/Textures.js';
 
+// Unified enemy system: spawns the full roster via biome-weighted registry,
+// drives per-type AI (melee chase, ranged kiting, rat packs, phasing wraiths),
+// manages projectile pools (magician orbs, archer arrows), and reports kills.
 export class SkeletonSystem {
   constructor(scene, state) {
     this.scene = scene;
     this.state = state;
-    this.skeletons = []; // { skel, x, z, cellX, cellZ, nextThink, active, magician }
+    this.skeletons = []; // { skel, x, z, cellX, cellZ, nextThink, type, elite, magician }
     this.enemyOrbs = []; // pooled red orbs fired by magicians
+    this.arrows = [];    // pooled bone arrows fired by archers
     this._nextOrb = 0;
+    this._nextArrow = 0;
     this.onKill = null;
     this.onPlayerDamaged = null;
     this.onPlayerDeath = null;
+    this.speedMult = 1;
   }
 
-  _initEnemyOrbs() {
-    const meshGeo = new THREE.SphereGeometry(0.16, 10, 8);
-    const meshMat = new THREE.MeshStandardMaterial({
+  _initProjectilePools() {
+    // Magician red orbs (existing)
+    const orbGeo = new THREE.SphereGeometry(0.16, 10, 8);
+    const orbMat = new THREE.MeshStandardMaterial({
       color: 0xff3322, emissive: 0xff3322, emissiveIntensity: 2.5,
       roughness: 0.15, metalness: 0.4,
     });
     const glowTex = generateGlowTexture();
     const glowMat = new THREE.SpriteMaterial({
-      map: glowTex,
-      color: 0xff4433,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      transparent: true,
-      opacity: 0.8,
+      map: glowTex, color: 0xff4433,
+      blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.8,
     });
     this._orbTex = glowTex;
-    this._orbMeshMat = meshMat;
+    this._orbMeshMat = orbMat;
     this._orbGlowMat = glowMat;
-    const POOL = 12;
-    for (let i = 0; i < POOL; i++) {
-      const mesh = new THREE.Mesh(meshGeo, meshMat);
+    for (let i = 0; i < 12; i++) {
+      const mesh = new THREE.Mesh(orbGeo, orbMat);
       const glow = new THREE.Sprite(glowMat);
       glow.scale.setScalar(1.4);
       mesh.visible = false;
@@ -45,15 +55,29 @@ export class SkeletonSystem {
       this.scene.add(glow);
       this.enemyOrbs.push({ mesh, glow, dirX: 0, dirZ: 0, life: 0, active: false });
     }
+
+    // Archer bone arrows (pool of 10)
+    const arrowGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.5, 6);
+    const arrowMat = new THREE.MeshStandardMaterial({
+      color: 0xd8d0c0, roughness: 0.6, metalness: 0.1,
+    });
+    this._arrowGeo = arrowGeo;
+    this._arrowMat = arrowMat;
+    for (let i = 0; i < 10; i++) {
+      const mesh = new THREE.Mesh(arrowGeo, arrowMat);
+      mesh.visible = false;
+      this.scene.add(mesh);
+      this.arrows.push({ mesh, dirX: 0, dirZ: 0, life: 0, active: false });
+    }
   }
 
   init(dungeonData, state) {
     this.data = dungeonData;
     this.state = state;
-    this._initEnemyOrbs();
+    this._initProjectilePools();
     const gs = dungeonData.gridSize;
 
-    // BFS from entrance to find cells far enough away for spawns
+    // BFS from entrance for spawn distance
     const dist = Array.from({ length: gs }, () => new Array(gs).fill(-1));
     const queue = [[state.entranceCell.x, state.entranceCell.z]];
     dist[state.entranceCell.z][state.entranceCell.x] = 0;
@@ -85,49 +109,156 @@ export class SkeletonSystem {
       for (let x = 0; x < gs; x++) {
         if (dungeonData.grid[z][x] === 'empty') continue;
         if (exitRoom.has(`${x},${z}`)) continue;
-        if (dist[z][x] < SKELETON.MIN_SPAWN_DIST) continue;
+        if (dist[z][x] < ENEMY.SPAWN_MIN_DIST) continue;
         candidates.push({ x, z });
       }
     }
-
-    // Shuffle
     for (let i = candidates.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
     }
 
-    const count = Math.min(
-      SKELETON.BASE_COUNT + (state.level - 1) * SKELETON.COUNT_PER_LEVEL,
-      SKELETON.MAX_COUNT,
+    // Level scaling: +5% speed & attack every 3 levels
+    const tier = Math.floor((state.level - 1) / 3);
+    this.speedMult = 1 + 0.05 * tier;
+    const attackMult = 1 + 0.05 * tier;
+
+    // Spawn slots: base + level, capped; +2 in ARENA rooms
+    let slots = Math.min(
+      ENEMY.BASE_SLOTS + (state.level - 1) * ENEMY.SLOTS_PER_LEVEL,
+      ENEMY.MAX_SLOTS,
     );
+    const inArena = dungeonData.rooms.some((r) => r.type === 'ARENA');
+    if (inArena) slots += ENEMY.ARENA_EXTRA_SLOTS;
 
     const cs = dungeonData.cellSize;
     const ex = state.entranceCell.x * cs + cs / 2;
     const ez = state.entranceCell.z * cs + cs / 2;
-    // Level scaling: +5% move speed and +5% attack speed every 3 levels
-    const tier = Math.floor((state.level - 1) / 3);
-    this.speedMult = 1 + 0.05 * tier;
-    const attackMult = 1 + 0.05 * tier;
-    for (let i = 0; i < Math.min(count, candidates.length); i++) {
+
+    let ratCount = 0;
+    for (let i = 0; i < Math.min(slots, candidates.length); i++) {
       const { x, z } = candidates[i];
-      const magician = Math.random() < MAGICIAN.CHANCE;
-      const skel = new Skeleton(this.scene, { isMagician: magician, active: true, attackMult });
+      const cellMeta = dungeonData.metadata[z][x];
+      const roomType = cellMeta?.type === 'room' ? cellMeta.roomType : null;
+      const type = this._pickType(roomType, state.biome);
       const sx = x * cs + cs / 2;
       const sz = z * cs + cs / 2;
+
+      if (type === 'RAT') {
+        if (ratCount >= ENEMY.RAT_CAP) continue;
+        const packSize = Math.min(
+          ENEMY.RAT_PACK_MIN + Math.floor(Math.random() * (ENEMY.RAT_PACK_MAX - ENEMY.RAT_PACK_MIN + 1)),
+          ENEMY.RAT_CAP - ratCount,
+          ENEMY.MAX_ALIVE - this.skeletons.length,
+        );
+        for (let r = 0; r < packSize; r++) {
+          const rat = new Rat(this.scene, { attackMult });
+          const ox = (Math.random() - 0.5) * 2;
+          const oz = (Math.random() - 0.5) * 2;
+          rat.group.position.set(sx + ox, 0, sz + oz);
+          rat.onKill = () => this._onKill(rat);
+          this.skeletons.push({
+            skel: rat, x: sx + ox, z: sz + oz,
+            cellX: x, cellZ: z, nextThink: 0, type: 'RAT', elite: false, magician: false,
+          });
+          ratCount++;
+        }
+        continue;
+      }
+
+      // Elite roll: 1-in-10 for elite-eligible types (Armored, Archer, Brute, Wraith)
+      const elite = ['ARMORED', 'ARCHER', 'BRUTE', 'WRAITH'].includes(type)
+        && Math.random() < ENEMY.ELITE_CHANCE;
+      // ARENA guarantees an elite on its first spawn roll
+      const arenaElite = inArena && this.skeletons.length === 0
+        && ['ARMORED', 'ARCHER', 'BRUTE', 'WRAITH'].includes(type);
+      const isElite = elite || arenaElite;
+
+      let skel;
+      switch (type) {
+        case 'ARMORED': skel = new ArmoredSkeleton(this.scene, { attackMult, elite: isElite }); break;
+        case 'ARCHER': skel = new ArcherSkeleton(this.scene, { attackMult, elite: isElite }); break;
+        case 'BRUTE': skel = new Brute(this.scene, { attackMult, elite: isElite }); break;
+        case 'WRAITH': skel = new Wraith(this.scene, { attackMult, elite: isElite }); break;
+        default: {
+          const magician = type === 'MAGICIAN';
+          skel = new Skeleton(this.scene, { isMagician: magician, active: true, attackMult });
+          skel.magician = magician;
+        }
+      }
       skel.group.position.set(sx, 0, sz);
-      skel.onAttackHit = () => {
-        if (magician) this._fireEnemyOrb(skel);
-        else this._tryDamagePlayer(skel);
-      };
+      skel.onAttackHit = () => this._onAttackHit(skel, type);
       skel.onDeathComplete = () => this._removeSkeleton(skel);
-      // Face the player immediately (they are the objective)
+      skel.onKill = () => this._onKill(skel);
       skel.facingYaw = Math.atan2(ex - sx, ez - sz);
       skel.group.rotation.y = skel.facingYaw;
       this.skeletons.push({
         skel, x: sx, z: sz,
-        cellX: x, cellZ: z, nextThink: 0, active: false, magician,
+        cellX: x, cellZ: z, nextThink: 0, type, elite: isElite, magician: type === 'MAGICIAN',
       });
     }
+  }
+
+  // Biome weights + room-type multipliers -> enemy type
+  _pickType(roomType, biome) {
+    const weights = ENEMY_SPAWN_WEIGHTS[biome] || ENEMY_SPAWN_WEIGHTS.STONE;
+    const mods = roomType ? ROOM_ENEMY_MODIFIERS[roomType] : null;
+    const scaled = weights.map((w, i) => {
+      const type = ENEMY_TYPES[i];
+      const m = mods ? (mods[type] ?? 1) : 1;
+      return w * m;
+    });
+    const sum = scaled.reduce((a, b) => a + b, 0);
+    let r = Math.random() * sum;
+    for (let i = 0; i < scaled.length; i++) {
+      r -= scaled[i];
+      if (r <= 0) return ENEMY_TYPES[i];
+    }
+    return ENEMY_TYPES[scaled.length - 1];
+  }
+
+  _onAttackHit(skel, type) {
+    if (type === 'MAGICIAN') this._fireEnemyOrb(skel);
+    else if (type === 'ARCHER') this._fireArrow(skel);
+    else if (type === 'BRUTE') this._bruteSlam(skel);
+    else this._tryDamagePlayer(skel);
+  }
+
+  _bruteSlam(skel) {
+    const p = this.state.player;
+    const dx = p.x - skel.group.position.x;
+    const dz = p.z - skel.group.position.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist > BRUTE.RANGE || dist < 0.001) return;
+    const dot = (dx / dist) * Math.sin(skel.facingYaw) + (dz / dist) * Math.cos(skel.facingYaw);
+    if (dot < Math.cos(BRUTE.ARC)) return; // outside ±50° cone
+    this._damagePlayer(BRUTE.DMG);
+    this._spawnShockwave(skel.group.position.x, skel.group.position.z);
+  }
+
+  _spawnShockwave(x, z) {
+    // Visual only: expanding torus ring
+    if (!this._shockGeo) {
+      this._shockGeo = new THREE.TorusGeometry(0.6, 0.05, 6, 20);
+      this._shockMat = new THREE.MeshBasicMaterial({
+        color: 0xff8830, transparent: true, opacity: 0.6,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      });
+      this._shocks = [];
+      for (let i = 0; i < 4; i++) {
+        const mesh = new THREE.Mesh(this._shockGeo, this._shockMat);
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.visible = false;
+        this.scene.add(mesh);
+        this._shocks.push({ mesh, life: 0, active: false });
+      }
+    }
+    const s = this._shocks.find((s) => !s.active) || this._shocks[0];
+    s.active = true;
+    s.life = 0.25;
+    s.mesh.visible = true;
+    s.mesh.position.set(x, 0.1, z);
+    s.mesh.scale.setScalar(0.6);
   }
 
   update(dt, time, player, collisionBoxes) {
@@ -141,8 +272,89 @@ export class SkeletonSystem {
       const dz = player.z - s.z;
       const dist = Math.hypot(dx, dz);
 
-      // Attack cycle (from CHASE or WAKING). Magicians attack from cast range.
-      const atkRange = s.magician ? MAGICIAN.CAST_RANGE : SKELETON.ATTACK_RANGE;
+      // --- Ranged attackers: Archer (kite) & Magician (cast) ---
+      if (s.type === 'ARCHER') {
+        const atkRange = ARCHER.RANGE;
+        if (skel.state === 'CHASE' && dist <= atkRange
+          && skel.attackCooldown <= 0 && this._hasLOS(skel, player, collisionBoxes)) {
+          skel.state = 'ATTACK';
+          skel.animTime = 0;
+          skel.attackHitDone = false;
+          skel.setFacing(Math.atan2(dx, dz));
+        }
+        if (skel.state === 'ATTACK') { skel.update(dt, time); continue; }
+        // Kite: stop at pref dist, retreat if too close
+        let moveX = 0, moveZ = 0;
+        if (dist < ARCHER.RETREAT_DIST) {
+          moveX = -dx / dist; moveZ = -dz / dist;
+          const speed = ARCHER.RETREAT_SPEED * this.speedMult * dt;
+          s.x += moveX * speed;
+          s.z += moveZ * speed;
+        } else if (dist > ARCHER.PREF_DIST && this._hasLOS(skel, player, collisionBoxes)) {
+          moveX = dx / dist; moveZ = dz / dist;
+          const speed = ARCHER.SPEED * this.speedMult * dt;
+          s.x += moveX * speed;
+          s.z += moveZ * speed;
+        } else if (!this._hasLOS(skel, player, collisionBoxes)) {
+          const dir = this._greedyStep(s, player, collisionBoxes);
+          if (dir) {
+            moveX = dir.x; moveZ = dir.z;
+            const speed = ARCHER.SPEED * this.speedMult * dt;
+            s.x += moveX * speed;
+            s.z += moveZ * speed;
+          }
+        }
+        if (moveX !== 0 || moveZ !== 0) {
+          resolveCircleCollisions(collisionBoxes, s, 0.35);
+          skel.group.position.set(s.x, 0, s.z);
+          skel.setFacing(Math.atan2(moveX, moveZ));
+          skel.group.rotation.y = THREE.MathUtils.damp(skel.group.rotation.y, skel.facingYaw, 8, dt);
+        }
+        skel.update(dt, time);
+        continue;
+      }
+
+      // --- Phasing Wraith: straight-line flight through walls ---
+      if (s.type === 'WRAITH') {
+        if (dist > 0.5) {
+          const speed = skel.speed * this.speedMult * dt;
+          s.x += (dx / dist) * speed;
+          s.z += (dz / dist) * speed;
+          skel.group.position.set(s.x, 0, s.z);
+          skel.setFacing(Math.atan2(dx, dz));
+        }
+        if (dist <= skel.attackRange && skel.attack() && this.state.invulnTimer <= 0) {
+          this._damagePlayer(skel.damage);
+        }
+        skel.update(dt, time);
+        continue;
+      }
+
+      // --- Rats: fast straight-line chase (with greedy step if LOS blocked) ---
+      if (s.type === 'RAT') {
+        let moveX = 0, moveZ = 0;
+        if (this._hasLOS(skel, player, collisionBoxes)) {
+          moveX = dx / dist; moveZ = dz / dist;
+        } else {
+          const dir = this._greedyStep(s, player, collisionBoxes);
+          if (dir) { moveX = dir.x; moveZ = dir.z; }
+        }
+        if (moveX !== 0 || moveZ !== 0) {
+          const speed = skel.speed * this.speedMult * dt;
+          s.x += moveX * speed;
+          s.z += moveZ * speed;
+          skel.group.position.set(s.x, 0, s.z);
+          skel.setFacing(Math.atan2(moveX, moveZ));
+        }
+        if (dist <= skel.attackRange && skel.attack() && this.state.invulnTimer <= 0) {
+          this._damagePlayer(skel.damage);
+        }
+        skel.update(dt);
+        continue;
+      }
+
+      // --- Melee skeleton-family (Skeleton, Magician?, Armored, Brute) ---
+      const atkRange = skel.attackRange ?? SKELETON.ATTACK_RANGE;
       if (skel.state === 'CHASE' && dist <= atkRange
         && skel.attackCooldown <= 0 && this._hasLOS(skel, player, collisionBoxes)) {
         skel.state = 'ATTACK';
@@ -156,14 +368,12 @@ export class SkeletonSystem {
         continue;
       }
 
-      // Movement: chase or greedy grid pathing (only while fully awake).
-      // Magicians keep their distance — stop at cast range.
       if (skel.state === 'CHASE') {
         let moveX = 0, moveZ = 0;
         const los = this._hasLOS(skel, player, collisionBoxes);
         const stopRange = s.magician
           ? Math.max(MAGICIAN.CAST_RANGE * 0.6, SKELETON.ATTACK_RANGE)
-          : SKELETON.ATTACK_RANGE;
+          : atkRange;
         if (los && dist > stopRange) {
           moveX = dx / dist;
           moveZ = dz / dist;
@@ -173,10 +383,9 @@ export class SkeletonSystem {
         }
 
         if (moveX !== 0 || moveZ !== 0) {
-          const speed = SKELETON.CHASE_SPEED * (this.speedMult || 1) * dt;
+          const speed = skel.speed * this.speedMult * dt;
           s.x += moveX * speed;
           s.z += moveZ * speed;
-          // Wall collision (same push-out as player)
           resolveCircleCollisions(collisionBoxes, s, 0.35);
           skel.group.position.set(s.x, 0, s.z);
           skel.setFacing(Math.atan2(moveX, moveZ));
@@ -189,26 +398,63 @@ export class SkeletonSystem {
       skel.update(dt, time);
     }
 
-    // Magician red orbs: move, hit walls or the player
+    // Magician red orbs + archer arrows
+    this._updateProjectiles(dt, collisionBoxes, player);
+
+    // Shockwave rings
+    if (this._shocks) {
+      for (const s of this._shocks) {
+        if (!s.active) continue;
+        s.life -= dt;
+        const t = 1 - Math.max(0, s.life / 0.25);
+        s.mesh.scale.setScalar(0.6 + t * 2.0);
+        s.mesh.material.opacity = 0.6 * (1 - t);
+        if (s.life <= 0) { s.active = false; s.mesh.visible = false; }
+      }
+    }
+  }
+
+  _updateProjectiles(dt, collisionBoxes, player) {
+    // Magician orbs
     for (const orb of this.enemyOrbs) {
       if (!orb.active) continue;
       orb.mesh.position.x += orb.dirX * MAGICIAN.ORB_SPEED * dt;
       orb.mesh.position.z += orb.dirZ * MAGICIAN.ORB_SPEED * dt;
       orb.glow.position.copy(orb.mesh.position);
       orb.life -= dt;
-
       if (circleHitsBox(collisionBoxes, orb.mesh.position.x, orb.mesh.position.z, MAGICIAN.ORB_RADIUS)) {
         this._deactivateOrb(orb);
         continue;
       }
       const dx = player.x - orb.mesh.position.x;
       const dz = player.z - orb.mesh.position.z;
-      if (dx * dx + dz * dz < 0.8) { // ~0.9 unit hit radius
-        this._damagePlayer();
+      if (dx * dx + dz * dz < 0.8) {
+        this._damagePlayer(MAGICIAN.ORB_DAMAGE);
         this._deactivateOrb(orb);
         continue;
       }
       if (orb.life <= 0) this._deactivateOrb(orb);
+    }
+
+    // Archer arrows
+    for (const a of this.arrows) {
+      if (!a.active) continue;
+      a.mesh.position.x += a.dirX * ARCHER.ARROW_SPEED * dt;
+      a.mesh.position.z += a.dirZ * ARCHER.ARROW_SPEED * dt;
+      a.mesh.rotation.x = Math.atan2(0.02, ARCHER.ARROW_SPEED * dt) + Math.PI / 2;
+      a.life -= dt;
+      if (circleHitsBox(collisionBoxes, a.mesh.position.x, a.mesh.position.z, ARCHER.ARROW_RADIUS)) {
+        this._deactivateArrow(a);
+        continue;
+      }
+      const dx = player.x - a.mesh.position.x;
+      const dz = player.z - a.mesh.position.z;
+      if (dx * dx + dz * dz < 0.7) {
+        this._damagePlayer(ARCHER.DMG);
+        this._deactivateArrow(a);
+        continue;
+      }
+      if (a.life <= 0) this._deactivateArrow(a);
     }
   }
 
@@ -231,20 +477,51 @@ export class SkeletonSystem {
     orb.life = MAGICIAN.ORB_LIFETIME;
   }
 
+  _fireArrow(skel) {
+    const p = this.state.player;
+    const sx = skel.group.position.x;
+    const sz = skel.group.position.z;
+    const arrows = skel.elite ? 2 : 1; // Sharpshooter fires a 2-arrow fan
+    for (let k = 0; k < arrows; k++) {
+      const a = this.arrows[this._nextArrow];
+      this._nextArrow = (this._nextArrow + 1) % this.arrows.length;
+      a.active = true;
+      a.mesh.visible = true;
+      a.mesh.position.set(sx, 1.5, sz);
+      const dx = p.x - sx;
+      const dz = p.z - sz;
+      const len = Math.hypot(dx, dz) || 1;
+      const spread = k === 0 ? 0 : (k === 1 ? -0.14 : 0.14); // ±8°
+      const ang = Math.atan2(dx, dz) + spread;
+      a.dirX = Math.sin(ang);
+      a.dirZ = Math.cos(ang);
+      a.life = ARCHER.ARROW_LIFE;
+    }
+  }
+
   _deactivateOrb(orb) {
     orb.active = false;
     orb.mesh.visible = false;
     orb.glow.visible = false;
   }
 
-  _damagePlayer() {
+  _deactivateArrow(a) {
+    a.active = false;
+    a.mesh.visible = false;
+  }
+
+  _damagePlayer(amount = 1) {
     if (this.state.invulnTimer > 0 || this.state.health <= 0) return;
-    this.state.health -= MAGICIAN.ORB_DAMAGE;
+    this.state.health -= amount;
     this.state.invulnTimer = PLAYER.INVULN_TIME;
     this.onPlayerDamaged?.();
     if (this.state.health <= 0) {
       this.onPlayerDeath?.();
     }
+  }
+
+  _onKill(skel) {
+    this.onKill?.(skel.group.position.x, skel.group.position.z, skel.dropOrbs || 1);
   }
 
   _hasLOS(skel, player, collisionBoxes) {
@@ -265,7 +542,6 @@ export class SkeletonSystem {
   }
 
   _greedyStep(s, player, collisionBoxes) {
-    // Re-evaluate every 0.3s; pick the walkable 4-neighbor cell closest to the player
     if (performance.now() < s.nextThink) return null;
     s.nextThink = performance.now() + 300;
 
@@ -301,34 +577,18 @@ export class SkeletonSystem {
     return { x: dx / len, z: dz / len };
   }
 
-  _tryDamagePlayer(skel) {
-    const p = this.state.player;
-    const dx = p.x - skel.group.position.x;
-    const dz = p.z - skel.group.position.z;
-    if (Math.hypot(dx, dz) > SKELETON.ATTACK_RANGE + 0.4) return;
-    if (this.state.invulnTimer > 0 || this.state.health <= 0) return;
-
-    this.state.health -= SKELETON.ATTACK_DAMAGE;
-    this.state.invulnTimer = PLAYER.INVULN_TIME;
-    this.onPlayerDamaged?.();
-    if (this.state.health <= 0) {
-      this.onPlayerDeath?.();
-    }
-  }
-
+  // Unified damage entry — kept for Game/OrbShooter compatibility
   hitSkeleton(skel, damage) {
-    if (skel.state === 'DEAD') return;
-    skel.hp -= damage;
-    if (skel.hp <= 0) {
-      skel.state = 'DEAD';
-      skel.animTime = 0;
-      skel.attackHitDone = true;
-      this.onKill?.(skel.group.position.x, skel.group.position.z);
+    const record = this.skeletons.find((s) => s.skel === skel);
+    const died = skel.hit(damage);
+    if (died && record) {
+      // hit() already fired onKill -> onKill -> drop
     }
+    return died;
   }
 
   _removeSkeleton(skel) {
-    const idx = this.skeletons.findIndex(s => s.skel === skel);
+    const idx = this.skeletons.findIndex((s) => s.skel === skel);
     if (idx !== -1) this.skeletons.splice(idx, 1);
     skel.dispose();
   }
@@ -343,9 +603,22 @@ export class SkeletonSystem {
       this.scene.remove(orb.mesh);
       this.scene.remove(orb.glow);
     }
+    for (const a of this.arrows) {
+      a.mesh.geometry.dispose();
+      this.scene.remove(a.mesh);
+    }
     if (this._orbMeshMat) this._orbMeshMat.dispose();
     if (this._orbGlowMat) this._orbGlowMat.dispose();
     if (this._orbTex) this._orbTex.dispose();
+    if (this._arrowGeo) this._arrowGeo.dispose();
+    if (this._arrowMat) this._arrowMat.dispose();
+    if (this._shockGeo) {
+      this._shockGeo.dispose();
+      this._shockMat.dispose();
+      for (const s of this._shocks) this.scene.remove(s.mesh);
+    }
     this.enemyOrbs = [];
+    this.arrows = [];
+    this._shocks = [];
   }
 }

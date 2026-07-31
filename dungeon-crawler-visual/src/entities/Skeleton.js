@@ -7,11 +7,16 @@ import { generateGlowTexture } from '../world/Textures.js';
 // States: DORMANT -> WAKING -> CHASE -> ATTACK -> DEAD
 // Magician variant (1 in 10): hood + glowing staff instead of a sword.
 export class Skeleton {
-  constructor(scene, { isMagician = false, active = false, attackMult = 1 } = {}) {
+  constructor(scene, { isMagician = false, active = false, attackMult = 1, boneColor = null, eyeColor = null } = {}) {
     this.scene = scene;
     this.isMagician = isMagician;
     this.attackMult = attackMult; // >1 = faster attack cycle (higher levels)
     this.hp = SKELETON.HP;
+    this.maxHp = this.hp;
+    this.speed = SKELETON.CHASE_SPEED; // u/s (unified EnemySystem reads this)
+    this.damage = SKELETON.ATTACK_DAMAGE;
+    this.attackRange = SKELETON.ATTACK_RANGE;
+    this.dropOrbs = 1; // unified drop count
     this.state = active ? 'CHASE' : 'DORMANT';
     this.animTime = 0;
     this.phase = Math.random() * Math.PI * 2;
@@ -28,14 +33,14 @@ export class Skeleton {
 
     // Per-skeleton material clones so death-fade opacity is independent
     this.boneMat = new THREE.MeshStandardMaterial({
-      color: SKELETON.BONE_COLOR, roughness: 0.85, metalness: 0.05,
+      color: boneColor || SKELETON.BONE_COLOR, roughness: 0.85, metalness: 0.05,
       transparent: true,
     });
     this.darkMat = new THREE.MeshStandardMaterial({
       color: 0x2a2622, roughness: 0.9, transparent: true,
     });
     this.eyeMat = new THREE.MeshBasicMaterial({
-      color: SKELETON.EYE_GLOW, transparent: true, opacity: 0.15,
+      color: eyeColor || SKELETON.EYE_GLOW, transparent: true, opacity: 0.15,
     });
     this.bladeMat = new THREE.MeshStandardMaterial({
       color: 0x6a6a72, roughness: 0.4, metalness: 0.9, transparent: true,
@@ -44,7 +49,7 @@ export class Skeleton {
     this._glowTex = generateGlowTexture();
     this.eyeGlowMat = new THREE.SpriteMaterial({
       map: this._glowTex,
-      color: SKELETON.EYE_GLOW,
+      color: eyeColor || SKELETON.EYE_GLOW,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       transparent: true,
@@ -380,6 +385,21 @@ export class Skeleton {
   // Called by SkeletonSystem each frame with movement direction (world yaw).
   setFacing(yaw) {
     this.facingYaw = yaw;
+  }
+
+  // Unified damage entry (used by EnemySystem for all enemy types).
+  // Returns true if this hit killed the skeleton.
+  hit(damage) {
+    if (this.state === 'DEAD') return false;
+    this.hp -= damage;
+    if (this.hp <= 0) {
+      this.state = 'DEAD';
+      this.animTime = 0;
+      this.attackHitDone = true;
+      this.onKill?.();
+      return true;
+    }
+    return false;
   }
 
   get x() { return this.group.position.x; }

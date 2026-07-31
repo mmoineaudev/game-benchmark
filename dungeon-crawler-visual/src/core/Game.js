@@ -194,8 +194,8 @@ export class Game {
 
     this.skeletons = new SkeletonSystem(this.scene, this.state);
     this.skeletons.init(this.dungeonData, this.state);
-    this.skeletons.onKill = (x, z) => {
-      this.orbs.spawnDrop(x, z);
+    this.skeletons.onKill = (x, z, orbs = 1) => {
+      if (orbs > 0) this.orbs.spawnDrop(x, z, orbs);
       this.smoke.addTransient(x, 0.6, z, 10, 0.4);
     };
     this.skeletons.onPlayerDamaged = () => this._flashDamage();

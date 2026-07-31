@@ -180,6 +180,80 @@ export const SKELETON = {
   BONE_COLOR: 0xcfc6b0,
 };
 
+// --- Extended spec: enemy roster ------------------------------------------
+export const ENEMY = {
+  SPAWN_MIN_DIST: 6,
+  BASE_SLOTS: 2,
+  SLOTS_PER_LEVEL: 1,
+  MAX_SLOTS: 10,
+  ARENA_EXTRA_SLOTS: 2,
+  MAX_ALIVE: 16,      // total living bodies (rats counted individually)
+  RAT_PACK_MIN: 4,
+  RAT_PACK_MAX: 6,
+  RAT_CAP: 12,
+  ELITE_CHANCE: 0.1,  // 1-in-10 per non-rat spawn
+};
+
+export const ARMORED = {
+  HP: 5, SPEED: 1.8, DMG: 2, RANGE: 1.7,
+  WINDUP: 0.5, SWING: 0.3, RECOVER: 0.5, COOLDOWN: 1.6,
+  DROP: 2, SCORE: 2,
+  BONE: 0x9a9282, PLATE: 0x5a5a66, SHIELD: 0x4a4a55, EYE: 0xff5533,
+};
+
+export const ARCHER = {
+  HP: 2, SPEED: 2.4, DMG: 1,
+  PREF_DIST: 8, RETREAT_DIST: 4, RETREAT_SPEED: 2.0, RANGE: 10,
+  WINDUP: 0.5, SWING: 0.1, RECOVER: 0.4, COOLDOWN: 1.8,
+  ARROW_SPEED: 8, ARROW_LIFE: 3, ARROW_RADIUS: 0.15,
+  DROP: 1, SCORE: 1,
+  BONE: 0xb8b0a0, HOOD: 0x2a2a35, ARROW_GLOW: 0xffcc88,
+};
+
+export const RAT = {
+  HP: 1, SPEED: 4.2, DMG: 1, RANGE: 0.9, COOLDOWN: 0.8,
+  DROP: 0, SCORE: 0,
+  BODY: 0x5a4a3a, HEAD: 0x4a3a2a, EYE: 0xff2211,
+};
+
+export const BRUTE = {
+  HP: 8, SPEED: 1.2, DMG: 3, RANGE: 2.4, ARC: 0.87, // ±50°
+  WINDUP: 1.2, SWING: 0.3, RECOVER: 1.2, COOLDOWN: 2.5,
+  DROP: 3, SCORE: 3,
+  BONE: 0x8a8070, TUNIC: 0x3a2a1a, CLUB: 0x4a3a2a, EYE: 0xff4422, FLASH: 0xff8830,
+};
+
+export const WRAITH = {
+  HP: 2, SPEED: 2.4, DMG: 1, RANGE: 0.9, COOLDOWN: 1.0,
+  DROP: 2, SCORE: 2,
+  BODY: 0x88ffcc, EYE: 0xccffdd, BOB_AMP: 0.15, BOB_FREQ: 2,
+};
+
+export const ELITE = {
+  ARMORED: { HP: 10, SPEED_MULT: 1.3, DROP: 3, NAME: 'Warlord', BONE: 0xb8a888, TRIM: 0xd8b44a },
+  ARCHER: { DROP: 2, NAME: 'Sharpshooter', BONE: 0xd8d0c0, HOOD: 0xcc2222 },
+  BRUTE: { HP: 16, SPEED_MULT: 1.2, DROP: 4, NAME: 'Ogre', BONE: 0x7a7060, SCALE: 1.9 },
+  WRAITH: { HP: 4, SPEED_MULT: 1.4, DROP: 3, NAME: 'Banshee', BODY: 0xff88cc },
+};
+
+// Per-biome spawn weights (sum = 100 each) — order: Skeleton, Magician, Armored, Archer, Rat, Brute, Wraith
+export const ENEMY_SPAWN_WEIGHTS = {
+  STONE: [45, 10, 15, 15, 10, 5, 0],
+  HAUNTED_CRYPT: [25, 10, 10, 15, 5, 5, 30],
+  FUNGAL_CAVERN: [30, 10, 10, 5, 40, 5, 0],
+  VOLCANIC_DEPTHS: [20, 10, 25, 15, 10, 20, 0],
+  FROZEN_HALLS: [25, 10, 20, 25, 10, 10, 0],
+};
+export const ENEMY_TYPES = ['SKELETON', 'MAGICIAN', 'ARMORED', 'ARCHER', 'RAT', 'BRUTE', 'WRAITH'];
+
+// Room-type enemy rule multipliers: type -> { roomType: mult } (LIBRARY uses exclusion via 0)
+export const ROOM_ENEMY_MODIFIERS = {
+  ARMORY: { ARMORED: 1.3, ARCHER: 1.2 },
+  LIBRARY: { SKELETON: 1, MAGICIAN: 0, ARMORED: 0, ARCHER: 0, RAT: 0, BRUTE: 0, WRAITH: 0 },
+  CRYPT: { WRAITH: 1.4, SKELETON: 1.2 },
+  MUSHROOM_GROVE: { RAT: 1.5 },
+};
+
 export const SWORD = {
   DAMAGE: 2,             // one-shots skeletons (HP 2)
   RANGE: 2.2,            // melee reach

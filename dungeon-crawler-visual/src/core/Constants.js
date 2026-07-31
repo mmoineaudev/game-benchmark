@@ -255,14 +255,19 @@ export const ROOM_ENEMY_MODIFIERS = {
 };
 
 export const SWORD = {
-  DAMAGE: 2,             // one-shots skeletons (HP 2)
-  RANGE: 2.2,            // melee reach
-  ARC: Math.PI / 3,      // ±60° hit cone in front of the player
-  WINDUP: 0.12,          // telegraph
-  SWING: 0.18,           // active hit window
-  RECOVER: 0.2,
-  COOLDOWN: 0.45,        // between swings
+  RANGE: 2.2,             // melee reach (base; scales with orb growth)
+  COMBO: {
+    WINDUP1: 0.10, SLASH1: 0.16, RECOVER1: 0.18,
+    WINDUP2: 0.08, SLASH2: 0.14, RECOVER2: 0.20,
+    COMBO_WINDOW: 0.35,   // from RECOVER1 start (0.18s recover + 0.17s input grace)
+    COOLDOWN: 0.30,
+    HIT1_DAMAGE: 2, HIT2_DAMAGE: 3,
+    ARC1: Math.PI * 0.39,  // ±70°
+    ARC2: Math.PI * 0.33,  // ±60°
+  },
 };
+
+export const HIT_STOP = 0.06; // seconds of world-freeze on sword hit
 
 export const ORB_WEAPON = {
   SPEED: 2 * PLAYER.SPEED * PLAYER.SPRINT_MULTIPLIER, // 12.4 u/s — 2× sprint

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON, SWORD, PROPS } from './Constants.js';
+import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON, SWORD, PROPS, HIT_STOP } from './Constants.js';
 import { GameState } from './GameState.js';
 import { Leaderboard } from './Leaderboard.js';
 import { EventBus } from './EventBus.js';
@@ -61,6 +61,7 @@ export class Game {
     this._shakeTime = 0;
     this._fireCooldown = 0;
     this._swordHitApplied = false;
+    this._rmbWasDown = false;
   }
 
   init() {
@@ -129,6 +130,8 @@ export class Game {
     );
     this.scene.add(this.camera);
     this.sword = new PlayerSword(this.camera);
+    // Each new slash (hit 1 or hit 2) re-arms the damage window
+    this.sword.onSlash = () => { this._swordHitApplied = false; };
   }
 
   _initPostProcessing() {
@@ -409,31 +412,43 @@ export class Game {
     if (this._gameOverActive) return;
     if (!this.sword) return;
 
-    // Right mouse = pierce. Only when pointer-locked (gameplay active).
+    // Right mouse = combo. Edge-triggered: a new press starts the attack or
+    // buffers the second hit inside the combo window.
     if (this.input.isMouseDown(2) && this.input.isPointerLocked()) {
-      if (this.sword.attack()) this._swordHitApplied = false;
+      if (!this._rmbWasDown) {
+        if (this.sword.state !== 'idle') {
+          this.sword.bufferCombo();
+        } else if (this.sword.attack()) {
+          this._swordHitApplied = false;
+        }
+      }
+      this._rmbWasDown = true;
+    } else {
+      this._rmbWasDown = false;
     }
     this.sword.update(this._delta, this._nearestSkeletonDist());
 
-    // Damage lands during the active thrust window, once per attack.
+    // Damage lands once per slash, during the slash hit window.
     // Range scales with the sword size bonus (longer sword = longer reach).
     if (this.sword.isSwinging && !this._swordHitApplied && this.skeletons) {
       this._swordHitApplied = true;
       const p = this.state.player;
       const fx = -Math.sin(p.yaw);
       const fz = -Math.cos(p.yaw);
-      const maxDot = Math.cos(SWORD.ARC);
+      const maxDot = Math.cos(this.sword.currentArc);
       const range = this.sword.range;
+      const damage = this.sword.currentDamage;
+      let enemiesHit = 0;
+
       // Breakable props in the arc
       if (this.props) {
         for (const b of this.props.breakables) {
           const dx = b.x - p.x;
           const dz = b.z - p.z;
-          const dist = Math.hypot(dx, dz);
-          if (dist > range + 0.5) continue;
-          this.props.hitBreakables(b.x, b.z);
+          if (Math.hypot(dx, dz) <= range + 0.5) this.props.hitBreakables(b.x, b.z);
         }
       }
+
       for (const s of this.skeletons.skeletons) {
         if (s.skel.state === 'DEAD') continue;
         const dx = s.x - p.x;
@@ -442,8 +457,29 @@ export class Game {
         if (dist > range || dist < 0.001) continue;
         const dot = (dx / dist) * fx + (dz / dist) * fz;
         if (dot < maxDot) continue; // outside the hit cone
-        this.skeletons.hitSkeleton(s.skel, SWORD.DAMAGE);
+        const wasAlive = s.skel.state !== 'DEAD';
+        this.skeletons.hitSkeleton(s.skel, damage);
+        if (wasAlive) enemiesHit++;
       }
+
+      if (enemiesHit > 0) {
+        // Hit feedback: hit-stop, blade flash, sparks at nearest hit
+        this.state.hitStop = HIT_STOP;
+        this.sword.flashBlade();
+        const p0 = this.state.player;
+        this.sword.burstSparks(new THREE.Vector3(
+          p0.x + fx * 1.5, 1.2, p0.z + fz * 1.5,
+        ));
+        this.events.emit('sword:hit', {
+          step: this.sword.comboStep, enemiesHit, damage,
+        });
+      }
+    }
+
+    // Hit-stop: freeze world updates (camera shake still runs)
+    if (this.state.hitStop > 0) {
+      this.state.hitStop -= this._delta;
+      this._delta = 0;
     }
   }
 

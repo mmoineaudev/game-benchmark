@@ -48,6 +48,11 @@ export const LIGHTING = {
   CRYSTAL_DISTANCE: 7,
   CRYSTAL_DECAY: 1.5,
   CRYSTAL_COLORS: [0x44ddff, 0xbb66ff, 0x66ffcc], // per-crystal hue
+  // Player headlight: attached to the camera, keeps close surroundings visible.
+  PLAYER_LIGHT_COLOR: 0xffdd99,
+  PLAYER_LIGHT_INTENSITY: 2.6,
+  PLAYER_LIGHT_DISTANCE: 9,
+  PLAYER_LIGHT_DECAY: 1.6,
 };
 
 export const MATERIALS = {

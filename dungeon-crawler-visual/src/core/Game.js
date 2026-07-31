@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON, SWORD, PROPS, HIT_STOP } from './Constants.js';
+import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON, SWORD, PROPS, HIT_STOP, LIGHTING } from './Constants.js';
 import { GameState } from './GameState.js';
 import { Leaderboard } from './Leaderboard.js';
 import { EventBus } from './EventBus.js';
@@ -135,6 +135,18 @@ export class Game {
     this.sword = new PlayerSword(this.camera);
     // Each new slash (hit 1 or hit 2) re-arms the damage window
     this.sword.onSlash = () => { this._swordHitApplied = false; };
+    // Headlight: warm point light attached to the camera, slightly above and
+    // in front of the eye. No shadows (the 8-torch budget is untouched).
+    // A camera child, so it survives level regens like the sword.
+    this.headlight = new THREE.PointLight(
+      LIGHTING.PLAYER_LIGHT_COLOR,
+      LIGHTING.PLAYER_LIGHT_INTENSITY,
+      LIGHTING.PLAYER_LIGHT_DISTANCE,
+      LIGHTING.PLAYER_LIGHT_DECAY,
+    );
+    this.headlight.position.set(0, 0.15, -0.4);
+    this.headlight.castShadow = false;
+    this.camera.add(this.headlight);
   }
 
   _initPostProcessing() {
@@ -742,6 +754,11 @@ export class Game {
     this.lighting.dispose();
     if (this.props) this.props.dispose();
     if (this.sword) this.sword.dispose();
+    if (this.headlight) {
+      this.camera.remove(this.headlight);
+      this.headlight.dispose();
+      this.headlight = null;
+    }
     if (this.skeletons) this.skeletons.dispose();
     if (this.shooter) this.shooter.dispose();
     for (const p of this._waterPuddles) {

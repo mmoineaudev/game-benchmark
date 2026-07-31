@@ -372,6 +372,7 @@ All new lights **never cast shadows** (shadow budget is reserved for the existin
 | 4 | Glowing mushroom | cap Cone 0.18×0.1 emissive | 0x44ff88 | 1.2 | 6 | 1.7 | cap scale ±10% @ 1.5 Hz | no | fungal |
 | 5 | Will-o'-wisp | sprite 0.3 + core Sphere 0.05 | 0x88ffcc | 1.0 | 7 | 1.8 | **moving**: patrols a circle radius 2 at 0.5 u/s, y 1.2, sine bob | no | crypt |
 | 6 | Ice crystal lamp | cluster of 3–5 Cones 0.1–0.2 × 0.5–1.2 | 0x66ccff | 1.4 | 7 | 1.5 | emissive pulse ±15% @ 0.8 Hz | no | frozen |
+| 7 | **Player headlight** | (attached to camera, no geometry) | 0xffdd99 | 2.6 | 9 | 1.6 | constant; moves with the player | no | all |
 
 ### 8.2 Integration with the shadow budget
 
@@ -528,7 +529,7 @@ Target: **60 FPS on mid-range hardware** (integrated GPU, e.g. Intel Iris Xe / V
 | Budget | Limit | Notes |
 |---|---|---|
 | Shadow-casting lights | **8 max** | nearest-8 torches only; all new lights `castShadow=false` |
-| Total point lights (all) | ≤ 140 | base game ~90 (torches ~82 + braziers/crystals ~8 + start/exit 2) + new lights ≤ 20. All shadow-free; forward-rendered point lights are cheap |
+| Total point lights (all) | ≤ 140 | base game ~90 (torches ~82 + braziers/crystals ~8 + start/exit 2) + new lights ≤ 20 + player headlight 1. All shadow-free; forward-rendered point lights are cheap |
 | Shadow map size | 256 × 256 per torch | existing |
 | Draw calls | ≤ 120 | InstancedMesh collapses decorative props |
 | Prop instances / level | ≤ 400 | InstancedMesh: skull piles, stalactites, books, ice crystals, mushrooms |
@@ -671,7 +672,7 @@ Ordered by implementation phase. Each is independently testable; **P0 gate: `nod
 - [A5.1] Candles, chandeliers, lava pools, mushrooms, wisps, ice lamps all emit light per §8.1 params.
 - [A5.2] Will-o'-wisps move (patrol circle r 2, 0.5 u/s) and bounce at room bounds.
 - [A5.3] Shadow-casting lights ≤ 8 at all times (torches only) — verified by iterating scene lights.
-- [A5.4] Total point lights ≤ 140 (verified: ~90 base + ≤ 20 new); new light resources disposed on regen (no leak).
+- [A5.4] Total point lights ≤ 140 (verified: ~90 base + ≤ 20 new + 1 headlight); new light resources disposed on regen (no leak).
 
 ### Phase 6 — Sword
 - [A6.1] Sword geometry matches §7.1 (curved two-segment blade, fuller, crossguard, brass pommel).

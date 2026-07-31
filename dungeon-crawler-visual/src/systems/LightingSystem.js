@@ -33,7 +33,7 @@ export class LightingSystem {
 
     this._placeAllTorches(dungeonData);
     this._placeGodRays(dungeonData);
-    this._placeExitMarker(dungeonData);
+    this._placeStartEndMarkers(dungeonData);
     this._updateShadowCasting(null);
   }
 
@@ -209,9 +209,37 @@ export class LightingSystem {
     }
   }
 
-  _placeExitMarker(dungeonData) {
+  _placeStartEndMarkers(dungeonData) {
+    const entrance = dungeonData.entranceCell;
     const exit = dungeonData.exitCell;
     const cs = dungeonData.cellSize;
+
+    // --- START marker: green ring + soft light ---
+    const sx = entrance.x * cs + cs / 2;
+    const sz = entrance.z * cs + cs / 2;
+    const startRingGeo = new THREE.RingGeometry(1.2, 1.5, 32);
+    const startRingMat = new THREE.MeshBasicMaterial({
+      color: 0x44ffaa, side: THREE.DoubleSide, transparent: true, opacity: 0.7, depthWrite: false,
+    });
+    this.startMarker = new THREE.Mesh(startRingGeo, startRingMat);
+    this.startMarker.rotation.x = -Math.PI / 2;
+    this.startMarker.position.set(sx, 0.03, sz);
+    this.scene.add(this.startMarker);
+
+    const startInnerGeo = new THREE.CircleGeometry(0.8, 32);
+    const startInnerMat = new THREE.MeshBasicMaterial({
+      color: 0x66ffcc, side: THREE.DoubleSide, transparent: true, opacity: 0.3, depthWrite: false,
+    });
+    this.startInner = new THREE.Mesh(startInnerGeo, startInnerMat);
+    this.startInner.rotation.x = -Math.PI / 2;
+    this.startInner.position.set(sx, 0.04, sz);
+    this.scene.add(this.startInner);
+
+    this._startLight = new THREE.PointLight(0x44ffaa, 1.5, 8, 1.5);
+    this._startLight.position.set(sx, 1.5, sz);
+    this.scene.add(this._startLight);
+
+    // --- EXIT marker: golden ring + beam ---
     const x = exit.x * cs + cs / 2;
     const z = exit.z * cs + cs / 2;
 
@@ -265,6 +293,18 @@ export class LightingSystem {
     }
     for (const gr of this.godRays) {
       gr.geometry.dispose(); gr.material.dispose(); this.scene.remove(gr);
+    }
+    if (this.startMarker) {
+      this.startMarker.geometry.dispose(); this.startMarker.material.dispose();
+      this.scene.remove(this.startMarker);
+    }
+    if (this.startInner) {
+      this.startInner.geometry.dispose(); this.startInner.material.dispose();
+      this.scene.remove(this.startInner);
+    }
+    if (this._startLight) {
+      this._startLight.dispose?.();
+      this.scene.remove(this._startLight);
     }
     if (this.exitMarker) {
       this.exitMarker.geometry.dispose(); this.exitMarker.material.dispose();

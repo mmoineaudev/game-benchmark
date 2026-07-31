@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON } from './Constants.js';
+import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON, SWORD } from './Constants.js';
 import { GameState } from './GameState.js';
 import { Leaderboard } from './Leaderboard.js';
 import { DungeonGenerator } from '../world/DungeonGenerator.js';
@@ -13,6 +13,7 @@ import { OrbSystem } from '../entities/OrbSystem.js';
 import { SmokeSystem } from '../systems/SmokeSystem.js';
 import { SkeletonSystem } from '../entities/SkeletonSystem.js';
 import { OrbShooter } from '../entities/OrbShooter.js';
+import { PlayerSword } from '../entities/PlayerSword.js';
 import { resolveCircleCollisions } from './Collision.js';
 
 export class Game {
@@ -50,9 +51,11 @@ export class Game {
     this._damageFlashEl = document.getElementById('damage-flash');
     this.skeletons = null;
     this.shooter = null;
+    this.sword = null;
     this._noAmmoWarned = false;
     this._shakeTime = 0;
     this._fireCooldown = 0;
+    this._swordHitApplied = false;
   }
 
   init() {
@@ -117,6 +120,7 @@ export class Game {
       CAMERA.FOV, window.innerWidth / window.innerHeight, CAMERA.NEAR, CAMERA.FAR,
     );
     this.scene.add(this.camera);
+    this.sword = new PlayerSword(this.camera);
   }
 
   _initPostProcessing() {
@@ -185,7 +189,10 @@ export class Game {
     this.skeletons = new SkeletonSystem(this.scene, this.state);
     this.skeletons.init(this.dungeonData, this.state);
     this.skeletons.onWake = (x, z) => this.smoke.addTransient(x, 0.3, z, 6, 0.5);
-    this.skeletons.onKill = (x, z) => this.smoke.addTransient(x, 0.6, z, 10, 0.4);
+    this.skeletons.onKill = (x, z) => {
+      this.orbs.spawnDrop(x, z);
+      this.smoke.addTransient(x, 0.6, z, 10, 0.4);
+    };
     this.skeletons.onPlayerDamaged = () => this._flashDamage();
     this.skeletons.onPlayerDeath = () => this._gameOver('dead');
     this.shooter.hitSkeleton = (skel) => this.skeletons.hitSkeleton(skel, ORB_WEAPON.DAMAGE);
@@ -242,6 +249,7 @@ export class Game {
     this.orbs.update(t, this.state.player,
       this.input.isPressed('KeyE'), this._eKeyWasDown);
     this._handleShooting();
+    this._handleSwordAttack();
     if (this.skeletons) this.skeletons.update(this._delta, t, this.state.player, this._collisionBoxes);
     if (this.shooter) this.shooter.update(this._delta, this._collisionBoxes, this.skeletons.skeletons || []);
     if (this.state.invulnTimer > 0) this.state.invulnTimer -= this._delta;
@@ -356,6 +364,36 @@ export class Game {
     this.state.collectedOrbs--;
     this.shooter.fire(this.state.player.x, 1.4, this.state.player.z, this.state.player.yaw);
     this._fireCooldown = 0.18; // ~5.5 shots/s max — tunable
+  }
+
+  _handleSwordAttack() {
+    if (this._gameOverActive) return;
+    if (!this.sword) return;
+
+    // Right mouse = swing. Only when pointer-locked (gameplay active).
+    if (this.input.isMouseDown(2) && this.input.isPointerLocked()) {
+      if (this.sword.swing()) this._swordHitApplied = false;
+    }
+    this.sword.update(this._delta);
+
+    // Damage lands during the active swing window, once per swing
+    if (this.sword.isSwinging && !this._swordHitApplied && this.skeletons) {
+      this._swordHitApplied = true;
+      const p = this.state.player;
+      const fx = -Math.sin(p.yaw);
+      const fz = -Math.cos(p.yaw);
+      const maxDot = Math.cos(SWORD.ARC);
+      for (const s of this.skeletons.skeletons) {
+        if (s.skel.state === 'DEAD') continue;
+        const dx = s.x - p.x;
+        const dz = s.z - p.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist > SWORD.RANGE || dist < 0.001) continue;
+        const dot = (dx / dist) * fx + (dz / dist) * fz;
+        if (dot < maxDot) continue; // outside the hit cone
+        this.skeletons.hitSkeleton(s.skel, SWORD.DAMAGE);
+      }
+    }
   }
 
   _flashDamage() {
@@ -590,6 +628,7 @@ export class Game {
     this.runes.dispose();
     this.orbs.dispose();
     this.lighting.dispose();
+    if (this.sword) this.sword.dispose();
     if (this.skeletons) this.skeletons.dispose();
     if (this.shooter) this.shooter.dispose();
     for (const p of this._waterPuddles) {

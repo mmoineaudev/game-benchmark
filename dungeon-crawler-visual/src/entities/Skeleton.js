@@ -1,12 +1,15 @@
 import * as THREE from 'three';
 import { SKELETON } from '../core/Constants.js';
+import { generateGlowTexture } from '../world/Textures.js';
 
 // Procedural skeletal warrior: rig built from primitives, animated by a
 // state machine with damped transitions. No external assets.
 // States: DORMANT -> WAKING -> CHASE -> ATTACK -> DEAD
+// Magician variant (1 in 10): hood + glowing staff instead of a sword.
 export class Skeleton {
-  constructor(scene) {
+  constructor(scene, { isMagician = false } = {}) {
     this.scene = scene;
+    this.isMagician = isMagician;
     this.hp = SKELETON.HP;
     this.state = 'DORMANT';
     this.animTime = 0;
@@ -35,6 +38,16 @@ export class Skeleton {
     });
     this.bladeMat = new THREE.MeshStandardMaterial({
       color: 0x6a6a72, roughness: 0.4, metalness: 0.9, transparent: true,
+    });
+    // Eye glow sprite (additive) — makes eyes readable through the dark
+    this._glowTex = generateGlowTexture();
+    this.eyeGlowMat = new THREE.SpriteMaterial({
+      map: this._glowTex,
+      color: SKELETON.EYE_GLOW,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      transparent: true,
+      opacity: 0.9,
     });
 
     this._buildRig();
@@ -117,6 +130,19 @@ export class Skeleton {
       this.parts.push(eye);
     }
 
+    // Additive glow sprite at the skull — makes the eyes pop through fog/bloom
+    this.eyeGlow = new THREE.Sprite(this.eyeGlowMat);
+    this.eyeGlow.position.set(0, 0.17, 0.1);
+    this.eyeGlow.scale.setScalar(0.5);
+    head.add(this.eyeGlow);
+
+    // Magician: hood over the skull
+    if (this.isMagician) {
+      const hood = this._mesh(new THREE.ConeGeometry(0.2, 0.34, 10), this.darkMat, 0, 0.2, -0.04, head);
+      hood.rotation.x = 0.25;
+      this.hood = hood;
+    }
+
     // Arms: shoulder pivot -> upper -> forearm -> hand
     for (const side of [-1, 1]) {
       const tag = side < 0 ? 'L' : 'R';
@@ -125,8 +151,11 @@ export class Skeleton {
       const forearm = this._bone('forearm' + tag, 0, -0.4, 0, arm);
       this._mesh(new THREE.BoxGeometry(0.08, 0.34, 0.08), this.boneMat, 0, -0.17, 0, forearm);
       this._mesh(new THREE.SphereGeometry(0.055, 8, 6), this.boneMat, 0, -0.36, 0, forearm);
-      // Sword in right hand
-      if (side > 0) this._buildSword(forearm);
+      // Right hand: sword (warrior) or staff (magician)
+      if (side > 0) {
+        if (this.isMagician) this._buildStaff(forearm);
+        else this._buildSword(forearm);
+      }
     }
 
     // Legs: hip pivot -> thigh -> shin -> foot
@@ -146,6 +175,18 @@ export class Skeleton {
     const guard = this._mesh(new THREE.BoxGeometry(0.09, 0.02, 0.03), this.darkMat, 0, -0.16, 0.1, hand);
     const blade = this._mesh(new THREE.BoxGeometry(0.03, 0.5, 0.07), this.bladeMat, 0, -0.36, 0.1, hand);
     blade.rotation.x = 0.15; // slight tilt
+  }
+
+  _buildStaff(hand) {
+    // Long wooden staff held in the right hand, glowing orb on top
+    const shaft = this._mesh(new THREE.CylinderGeometry(0.025, 0.035, 1.3, 8), this.darkMat, 0, -0.15, 0.12, hand);
+    shaft.rotation.x = 0.05;
+    this.staffOrb = this._mesh(new THREE.SphereGeometry(0.07, 10, 8), this.eyeMat, 0, 0.62, 0.12, hand);
+    // Staff orb glow sprite (shares the eye material color)
+    this.staffGlow = new THREE.Sprite(this.eyeGlowMat);
+    this.staffGlow.position.set(0, 0.62, 0.12);
+    this.staffGlow.scale.setScalar(0.4);
+    hand.add(this.staffGlow);
   }
 
   // ------------------------------------------------------------ pose utils
@@ -177,6 +218,7 @@ export class Skeleton {
 
   _setEye(v) {
     this.eyeMat.opacity = v;
+    if (this.eyeGlow) this.eyeGlow.material.opacity = v * 0.9;
     for (const p of this.parts) {
       if (p.material === this.eyeMat) p.material.needsUpdate = true;
     }
@@ -245,6 +287,10 @@ export class Skeleton {
     b.ribcage.rotation.x = Math.sin(t * freq + this.phase) * 0.03;
     b.head.rotation.y = Math.sin(t * 4 + this.phase) * 0.08;
     this._setEye(1);
+    // Magician staff orb: steady pulse
+    if (this.staffGlow) {
+      this.staffGlow.scale.setScalar(0.35 + Math.sin(time * 5 + this.phase) * 0.08);
+    }
   }
 
   _animAttack(dt) {
@@ -262,6 +308,11 @@ export class Skeleton {
       b.ribcage.rotation.x = THREE.MathUtils.damp(b.ribcage.rotation.x, 0.3, 8, dt);
       b.head.rotation.x = THREE.MathUtils.damp(b.head.rotation.x, 0.2, 8, dt);
       b.armR.rotation.z = Math.sin(t * 60 + this.phase) * 0.02 * p;
+      // Magician: staff orb charges up during windup
+      if (this.staffGlow) {
+        this.staffGlow.scale.setScalar(0.35 + p * 0.5);
+        this.staffGlow.material.opacity = 0.9 + p * 0.5;
+      }
     } else if (t < swingEnd) {
       // Chop: arm sweeps forward, torso lunges
       const p = (t - windup) / SKELETON.ATTACK_SWING;
@@ -316,6 +367,8 @@ export class Skeleton {
     for (const mat of [this.boneMat, this.darkMat, this.eyeMat, this.bladeMat]) {
       mat.opacity = v;
     }
+    if (this.eyeGlow) this.eyeGlow.material.opacity = v * 0.9;
+    if (this.staffGlow) this.staffGlow.material.opacity = v * 0.9;
   }
 
   // Called by SkeletonSystem each frame with movement direction (world yaw).
@@ -334,7 +387,8 @@ export class Skeleton {
         if (obj.geometry) obj.geometry.dispose();
       }
     });
-    for (const mat of [this.boneMat, this.darkMat, this.eyeMat, this.bladeMat]) mat.dispose();
+    for (const mat of [this.boneMat, this.darkMat, this.eyeMat, this.bladeMat, this.eyeGlowMat]) mat.dispose();
+    if (this._glowTex) this._glowTex.dispose();
     this.scene.remove(this.group);
   }
 }

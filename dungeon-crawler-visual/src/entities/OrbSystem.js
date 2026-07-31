@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { DROP } from '../core/Constants.js';
 
 export class OrbSystem {
   constructor(scene, dungeonData, state) {
@@ -7,6 +8,7 @@ export class OrbSystem {
     this.state = state;
     this.orbs = [];
     this.rings = []; // pickup feedback rings
+    this.drops = []; // skeleton death drops (auto-collect)
   }
 
   init() {
@@ -142,6 +144,48 @@ export class OrbSystem {
         this.rings.splice(i, 1);
       }
     }
+
+    // Skeleton drops: bob + auto-collect on proximity
+    for (let i = this.drops.length - 1; i >= 0; i--) {
+      const drop = this.drops[i];
+      drop.mesh.position.y = drop.y + Math.sin(time * 2.5 + drop.phase) * 0.1;
+      drop.mesh.rotation.y += 0.03;
+      drop.glow.position.copy(drop.mesh.position);
+      const dx = p.x - drop.x;
+      const dz = p.z - drop.z;
+      if (dx * dx + dz * dz < DROP.RADIUS * DROP.RADIUS) {
+        this.state.collectedOrbs++;
+        this._spawnPickupRing(drop.x, drop.y, drop.z);
+        drop.mesh.geometry.dispose();
+        drop.mesh.material.dispose();
+        drop.glow.material.dispose();
+        this.scene.remove(drop.mesh);
+        this.scene.remove(drop.glow);
+        this.drops.splice(i, 1);
+      }
+    }
+  }
+
+  // Spawn an auto-collect orb at a skeleton's death position
+  spawnDrop(x, z) {
+    const geo = new THREE.SphereGeometry(0.18, 12, 10);
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x44aaff, emissive: 0x44aaff, emissiveIntensity: 2.5,
+      roughness: 0.15, metalness: 0.4,
+    });
+    const glowGeo = new THREE.SphereGeometry(0.4, 10, 8);
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: 0x44aaff, transparent: true, opacity: 0.2,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    const y = DROP.Y;
+    mesh.position.set(x, y, z);
+    this.scene.add(mesh);
+    const glow = new THREE.Mesh(glowGeo, glowMat);
+    glow.position.set(x, y, z);
+    this.scene.add(glow);
+    this.drops.push({ mesh, glow, x, z, y, phase: Math.random() * Math.PI * 2 });
   }
 
   _spawnPickupRing(x, y, z) {
@@ -197,7 +241,16 @@ export class OrbSystem {
       ring.mesh.material.dispose();
       this.scene.remove(ring.mesh);
     }
+    for (const drop of this.drops) {
+      drop.mesh.geometry.dispose();
+      drop.mesh.material.dispose();
+      drop.glow.geometry.dispose();
+      drop.glow.material.dispose();
+      this.scene.remove(drop.mesh);
+      this.scene.remove(drop.glow);
+    }
     this.rings = [];
+    this.drops = [];
     this.orbs = [];
   }
 }

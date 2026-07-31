@@ -1,22 +1,57 @@
 import * as THREE from 'three';
 import { Skeleton } from './Skeleton.js';
-import { SKELETON, PLAYER } from '../core/Constants.js';
+import { SKELETON, PLAYER, MAGICIAN } from '../core/Constants.js';
 import { resolveCircleCollisions, circleHitsBox } from '../core/Collision.js';
+import { generateGlowTexture } from '../world/Textures.js';
 
 export class SkeletonSystem {
   constructor(scene, state) {
     this.scene = scene;
     this.state = state;
-    this.skeletons = []; // { skel, x, z, cellX, cellZ, nextThink, active }
+    this.skeletons = []; // { skel, x, z, cellX, cellZ, nextThink, active, magician }
+    this.enemyOrbs = []; // pooled red orbs fired by magicians
+    this._nextOrb = 0;
     this.onWake = null;
     this.onKill = null;
     this.onPlayerDamaged = null;
     this.onPlayerDeath = null;
   }
 
+  _initEnemyOrbs() {
+    const meshGeo = new THREE.SphereGeometry(0.16, 10, 8);
+    const meshMat = new THREE.MeshStandardMaterial({
+      color: 0xff3322, emissive: 0xff3322, emissiveIntensity: 2.5,
+      roughness: 0.15, metalness: 0.4,
+    });
+    const glowTex = generateGlowTexture();
+    const glowMat = new THREE.SpriteMaterial({
+      map: glowTex,
+      color: 0xff4433,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      transparent: true,
+      opacity: 0.8,
+    });
+    this._orbTex = glowTex;
+    this._orbMeshMat = meshMat;
+    this._orbGlowMat = glowMat;
+    const POOL = 12;
+    for (let i = 0; i < POOL; i++) {
+      const mesh = new THREE.Mesh(meshGeo, meshMat);
+      const glow = new THREE.Sprite(glowMat);
+      glow.scale.setScalar(1.4);
+      mesh.visible = false;
+      glow.visible = false;
+      this.scene.add(mesh);
+      this.scene.add(glow);
+      this.enemyOrbs.push({ mesh, glow, dirX: 0, dirZ: 0, life: 0, active: false });
+    }
+  }
+
   init(dungeonData, state) {
     this.data = dungeonData;
     this.state = state;
+    this._initEnemyOrbs();
     const gs = dungeonData.gridSize;
 
     // BFS from entrance to find cells far enough away for spawns
@@ -70,13 +105,17 @@ export class SkeletonSystem {
     const cs = dungeonData.cellSize;
     for (let i = 0; i < Math.min(count, candidates.length); i++) {
       const { x, z } = candidates[i];
-      const skel = new Skeleton(this.scene);
+      const magician = Math.random() < MAGICIAN.CHANCE;
+      const skel = new Skeleton(this.scene, { isMagician: magician });
       skel.group.position.set(x * cs + cs / 2, 0, z * cs + cs / 2);
-      skel.onAttackHit = () => this._tryDamagePlayer(skel);
+      skel.onAttackHit = () => {
+        if (magician) this._fireEnemyOrb(skel);
+        else this._tryDamagePlayer(skel);
+      };
       skel.onDeathComplete = () => this._removeSkeleton(skel);
       this.skeletons.push({
         skel, x: skel.group.position.x, z: skel.group.position.z,
-        cellX: x, cellZ: z, nextThink: 0, active: false,
+        cellX: x, cellZ: z, nextThink: 0, active: false, magician,
       });
     }
   }
@@ -104,12 +143,14 @@ export class SkeletonSystem {
         }
       }
 
-      // Attack cycle (from CHASE or WAKING)
-      if (skel.state === 'CHASE' && dist <= SKELETON.ATTACK_RANGE
+      // Attack cycle (from CHASE or WAKING). Magicians attack from cast range.
+      const atkRange = s.magician ? MAGICIAN.CAST_RANGE : SKELETON.ATTACK_RANGE;
+      if (skel.state === 'CHASE' && dist <= atkRange
         && skel.attackCooldown <= 0 && this._hasLOS(skel, player, collisionBoxes)) {
         skel.state = 'ATTACK';
         skel.animTime = 0;
         skel.attackHitDone = false;
+        skel.setFacing(Math.atan2(dx, dz));
       }
 
       if (skel.state === 'ATTACK') {
@@ -117,11 +158,15 @@ export class SkeletonSystem {
         continue;
       }
 
-      // Movement: chase or greedy grid pathing (only while fully awake)
+      // Movement: chase or greedy grid pathing (only while fully awake).
+      // Magicians keep their distance — stop at cast range.
       if (skel.state === 'CHASE') {
         let moveX = 0, moveZ = 0;
         const los = this._hasLOS(skel, player, collisionBoxes);
-        if (los && dist > SKELETON.ATTACK_RANGE) {
+        const stopRange = s.magician
+          ? Math.max(MAGICIAN.CAST_RANGE * 0.6, SKELETON.ATTACK_RANGE)
+          : SKELETON.ATTACK_RANGE;
+        if (los && dist > stopRange) {
           moveX = dx / dist;
           moveZ = dz / dist;
         } else if (!los) {
@@ -144,6 +189,63 @@ export class SkeletonSystem {
       }
 
       skel.update(dt, time);
+    }
+
+    // Magician red orbs: move, hit walls or the player
+    for (const orb of this.enemyOrbs) {
+      if (!orb.active) continue;
+      orb.mesh.position.x += orb.dirX * MAGICIAN.ORB_SPEED * dt;
+      orb.mesh.position.z += orb.dirZ * MAGICIAN.ORB_SPEED * dt;
+      orb.glow.position.copy(orb.mesh.position);
+      orb.life -= dt;
+
+      if (circleHitsBox(collisionBoxes, orb.mesh.position.x, orb.mesh.position.z, MAGICIAN.ORB_RADIUS)) {
+        this._deactivateOrb(orb);
+        continue;
+      }
+      const dx = player.x - orb.mesh.position.x;
+      const dz = player.z - orb.mesh.position.z;
+      if (dx * dx + dz * dz < 0.8) { // ~0.9 unit hit radius
+        this._damagePlayer();
+        this._deactivateOrb(orb);
+        continue;
+      }
+      if (orb.life <= 0) this._deactivateOrb(orb);
+    }
+  }
+
+  _fireEnemyOrb(skel) {
+    const orb = this.enemyOrbs[this._nextOrb];
+    this._nextOrb = (this._nextOrb + 1) % this.enemyOrbs.length;
+    const p = this.state.player;
+    const sx = skel.group.position.x;
+    const sz = skel.group.position.z;
+    orb.active = true;
+    orb.mesh.visible = true;
+    orb.glow.visible = true;
+    orb.mesh.position.set(sx, 1.6, sz);
+    orb.glow.position.copy(orb.mesh.position);
+    const dx = p.x - sx;
+    const dz = p.z - sz;
+    const len = Math.hypot(dx, dz) || 1;
+    orb.dirX = dx / len;
+    orb.dirZ = dz / len;
+    orb.life = MAGICIAN.ORB_LIFETIME;
+  }
+
+  _deactivateOrb(orb) {
+    orb.active = false;
+    orb.mesh.visible = false;
+    orb.glow.visible = false;
+  }
+
+  _damagePlayer() {
+    if (this.state.invulnTimer > 0 || this.state.health <= 0) return;
+    this.state.health -= MAGICIAN.ORB_DAMAGE;
+    this.state.invulnTimer = PLAYER.INVULN_TIME;
+    this.onPlayerDamaged?.();
+    if (this.state.health <= 0) {
+      this.onPlayerDeath?.();
     }
   }
 
@@ -238,5 +340,14 @@ export class SkeletonSystem {
       s.skel.dispose();
     }
     this.skeletons = [];
+    for (const orb of this.enemyOrbs) {
+      orb.mesh.geometry.dispose();
+      this.scene.remove(orb.mesh);
+      this.scene.remove(orb.glow);
+    }
+    if (this._orbMeshMat) this._orbMeshMat.dispose();
+    if (this._orbGlowMat) this._orbGlowMat.dispose();
+    if (this._orbTex) this._orbTex.dispose();
+    this.enemyOrbs = [];
   }
 }

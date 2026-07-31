@@ -22,12 +22,12 @@ export class PostProcessing {
     this.composer.addPass(new RenderPass(this.scene, this.camera));
 
     this.bloomPass = new UnrealBloomPass(
-      new THREE.Vector2(w, h), 1.2, 0.4, 0.6,
+      new THREE.Vector2(w, h), 1.4, 0.5, 0.5,
     );
     this.composer.addPass(this.bloomPass);
 
     this.vignettePass = new ShaderPass(VignetteShader);
-    this.vignettePass.uniforms['darkness'].value = 0.5;
+    this.vignettePass.uniforms['darkness'].value = 0.4;
     this.vignettePass.uniforms['offset'].value = 0.95;
     this.composer.addPass(this.vignettePass);
 

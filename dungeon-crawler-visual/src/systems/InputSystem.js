@@ -30,6 +30,8 @@ export class InputSystem {
         this.canvas.requestPointerLock();
       }
     };
+    // Suppress the right-click context menu (RMB = sword swing)
+    const onContextMenu = (e) => e.preventDefault();
 
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
@@ -37,6 +39,7 @@ export class InputSystem {
     document.addEventListener('mousedown', onMouseDown);
     document.addEventListener('mouseup', onMouseUp);
     this.canvas.addEventListener('click', onClick);
+    this.canvas.addEventListener('contextmenu', onContextMenu);
 
     this._boundHandlers.set('destroy', () => {
       window.removeEventListener('keydown', onKeyDown);
@@ -45,6 +48,7 @@ export class InputSystem {
       document.removeEventListener('mousedown', onMouseDown);
       document.removeEventListener('mouseup', onMouseUp);
       this.canvas.removeEventListener('click', onClick);
+      this.canvas.removeEventListener('contextmenu', onContextMenu);
     });
   }
 

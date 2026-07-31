@@ -110,8 +110,18 @@ export const SKELETON = {
   BASE_COUNT: 2,
   COUNT_PER_LEVEL: 1,
   MAX_COUNT: 8,
-  EYE_GLOW: 0xff3322,
+  EYE_GLOW: 0xff4433,
   BONE_COLOR: 0xcfc6b0,
+};
+
+export const SWORD = {
+  DAMAGE: 2,             // one-shots skeletons (HP 2)
+  RANGE: 2.2,            // melee reach
+  ARC: Math.PI / 3,      // ±60° hit cone in front of the player
+  WINDUP: 0.12,          // telegraph
+  SWING: 0.18,           // active hit window
+  RECOVER: 0.2,
+  COOLDOWN: 0.45,        // between swings
 };
 
 export const ORB_WEAPON = {
@@ -119,6 +129,21 @@ export const ORB_WEAPON = {
   LIFETIME: 2.5,          // seconds before fizzle (~31 units max range)
   DAMAGE: 1,
   RADIUS: 0.35,           // projectile collision radius
+};
+
+export const MAGICIAN = {
+  CHANCE: 0.1,           // 1 skeleton out of 10
+  CAST_RANGE: 9,         // fires from a distance instead of melee range
+  ORB_SPEED: ORB_WEAPON.SPEED / 2, // half the player's orb speed
+  ORB_LIFETIME: 4,
+  ORB_RADIUS: 0.3,
+  ORB_DAMAGE: 1,
+  FIRE_INTERVAL: 2.2,    // min seconds between casts (attack cycle + cooldown)
+};
+
+export const DROP = {
+  RADIUS: 1.4,           // auto-collect distance for dropped orbs
+  Y: 0.8,
 };
 
 export const TIMED_RUN = {

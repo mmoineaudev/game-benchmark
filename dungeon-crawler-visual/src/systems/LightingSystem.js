@@ -56,10 +56,16 @@ export class LightingSystem {
     const gs = dungeonData.gridSize;
     const spacing = 8;
     const torchY = 2.5;
+    // Fungal cavern: torches only in VAULT rooms (mushrooms light the rest)
+    const fungalVaultOnly = this.biomePalette?.torchColor === 0x44ff88;
 
     for (let cz = 0; cz < gs; cz++) {
       for (let cx = 0; cx < gs; cx++) {
         if (dungeonData.grid[cz][cx] === 'empty') continue;
+        if (fungalVaultOnly) {
+          const meta = dungeonData.metadata[cz][cx];
+          if (meta.type !== 'room' || meta.roomType !== 'VAULT') continue;
+        }
         const wx = cx * cs;
         const wz = cz * cs;
 

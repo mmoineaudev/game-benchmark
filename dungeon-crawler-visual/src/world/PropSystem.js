@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { WORLD, PROPS, LIGHT_SOURCES } from '../core/Constants.js';
+import { generateGlowTexture } from './Textures.js';
 
 // Props & decorations: breakables, interactives, structural collision props,
 // and InstancedMesh decoratives. Placed per room type + biome rules (spec §6).
@@ -123,6 +124,45 @@ export class PropSystem {
     if (is('LIBRARY')) this._placeBookshelves(room, 6 + Math.floor(Math.random() * 3)); // 6-8
     if (is('CRYPT')) this._placeSarcophagi(room, 2 + Math.floor(Math.random() * 2)); // 2-3
     if (is('ARMORY')) this._placeWeaponRacks(room, 4);
+    // Will-o'-wisps: 1-2 per CRYPT room (moving lights)
+    if (is('CRYPT') && biome === 'HAUNTED_CRYPT') {
+      this._placeWisps(room, 1 + Math.floor(Math.random() * 2)); // 1-2
+    }
+  }
+
+  _placeWisps(room, count) {
+    for (let i = 0; i < count; i++) {
+      const c = this._cellCenter(room.cx + room.w / 2, room.cz + room.h / 2);
+      const spriteMat = new THREE.SpriteMaterial({
+        map: generateGlowTexture(),
+        color: LIGHT_SOURCES.WISP.color,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        transparent: true,
+        opacity: 0.9,
+      });
+      const sprite = new THREE.Sprite(spriteMat);
+      sprite.scale.setScalar(0.5);
+      const core = new THREE.Mesh(
+        new THREE.SphereGeometry(0.05, 6, 6),
+        new THREE.MeshBasicMaterial({ color: 0xccffdd }),
+      );
+      const light = new THREE.PointLight(
+        LIGHT_SOURCES.WISP.color, LIGHT_SOURCES.WISP.intensity,
+        LIGHT_SOURCES.WISP.distance, LIGHT_SOURCES.WISP.decay,
+      );
+      this.wisps = this.wisps || [];
+      this.wisps.push({
+        sprite, core, light,
+        cx: c.x, cz: c.z,       // patrol center (room center)
+        radius: 2, speed: 0.5, y: 1.2,
+        phase: Math.random() * Math.PI * 2,
+        dir: 1,                  // patrol direction (bounce reverses)
+      });
+      this._add(sprite);
+      this._add(core);
+      this._add(light);
+    }
   }
 
   _pickProp(room, biome) {
@@ -591,10 +631,37 @@ export class PropSystem {
     return true;
   }
 
+  _updateWisps(dt, time) {
+    if (!this.wisps) return;
+    const cs = this.data.cellSize;
+    const gs = this.data.gridSize;
+    for (const w of this.wisps) {
+      w.phase += w.speed * dt * w.dir;
+      // Patrol circle around room center; bounce when exiting room bounds
+      let x = w.cx + Math.cos(w.phase) * w.radius;
+      let z = w.cz + Math.sin(w.phase) * w.radius;
+      const cx = Math.floor(x / cs);
+      const cz = Math.floor(z / cs);
+      if (cx < 0 || cz < 0 || cx >= gs || cz >= gs || this.data.grid[cz][cx] === 'empty') {
+        w.dir *= -1;
+        w.phase += w.speed * dt * w.dir;
+        x = w.cx + Math.cos(w.phase) * w.radius;
+        z = w.cz + Math.sin(w.phase) * w.radius;
+      }
+      const bob = Math.sin(time * 1.5 + w.phase) * 0.15;
+      w.sprite.position.set(x, w.y + bob, z);
+      w.core.position.copy(w.sprite.position);
+      w.light.position.copy(w.sprite.position);
+      // Flicker
+      w.light.intensity = LIGHT_SOURCES.WISP.intensity * (1 + Math.sin(time * 3 + w.phase) * 0.15);
+    }
+  }
+
   // -------------------------------------------------------------- update
 
   update(dt, time, playerPos) {
     this._updateShards(dt);
+    this._updateWisps(dt, time);
     // Interactive props (sarcophagus lid slide + wraith spawn handled once)
     for (const it of this.interactives) {
       if (it.opened && it.openT < 0.6) {

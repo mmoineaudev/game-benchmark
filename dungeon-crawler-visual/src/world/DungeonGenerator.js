@@ -103,28 +103,76 @@ export class DungeonGenerator {
   }
 
   _connectRooms() {
-    // Connect rooms in placement order (simple nearest-neighbor chain)
-    for (let i = 1; i < this.rooms.length; i++) {
-      const a = this.rooms[i - 1];
-      const b = this.rooms[i];
-      this._carveCorridor(a, b);
+    const n = this.rooms.length;
+    if (n < 2) return;
+
+    const dist = (a, b) => Math.abs(a.cx - b.cx) + Math.abs(a.cz - b.cz);
+
+    // Prim's MST over complete graph (Manhattan distance between room centers)
+    const inTree = new Array(n).fill(false);
+    const parent = new Array(n).fill(-1);
+    const key = new Array(n).fill(Infinity);
+    key[0] = 0;
+
+    for (let i = 0; i < n; i++) {
+      let u = -1;
+      for (let j = 0; j < n; j++) {
+        if (!inTree[j] && (u === -1 || key[j] < key[u])) u = j;
+      }
+      inTree[u] = true;
+      if (parent[u] !== -1) {
+        this._carveCorridor(this.rooms[parent[u]], this.rooms[u]);
+      }
+      for (let j = 0; j < n; j++) {
+        if (!inTree[j] && dist(this.rooms[u], this.rooms[j]) < key[j]) {
+          key[j] = dist(this.rooms[u], this.rooms[j]);
+          parent[j] = u;
+        }
+      }
+    }
+
+    // Add loops: connect a few of the nearest non-tree room pairs -> cycles.
+    // Corridors only carve 'empty' cells, so overlaps with existing paths are harmless.
+    const maxLoops = Math.min(3, Math.floor(n / 3));
+    const pairs = [];
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        pairs.push({ i, j, d: dist(this.rooms[i], this.rooms[j]) });
+      }
+    }
+    pairs.sort((a, b) => a.d - b.d);
+    let loops = 0;
+    for (const { i, j, d } of pairs) {
+      if (loops >= maxLoops) break;
+      if (d > this.gridSize) continue; // only short loops
+      this._carveCorridor(this.rooms[i], this.rooms[j]);
+      loops++;
     }
   }
 
   _carveCorridor(a, b) {
-    // L-shaped corridor: horizontal then vertical
-    let ax = a.cx + Math.floor(a.w / 2);
-    let az = a.cz + Math.floor(a.h / 2);
-    let bx = b.cx + Math.floor(b.w / 2);
-    let bz = b.cz + Math.floor(b.h / 2);
+    const ax = a.cx + Math.floor(a.w / 2);
+    const az = a.cz + Math.floor(a.h / 2);
+    const bx = b.cx + Math.floor(b.w / 2);
+    const bz = b.cz + Math.floor(b.h / 2);
 
-    // Randomly choose horizontal-first or vertical-first
-    if (this.rng() > 0.5) {
+    const roll = this.rng();
+    if (roll < 0.35) {
+      // L: horizontal then vertical
       this._carveH(ax, bx, az);
       this._carveV(az, bz, bx);
-    } else {
+    } else if (roll < 0.7) {
+      // L: vertical then horizontal
       this._carveV(az, bz, ax);
       this._carveH(ax, bx, bz);
+    } else {
+      // Z: winding — H, V, H, V through a midpoint
+      const midX = ax + Math.floor((bx - ax) / 2) + (this.rng() > 0.5 ? 1 : 0);
+      const midZ = az + Math.floor((bz - az) / 2) + (this.rng() > 0.5 ? 1 : 0);
+      this._carveH(ax, midX, az);
+      this._carveV(az, midZ, midX);
+      this._carveH(midX, bx, midZ);
+      this._carveV(midZ, bz, bx);
     }
   }
 
@@ -185,28 +233,42 @@ export class DungeonGenerator {
   }
 
   _designateEntranceAndExit() {
-    // Entrance: first room placed
-    const entrance = this.rooms[0];
+    if (this.rooms.length === 0) {
+      this.entranceCell = { x: 0, z: 0 };
+      this.exitCell = { x: 0, z: 0 };
+      return;
+    }
+
+    // Entrance: room nearest the top-left corner (the start of the descent)
+    let entrance = this.rooms[0];
+    let best = Infinity;
+    for (const room of this.rooms) {
+      const d = room.cx + room.cz;
+      if (d < best) { best = d; entrance = room; }
+    }
     this.entranceCell = {
       x: entrance.cx + Math.floor(entrance.w / 2),
       z: entrance.cz + Math.floor(entrance.h / 2),
     };
-    // Exit: largest room farthest from entrance
-    let best = this.rooms[0];
-    let bestDist = 0;
-    for (const room of this.rooms) {
-      const size = room.w * room.h;
-      const dx = room.cx - entrance.cx;
-      const dz = room.cz - entrance.cz;
-      const dist = Math.sqrt(dx * dx + dz * dz);
-      if (size >= best.w * best.h && dist > bestDist) {
-        best = room;
-        bestDist = dist;
+
+    // Exit: farthest room by BFS distance along corridors from the entrance.
+    // BFS over non-empty cells; the last room cell reached at max distance wins.
+    const gs = this.gridSize;
+    const dist = Array.from({ length: gs }, () => new Array(gs).fill(-1));
+    const queue = [[this.entranceCell.x, this.entranceCell.z]];
+    dist[this.entranceCell.z][this.entranceCell.x] = 0;
+    let far = this.entranceCell;
+    while (queue.length) {
+      const [x, z] = queue.shift();
+      if (this.grid[z][x] === 'room') far = { x, z };
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, nz = z + dz;
+        if (nx < 0 || nz < 0 || nx >= gs || nz >= gs) continue;
+        if (this.grid[nz][nx] === 'empty' || dist[nz][nx] !== -1) continue;
+        dist[nz][nx] = dist[z][x] + 1;
+        queue.push([nx, nz]);
       }
     }
-    this.exitCell = {
-      x: best.cx + Math.floor(best.w / 2),
-      z: best.cz + Math.floor(best.h / 2),
-    };
+    this.exitCell = far;
   }
 }

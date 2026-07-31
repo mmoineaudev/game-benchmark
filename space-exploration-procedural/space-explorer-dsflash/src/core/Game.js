@@ -9,6 +9,7 @@ import { PhysicsSystem } from '../systems/PhysicsSystem.js';
 import { AudioSystem } from '../systems/AudioSystem.js';
 import { ParticleSystem } from '../systems/ParticleSystem.js';
 import { PostProcessingSystem } from '../systems/PostProcessingSystem.js';
+import { LightManager } from '../systems/LightManager.js';
 
 import { PlayerShip } from '../gameplay/PlayerShip.js';
 import { WeaponSystem } from '../gameplay/WeaponSystem.js';
@@ -119,6 +120,12 @@ export class Game {
     this.ship = new PlayerShip(this.scene);
     this.weaponSystem = new WeaponSystem(this.scene, eventBus, this.physics);
     this.post = new PostProcessingSystem(this.renderer, this.scene, this.camera);
+    this.lightManager = new LightManager(this.scene);
+    const savedProfile = (() => { try { return localStorage.getItem(Constants.LIGHT_MANAGER.storageKey); } catch { return null; } })();
+    if (savedProfile === 'eco') {
+      gameState.lightProfile = 'eco';
+      this.lightManager.setProfile('eco');
+    }
 
     this._wireEvents();
     this._spawnInitialWorld();
@@ -143,9 +150,12 @@ export class Game {
     });
     on(Events.WEAPON_HIT, (e) => {
       this.particles.burst('laserSpark', e.position.x, e.position.y, e.position.z, 10, 6, { size: 0.15 });
+      this.particles.impactGlow(e.position.x, e.position.y, e.position.z);
     });
     on(Events.ASTEROID_DESTROYED, (e) => {
       this.particles.burst('explosion', e.position.x, e.position.y, e.position.z, 50, 10, { size: 0.4 });
+      this.particles.burstRing(e.position.x, e.position.y, e.position.z);
+      this.particles.burstShards(e.position.x, e.position.y, e.position.z, 4);
       this.cameraSystem.addShake(Constants.SHAKE_EXPLOSION_INTENSITY, Constants.SHAKE_EXPLOSION_DURATION);
       this.audio.play('explosion', { volume: 0.5 });
     });
@@ -155,6 +165,8 @@ export class Game {
     });
     on(Events.COMET_DESTROYED, (e) => {
       this.particles.burst('explosion', e.position.x, e.position.y, e.position.z, 90, 22, { size: 0.55 });
+      this.particles.burstRing(e.position.x, e.position.y, e.position.z);
+      this.particles.burstShards(e.position.x, e.position.y, e.position.z, 6);
       this.cameraSystem.addShake(1.0, 0.6);
       this.audio.play('comet', { volume: 0.7 });
     });
@@ -303,6 +315,11 @@ export class Game {
     this.hud.setRungNumber(contentRung);
     this.hud.setRung(biome.name, progress, biome.key === 'SPATIAL_GRAVEYARD');
     this.ladderChart.update(gameState.distance, biome.key, progress);
+    // Per-rung bloom threshold (v2.0 §5)
+    if (this.post && this.post.setBloomThreshold) {
+      const thresholds = { CRYSTAL_FIELDS: 0.12, PULSAR_REGION: 0.13, PLASMA_STORM: 0.11, SPATIAL_GRAVEYARD: 0.12 };
+      this.post.setBloomThreshold(thresholds[biome.key] ?? Constants.BLOOM.threshold);
+    }
     if (contentRung !== gameState.rungIndex) {
       const prevRung = gameState.rungIndex;
       gameState.rungIndex = contentRung;
@@ -365,6 +382,7 @@ export class Game {
     // Camera
     this.cameraSystem.update(dt, this.ship, thrustFraction);
     this.starfield.update(dt, this.ship.position);
+    if (this.lightManager) this.lightManager.update(this.camera.position);
 
     // State ticking
     gameState.tickInvulnerability(dt);
@@ -381,6 +399,10 @@ export class Game {
       this.hud.throttleSlider.value = String(Math.round(thrustFraction * 100));
     }
     const speedFraction = this.ship.speed / Constants.MAX_SHIP_SPEED;
+    // Speed lines at high throttle (v2.0 §5)
+    if (speedFraction > 0.9 && this.cameraSystem.camera.fov > 88) {
+      this.particles.emitSpeedLines(this.camera.position, this.camera.quaternion, 3);
+    }
     if (this.worldSystems.stormSystem) {
       this.post.stormCA = this.worldSystems.stormSystem.getShipDist() < 200 ? 0.002 : 0;
     }
@@ -478,6 +500,7 @@ export class Game {
     try {
       localStorage.setItem(Constants.LIGHT_MANAGER.storageKey, gameState.lightProfile);
     } catch { /* private mode */ }
+    if (this.lightManager) this.lightManager.setProfile(gameState.lightProfile);
     eventBus.emit(Events.INPUT_LIGHT_PROFILE, { profile: gameState.lightProfile });
   }
 

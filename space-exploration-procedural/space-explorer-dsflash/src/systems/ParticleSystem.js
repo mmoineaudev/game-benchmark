@@ -50,6 +50,120 @@ export class ParticleSystem {
     for (const [name, cfg] of Object.entries(Constants.PARTICLE_POOLS)) {
       this.pools[name] = this._makePool(name, cfg);
     }
+    this._buildMeshPools();
+  }
+
+  // ---- v2.0 remaster mesh pools (rings, shards, speed lines, impact glow) ----
+  _buildMeshPools() {
+    const RM = Constants.REMASTER;
+    this._group = new THREE.Group();
+    this._group.name = 'vfx-pools';
+    this.scene.add(this._group);
+
+    // shockwave rings
+    this._rings = [];
+    const ringGeo = new THREE.RingGeometry(0.9, 1.0, 32);
+    for (let i = 0; i < 4; i++) {
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0x66ccff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending,
+        depthWrite: false, side: THREE.DoubleSide,
+      });
+      const mesh = new THREE.Mesh(ringGeo, mat);
+      mesh.visible = false;
+      this._group.add(mesh);
+      this._rings.push({ mesh, mat, life: 0, max: RM.shockRingLife });
+    }
+
+    // debris shards
+    this._shards = [];
+    const shardGeo = new THREE.BoxGeometry(0.25, 0.25, 0.25);
+    for (let i = 0; i < 12; i++) {
+      const mat = new THREE.MeshBasicMaterial({ color: 0xffcc88, transparent: true, opacity: 0 });
+      const mesh = new THREE.Mesh(shardGeo, mat);
+      mesh.visible = false;
+      this._group.add(mesh);
+      this._shards.push({ mesh, mat, vx: 0, vy: 0, vz: 0, life: 0, max: 0.8 });
+    }
+
+    // speed line streaks
+    this._speedLines = [];
+    const dot = softDotTexture();
+    for (let i = 0; i < RM.speedLineCount; i++) {
+      const mat = new THREE.SpriteMaterial({
+        map: dot, color: 0xaaddff, transparent: true, opacity: 0,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      });
+      const spr = new THREE.Sprite(mat);
+      spr.visible = false;
+      this._group.add(spr);
+      this._speedLines.push({ spr, mat, life: 0, max: 0.25, vx: 0, vy: 0, vz: 0 });
+    }
+
+    // laser impact glow lights
+    this._impactGlows = [];
+    for (let i = 0; i < 4; i++) {
+      const light = new THREE.PointLight(0x66ff88, 0, 8, 2);
+      light.name = 'ship:impact';
+      this._group.add(light);
+      this._impactGlows.push({ light, life: 0, max: 0.15 });
+    }
+  }
+
+  /** Expanding shockwave ring (v2.0 §5). */
+  burstRing(x, y, z) {
+    const r = this._rings.find((q) => q.life <= 0);
+    if (!r) return;
+    r.life = r.max;
+    r.mesh.position.set(x, y, z);
+    r.mesh.visible = true;
+    r.mesh.scale.setScalar(1);
+  }
+
+  /** Debris shards with gravity (v2.0 §5). */
+  burstShards(x, y, z, n) {
+    for (let i = 0; i < n; i++) {
+      const s = this._shards.find((q) => q.life <= 0);
+      if (!s) return;
+      s.life = s.max;
+      s.mesh.position.set(x, y, z);
+      s.mesh.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
+      s.mesh.visible = true;
+      const speed = 8 + Math.random() * 14;
+      const ang = Math.random() * Math.PI * 2;
+      const elev = (Math.random() - 0.5) * 1.6;
+      s.vx = Math.cos(ang) * speed;
+      s.vz = Math.sin(ang) * speed;
+      s.vy = Math.sin(elev) * speed * 0.6;
+      s.mat.opacity = 1;
+    }
+  }
+
+  /** Speed-line streaks around the camera at high throttle (v2.0 §5). */
+  emitSpeedLines(cameraPos, cameraQuat, count) {
+    for (let i = 0; i < count; i++) {
+      const l = this._speedLines.find((q) => q.life <= 0);
+      if (!l) return;
+      l.life = l.max;
+      // random direction around the camera, then fly backward past it
+      const dir = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
+      l.spr.position.copy(cameraPos).addScaledVector(dir, 60 + Math.random() * 60);
+      l.vx = -dir.x * 260;
+      l.vy = -dir.y * 260;
+      l.vz = -dir.z * 260;
+      l.spr.material.rotation = Math.atan2(dir.x, dir.z);
+      l.spr.scale.set(2, 30, 1);
+      l.spr.visible = true;
+      l.mat.opacity = Constants.REMASTER.speedLineOpacity;
+    }
+  }
+
+  /** Brief green glow at laser impact (v2.0 §5). */
+  impactGlow(x, y, z) {
+    const g = this._impactGlows.find((q) => q.life <= 0);
+    if (!g) return;
+    g.life = g.max;
+    g.light.position.set(x, y, z);
+    g.light.intensity = Constants.REMASTER.impactGlowIntensity;
   }
 
   _makePool(name, cfg) {
@@ -186,6 +300,51 @@ export class ParticleSystem {
       pool.geo.attributes.aSize.needsUpdate = true;
       pool.geo.attributes.aColor.needsUpdate = true;
     }
+
+    // v2.0 mesh pools
+    const RM = Constants.REMASTER;
+    for (const r of this._rings) {
+      if (r.life <= 0) continue;
+      r.life -= dt;
+      if (r.life <= 0) { r.mesh.visible = false; r.mat.opacity = 0; continue; }
+      const t = r.life / r.max; // 1 → 0
+      r.mesh.scale.setScalar(1 + (1 - t) * RM.shockRingScale);
+      r.mat.opacity = t * 0.7;
+    }
+    for (const s of this._shards) {
+      if (s.life <= 0) continue;
+      s.life -= dt;
+      if (s.life <= 0) { s.mesh.visible = false; s.mat.opacity = 0; continue; }
+      s.vy -= RM.shardGravity * dt;
+      s.mesh.position.x += s.vx * dt;
+      s.mesh.position.y += s.vy * dt;
+      s.mesh.position.z += s.vz * dt;
+      s.mesh.rotation.x += dt * 6;
+      s.mesh.rotation.y += dt * 5;
+      s.mat.opacity = s.life / s.max;
+    }
+    for (const l of this._speedLines) {
+      if (l.life <= 0) continue;
+      l.life -= dt;
+      if (l.life <= 0) { l.spr.visible = false; l.mat.opacity = 0; continue; }
+      l.spr.position.x += l.vx * dt;
+      l.spr.position.y += l.vy * dt;
+      l.spr.position.z += l.vz * dt;
+    }
+    for (const g of this._impactGlows) {
+      if (g.life <= 0) continue;
+      g.life -= dt;
+      g.light.intensity = g.life <= 0 ? 0 : RM.impactGlowIntensity * (g.life / g.max);
+    }
+  }
+
+  get liveCount() {
+    let n = 0;
+    for (const pool of Object.values(this.pools)) n += pool.active;
+    for (const r of this._rings) if (r.life > 0) n++;
+    for (const s of this._shards) if (s.life > 0) n++;
+    for (const l of this._speedLines) if (l.life > 0) n++;
+    return n;
   }
 
   dispose() {
@@ -195,5 +354,10 @@ export class ParticleSystem {
       pool.mat.dispose();
     }
     this.pools = {};
+    this.scene.remove(this._group);
+    this._group.traverse((o) => {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) o.material.dispose();
+    });
   }
 }

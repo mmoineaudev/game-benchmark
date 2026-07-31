@@ -149,6 +149,7 @@ export class DeadStarSystem {
 
     // Red point light (culled by distance in update)
     const light = new THREE.PointLight(Constants.DEAD_STAR_LIGHT_COLOR, Constants.DEAD_STAR_LIGHT_INTENSITY, Constants.DEAD_STAR_LIGHT_RANGE, 2);
+    light.name = 'land:deadstar';
     light.position.set(0, 0, 0);
     g.add(light);
     star.light = light;

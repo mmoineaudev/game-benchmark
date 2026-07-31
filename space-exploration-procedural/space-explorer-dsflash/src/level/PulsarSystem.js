@@ -93,6 +93,7 @@ export class PulsarSystem {
     g.add(glow);
 
     const light = new THREE.PointLight(C.lightColor, C.lightIntensity, C.lightRange, 2);
+    light.name = 'sig:pulsarSweep';
     g.add(light);
 
     // Two counter-rotating beam cones (CylinderGeometry along +Y → rotate to +Z)

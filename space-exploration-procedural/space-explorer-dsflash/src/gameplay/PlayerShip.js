@@ -22,12 +22,14 @@ export class PlayerShip {
     // Headlight + accent light (spec §5.3) — powerful, reveals asteroids ahead
     const HL = Constants.HEADLIGHT;
     this.headlight = new THREE.SpotLight(HL.color, HL.intensity, HL.range, HL.angle, HL.penumbra, 1.5);
+    this.headlight.name = 'ship:headlight';
     this.headlight.position.set(0, 0.6, -3.0);
     this.group.add(this.headlight);
     this.headlight.target.position.set(0, 0, -20);
     this.group.add(this.headlight.target);
 
     this.accentLight = new THREE.PointLight(0x6644ff, 0.4, 12, 2);
+    this.accentLight.name = 'ship:underglow';
     this.accentLight.position.set(0, -0.8, 0.5);
     this.group.add(this.accentLight);
 
@@ -222,9 +224,11 @@ export class PlayerShip {
     beacon.position.set(0, 0.8, 0.6);
     visual.add(beacon);
     this._beaconLight = new THREE.PointLight(0xff5040, 0.8, 16, 2);
+    this._beaconLight.name = 'ship:beacon';
     this._beaconLight.position.set(0, 0.8, 0.6);
     g.add(this._beaconLight);
     this._cockpitLight = new THREE.PointLight(0x88ffcc, 0.3, 5, 2);
+    this._cockpitLight.name = 'ship:cockpit';
     this._cockpitLight.position.set(0, 0.45, -0.6);
     g.add(this._cockpitLight);
 
@@ -232,6 +236,7 @@ export class PlayerShip {
     this._engineGlows = [];
     for (const x of [-0.82, 0.82]) {
       const glow = new THREE.PointLight(0x4488ff, 0, 14, 2);
+      glow.name = 'ship:engine';
       glow.position.set(x, 0.05, 2.2);
       g.add(glow);
       this._engineGlows.push(glow);

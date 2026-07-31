@@ -113,7 +113,6 @@ export class PostProcessingSystem {
     this.caPass.uniforms.uOffset.value = 0;
     this.stormCA = 0; // storm distortion (v2.0 §3.4.3)
     this.composer.addPass(this.caPass);
-
     this.vignettePass = new ShaderPass(VignetteShader);
     this.composer.addPass(this.vignettePass);
 
@@ -127,6 +126,11 @@ export class PostProcessingSystem {
       this.caPass.enabled = false;
       this.grainPass.enabled = false;
     }
+  }
+
+  /** Per-rung bloom threshold (v2.0 §5). */
+  setBloomThreshold(t) {
+    this.bloomPass.threshold = t;
   }
 
   /** Speed fraction 0..1 drives chromatic aberration (spec §5.9). */

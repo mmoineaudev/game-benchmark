@@ -66,6 +66,7 @@ export class NebulaSystem {
     }
     // Core point light (spec §5.3) — visibility toggled by update()
     const light = new THREE.PointLight(biomeCfg.color[0] * 3, 0.8 + rng() * 0.7, 120, 2);
+    light.name = 'land:nebula';
     light.position.set(0, 0, 0);
     group.add(light);
 

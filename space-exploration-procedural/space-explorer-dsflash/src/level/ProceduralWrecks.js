@@ -58,6 +58,7 @@ export function buildHulk(seed, palette) {
   beacon.position.set(0, 1.5, -1.2);
   g.add(beacon);
   const light = new THREE.PointLight(palette.glow, 0.6, 20, 2);
+  light.name = 'sig:hulkEmergency';
   light.position.set(0, 1.6, -1.2);
   g.add(light);
 
@@ -125,6 +126,7 @@ export function buildCityFragment(seed, windowTex, palette) {
   }
   // one window light (budgeted)
   const light = new THREE.PointLight(palette.window, 1.2, 150, 2);
+  light.name = 'sig:cityWindow';
   light.position.set(0, scale * 0.1, 0);
   g.add(light);
 

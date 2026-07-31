@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Constants } from '../core/Constants.js';
-import { STAR_VERTEX, STAR_FRAGMENT } from '../utils/ShaderHelpers.js';
+import { STAR_VERTEX, STAR_FRAGMENT, softDotTexture } from '../utils/ShaderHelpers.js';
 
 // Multi-layer parallax starfield (spec §5.1): 3 Points layers + 30 bright stars.
 // All materials render with fog disabled so exponential fog never swallows them.
@@ -16,6 +16,7 @@ export class Starfield {
       this._layers.push(this._buildLayer(name, cfg));
     }
     this._bright = this._buildBright();
+    this._buildShootingStars();
   }
 
   _buildLayer(name, cfg) {
@@ -31,9 +32,16 @@ export class Starfield {
       positions[i * 3 + 1] = (rng() * 2 - 1) * Constants.STARFIELD_WRAP;
       positions[i * 3 + 2] = (rng() * 2 - 1) * Constants.STARFIELD_WRAP;
       sizes[i] = cfg.size * (0.6 + rng() * 0.8);
-      colors[i * 3] = cfg.color[0] * (0.8 + rng() * 0.4);
-      colors[i * 3 + 1] = cfg.color[1] * (0.8 + rng() * 0.4);
-      colors[i * 3 + 2] = cfg.color[2] * (0.8 + rng() * 0.4);
+      // v2.0 color-temperature variety: 30% blue-white, 40% white, 20% warm, 10% red giants
+      const temp = rng();
+      let tint = [1, 1, 1];
+      if (temp < 0.3) tint = [0.75, 0.85, 1.0];
+      else if (temp < 0.7) tint = [1, 1, 1];
+      else if (temp < 0.9) tint = [1.0, 0.9, 0.7];
+      else tint = [1.0, 0.55, 0.4];
+      colors[i * 3] = cfg.color[0] * tint[0] * (0.8 + rng() * 0.4);
+      colors[i * 3 + 1] = cfg.color[1] * tint[1] * (0.8 + rng() * 0.4);
+      colors[i * 3 + 2] = cfg.color[2] * tint[2] * (0.8 + rng() * 0.4);
       twinkles[i] = rng();
     }
 
@@ -98,7 +106,7 @@ export class Starfield {
     return { points, positions };
   }
 
-  /** Parallax offset + wrapping around the ship. */
+  /** Parallax offset + wrapping around the ship + shooting stars (v2.0). */
   update(dt, shipPos) {
     const wrap = Constants.STARFIELD_WRAP;
     for (const layer of this._layers) {
@@ -127,6 +135,52 @@ export class Starfield {
     }
     // Bright stars: static, no parallax
     this._bright.points.material.uniforms.uTime.value += dt;
+
+    // Shooting stars (v2.0 §5): every REMASTER.shootingStarEvery s, max 2 active
+    this._shootTimer -= dt;
+    if (this._shootTimer <= 0) {
+      this._shootTimer = Constants.REMASTER.shootingStarEvery;
+      const active = this._shootingStars.filter((s) => s.life > 0).length;
+      if (active < Constants.REMASTER.shootingStarMax) this._spawnShootingStar(shipPos);
+    }
+    for (const s of this._shootingStars) {
+      if (s.life <= 0) continue;
+      s.life -= dt;
+      if (s.life <= 0) { s.spr.visible = false; continue; }
+      s.spr.position.x += s.vx * dt;
+      s.spr.position.y += s.vy * dt;
+      s.spr.position.z += s.vz * dt;
+    }
+  }
+
+  _spawnShootingStar(shipPos) {
+    const s = this._shootingStars.find((q) => q.life <= 0);
+    if (!s) return;
+    s.life = 0.45;
+    const dir = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.3, Math.random() - 0.5).normalize();
+    s.spr.position.set(shipPos.x + dir.x * 700, shipPos.y + dir.y * 700, shipPos.z + dir.z * 700);
+    s.vx = -dir.x * 1600;
+    s.vy = -dir.y * 1600;
+    s.vz = -dir.z * 1600;
+    s.spr.material.rotation = Math.atan2(dir.x, dir.z);
+    s.spr.visible = true;
+  }
+
+  _buildShootingStars() {
+    this._shootingStars = [];
+    this._shootTimer = 10;
+    const dot = softDotTexture();
+    for (let i = 0; i < Constants.REMASTER.shootingStarMax; i++) {
+      const mat = new THREE.SpriteMaterial({
+        map: dot, color: 0xffffff, transparent: true, opacity: 0.9,
+        blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+      });
+      const spr = new THREE.Sprite(mat);
+      spr.scale.set(2, 10, 1);
+      spr.visible = false;
+      this.group.add(spr);
+      this._shootingStars.push({ spr, mat, life: 0, vx: 0, vy: 0, vz: 0 });
+    }
   }
 
   dispose() {

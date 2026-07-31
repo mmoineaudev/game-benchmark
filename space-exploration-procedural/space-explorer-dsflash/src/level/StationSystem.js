@@ -104,6 +104,7 @@ export class StationSystem {
 
     // Deck lights
     const light = new THREE.PointLight(0x88bbff, 0.8, 40, 2);
+    light.name = 'land:station';
     light.position.y = 0;
     g.add(light);
     station.light = light;

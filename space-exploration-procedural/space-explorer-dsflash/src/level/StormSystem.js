@@ -119,6 +119,7 @@ export class StormSystem {
     flash.scale.setScalar(radius * 2.2);
     g.add(flash);
     const light = new THREE.PointLight(C.lightColor, 0, 60, 2);
+    light.name = 'sig:stormFlicker';
     g.add(light);
     g.userData = { mat, flash, flashMat, light };
     return g;

@@ -127,6 +127,7 @@ export class CitySystem {
         const built = buildHulk(seed, this._wreckPalette);
         built.group.scale.setScalar(scale);
         built.group.position.set(x, y, z);
+        built.light.name = 'sig:wreckStrobe';
         // white strobe beacon (phase offset π from the red one)
         const whiteMat = new THREE.MeshBasicMaterial({ color: C.strobeWhite, transparent: true, opacity: 0.1, fog: false });
         const whiteBeacon = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), whiteMat);

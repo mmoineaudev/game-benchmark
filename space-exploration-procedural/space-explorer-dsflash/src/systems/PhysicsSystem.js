@@ -20,6 +20,7 @@ export class PhysicsSystem {
     if (systems.deadStarSystem) list.push(...systems.deadStarSystem.getColliders());
     if (systems.blackHoleSystem) list.push(...systems.blackHoleSystem.getColliders());
     if (systems.crystalSystem) list.push(...systems.crystalSystem.getColliders());
+    if (systems.pulsarSystem) list.push(...systems.pulsarSystem.getColliders());
     return list;
   }
 
@@ -36,17 +37,19 @@ export class PhysicsSystem {
 
   update(dt, ship, gameState) {
     if (!ship || !ship.alive) return;
+    const systems = this.game.worldSystems;
     const colliders = this._colliders();
     const invuln = gameState.invulnerable;
 
     // ---- Ship vs world ----------------------------------------------------
     for (const c of colliders) {
-      if (c.type === 'blackHole' || c.type === 'deadStar') {
-        // instant-death zones bypass invulnerability (spec §6.5)
+      if (c.type === 'blackHole' || c.type === 'deadStar' || c.type === 'pulsar') {
+        // instant-death zones bypass invulnerability (spec §6.5, v2.0 §3.4.2)
         const d2 = this._d2(ship.position, c);
         const r = c.type === 'deadStar' ? c.radius : c.radius;
         if (d2 < (r + ship.radius) * (r + ship.radius)) {
-          this._kill(ship, gameState, c.type === 'deadStar' ? 'dead_star' : 'black_hole', c);
+          const reason = c.type === 'deadStar' ? 'dead_star' : c.type === 'pulsar' ? 'pulsar' : 'black_hole';
+          this._kill(ship, gameState, reason, c);
           return;
         }
         continue;
@@ -114,8 +117,30 @@ export class PhysicsSystem {
       }
     }
 
+    // ---- Pulsar beam touch (v2.0 §3.4.2): 50 dmg, invulnerability applies ----
+    if (systems.pulsarSystem) {
+      const beams = systems.pulsarSystem.getBeams();
+      for (const b of beams) {
+        // closest point on the beam ray to the ship
+        const px = ship.position.x - b.x, py = ship.position.y - b.y, pz = ship.position.z - b.z;
+        const t = px * b.ax + py * b.ay + pz * b.az;
+        if (t < 0 || t > b.length) continue;
+        const qx = px - b.ax * t, qy = py - b.ay * t, qz = pz - b.az * t;
+        const d2 = qx * qx + qy * qy + qz * qz;
+        const rr = Constants.PULSAR.beamTouchRadius + ship.radius;
+        if (d2 < rr * rr) {
+          if (ship.shieldActive) {
+            this.game.onShieldDeflect(ship.position.x + qx, ship.position.y + qy, ship.position.z + qz);
+            continue;
+          }
+          const res = gameState.takeDamage(Constants.PULSAR.damage, 'pulsarBeam');
+          this.game.onShipCollision({ type: 'pulsarBeam' }, Constants.PULSAR.damage);
+          if (res === 'dead') { this._kill(ship, gameState, 'pulsarBeam', { type: 'pulsarBeam' }); return; }
+        }
+      }
+    }
+
     // ---- Black hole gravity + consumption ---------------------------------
-    const systems = this.game.worldSystems;
     if (systems.blackHoleSystem) {
       const holes = systems.blackHoleSystem.holes;
       for (const hole of holes) {

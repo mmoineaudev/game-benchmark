@@ -24,6 +24,7 @@ import { BlackHoleSystem } from '../level/BlackHoleSystem.js';
 import { DeadStarSystem } from '../level/DeadStarSystem.js';
 import { StationSystem } from '../level/StationSystem.js';
 import { CrystalSystem } from '../level/CrystalSystem.js';
+import { PulsarSystem } from '../level/PulsarSystem.js';
 import { ChunkManager } from '../level/ChunkManager.js';
 import { BiomeGenerator } from '../level/BiomeGenerator.js';
 
@@ -102,6 +103,7 @@ export class Game {
       deadStarSystem: new DeadStarSystem(this.scene, eventBus, this.particles),
       stationSystem: new StationSystem(this.scene, eventBus),
       crystalSystem: new CrystalSystem(this.scene, eventBus),
+      pulsarSystem: new PulsarSystem(this.scene, eventBus),
       nebulaSystem: this.nebulaSystem,
     };
 
@@ -309,6 +311,7 @@ export class Game {
     this.worldSystems.stationSystem.update(dt, this.ship.position);
     this.worldSystems.blackHoleSystem.update(dt);
     if (this.worldSystems.crystalSystem) this.worldSystems.crystalSystem.update(dt);
+    if (this.worldSystems.pulsarSystem) this.worldSystems.pulsarSystem.update(dt, this.ship.position);
 
     // Physics (collisions, gravity, consumption, wormhole blur)
     this.physics.update(dt, this.ship, gameState);
@@ -404,6 +407,7 @@ export class Game {
     const shipPos = this.ship.position;
     let horizonWarn = false;
     let starWarn = false;
+    let pulsarWarn = false;
 
     for (const h of this.worldSystems.blackHoleSystem.holes) {
       const d = Math.hypot(h.x - shipPos.x, h.y - shipPos.y, h.z - shipPos.z);
@@ -413,8 +417,18 @@ export class Game {
       const d = Math.hypot(s.x - shipPos.x, s.y - shipPos.y, s.z - shipPos.z);
       if (d < s.radius + Constants.DEAD_STAR_WARNING_RANGE) starWarn = true;
     }
+    if (this.worldSystems.pulsarSystem) {
+      for (const b of this.worldSystems.pulsarSystem.getBeams()) {
+        const px = shipPos.x - b.x, py = shipPos.y - b.y, pz = shipPos.z - b.z;
+        const t = px * b.ax + py * b.ay + pz * b.az;
+        if (t < 0 || t > b.length) continue;
+        const qx = px - b.ax * t, qy = py - b.ay * t, qz = pz - b.az * t;
+        if (qx * qx + qy * qy + qz * qz < 60 * 60) pulsarWarn = true;
+      }
+    }
     this.hud.setWarning('eventHorizon', horizonWarn);
     this.hud.setWarning('stellarRemnant', starWarn);
+    this.hud.setWarning('pulsarBeam', pulsarWarn);
   }
 
   // ------------------------------------------------------------- game flow
@@ -546,6 +560,7 @@ export class Game {
     this.worldSystems.deadStarSystem.dispose();
     this.worldSystems.stationSystem.dispose();
     this.worldSystems.crystalSystem.dispose();
+    this.worldSystems.pulsarSystem.dispose();
     this.particles.dispose();
     this.weaponSystem.dispose();
     this.ship.dispose(this.scene);

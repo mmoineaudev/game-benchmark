@@ -110,6 +110,8 @@ export class HUD {
     this.warnHorizon.textContent = '⚠ EVENT HORIZON';
     this.warnStar = this._el('div', 'hud-warn', warns);
     this.warnStar.textContent = '⚠ STELLAR REMNANT';
+    this.warnPulsar = this._el('div', 'hud-warn', warns);
+    this.warnPulsar.textContent = '⚠ PULSAR BEAM';
 
     this.flashEl = this._el('div', '', this.root); this.flashEl.id = 'hud-flash';
     this.lowhp = this._el('div', '', this.root); this.lowhp.id = 'hud-lowhp';
@@ -190,6 +192,7 @@ export class HUD {
   setWarning(name, active) {
     if (name === 'eventHorizon') this.warnHorizon.style.display = active ? 'block' : 'none';
     else if (name === 'stellarRemnant') this.warnStar.style.display = active ? 'block' : 'none';
+    else if (name === 'pulsarBeam') this.warnPulsar.style.display = active ? 'block' : 'none';
   }
   setMuted(muted) { this.mute.textContent = muted ? '🔇 muted (M)' : '🔊 (M to mute)'; }
   flash(color = 'rgba(255,30,30,0.35)') {
@@ -210,6 +213,7 @@ export class HUD {
     this.announceEl.style.opacity = '0';
     this.setWarning('eventHorizon', false);
     this.setWarning('stellarRemnant', false);
+    this.setWarning('pulsarBeam', false);
     this.showPause(false);
     this.lowhp.style.opacity = '0';
   }

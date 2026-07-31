@@ -96,6 +96,7 @@ export class ChunkManager {
     S.deadStarSystem.spawnChunk(chunk, rng, cfg, shipPos);
     S.stationSystem.spawnChunk(chunk, rng, cfg, shipPos);
     if (S.crystalSystem) S.crystalSystem.spawnChunk(chunk, rng, cfg, shipPos);
+    if (S.pulsarSystem) S.pulsarSystem.spawnChunk(chunk, rng, cfg, shipPos);
 
     if (biome.key === 'WORMHOLE') this._spawnTunnel(chunk, rng);
 
@@ -144,6 +145,7 @@ export class ChunkManager {
     S.deadStarSystem.cleanupChunk(chunk);
     S.stationSystem.cleanupChunk(chunk);
     if (S.crystalSystem) S.crystalSystem.cleanupChunk(chunk);
+    if (S.pulsarSystem) S.pulsarSystem.cleanupChunk(chunk);
     if (chunk.tunnel) {
       this._group.remove(chunk.tunnel.mesh);
       chunk.tunnel.geo?.dispose();

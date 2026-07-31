@@ -43,6 +43,9 @@ export class DeathScreen {
       collision: 'SHIP DESTROYED',
       black_hole: 'CONSUMED BY A BLACK HOLE',
       dead_star: 'VAPORIZED BY A DEAD STAR',
+      pulsar: 'VAPORIZED BY A PULSAR',
+      pulsarBeam: 'CUT DOWN BY A PULSAR BEAM',
+      blackHoleCollapse: 'VAPORIZED BY A COLLAPSE',
     };
     this.title.textContent = titles[info.reason] || 'SHIP DESTROYED';
     this.stats.innerHTML = `

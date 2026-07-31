@@ -2,6 +2,8 @@ import * as THREE from 'three';
 
 // Procedural wreck/city builders (spec v2.0 §3.4.4 / §3.4.5).
 // Shared by HulkSystem (derelicts) and CitySystem (finale wrecks + fragments).
+// Materials/geometries are cached per palette — spawning a chunk creates ZERO
+// new GPU resources (per-spawn material creation was a chunk-boundary hitch).
 
 function mulberry(seed) {
   let a = seed >>> 0;
@@ -13,6 +15,54 @@ function mulberry(seed) {
   };
 }
 
+// Shared fixed-size hulk geometries (variants only scale/rotate the hull).
+const HULK_GEOS = {
+  hull: new THREE.BoxGeometry(3.2, 1.8, 7),
+  wingL: new THREE.BoxGeometry(4.5, 0.18, 1.6),
+  wingR: new THREE.BoxGeometry(3.4, 0.18, 1.4),
+  engine: new THREE.ConeGeometry(0.5, 2, 8),
+  scorch: new THREE.BoxGeometry(1.6, 0.08, 2.2),
+  beacon: new THREE.SphereGeometry(0.3, 8, 6),
+};
+for (const g of Object.values(HULK_GEOS)) g.userData.shared = true;
+
+const HULK_MATS = new Map(); // hull color → { hullMat, wingMat, engineMat }
+function hulkMats(palette) {
+  const key = String(palette.hull);
+  let m = HULK_MATS.get(key);
+  if (!m) {
+    m = {
+      hullMat: new THREE.MeshStandardMaterial({ color: palette.hull, metalness: 0.6, roughness: 0.85 }),
+      wingMat: new THREE.MeshStandardMaterial({ color: palette.hull, metalness: 0.6, roughness: 0.85 }),
+      engineMat: new THREE.MeshStandardMaterial({ color: palette.hull, metalness: 0.7, roughness: 0.6 }),
+    };
+    for (const v of Object.values(m)) v.userData.shared = true;
+    HULK_MATS.set(key, m);
+  }
+  return m;
+}
+
+const CITY_MATS = new Map(); // "hull|window" → { hullMat, windowMat }
+function cityMats(palette, windowTex) {
+  const key = `${palette.hull}|${palette.window}`;
+  let m = CITY_MATS.get(key);
+  if (!m) {
+    m = {
+      hullMat: new THREE.MeshStandardMaterial({ color: palette.hull, metalness: 0.7, roughness: 0.6 }),
+      windowMat: new THREE.MeshBasicMaterial({
+        map: windowTex,
+        transparent: true,
+        opacity: 0.9,
+        color: palette.window,
+        fog: false,
+      }),
+    };
+    for (const v of Object.values(m)) v.userData.shared = true;
+    CITY_MATS.set(key, m);
+  }
+  return m;
+}
+
 /**
  * Build a wrecked ship group (variant 0..2). `palette` = { hull, glow } hex colors.
  * Returns { group, light, strobeMats } — strobeMats drive the blinking beacons.
@@ -21,40 +71,35 @@ export function buildHulk(seed, palette) {
   const rng = mulberry(seed);
   const variant = Math.floor(rng() * 3);
   const g = new THREE.Group();
+  const M = hulkMats(palette);
+  const G = HULK_GEOS;
 
-  const hullMat = new THREE.MeshStandardMaterial({
-    color: palette.hull,
-    metalness: 0.6,
-    roughness: 0.85,
-  });
   // main hull
-  const hull = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.8, 7), hullMat);
+  const hull = new THREE.Mesh(G.hull, M.hullMat);
   hull.position.y = 0.2;
   g.add(hull);
   // broken wings
-  const wingMat = hullMat.clone();
-  const wingL = new THREE.Mesh(new THREE.BoxGeometry(4.5, 0.18, 1.6), wingMat);
+  const wingL = new THREE.Mesh(G.wingL, M.wingMat);
   wingL.position.set(-3.2, 0.1, 0.2);
   wingL.rotation.set(0, 0.35, 0.18);
   g.add(wingL);
-  const wingR = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.18, 1.4), wingMat);
+  const wingR = new THREE.Mesh(G.wingR, M.wingMat);
   wingR.position.set(2.6, 0.15, -0.4);
   wingR.rotation.set(0.2, -0.4, -0.25);
   g.add(wingR);
   // snapped engine cone
-  const engineMat = new THREE.MeshStandardMaterial({ color: palette.hull, metalness: 0.7, roughness: 0.6 });
-  const engine = new THREE.Mesh(new THREE.ConeGeometry(0.5, 2, 8), engineMat);
+  const engine = new THREE.Mesh(G.engine, M.engineMat);
   engine.position.set(1.1, -0.4, 4.0);
   engine.rotation.x = Math.PI / 2 + 0.5;
   g.add(engine);
   // scorch decal (dark box)
-  const scorch = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.08, 2.2), new THREE.MeshBasicMaterial({ color: 0x1a140e }));
+  const scorch = new THREE.Mesh(G.scorch, new THREE.MeshBasicMaterial({ color: 0x1a140e }));
   scorch.position.set(0, 0.95, 1.5);
   g.add(scorch);
 
   // flickering emergency light (red) + strobe materials
   const strobeMat = new THREE.MeshBasicMaterial({ color: palette.glow, transparent: true, opacity: 0.1, fog: false });
-  const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), strobeMat);
+  const beacon = new THREE.Mesh(G.beacon, strobeMat);
   beacon.position.set(0, 1.5, -1.2);
   g.add(beacon);
   const light = new THREE.PointLight(palette.glow, 0.6, 20, 2);
@@ -76,14 +121,9 @@ export function buildHulk(seed, palette) {
 export function buildCityFragment(seed, windowTex, palette) {
   const rng = mulberry(seed + 7);
   const g = new THREE.Group();
-  const hullMat = new THREE.MeshStandardMaterial({ color: palette.hull, metalness: 0.7, roughness: 0.6 });
-  const windowMat = new THREE.MeshBasicMaterial({
-    map: windowTex,
-    transparent: true,
-    opacity: 0.9,
-    color: palette.window,
-    fog: false,
-  });
+  const M = cityMats(palette, windowTex);
+  const hullMat = M.hullMat;
+  const windowMat = M.windowMat;
 
   const variant = Math.floor(rng() * 3);
   const scale = 100 + rng() * 300; // 100..400 u overall

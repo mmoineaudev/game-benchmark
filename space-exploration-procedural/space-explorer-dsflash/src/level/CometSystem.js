@@ -17,8 +17,36 @@ export class CometSystem {
     scene.add(this._group);
 
     this._nucleusGeo = this._displace(new THREE.IcosahedronGeometry(1, 1), 55, 0.5);
+    this._nucleusGeo.userData.shared = true;
     this._dustTimer = 0;
     this._smokeTimer = 0;
+
+    // Shared per-comet resources — no material/texture creation at spawn.
+    this._nucleusMat = new THREE.MeshStandardMaterial({
+      color: 0x9aa8b8, roughness: 0.9, metalness: 0.1,
+      emissive: 0x224466, emissiveIntensity: 0.35,
+    });
+    this._nucleusMat.userData.shared = true;
+    this._comaTex = softDotTexture();
+    this._comaTex.userData.shared = true;
+    this._comaMat = new THREE.SpriteMaterial({
+      map: this._comaTex,
+      color: 0x88ccff,
+      transparent: true,
+      opacity: 0.35,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    this._comaMat.userData.shared = true;
+    this._ionMat = new THREE.MeshBasicMaterial({
+      color: 0x4488ff,
+      transparent: true,
+      opacity: 0.3,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    this._ionMat.userData.shared = true;
   }
 
   _displace(geo, seed, amp) {
@@ -78,36 +106,19 @@ export class CometSystem {
   _buildVisual(scale, rng) {
     const g = new THREE.Group();
 
-    const nucleusMat = new THREE.MeshStandardMaterial({
-      color: 0x9aa8b8, roughness: 0.9, metalness: 0.1,
-      emissive: 0x224466, emissiveIntensity: 0.35,
-    });
+    const nucleusMat = this._nucleusMat;
     const nucleus = new THREE.Mesh(this._nucleusGeo, nucleusMat);
     nucleus.scale.setScalar(scale);
     g.add(nucleus);
 
     // Coma billboard (soft dot, pale cyan, additive)
-    const comaMat = new THREE.SpriteMaterial({
-      map: softDotTexture(),
-      color: 0x88ccff,
-      transparent: true,
-      opacity: 0.35,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
+    const comaMat = this._comaMat;
     const coma = new THREE.Sprite(comaMat);
     coma.scale.setScalar(scale * 2.5);
     g.add(coma);
 
     // Ion tail: stretched plane along velocity (blue, additive)
-    const ionMat = new THREE.MeshBasicMaterial({
-      color: 0x4488ff,
-      transparent: true,
-      opacity: 0.3,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
+    const ionMat = this._ionMat;
     const ion = new THREE.Mesh(new THREE.PlaneGeometry(scale * 0.5, scale * 5), ionMat);
     ion.position.z = scale * 2.5;
     g.add(ion);
@@ -170,8 +181,8 @@ export class CometSystem {
     body.active = false;
     this._group.remove(body.group);
     body.group.traverse((o) => {
-      if (o.geometry) o.geometry.dispose();
-      if (o.material) o.material.dispose();
+      if (o.geometry && !o.geometry.userData?.shared) o.geometry.dispose();
+      if (o.material && !o.material.userData?.shared) o.material.dispose();
     });
     const idx = this.colliders.indexOf(body);
     if (idx >= 0) this.colliders.splice(idx, 1);

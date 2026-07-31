@@ -14,6 +14,24 @@ export class StationSystem {
     scene.add(this._group);
     this._nextId = 1;
     this._windowTex = this._makeWindowTexture();
+    this._windowTex.userData.shared = true;
+    // Shared materials + geometries — no per-station GPU resource creation.
+    this._shared = {
+      hullMat: new THREE.MeshStandardMaterial({ color: 0x8a9aaa, metalness: 0.6, roughness: 0.35 }),
+      ringMat: new THREE.MeshStandardMaterial({ color: 0x66778a, metalness: 0.7, roughness: 0.3 }),
+      windowMat: new THREE.MeshStandardMaterial({
+        color: 0xffffff, emissive: 0x88bbff, emissiveIntensity: 0.8, emissiveMap: this._windowTex,
+      }),
+      beaconMat: new THREE.MeshBasicMaterial({ color: 0xffcc44 }),
+    };
+    for (const m of Object.values(this._shared)) m.userData.shared = true;
+    this._sharedGeo = {
+      hullGeo: new THREE.CylinderGeometry(2.2, 2.8, 1, 12),
+      windowsGeo: new THREE.CylinderGeometry(2.5, 3.1, 1, 12, 1, true),
+      torusGeo: new THREE.TorusGeometry(5.5, 0.7, 10, 24),
+      beaconGeo: new THREE.SphereGeometry(0.5, 8, 8),
+    };
+    for (const g of Object.values(this._sharedGeo)) g.userData.shared = true;
   }
 
   _makeWindowTexture() {
@@ -74,33 +92,30 @@ export class StationSystem {
 
   _buildVisual(station, scale, rng) {
     const g = new THREE.Group();
+    const S = this._shared;
+    const R = this._sharedGeo;
 
-    const hullMat = new THREE.MeshStandardMaterial({ color: 0x8a9aaa, metalness: 0.6, roughness: 0.35 });
-    const ringMat = new THREE.MeshStandardMaterial({ color: 0x66778a, metalness: 0.7, roughness: 0.3 });
-    const windowMat = new THREE.MeshStandardMaterial({
-      color: 0xffffff, emissive: 0x88bbff, emissiveIntensity: 0.8, emissiveMap: this._windowTex,
-    });
-
-    // Hull (vertical cylinder)
-    const hull = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.8, scale, 12), hullMat);
+    // Hull (vertical cylinder) — shared geometry scaled per station
+    const hull = new THREE.Mesh(R.hullGeo, S.hullMat);
+    hull.scale.y = scale;
     g.add(hull);
 
     // Window bands
-    const windows = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 3.1, scale * 0.8, 12, 1, true), windowMat);
+    const windows = new THREE.Mesh(R.windowsGeo, S.windowMat);
+    windows.scale.y = scale * 0.8;
     g.add(windows);
 
     // Torus ring around the middle
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(5.5, 0.7, 10, 24), ringMat);
+    const ring = new THREE.Mesh(R.torusGeo, S.ringMat);
     ring.rotation.x = Math.PI / 2;
     ring.position.y = 0;
     g.add(ring);
 
-    // Beacon (pulsing emissive sphere)
-    const beaconMat = new THREE.MeshBasicMaterial({ color: 0xffcc44 });
-    const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 8), beaconMat);
+    // Beacon (pulsing emissive sphere) — shared material (all beacons pulse together)
+    const beacon = new THREE.Mesh(R.beaconGeo, S.beaconMat);
     beacon.position.y = scale / 2 + 1.2;
     g.add(beacon);
-    station.beaconMat = beaconMat;
+    station.beaconMat = S.beaconMat;
 
     // Deck lights
     const light = new THREE.PointLight(0x88bbff, 0.8, 40, 2);
@@ -129,8 +144,8 @@ export class StationSystem {
   _removeStation(s) {
     this._group.remove(s.group);
     s.group.traverse((o) => {
-      if (o.geometry) o.geometry.dispose();
-      if (o.material) o.material.dispose();
+      if (o.geometry && !o.geometry.userData?.shared) o.geometry.dispose();
+      if (o.material && !o.material.userData?.shared) o.material.dispose();
     });
     const idx = this.stations.indexOf(s);
     if (idx >= 0) this.stations.splice(idx, 1);

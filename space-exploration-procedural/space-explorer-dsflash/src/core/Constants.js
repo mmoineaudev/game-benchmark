@@ -125,11 +125,14 @@ export const Constants = {
   SHAKE_EXPLOSION_DURATION: 0.5,
   SHAKE_DECAY_RATE: 4.0,
 
-  // World / chunks
+  // World / chunks — perf-tuned: radius 1 keeps 27 chunks (3x3x3) instead of
+  // 75, spawn/cleanup are staggered across frames to avoid boundary hitches.
   CHUNK_SIZE: 200,
-  CHUNKS_RADIUS: 2,         // chunks kept around ship (Chebyshev distance, 5x5 grid)
-  CHUNKS_CLEANUP_RADIUS: 2.6,
+  CHUNKS_RADIUS: 1,         // chunks kept around ship (Chebyshev distance, 3x3 grid)
+  CHUNKS_CLEANUP_RADIUS: 1.6,
   CHUNKS_VERTICAL_RADIUS: 1, // 3 vertical layers: below, current, above
+  CHUNK_SPAWN_PER_FRAME: 3,  // max chunk populations per frame (staggered streaming)
+  INSTANCE_CULL_RADIUS: 460, // skip per-frame matrix writes for bodies beyond this
   CONTENT_Y_BAND: 90,        // ±u within each chunk's Y layer
   DENSITY_REDUCTION: 0.75,   // per-layer density (3 layers → total ≈ 2.25× old, per user)
   SHIP_FORWARD_AXIS: 'z',

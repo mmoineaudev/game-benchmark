@@ -54,23 +54,42 @@ export class ChunkManager {
     const R = Constants.CHUNKS_RADIUS;
     const VR = Constants.CHUNKS_VERTICAL_RADIUS;
 
-    // Spawn missing chunks around the ship (5x5 horizontal, 3 vertical layers)
+    // Collect missing chunks into a pending queue; populate at most
+    // CHUNK_SPAWN_PER_FRAME per frame so a boundary crossing (up to 9 chunks)
+    // drains over 3 frames instead of hitching in one.
+    if (!this._pending) this._pending = [];
     for (let dy = -VR; dy <= VR; dy++) {
       for (let dx = -R; dx <= R; dx++) {
         for (let dz = -R; dz <= R; dz++) {
           const key = `${cx + dx},${cy + dy},${cz + dz}`;
-          if (!this.chunks.has(key)) {
-            this._spawnChunk(cx + dx, cy + dy, cz + dz, odometer, shipPos);
+          if (!this.chunks.has(key) && !this._pending.some((p) => p.key === key)) {
+            this._pending.push({ x: cx + dx, y: cy + dy, z: cz + dz, key });
           }
         }
       }
     }
+    const spawnBudget = Constants.CHUNK_SPAWN_PER_FRAME;
+    let spawned = 0;
+    while (this._pending.length && spawned < spawnBudget) {
+      const p = this._pending.shift();
+      // discard entries that fell outside the keep-radius (ship changed course)
+      if (Math.max(Math.abs(p.x - cx), Math.abs(p.z - cz), Math.abs(p.y - cy)) > R) continue;
+      if (!this.chunks.has(p.key)) {
+        this._spawnChunk(p.x, p.y, p.z, odometer, shipPos);
+        spawned++;
+      }
+    }
 
-    // Cleanup chunks too far away
+    // Cleanup chunks too far away (also budgeted to avoid disposal spikes)
     const cleanup = Constants.CHUNKS_CLEANUP_RADIUS;
+    let cleaned = 0;
     for (const [key, chunk] of [...this.chunks]) {
+      if (cleaned >= spawnBudget) break;
       const d = Math.max(Math.abs(chunk.cx - cx), Math.abs(chunk.cz - cz), Math.abs(chunk.cy - cy));
-      if (d > cleanup) this._cleanupChunk(chunk);
+      if (d > cleanup) {
+        this._cleanupChunk(chunk);
+        cleaned++;
+      }
     }
   }
 

@@ -356,8 +356,8 @@ export class Game {
     // World
     this.chunkManager.update(this.ship.position, gameState.distance);
     this.chunkManager.updateTunnelTime(dt);
-    this.worldSystems.asteroidField.update(dt);
-    this.worldSystems.debrisSystem.update(dt);
+    this.worldSystems.asteroidField.update(dt, this.ship.position);
+    this.worldSystems.debrisSystem.update(dt, this.ship.position);
     this.worldSystems.cometSystem.update(dt, this.ship.position);
     this.nebulaSystem.update(dt, this.camera);
     this.worldSystems.deadStarSystem.update(dt, this.camera.position);

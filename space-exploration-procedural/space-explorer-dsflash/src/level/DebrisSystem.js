@@ -79,12 +79,15 @@ export class DebrisSystem {
     }
   }
 
-  update(dt) {
+  update(dt, shipPos) {
     const m4 = new THREE.Matrix4();
     const q = new THREE.Quaternion();
     const axis = new THREE.Vector3();
     const p = new THREE.Vector3();
     const s = new THREE.Vector3();
+    const cullR2 = Constants.INSTANCE_CULL_RADIUS * Constants.INSTANCE_CULL_RADIUS;
+    let dirtyBox = false;
+    let dirtyJunk = false;
     for (const b of this.bodies) {
       if (!b.active) continue;
       b.x += b.vx * dt;
@@ -92,14 +95,19 @@ export class DebrisSystem {
       b.z += b.vz * dt;
       q.setFromAxisAngle(axis.copy(b.rotAxis), b.rotSpeed * dt);
       b.quat.premultiply(q);
+      // Perf: skip matrix writes for invisible far bodies (re-sync on approach)
+      const dx = b.x - shipPos.x, dy = b.y - shipPos.y, dz = b.z - shipPos.z;
+      if (dx * dx + dy * dy + dz * dz > cullR2) continue;
       const pool = b.isBox ? this._instBox : this._instJunk;
       p.set(b.x, b.y, b.z);
       s.set(b.scale, b.scale * (b.isBox ? randAspect(b) : 1), b.scale * (b.isBox ? 1 : randAspect(b)));
       m4.compose(p, b.quat, s);
       pool.setMatrixAt(b.instIndex, m4);
+      if (pool === this._instBox) dirtyBox = true;
+      else dirtyJunk = true;
     }
-    if (this._instBox.count > 0) this._instBox.instanceMatrix.needsUpdate = true;
-    if (this._instJunk.count > 0) this._instJunk.instanceMatrix.needsUpdate = true;
+    if (dirtyBox) this._instBox.instanceMatrix.needsUpdate = true;
+    if (dirtyJunk) this._instJunk.instanceMatrix.needsUpdate = true;
   }
 
   applyGravity(center, strength, maxPull, dt) {

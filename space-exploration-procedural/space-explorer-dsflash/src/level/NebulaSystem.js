@@ -11,6 +11,11 @@ export class NebulaSystem {
     this._group = new THREE.Group();
     this._group.name = 'nebulae';
     scene.add(this._group);
+    // Shared resources: one plane geometry for every billboard, one shader
+    // material per biome color — no per-chunk geometry/material creation.
+    this._planeGeo = new THREE.PlaneGeometry(1, 1);
+    this._planeGeo.userData.shared = true;
+    this._matCache = new Map(); // key: biome color join → ShaderMaterial
   }
 
   /** Spawn `count` clusters into a chunk record. */
@@ -34,25 +39,33 @@ export class NebulaSystem {
     const colorB = base.clone().multiplyScalar(3.2).add(new THREE.Color(0.15, 0.15, 0.25));
 
     const seed = Math.floor(rng() * 1000);
-    const mat = new THREE.ShaderMaterial({
-      vertexShader: NEBULA_VERTEX,
-      fragmentShader: NEBULA_FRAGMENT,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      uniforms: {
-        uTime: { value: rng() * 100 },
-        uColorA: { value: colorA },
-        uColorB: { value: colorB },
-        uOpacity: { value: 0.25 + rng() * 0.2 },
-        uScale: { value: 2.5 + rng() * 2.5 },
-        uSeed: { value: seed },
-      },
-    });
+    // Per-biome-color shared material (fixed opacity/scale per biome — clouds
+    // in the same biome share the pattern, visually identical at this scale).
+    const matKey = biomeCfg.color.join(',');
+    let mat = this._matCache.get(matKey);
+    if (!mat) {
+      mat = new THREE.ShaderMaterial({
+        vertexShader: NEBULA_VERTEX,
+        fragmentShader: NEBULA_FRAGMENT,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        uniforms: {
+          uTime: { value: Math.random() * 100 },
+          uColorA: { value: colorA },
+          uColorB: { value: colorB },
+          uOpacity: { value: 0.35 },
+          uScale: { value: 3.5 },
+          uSeed: { value: seed },
+        },
+      });
+      mat.userData.shared = true;
+      this._matCache.set(matKey, mat);
+    }
 
     const group = new THREE.Group();
     group.position.copy(center);
-    const planeGeo = new THREE.PlaneGeometry(1, 1);
+    const planeGeo = this._planeGeo;
     const billboards = [];
     const n = 8 + Math.floor(rng() * 5); // 8-12
     for (let i = 0; i < n; i++) {
@@ -102,7 +115,7 @@ export class NebulaSystem {
     if (!chunk.nebulae) return;
     for (const c of chunk.nebulae) {
       this._group.remove(c.group);
-      c.mat.dispose();
+      if (!c.mat.userData.shared) c.mat.dispose();
       const idx = this.clusters.indexOf(c);
       if (idx >= 0) this.clusters.splice(idx, 1);
     }
@@ -112,7 +125,7 @@ export class NebulaSystem {
   dispose() {
     for (const c of [...this.clusters]) {
       this._group.remove(c.group);
-      c.mat.dispose();
+      if (!c.mat.userData.shared) c.mat.dispose();
     }
     this.clusters = [];
     this.scene.remove(this._group);

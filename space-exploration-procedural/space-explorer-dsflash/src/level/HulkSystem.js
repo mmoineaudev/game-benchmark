@@ -105,8 +105,8 @@ export class HulkSystem {
   dispose() {
     this.scene.remove(this._group);
     this._group.traverse((o) => {
-      if (o.geometry) o.geometry.dispose();
-      if (o.material) o.material.dispose();
+      if (o.geometry && !o.geometry.userData?.shared) o.geometry.dispose();
+      if (o.material && !o.material.userData?.shared) o.material.dispose();
     });
   }
 }

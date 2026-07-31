@@ -9,25 +9,33 @@ export class AdaptiveQuality {
     this.level = 0;
     this._frames = 0;
     this._acc = 0;
+    this._elapsed = 0;
     this._fps = 60;
     this._lowTimer = 0;
     this._recoverTimer = 0;
     this._baseDpr = Math.min(window.devicePixelRatio || 1, Constants.DPR_MAX);
   }
 
-  /** Feed one frame's dt (seconds). */
+  /**
+   * Feed one frame's dt (seconds). Evaluates once per wall-clock second —
+   * frame-based accumulation froze at low FPS (frames slower than 0.5s were
+   * discarded and the 60-frame window never filled), so adaptive quality
+   * NEVER engaged on slow machines. Time-based now: always responsive.
+   */
   update(dt) {
     const AQ = Constants.ADAPTIVE_QUALITY;
-    if (dt > 0 && dt < 0.5) {
-      this._acc += 1 / dt;
+    if (dt > 0.001) {
+      this._acc += Math.min(1 / Math.max(dt, 1e-3), 240);
       this._frames++;
-      if (this._frames >= AQ.sampleFrames) {
+      this._elapsed += dt;
+      if (this._elapsed >= 1.0) {
         this._fps = this._acc / this._frames;
-        this._frames = 0;
         this._acc = 0;
+        this._frames = 0;
+        this._elapsed = 0;
+        this._evaluate();
       }
     }
-    if (this._frames === 0) this._evaluate();
     return this.level;
   }
 

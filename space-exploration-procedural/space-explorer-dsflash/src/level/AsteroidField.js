@@ -30,6 +30,17 @@ export class AsteroidField {
     this._geoLarge = this._displace(new THREE.IcosahedronGeometry(1, 1), 11, 0.55);
     this._geoMedium = this._displace(new THREE.DodecahedronGeometry(1, 0), 23, 0.4);
     this._geoSmall = this._displace(new THREE.OctahedronGeometry(1, 0), 37, 0.35);
+    this._geoLarge.userData.shared = true;
+    // Shared large-asteroid materials (6 rock shades) — no material creation at spawn
+    this._largeMats = [];
+    for (let i = 0; i < 6; i++) {
+      const m = new THREE.MeshStandardMaterial({
+        color: this._rockColor(), roughness: 0.9, metalness: 0.1,
+      });
+      m.userData.shared = true;
+      this._largeMats.push(m);
+    }
+    this._largeMatCursor = 0;
   }
 
   _displace(geo, seed, amp) {
@@ -106,9 +117,7 @@ export class AsteroidField {
   _activate(body) {
     const rng = () => 0; // unused here
     if (body.tier === TIER.LARGE) {
-      const mesh = new THREE.Mesh(this._geoLarge, new THREE.MeshStandardMaterial({
-        color: this._rockColor(), roughness: 0.9, metalness: 0.1,
-      }));
+      const mesh = new THREE.Mesh(this._geoLarge, this._largeMats[this._largeMatCursor++ % this._largeMats.length]);
       mesh.scale.setScalar(body.scale);
       body.mesh = mesh;
       body.instIndex = -1;
@@ -135,12 +144,15 @@ export class AsteroidField {
     return c;
   }
 
-  update(dt) {
+  update(dt, shipPos) {
     const m4 = new THREE.Matrix4();
     const q = new THREE.Quaternion();
     const axis = new THREE.Vector3();
     const s = new THREE.Vector3();
     const p = new THREE.Vector3();
+    const cullR2 = Constants.INSTANCE_CULL_RADIUS * Constants.INSTANCE_CULL_RADIUS;
+    let dirtyMedium = false;
+    let dirtySmall = false;
 
     for (const b of this.bodies) {
       if (!b.active) continue;
@@ -153,16 +165,21 @@ export class AsteroidField {
       if (b.mesh) {
         b.mesh.position.set(b.x, b.y, b.z);
         b.mesh.quaternion.copy(b.quat);
-      } else {
-        const pool = b.tier === TIER.MEDIUM ? this._instMedium : this._instSmall;
-        p.set(b.x, b.y, b.z);
-        s.setScalar(b.scale);
-        m4.compose(p, b.quat, s);
-        pool.setMatrixAt(b.instIndex, m4);
+        continue;
       }
+      // Perf: skip matrix writes for invisible far bodies (they re-sync on approach)
+      const dx = b.x - shipPos.x, dy = b.y - shipPos.y, dz = b.z - shipPos.z;
+      if (dx * dx + dy * dy + dz * dz > cullR2) continue;
+      const pool = b.tier === TIER.MEDIUM ? this._instMedium : this._instSmall;
+      p.set(b.x, b.y, b.z);
+      s.setScalar(b.scale);
+      m4.compose(p, b.quat, s);
+      pool.setMatrixAt(b.instIndex, m4);
+      if (pool === this._instMedium) dirtyMedium = true;
+      else dirtySmall = true;
     }
-    if (this._instMedium.count > 0) this._instMedium.instanceMatrix.needsUpdate = true;
-    if (this._instSmall.count > 0) this._instSmall.instanceMatrix.needsUpdate = true;
+    if (dirtyMedium) this._instMedium.instanceMatrix.needsUpdate = true;
+    if (dirtySmall) this._instSmall.instanceMatrix.needsUpdate = true;
   }
 
   /** Black hole gravity: pull all active bodies toward center. */
@@ -186,8 +203,8 @@ export class AsteroidField {
     body.active = false;
     if (body.mesh) {
       this._group.remove(body.mesh);
-      body.mesh.geometry.dispose();
-      body.mesh.material.dispose();
+      if (!body.mesh.geometry.userData?.shared) body.mesh.geometry.dispose();
+      if (!body.mesh.material.userData?.shared) body.mesh.material.dispose();
       body.mesh = null;
     } else {
       const pool = body.tier === TIER.MEDIUM ? this._instMedium : this._instSmall;

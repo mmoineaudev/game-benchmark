@@ -26,10 +26,12 @@ export class PhysicsSystem {
     return list;
   }
 
-  /** Return colliders within radius of center (laser hits). */
+  /** Return colliders within radius of center (laser hits). Uses the per-frame
+   *  cached list when available — avoids rebuilding the world list per laser. */
   querySphere(center, radius) {
     const out = [];
-    for (const c of this._colliders()) {
+    const list = this._frameColliders || this._colliders();
+    for (const c of list) {
       if (!c.active && c.type !== 'station' && c.type !== 'deadStar' && c.type !== 'blackHole') continue;
       const dx = c.x - center.x, dy = c.y - center.y, dz = c.z - center.z;
       if (dx * dx + dy * dy + dz * dz < (radius + c.radius) * (radius + c.radius)) out.push(c);
@@ -41,6 +43,7 @@ export class PhysicsSystem {
     if (!ship || !ship.alive) return;
     const systems = this.game.worldSystems;
     const colliders = this._colliders();
+    this._frameColliders = colliders; // reused by querySphere this frame (no re-alloc per laser)
     const invuln = gameState.invulnerable;
 
     // ---- Ship vs world ----------------------------------------------------

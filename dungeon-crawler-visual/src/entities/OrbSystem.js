@@ -87,7 +87,7 @@ export class OrbSystem {
     return points;
   }
 
-  update(time, playerPos, isPressedE, wasPressedE) {
+  update(time, playerPos) {
     const p = playerPos;
 
     for (const orb of this.orbs) {
@@ -109,7 +109,7 @@ export class OrbSystem {
       const dx = p.x - orb.x;
       const dz = p.z - orb.z;
       const dist = Math.sqrt(dx * dx + dz * dz);
-      if (dist < 1.5 && isPressedE && !wasPressedE) {
+      if (dist < 1.5) {
         orb.collected = true;
         this.state.collectedOrbs++;
         this._spawnPickupRing(orb.x, orb.y, orb.z);

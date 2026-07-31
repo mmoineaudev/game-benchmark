@@ -27,7 +27,6 @@ export class Game {
     this._eKeyWasDown = false;
     this._promptEl = document.getElementById('prompt');
     this._orbCountEl = document.getElementById('orb-count');
-    this._interactEl = document.getElementById('interact-prompt');
     this._exitEl = document.getElementById('exit-prompt');
     this._messagesEl = document.getElementById('messages');
     this._prevOrbCount = 0;
@@ -246,8 +245,7 @@ export class Game {
     this.particles.update(this._delta, this.state.player, this.lighting.torches);
     this.smoke.update(this._delta, this.state.player);
     this.runes.update(t);
-    this.orbs.update(t, this.state.player,
-      this.input.isPressed('KeyE'), this._eKeyWasDown);
+    this.orbs.update(t, this.state.player);
     this._handleShooting();
     this._handleSwordAttack();
     if (this.skeletons) this.skeletons.update(this._delta, t, this.state.player, this._collisionBoxes);
@@ -374,7 +372,7 @@ export class Game {
     if (this.input.isMouseDown(2) && this.input.isPointerLocked()) {
       if (this.sword.swing()) this._swordHitApplied = false;
     }
-    this.sword.update(this._delta);
+    this.sword.update(this._delta, this._nearestSkeletonDist());
 
     // Damage lands during the active swing window, once per swing
     if (this.sword.isSwinging && !this._swordHitApplied && this.skeletons) {
@@ -394,6 +392,18 @@ export class Game {
         this.skeletons.hitSkeleton(s.skel, SWORD.DAMAGE);
       }
     }
+  }
+
+  _nearestSkeletonDist() {
+    if (!this.skeletons) return Infinity;
+    const p = this.state.player;
+    let min = Infinity;
+    for (const s of this.skeletons.skeletons) {
+      if (s.skel.state === 'DEAD') continue;
+      const d = Math.hypot(s.x - p.x, s.z - p.z);
+      if (d < min) min = d;
+    }
+    return min;
   }
 
   _flashDamage() {
@@ -598,13 +608,10 @@ export class Game {
     if (this._orbCountEl) {
       this._orbCountEl.textContent = `Orbs: ${this.state.collectedOrbs}`;
     }
+    if (this.sword) this.sword.setOrbCount(this.state.collectedOrbs);
     if (this._heartsEl) {
       const h = Math.max(0, this.state.health);
       this._heartsEl.textContent = '♥'.repeat(h) + '♡'.repeat(Math.max(0, PLAYER.MAX_HEALTH - h));
-    }
-    if (this._interactEl) {
-      const dist = this.orbs ? this.orbs.nearestOrbDist(this.state.player) : Infinity;
-      this._interactEl.style.display = (dist < 1.5) ? 'block' : 'none';
     }
     if (this._exitEl) {
       this._exitEl.style.display = this.state.inExitRoom ? 'block' : 'none';

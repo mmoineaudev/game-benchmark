@@ -10,6 +10,7 @@ import { AudioSystem } from '../systems/AudioSystem.js';
 import { ParticleSystem } from '../systems/ParticleSystem.js';
 import { PostProcessingSystem } from '../systems/PostProcessingSystem.js';
 import { LightManager } from '../systems/LightManager.js';
+import { AdaptiveQuality } from '../systems/AdaptiveQuality.js';
 
 import { PlayerShip } from '../gameplay/PlayerShip.js';
 import { WeaponSystem } from '../gameplay/WeaponSystem.js';
@@ -121,6 +122,7 @@ export class Game {
     this.weaponSystem = new WeaponSystem(this.scene, eventBus, this.physics);
     this.post = new PostProcessingSystem(this.renderer, this.scene, this.camera);
     this.lightManager = new LightManager(this.scene);
+    this.adaptiveQuality = new AdaptiveQuality(this);
     const savedProfile = (() => { try { return localStorage.getItem(Constants.LIGHT_MANAGER.storageKey); } catch { return null; } })();
     if (savedProfile === 'eco') {
       gameState.lightProfile = 'eco';
@@ -249,6 +251,15 @@ export class Game {
     else if (gameState.gameState === 'dead') this._updateDead();
 
     this._render();
+
+    // Adaptive quality (v2.0 §7.2.5)
+    if (this.adaptiveQuality) {
+      const level = this.adaptiveQuality.update(dt);
+      if (level !== gameState.adaptiveQualityLevel) {
+        gameState.adaptiveQualityLevel = level;
+        this.hud.setAQ(level);
+      }
+    }
   }
 
   _updatePlaying(dt) {
@@ -550,6 +561,15 @@ export class Game {
   restart() {
     gameState.reset();
     this._scoreFrac = 0;
+    if (this.adaptiveQuality) {
+      this.adaptiveQuality.level = 0;
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, Constants.DPR_MAX));
+      if (this.post) {
+        this.post.caPass.enabled = true;
+        this.post.grainPass.enabled = true;
+      }
+      if (this.lightManager) this.lightManager.setProfile(gameState.lightProfile);
+    }
     this.chunkManager.clearAll();
     this.deathScreen.hide();
     this.hud.reset();

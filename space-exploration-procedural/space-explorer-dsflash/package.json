@@ -1,12 +1,13 @@
 {
   "name": "space-explorer-dsflash",
   "version": "1.0.0",
-  "description": "Void Drift — procedural space exploration game (Three.js + Vite)",
+  "description": "Void Drift \u2014 procedural space exploration game (Three.js + Vite)",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:perf": "node scripts/check-perf.mjs"
   },
   "dependencies": {
     "three": "^0.165.0"

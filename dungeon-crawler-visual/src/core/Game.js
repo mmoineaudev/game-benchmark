@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN } from './Constants.js';
+import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON } from './Constants.js';
 import { GameState } from './GameState.js';
 import { Leaderboard } from './Leaderboard.js';
 import { DungeonGenerator } from '../world/DungeonGenerator.js';
@@ -11,6 +11,9 @@ import { ParticleSystem } from '../systems/ParticleSystem.js';
 import { RuneSystem } from '../systems/RuneSystem.js';
 import { OrbSystem } from '../entities/OrbSystem.js';
 import { SmokeSystem } from '../systems/SmokeSystem.js';
+import { SkeletonSystem } from '../entities/SkeletonSystem.js';
+import { OrbShooter } from '../entities/OrbShooter.js';
+import { resolveCircleCollisions } from './Collision.js';
 
 export class Game {
   constructor(containerId) {
@@ -30,7 +33,6 @@ export class Game {
     this._prevInExit = false;
     this._welcomeShown = false;
     this._lastHintTime = 0;
-    this._nextOrbMsgTime = 0;
     this._sprinting = false;
     this.leaderboard = new Leaderboard();
     this.smoke = null;
@@ -44,6 +46,13 @@ export class Game {
     this._gameOverEl = document.getElementById('game-over');
     this._goStats = document.getElementById('go-stats');
     this._goList = document.getElementById('go-leaderboard-list');
+    this._heartsEl = document.getElementById('hearts');
+    this._damageFlashEl = document.getElementById('damage-flash');
+    this.skeletons = null;
+    this.shooter = null;
+    this._noAmmoWarned = false;
+    this._shakeTime = 0;
+    this._fireCooldown = 0;
   }
 
   init() {
@@ -58,10 +67,11 @@ export class Game {
     this._initParticles();
     this._initRunes();
     this._initOrbs();
+    this._initCombat();
     this._placeWaterPuddles();
     this._setupPlayerStart();
-    this._showMessage('Find the ' + this.state.totalOrbs + ' glowing blue orbs', 'goal');
-    this._showMessage('Follow the torch-lit corridors', 'goal');
+    this._showMessage('Collect orbs — shoot the skeletons!', 'goal');
+    this._showMessage('Reach the golden exit before time runs out', 'goal');
     this._updateHUD();
     this._isRunning = true;
     this._lastTime = performance.now();
@@ -168,6 +178,19 @@ export class Game {
     this.orbs.init();
   }
 
+  _initCombat() {
+    this.shooter = new OrbShooter(this.scene);
+    this.shooter.init();
+
+    this.skeletons = new SkeletonSystem(this.scene, this.state);
+    this.skeletons.init(this.dungeonData, this.state);
+    this.skeletons.onWake = (x, z) => this.smoke.addTransient(x, 0.3, z, 6, 0.5);
+    this.skeletons.onKill = (x, z) => this.smoke.addTransient(x, 0.6, z, 10, 0.4);
+    this.skeletons.onPlayerDamaged = () => this._flashDamage();
+    this.skeletons.onPlayerDeath = () => this._gameOver('dead');
+    this.shooter.hitSkeleton = (skel) => this.skeletons.hitSkeleton(skel, ORB_WEAPON.DAMAGE);
+  }
+
   _placeWaterPuddles() {
     this._waterPuddles = [];
     const cs = this.dungeonData.cellSize;
@@ -218,6 +241,11 @@ export class Game {
     this.runes.update(t);
     this.orbs.update(t, this.state.player,
       this.input.isPressed('KeyE'), this._eKeyWasDown);
+    this._handleShooting();
+    if (this.skeletons) this.skeletons.update(this._delta, t, this.state.player, this._collisionBoxes);
+    if (this.shooter) this.shooter.update(this._delta, this._collisionBoxes, this.skeletons.skeletons || []);
+    if (this.state.invulnTimer > 0) this.state.invulnTimer -= this._delta;
+    if (this._shakeTime > 0) this._shakeTime -= this._delta;
 
     this._animateWater(t);
     this._checkMessages();
@@ -259,22 +287,7 @@ export class Game {
 
   _resolveCollisions(p) {
     const margin = 0.35; // player radius
-    for (const box of this._collisionBoxes) {
-      // Find closest point on box to player
-      const cx = Math.max(box.minX, Math.min(p.x, box.maxX));
-      const cz = Math.max(box.minZ, Math.min(p.z, box.maxZ));
-      const dx = p.x - cx;
-      const dz = p.z - cz;
-      const dist = Math.sqrt(dx * dx + dz * dz);
-      if (dist < margin) {
-        // Push player out
-        const overlap = margin - dist;
-        const nx = dist > 0.001 ? dx / dist : 0;
-        const nz = dist > 0.001 ? dz / dist : 1;
-        p.x += nx * overlap;
-        p.z += nz * overlap;
-      }
-    }
+    resolveCircleCollisions(this._collisionBoxes, p, margin);
   }
 
   _updateCamera() {
@@ -288,6 +301,13 @@ export class Game {
     }
 
     this.camera.position.set(p.x, WORLD.PLAYER_EYE_HEIGHT, p.z);
+    // Damage shake
+    if (this._shakeTime > 0) {
+      const s = this._shakeTime * 4;
+      this.camera.position.x += Math.sin(performance.now() * 0.045) * 0.06 * s;
+      this.camera.position.y += Math.sin(performance.now() * 0.05) * 0.05 * s;
+      this.camera.position.z += Math.cos(performance.now() * 0.04) * 0.06 * s;
+    }
     const dir = new THREE.Vector3(
       -Math.sin(p.yaw) * Math.cos(p.pitch),
       Math.sin(p.pitch),
@@ -319,6 +339,34 @@ export class Game {
     }
   }
 
+  _handleShooting() {
+    if (this._gameOverActive) return;
+    if (this._fireCooldown > 0) this._fireCooldown -= this._delta;
+    if (!this.input.isMouseDown(0) || !this.input.isPointerLocked()) return;
+    if (this._fireCooldown > 0) return;
+
+    if (this.state.collectedOrbs <= 0) {
+      if (!this._noAmmoWarned) {
+        this._showMessage('No orbs! Find glowing orbs to shoot', 'goal');
+        this._noAmmoWarned = true;
+      }
+      return;
+    }
+    this._noAmmoWarned = false;
+    this.state.collectedOrbs--;
+    this.shooter.fire(this.state.player.x, 1.4, this.state.player.z, this.state.player.yaw);
+    this._fireCooldown = 0.18; // ~5.5 shots/s max — tunable
+  }
+
+  _flashDamage() {
+    if (this._damageFlashEl) {
+      this._damageFlashEl.classList.remove('flash');
+      void this._damageFlashEl.offsetWidth; // restart CSS animation
+      this._damageFlashEl.classList.add('flash');
+    }
+    this._shakeTime = 0.25;
+  }
+
   _updateRunTimer() {
     if (this._gameOverActive) return;
     this.state.levelTime += this._delta;
@@ -335,24 +383,28 @@ export class Game {
       const totalSecs = Math.floor(this.state.runTime % 60).toString().padStart(2, '0');
       const best = this.leaderboard.best();
       const bestTxt = best
-        ? `best Lv${best.level} ${Math.floor(best.time / 60)}:${(best.time % 60).toString().padStart(2, '0')}`
+        ? `best Lv${best.level} ${Math.floor(best.time / 60)}:${(best.time % 60).toString().padStart(2, '0')} ◈${best.orbs}`
         : 'best —';
       this._timerEl.textContent = `Lv ${this.state.level} · ${mins}:${secs} · total ${totalMins}:${totalSecs} · ${bestTxt}`;
       this._timerEl.classList.toggle('low', remaining < 30);
     }
   }
 
-  _gameOver() {
+  _gameOver(reason = 'time') {
     this._gameOverActive = true;
     this._isRunning = false;
     if (document.pointerLockElement) document.exitPointerLock();
-    const rank = this.leaderboard.add(this.state.level, this.state.runTime);
+    const rank = this.leaderboard.add(this.state.level, this.state.runTime, this.state.collectedOrbs);
     this._lastEntry = this.leaderboard.load()[0];
     if (this._goStats) {
       const t = this.state.runTime;
       const mm = Math.floor(t / 60);
       const ss = Math.floor(t % 60).toString().padStart(2, '0');
-      this._goStats.textContent = `Level reached: ${this.state.level} · Total time: ${mm}:${ss}${rank > 0 ? ` · Rank #${rank}` : ''}`;
+      this._goStats.textContent = `Level reached: ${this.state.level} · Total time: ${mm}:${ss} · Orbs: ${this.state.collectedOrbs}${rank > 0 ? ` · Rank #${rank}` : ''}`;
+    }
+    if (this._gameOverEl) {
+      const title = this._gameOverEl.querySelector('h2');
+      if (title) title.textContent = reason === 'dead' ? 'The dead claim you' : 'The darkness consumes you';
     }
     this._renderLeaderboard(this._goList);
     if (this._gameOverEl) this._gameOverEl.classList.remove('hidden');
@@ -379,8 +431,9 @@ export class Game {
     const entries = this.leaderboard.load();
     listEl.innerHTML = entries.length
       ? entries.map((e, i) => {
-        const me = this._lastEntry && e.level === this._lastEntry.level && e.time === this._lastEntry.time;
-        return `<li class="${me ? 'me' : ''}">#${i + 1} · Lv ${e.level} · ${Math.floor(e.time / 60)}:${(e.time % 60).toString().padStart(2, '0')}</li>`;
+        const me = this._lastEntry && e.level === this._lastEntry.level
+          && e.time === this._lastEntry.time && e.orbs === this._lastEntry.orbs;
+        return `<li class="${me ? 'me' : ''}">#${i + 1} · Lv ${e.level} · ${Math.floor(e.time / 60)}:${(e.time % 60).toString().padStart(2, '0')} · ◈ ${e.orbs}</li>`;
       }).join('')
       : '<li>No runs yet — descend!</li>';
   }
@@ -388,15 +441,7 @@ export class Game {
   _checkMessages() {
     // Orb collected
     if (this.state.collectedOrbs > this._prevOrbCount) {
-      const remaining = this.state.totalOrbs - this.state.collectedOrbs;
-      if (remaining > 0) {
-        this._showMessage('Orb collected! ' + remaining + ' remaining', 'success');
-      }
-    }
-    // All orbs found
-    if (this._prevOrbCount < this.state.totalOrbs && this.state.collectedOrbs >= this.state.totalOrbs) {
-      this._showMessage('All orbs found! Head to the golden exit', 'success');
-      this._nextOrbMsgTime = 0; // trigger immediate exit direction
+      this._showMessage('Orb collected! +1 ammo', 'success');
     }
     // Entered exit room
     if (this.state.inExitRoom && !this._prevInExit) {
@@ -416,30 +461,28 @@ export class Game {
 
   _showDirectionalHint() {
     const p = this.state.player;
-    // If all orbs collected, point to exit
-    if (this.state.collectedOrbs >= this.state.totalOrbs && this.state.totalOrbs > 0) {
-      const ex = this.dungeonData.exitCell.x * this.dungeonData.cellSize + this.dungeonData.cellSize / 2;
-      const ez = this.dungeonData.exitCell.z * this.dungeonData.cellSize + this.dungeonData.cellSize / 2;
-      const dx = ex - p.x, dz = ez - p.z;
-      const dist = Math.sqrt(dx * dx + dz * dz).toFixed(0);
-      const dir = this._compassDir(dx, dz);
-      this._showMessage('Golden exit lies ' + dir + ' (' + dist + 'm)', 'goal');
-      return;
+    const ex = this.dungeonData.exitCell.x * this.dungeonData.cellSize + this.dungeonData.cellSize / 2;
+    const ez = this.dungeonData.exitCell.z * this.dungeonData.cellSize + this.dungeonData.cellSize / 2;
+
+    // Low ammo: point to the nearest remaining orb first
+    if (this.state.collectedOrbs <= 1 && this.orbs) {
+      let nearest = null, nearestDist = Infinity;
+      for (const orb of this.orbs.orbs) {
+        if (orb.collected) continue;
+        const dx = orb.x - p.x, dz = orb.z - p.z;
+        const d = Math.sqrt(dx * dx + dz * dz);
+        if (d < nearestDist) { nearestDist = d; nearest = orb; }
+      }
+      if (nearest) {
+        const dx = nearest.x - p.x, dz = nearest.z - p.z;
+        this._showMessage('Nearest orb lies ' + this._compassDir(dx, dz), 'goal');
+        return;
+      }
     }
-    // Point to nearest orb
-    if (!this.orbs) return;
-    let nearest = null, nearestDist = Infinity;
-    for (const orb of this.orbs.orbs) {
-      if (orb.collected) continue;
-      const dx = orb.x - p.x, dz = orb.z - p.z;
-      const d = Math.sqrt(dx * dx + dz * dz);
-      if (d < nearestDist) { nearestDist = d; nearest = orb; }
-    }
-    if (nearest) {
-      const dx = nearest.x - p.x, dz = nearest.z - p.z;
-      const dir = this._compassDir(dx, dz);
-      this._showMessage('Nearest orb lies ' + dir, 'goal');
-    }
+    // Otherwise point to the exit
+    const dx = ex - p.x, dz = ez - p.z;
+    const dist = Math.sqrt(dx * dx + dz * dz).toFixed(0);
+    this._showMessage('Golden exit lies ' + this._compassDir(dx, dz) + ' (' + dist + 'm)', 'goal');
   }
 
   _compassDir(dx, dz) {
@@ -461,6 +504,8 @@ export class Game {
     this.particles.dispose();
     this.lighting.dispose();
     this.smoke.dispose();
+    if (this.skeletons) this.skeletons.dispose();
+    if (this.shooter) this.shooter.dispose();
     for (const p of (this._waterPuddles || [])) {
       p.mesh.geometry.dispose();
       p.mesh.material.dispose();
@@ -470,9 +515,14 @@ export class Game {
 
     this.state = newRun
       ? new GameState()
-      : new GameState({ runTime: this.state.runTime, level: this.state.level + 1 });
+      : new GameState({
+        runTime: this.state.runTime,
+        level: this.state.level + 1,
+        collectedOrbs: this.state.collectedOrbs,
+      });
     this._prevOrbCount = 0;
     this._prevInExit = false;
+    this._noAmmoWarned = false;
     this._generateDungeon();
     this._buildWorld();
     this.lighting = new LightingSystem(this.scene);
@@ -486,9 +536,10 @@ export class Game {
     this.runes.init();
     this.orbs = new OrbSystem(this.scene, this.dungeonData, this.state);
     this.orbs.init();
+    this._initCombat();
     this._placeWaterPuddles();
     this._setupPlayerStart();
-    this._showMessage('Find the ' + this.state.totalOrbs + ' glowing blue orbs', 'goal');
+    this._showMessage('Collect orbs — shoot the skeletons!', 'goal');
     if (this.state.level > 1) this._showMessage(`Level ${this.state.level} — descend!`, 'goal');
     this._isRunning = true;
     this._lastTime = performance.now();
@@ -507,7 +558,11 @@ export class Game {
 
   _updateHUD() {
     if (this._orbCountEl) {
-      this._orbCountEl.textContent = `Orbs: ${this.state.collectedOrbs}/${this.state.totalOrbs}`;
+      this._orbCountEl.textContent = `Orbs: ${this.state.collectedOrbs}`;
+    }
+    if (this._heartsEl) {
+      const h = Math.max(0, this.state.health);
+      this._heartsEl.textContent = '♥'.repeat(h) + '♡'.repeat(Math.max(0, PLAYER.MAX_HEALTH - h));
     }
     if (this._interactEl) {
       const dist = this.orbs ? this.orbs.nearestOrbDist(this.state.player) : Infinity;
@@ -535,6 +590,8 @@ export class Game {
     this.runes.dispose();
     this.orbs.dispose();
     this.lighting.dispose();
+    if (this.skeletons) this.skeletons.dispose();
+    if (this.shooter) this.shooter.dispose();
     for (const p of this._waterPuddles) {
       p.mesh.geometry.dispose();
       p.mesh.material.dispose();

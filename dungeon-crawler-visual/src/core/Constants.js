@@ -11,6 +11,8 @@ export const WORLD = {
 export const PLAYER = {
   SPEED: 4,
   SPRINT_MULTIPLIER: 1.55,
+  MAX_HEALTH: 3,
+  INVULN_TIME: 0.8,
   MOUSE_SENSITIVITY: 0.002,
   PITCH_CLAMP: Math.PI / 2 - 0.1, // ±85°
 };
@@ -92,6 +94,31 @@ export const SMOKE = {
   BASE_SIZE: 0.55,
   BASE_ALPHA: 0.16,
   VISIBLE_RADIUS: 18,   // smoke fades out beyond this distance from player
+};
+
+export const SKELETON = {
+  HP: 2,
+  WAKE_RADIUS: 9,        // distance at which a dormant skeleton activates
+  CHASE_SPEED: 2.6,
+  ATTACK_RANGE: 1.6,
+  ATTACK_DAMAGE: 1,
+  ATTACK_WINDUP: 0.35,   // telegraph
+  ATTACK_SWING: 0.25,
+  ATTACK_RECOVER: 0.4,
+  ATTACK_COOLDOWN: 1.2,  // pause between attack cycles
+  MIN_SPAWN_DIST: 6,     // cells from entrance before skeletons may spawn
+  BASE_COUNT: 2,
+  COUNT_PER_LEVEL: 1,
+  MAX_COUNT: 8,
+  EYE_GLOW: 0xff3322,
+  BONE_COLOR: 0xcfc6b0,
+};
+
+export const ORB_WEAPON = {
+  SPEED: 2 * PLAYER.SPEED * PLAYER.SPRINT_MULTIPLIER, // 12.4 u/s — 2× sprint
+  LIFETIME: 2.5,          // seconds before fizzle (~31 units max range)
+  DAMAGE: 1,
+  RADIUS: 0.35,           // projectile collision radius
 };
 
 export const TIMED_RUN = {

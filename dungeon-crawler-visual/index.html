@@ -21,6 +21,18 @@
         background: rgba(0,0,0,0.5); padding: 6px 12px; border-radius: 4px;
         font-size: 14px;
       }
+      #hearts {
+        position: absolute; top: 48px; left: 16px;
+        background: rgba(0,0,0,0.5); padding: 6px 12px; border-radius: 4px;
+        font-size: 16px; color: #ff5566; letter-spacing: 2px;
+      }
+      #damage-flash {
+        position: fixed; inset: 0; pointer-events: none; z-index: 5;
+        background: radial-gradient(ellipse, transparent 40%, rgba(180,20,20,0.5) 100%);
+        opacity: 0;
+      }
+      #damage-flash.flash { animation: dmgFlash 0.4s ease-out; }
+      @keyframes dmgFlash { 0% { opacity: 0; } 15% { opacity: 0.9; } 100% { opacity: 0; } }
       #timer {
         position: absolute; top: 16px; right: 16px;
         background: rgba(0,0,0,0.5); padding: 6px 12px; border-radius: 4px;
@@ -82,9 +94,11 @@
   </head>
   <body>
     <div id="app"></div>
+    <div id="damage-flash"></div>
     <div id="hud">
       <div id="crosshair"></div>
-      <div id="orb-count">Orbs: 0/0</div>
+      <div id="orb-count">Orbs: 0</div>
+      <div id="hearts">♥♥♥</div>
       <div id="timer">Lv 1 · 3:00 · total 0:00 · best —</div>
       <div id="leaderboard-panel" class="hidden">
         <h3>🏆 Depth Leaderboard</h3>
@@ -102,7 +116,7 @@
       <div id="prompt">Click to explore</div>
       <div id="interact-prompt">[E] Collect</div>
       <div id="exit-prompt">The depths beckon further... [E] to descend</div>
-      <div id="hint">WASD move · Shift sprint · Mouse look · E collect/descend · Tab leaderboard · P bloom</div>
+      <div id="hint">WASD move · Shift sprint · LMB shoot orbs · E collect/descend · Tab leaderboard · P bloom</div>
     </div>
     <script type="module" src="/src/main.js"></script>
   </body>

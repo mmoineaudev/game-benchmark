@@ -1,8 +1,12 @@
+import { PLAYER } from './Constants.js';
+
 export class GameState {
-  constructor({ runTime = 0, level = 1 } = {}) {
+  constructor({ runTime = 0, level = 1, collectedOrbs = 0 } = {}) {
     this.player = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 };
-    this.collectedOrbs = 0;
-    this.totalOrbs = 0;
+    this.collectedOrbs = collectedOrbs; // cumulative ammo/score (persists across levels)
+    this.totalOrbs = 0;   // pickups present on the current level
+    this.health = PLAYER.MAX_HEALTH;
+    this.invulnTimer = 0;
     this.visitedCells = new Set();
     this.dungeonSeed = Date.now();
     this.effectsEnabled = true;

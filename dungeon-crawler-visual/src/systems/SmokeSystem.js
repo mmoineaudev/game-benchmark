@@ -85,6 +85,11 @@ export class SmokeSystem {
     this.emitters.push({ x, y, z, rate, acc: 0 });
   }
 
+  // One-shot emitter that auto-removes after ttl seconds (combat feedback puffs)
+  addTransient(x, y, z, rate = 8, ttl = 0.4) {
+    this.emitters.push({ x, y, z, rate, acc: 0, transient: true, ttl });
+  }
+
   clearEmitters() {
     this.emitters = [];
   }
@@ -94,8 +99,16 @@ export class SmokeSystem {
     const px = playerPos.x;
     const pz = playerPos.z;
 
-    // Spawn
-    for (const e of this.emitters) {
+    // Spawn + expire transient emitters
+    for (let i = this.emitters.length - 1; i >= 0; i--) {
+      const e = this.emitters[i];
+      if (e.transient) {
+        e.ttl -= dt;
+        if (e.ttl <= 0) {
+          this.emitters.splice(i, 1);
+          continue;
+        }
+      }
       e.acc += dt;
       const interval = 1 / e.rate;
       while (e.acc >= interval) {

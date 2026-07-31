@@ -6,6 +6,7 @@ export class OrbSystem {
     this.data = dungeonData;
     this.state = state;
     this.orbs = [];
+    this.rings = []; // pickup feedback rings
   }
 
   init() {
@@ -106,10 +107,10 @@ export class OrbSystem {
       const dx = p.x - orb.x;
       const dz = p.z - orb.z;
       const dist = Math.sqrt(dx * dx + dz * dz);
-
       if (dist < 1.5 && isPressedE && !wasPressedE) {
         orb.collected = true;
         this.state.collectedOrbs++;
+        this._spawnPickupRing(orb.x, orb.y, orb.z);
         orb.mesh.scale.set(0, 0, 0);
         orb.glow.scale.set(0, 0, 0);
         orb.light.intensity = 0;
@@ -125,6 +126,35 @@ export class OrbSystem {
         orb.glow.geometry.dispose();
       }
     }
+
+    // Animate pickup rings: expand + fade
+    for (let i = this.rings.length - 1; i >= 0; i--) {
+      const ring = this.rings[i];
+      ring.life += 1 / 60;
+      const t = ring.life / ring.ttl;
+      ring.mesh.scale.setScalar(0.3 + t * 2.5);
+      ring.mesh.material.opacity = ring.baseOpacity * (1 - t);
+      ring.mesh.rotation.x += 0.02;
+      if (t >= 1) {
+        ring.mesh.geometry.dispose();
+        ring.mesh.material.dispose();
+        this.scene.remove(ring.mesh);
+        this.rings.splice(i, 1);
+      }
+    }
+  }
+
+  _spawnPickupRing(x, y, z) {
+    const geo = new THREE.TorusGeometry(0.5, 0.04, 8, 24);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x66ccff, transparent: true, opacity: 0.8,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.x = Math.PI / 2;
+    mesh.position.set(x, y, z);
+    this.scene.add(mesh);
+    this.rings.push({ mesh, life: 0, ttl: 0.45, baseOpacity: 0.8 });
   }
 
   nearestOrbDist(playerPos) {
@@ -162,6 +192,12 @@ export class OrbSystem {
       const g0 = this.orbs[0].glow.material;
       if (g0 && !g0._disposed) { g0.dispose(); g0._disposed = true; }
     }
+    for (const ring of this.rings) {
+      ring.mesh.geometry.dispose();
+      ring.mesh.material.dispose();
+      this.scene.remove(ring.mesh);
+    }
+    this.rings = [];
     this.orbs = [];
   }
 }

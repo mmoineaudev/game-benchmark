@@ -4,6 +4,7 @@ export class InputSystem {
   constructor(canvas) {
     this.canvas = canvas;
     this.keys = {};
+    this.mouseButtons = {};
     this.mouseX = 0;
     this.mouseY = 0;
     this._boundHandlers = new Map();
@@ -22,6 +23,8 @@ export class InputSystem {
         this.mouseY += e.movementY;
       }
     };
+    const onMouseDown = (e) => { this.mouseButtons[e.button] = true; };
+    const onMouseUp = (e) => { this.mouseButtons[e.button] = false; };
     const onClick = () => {
       if (!document.pointerLockElement) {
         this.canvas.requestPointerLock();
@@ -31,18 +34,26 @@ export class InputSystem {
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('mouseup', onMouseUp);
     this.canvas.addEventListener('click', onClick);
 
     this._boundHandlers.set('destroy', () => {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mousedown', onMouseDown);
+      document.removeEventListener('mouseup', onMouseUp);
       this.canvas.removeEventListener('click', onClick);
     });
   }
 
   isPressed(code) {
     return !!this.keys[code];
+  }
+
+  isMouseDown(button = 0) {
+    return !!this.mouseButtons[button];
   }
 
   consumeMouse() {

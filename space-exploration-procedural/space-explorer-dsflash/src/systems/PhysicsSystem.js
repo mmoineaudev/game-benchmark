@@ -21,6 +21,7 @@ export class PhysicsSystem {
     if (systems.blackHoleSystem) list.push(...systems.blackHoleSystem.getColliders());
     if (systems.crystalSystem) list.push(...systems.crystalSystem.getColliders());
     if (systems.pulsarSystem) list.push(...systems.pulsarSystem.getColliders());
+    if (systems.hulkSystem) list.push(...systems.hulkSystem.getColliders());
     return list;
   }
 
@@ -108,6 +109,16 @@ export class PhysicsSystem {
         this._bounce(ship, c, dt);
         if (c.owner) c.owner.remove(c);
         this.game.onShipCollision(c, Constants.CRYSTAL.damage);
+        if (res === 'dead') { this._kill(ship, gameState, 'collision', c); return; }
+      } else if (c.type === 'hulk') {
+        // Heavy but the hulk survives the impact (spec v2.0 §3.4.4)
+        if (ship.shieldActive) {
+          this._shieldDeflect(c, ship.position);
+          continue;
+        }
+        const res = gameState.takeDamage(Constants.HULK.damage, 'collision');
+        this._bounce(ship, c, dt);
+        this.game.onShipCollision(c, Constants.HULK.damage);
         if (res === 'dead') { this._kill(ship, gameState, 'collision', c); return; }
       } else if (c.type === 'station') {
         const res = gameState.takeDamage(Constants.COLLISION_DAMAGE_LARGE, 'collision');

@@ -179,7 +179,7 @@ export const Constants = {
 
   // Derelict hulks (v2.0 §3.4.4)
   HULK: {
-    density: 4, hp: 250, damage: 25, score: 150,
+    density: 4, hp: 100, damage: 25, score: 150,
     driftMin: 0.3, driftMax: 1.0, tumble: 0.05,
     minDistShip: 200, minSpacing: 80, scrapParticles: 12,
     hullColor: 0x5a4632, scrapColor: 0x8a6f4d, emergencyColor: 0xff5040,
@@ -193,7 +193,7 @@ export const Constants = {
     windowCount: 60, flickerFreq: 0.8, dropoutEvery: 2, dropoutLen: 0.2,
     glowColor: 0x5aa88f, glowOpacity: 0.08, glowScale: 3,
     hullColor: 0x2a3533, windowColor: 0x9fe8c8,
-    wreckDensity: 5, wreckHp: 200, wreckDamage: 20, wreckScore: 200,
+    wreckDensity: 5, wreckHp: 100, wreckDamage: 20, wreckScore: 200,
     wreckScaleMin: 0.5, wreckScaleMax: 0.9, wreckScrap: 16,
     strobeFreq: 3.0, strobeRed: 0xff5040, strobeWhite: 0xd8e8e0,
     wreckColor: 0x3a4a45,

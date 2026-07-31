@@ -146,7 +146,7 @@ All new entities register in `ChunkManager._spawnChunk` after `stationSystem`, a
 
 #### 3.4.4 Ship hulks (Derelict Graveyard)
 - **Look:** procedural wreck — 1 main hull (BoxGeometry 6×3×10, rust `0x5a4632`, metalness 0.6, roughness 0.85) + 2 broken wing plates (scaled boxes, rotated) + 1 snapped engine cone + 1 flickering red emergency light (PointLight 0.6, range 20, 1.5 Hz). Per-hulk random seed for shape variants (3 variants).
-- **Stats:** HP 250 (4 beam hits), collision damage 25, **score 150** + scrap burst (12 debris particles, `explosion` pool, color `0x8a6f4d`). Drift 0.3–1 u/s, tumble 0.05 rad/s.
+- **Stats:** HP 100 (4 beam hits), collision damage 25, **score 150** + scrap burst (12 debris particles, `explosion` pool, color `0x8a6f4d`). Drift 0.3–1 u/s, tumble 0.05 rad/s.
 - **Spawn:** `hulkDensity 4` per chunk, ≥ 200 u from ship, ≥ 80 u between hulks.
 - **Event:** `environment:hulkDestroyed` { position, score }.
 
@@ -159,7 +159,7 @@ All new entities register in `ChunkManager._spawnChunk` after `stationSystem`, a
 
 **Blinking wrecks (destructible):**
 - **Look:** 5 wrecked ships per chunk (`wreckDensity 5`, final count): reuse hulk builder with city palette (`0x3a4a45`), smaller (scale 0.5–0.9), each with **staggered red/white strobes**: 2 beacon points per wreck, emissive pulse `intensity = 0.1 + 0.9·(sin(t·3.0 + φ) > 0.75 ? 1 : 0.1)`, φ staggered per wreck (φ = seed·2.1); red `0xff5040` and white `0xd8e8e0` alternating (phase offset π).
-- **Stats:** HP 200 (4 hits), collision damage 20, **score 200** + scrap burst (16 particles). Drift 0.3–1 u/s, tumble 0.1 rad/s.
+- **Stats:** HP 100 (4 hits), collision damage 20, **score 200** + scrap burst (16 particles). Drift 0.3–1 u/s, tumble 0.1 rad/s.
 - **Event:** `environment:wreckDestroyed` { position, score }.
 
 ### 3.5 Difficulty scaling (caps)

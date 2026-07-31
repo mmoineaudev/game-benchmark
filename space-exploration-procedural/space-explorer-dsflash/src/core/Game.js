@@ -26,6 +26,7 @@ import { StationSystem } from '../level/StationSystem.js';
 import { CrystalSystem } from '../level/CrystalSystem.js';
 import { PulsarSystem } from '../level/PulsarSystem.js';
 import { StormSystem } from '../level/StormSystem.js';
+import { HulkSystem } from '../level/HulkSystem.js';
 import { ChunkManager } from '../level/ChunkManager.js';
 import { BiomeGenerator } from '../level/BiomeGenerator.js';
 
@@ -106,6 +107,7 @@ export class Game {
       crystalSystem: new CrystalSystem(this.scene, eventBus),
       pulsarSystem: new PulsarSystem(this.scene, eventBus),
       stormSystem: new StormSystem(this.scene, eventBus),
+      hulkSystem: new HulkSystem(this.scene, eventBus),
       nebulaSystem: this.nebulaSystem,
     };
 
@@ -157,6 +159,12 @@ export class Game {
     on(Events.CRYSTAL_DESTROYED, (e) => {
       this.particles.burst('laserSpark', e.position.x, e.position.y, e.position.z, 18, 10, { size: 0.3, color: [0.5, 1.0, 0.9] });
       this.audio.play('explosion', { volume: 0.25 });
+    });
+    on(Events.HULK_DESTROYED, (e) => {
+      this.particles.burst('explosion', e.position.x, e.position.y, e.position.z, 60, 14, { size: 0.5 });
+      this.particles.burst('laserSpark', e.position.x, e.position.y, e.position.z, 12, 8, { size: 0.25, color: [0.55, 0.45, 0.3] });
+      this.cameraSystem.addShake(0.7, 0.5);
+      this.audio.play('comet', { volume: 0.5 });
     });
     on(Events.OBJECT_CONSUMED, (e) => {
       this.audio.play('consumption', { volume: 0.5 });
@@ -315,6 +323,7 @@ export class Game {
     if (this.worldSystems.crystalSystem) this.worldSystems.crystalSystem.update(dt);
     if (this.worldSystems.pulsarSystem) this.worldSystems.pulsarSystem.update(dt, this.ship.position);
     if (this.worldSystems.stormSystem) this.worldSystems.stormSystem.update(dt, this.ship.position);
+    if (this.worldSystems.hulkSystem) this.worldSystems.hulkSystem.update(dt);
 
     // Physics (collisions, gravity, consumption, wormhole blur)
     this.physics.update(dt, this.ship, gameState);
@@ -568,6 +577,7 @@ export class Game {
     this.worldSystems.crystalSystem.dispose();
     this.worldSystems.pulsarSystem.dispose();
     this.worldSystems.stormSystem.dispose();
+    this.worldSystems.hulkSystem.dispose();
     this.particles.dispose();
     this.weaponSystem.dispose();
     this.ship.dispose(this.scene);

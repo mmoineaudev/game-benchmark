@@ -114,11 +114,11 @@ Intensity multipliers are capped (asteroid ≤3.0, nebula ≤2.5, comet ≤2.5, 
 
 ### 1.19 Ship Hulks (Derelict Graveyard)
 - **Look:** procedural wrecks — rust hull + broken wings + snapped engine + flickering red emergency light; 3 shape variants; 4/chunk.
-- **Interact:** **250 HP** (4 beam hits) → **150 pts** + 12 scrap particles; collision 25 dmg; drift + tumble. Event `environment:hulkDestroyed`.
+- **Interact:** **100 HP** (4 beam hits) → **150 pts** + 12 scrap particles; collision 25 dmg; drift + tumble. Event `environment:hulkDestroyed`.
 
 ### 1.20 City Fragments + Blinking Wrecks (SPATIAL GRAVEYARD — the finale)
 - **Look:** huge broken space-city remains — shattered ring segments, ruined superstructures, broken towers, **100–400 u** landmark-scale, flickering window strips (canvas texture, random dropout), landmark glow visible from 2,000 u. Blinking wrecks: 5 smaller wrecks/chunk with **staggered red/white strobes** (time-offset emissive pulses).
-- **Interact:** fragments **indestructible** (collision 25 + bounce); wrecks **200 HP** → **200 pts** + 16 scrap, collision 20. 5 wrecks/chunk. Entry announcement: **"SECTOR: DEAD CITY — you should not be here"** (once per run). Endless past 35,000 u. Events: `environment:cityFragmentSpawned`, `environment:wreckDestroyed`.
+- **Interact:** fragments **indestructible** (collision 25 + bounce); wrecks **100 HP** → **200 pts** + 16 scrap, collision 20. 5 wrecks/chunk. Entry announcement: **"SECTOR: DEAD CITY — you should not be here"** (once per run). Endless past 35,000 u. Events: `environment:cityFragmentSpawned`, `environment:wreckDestroyed`.
 
 ### 1.21 Starfield (background)
 - **Look:** 3 parallax `Points` layers — far (5,000 × 0.5 u, blue-white), mid (2,000 × 1.0 u, warm), near (500 × 2.0 u, warm, noise twinkle) — plus 30 bright stars with bloom. Custom shader, one draw call per layer, **`fog: false`**. *(v2.0 remaster: color-temperature variety + shooting stars — see docs/SPEC.md §5.)*

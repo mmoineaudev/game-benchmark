@@ -206,6 +206,7 @@ export class Game {
       this.cameraSystem.addShake(Constants.SHAKE_DAMAGE_INTENSITY, Constants.SHAKE_DAMAGE_DURATION);
       this.hud.flash();
       this.audio.play('collision', { volume: 0.5 });
+      if (this.ship.setDamageLevel) this.ship.setDamageLevel(e.health, e.maxHealth); // ship remaster v2.0
     });
   }
 
@@ -349,7 +350,7 @@ export class Game {
     // Exhaust trail (throttle-driven)
     if (thrustFraction > 0) {
       const f = this.ship.forward;
-      const perFrame = Math.max(1, Math.round(6 * thrustFraction));
+      const perFrame = Math.max(2, Math.round(10 * thrustFraction)); // v2.0 denser trail
       this.particles.emitStream('exhaust',
         this.ship.position.x - f.x * 2.2, this.ship.position.y - f.y * 2.2, this.ship.position.z - f.z * 2.2,
         -f.x * 8, -f.y * 8, -f.z * 8,
@@ -498,10 +499,11 @@ export class Game {
     this._startDeathSequence();
   }
 
-  /** Shield deflection feedback: spark + ping at contact point. */
+  /** Shield deflection feedback: spark + ping + shield ripple at contact point. */
   onShieldDeflect(x, y, z) {
     this.particles.burst('laserSpark', x, y, z, 10, 10, { size: 0.2, color: [0.4, 0.8, 1.0] });
     this.audio.play('shield', { volume: 0.4 });
+    if (this.ship.shieldPulse) this.ship.shieldPulse(x, y, z);
   }
 
   _startDeathSequence() {
@@ -540,6 +542,7 @@ export class Game {
     this.ship.shieldActive = false;
     this.ship.alive = true;
     this.ship.group.visible = true;
+    if (this.ship.setDamageLevel) this.ship.setDamageLevel(Constants.MAX_HEALTH, Constants.MAX_HEALTH);
     this.cameraSystem.reset();
 
     this._spawnInitialWorld();

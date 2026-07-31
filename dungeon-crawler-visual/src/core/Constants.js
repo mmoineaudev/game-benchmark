@@ -10,12 +10,14 @@ export const WORLD = {
 
 export const PLAYER = {
   SPEED: 4,
+  SPRINT_MULTIPLIER: 1.55,
   MOUSE_SENSITIVITY: 0.002,
   PITCH_CLAMP: Math.PI / 2 - 0.1, // ±85°
 };
 
 export const CAMERA = {
   FOV: 75,
+  SPRINT_FOV_BOOST: 8,
   NEAR: 0.1,
   FAR: 50,
 };
@@ -35,6 +37,15 @@ export const LIGHTING = {
   FOG_DENSITY: 0.015,
   FLAME_COLOR: 0xff8830,
   BRACKET_COLOR: 0x5a4a3a,
+  BRAZIER_COLOR: 0xff7733,
+  BRAZIER_INTENSITY: 2.2,
+  BRAZIER_DISTANCE: 9,
+  BRAZIER_DECAY: 1.6,
+  CRYSTAL_COLOR: 0x44ddff,
+  CRYSTAL_INTENSITY: 1.4,
+  CRYSTAL_DISTANCE: 7,
+  CRYSTAL_DECAY: 1.5,
+  CRYSTAL_COLORS: [0x44ddff, 0xbb66ff, 0x66ffcc], // per-crystal hue
 };
 
 export const MATERIALS = {
@@ -70,4 +81,19 @@ export const RENDERER = {
   EXPOSURE: 1.0,
   MAX_PIXEL_RATIO: 2,
   BACKGROUND_COLOR: 0x0a0a15,
+};
+
+export const SMOKE = {
+  POOL_SIZE: 180,
+  RATE: 1.2,            // puffs/sec per emitter
+  RISE_SPEED: 0.5,
+  TURBULENCE: 0.6,
+  LIFETIME: 3.2,
+  BASE_SIZE: 0.55,
+  BASE_ALPHA: 0.16,
+  VISIBLE_RADIUS: 18,   // smoke fades out beyond this distance from player
+};
+
+export const TIMED_RUN = {
+  LEVEL_TIME_LIMIT: 180, // seconds per level — tunable; avg exit is ~22 cells ≈ 20-30s at sprint, so 3min leaves room to explore/collect orbs
 };

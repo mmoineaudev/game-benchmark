@@ -1,6 +1,7 @@
 import * as THREE from 'three';
-import { WORLD, PLAYER, CAMERA, RENDERER } from './Constants.js';
+import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN } from './Constants.js';
 import { GameState } from './GameState.js';
+import { Leaderboard } from './Leaderboard.js';
 import { DungeonGenerator } from '../world/DungeonGenerator.js';
 import { WorldBuilder } from '../world/WorldBuilder.js';
 import { LightingSystem } from '../systems/LightingSystem.js';
@@ -9,6 +10,7 @@ import { PostProcessing } from '../systems/PostProcessing.js';
 import { ParticleSystem } from '../systems/ParticleSystem.js';
 import { RuneSystem } from '../systems/RuneSystem.js';
 import { OrbSystem } from '../entities/OrbSystem.js';
+import { SmokeSystem } from '../systems/SmokeSystem.js';
 
 export class Game {
   constructor(containerId) {
@@ -29,6 +31,19 @@ export class Game {
     this._welcomeShown = false;
     this._lastHintTime = 0;
     this._nextOrbMsgTime = 0;
+    this._sprinting = false;
+    this.leaderboard = new Leaderboard();
+    this.smoke = null;
+    this._tabWasDown = false;
+    this._gameOverActive = false;
+    this._lastEntry = null;
+    this._onGameOverClick = null;
+    this._timerEl = document.getElementById('timer');
+    this._lbPanel = document.getElementById('leaderboard-panel');
+    this._lbList = document.getElementById('leaderboard-list');
+    this._gameOverEl = document.getElementById('game-over');
+    this._goStats = document.getElementById('go-stats');
+    this._goList = document.getElementById('go-leaderboard-list');
   }
 
   init() {
@@ -39,6 +54,7 @@ export class Game {
     this._generateDungeon();
     this._buildWorld();
     this._initLighting();
+    this._initSmoke();
     this._initParticles();
     this._initRunes();
     this._initOrbs();
@@ -123,6 +139,20 @@ export class Game {
     this.lighting.init(this.dungeonData);
   }
 
+  _initSmoke() {
+    this.smoke = new SmokeSystem(this.scene);
+    this.smoke.init();
+    this._rebindSmokeEmitters();
+  }
+
+  _rebindSmokeEmitters() {
+    if (!this.smoke) return;
+    this.smoke.clearEmitters();
+    for (const s of (this.lighting.smokeSources || [])) {
+      this.smoke.addEmitter(s.x, s.y, s.z, s.rate);
+    }
+  }
+
   _initParticles() {
     this.particles = new ParticleSystem(this.scene);
     this.particles.init();
@@ -181,8 +211,10 @@ export class Game {
     this._updateCamera();
     this._handleToggles();
     this._handleExitRegeneration();
+    this._updateRunTimer();
     this.lighting.update(t, this.state.player);
     this.particles.update(this._delta, this.state.player, this.lighting.torches);
+    this.smoke.update(this._delta, this.state.player);
     this.runes.update(t);
     this.orbs.update(t, this.state.player,
       this.input.isPressed('KeyE'), this._eKeyWasDown);
@@ -197,7 +229,8 @@ export class Game {
   _updateInput() {
     const dt = this._delta;
     const p = this.state.player;
-    const speed = PLAYER.SPEED * dt;
+    this._sprinting = this.input.isPressed('ShiftLeft') || this.input.isPressed('ShiftRight');
+    const speed = PLAYER.SPEED * (this._sprinting ? PLAYER.SPRINT_MULTIPLIER : 1) * dt;
 
     const mouse = this.input.consumeMouse();
     p.yaw -= mouse.x * PLAYER.MOUSE_SENSITIVITY;
@@ -246,6 +279,14 @@ export class Game {
 
   _updateCamera() {
     const p = this.state.player;
+
+    // Smooth FOV kick while sprinting
+    const targetFov = CAMERA.FOV + (this._sprinting ? CAMERA.SPRINT_FOV_BOOST : 0);
+    if (Math.abs(this.camera.fov - targetFov) > 0.01) {
+      this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, this._delta * 8);
+      this.camera.updateProjectionMatrix();
+    }
+
     this.camera.position.set(p.x, WORLD.PLAYER_EYE_HEIGHT, p.z);
     const dir = new THREE.Vector3(
       -Math.sin(p.yaw) * Math.cos(p.pitch),
@@ -261,6 +302,13 @@ export class Game {
       this.state.effectsEnabled = this.post.toggle();
     }
     this._pKeyWasDown = pDown;
+
+    const tabDown = this.input.isPressed('Tab');
+    if (tabDown && !this._tabWasDown && this._lbPanel) {
+      this._lbPanel.classList.toggle('hidden');
+      if (!this._lbPanel.classList.contains('hidden')) this._renderLeaderboard(this._lbList);
+    }
+    this._tabWasDown = tabDown;
   }
 
   _handleExitRegeneration() {
@@ -269,6 +317,72 @@ export class Game {
     if (eDown && !this._eKeyWasDown) {
       this._regenerateDungeon();
     }
+  }
+
+  _updateRunTimer() {
+    if (this._gameOverActive) return;
+    this.state.levelTime += this._delta;
+    this.state.runTime += this._delta;
+    const remaining = Math.max(0, TIMED_RUN.LEVEL_TIME_LIMIT - this.state.levelTime);
+    if (remaining <= 0) {
+      this._gameOver();
+      return;
+    }
+    if (this._timerEl) {
+      const mins = Math.floor(remaining / 60);
+      const secs = Math.floor(remaining % 60).toString().padStart(2, '0');
+      const totalMins = Math.floor(this.state.runTime / 60);
+      const totalSecs = Math.floor(this.state.runTime % 60).toString().padStart(2, '0');
+      const best = this.leaderboard.best();
+      const bestTxt = best
+        ? `best Lv${best.level} ${Math.floor(best.time / 60)}:${(best.time % 60).toString().padStart(2, '0')}`
+        : 'best —';
+      this._timerEl.textContent = `Lv ${this.state.level} · ${mins}:${secs} · total ${totalMins}:${totalSecs} · ${bestTxt}`;
+      this._timerEl.classList.toggle('low', remaining < 30);
+    }
+  }
+
+  _gameOver() {
+    this._gameOverActive = true;
+    this._isRunning = false;
+    if (document.pointerLockElement) document.exitPointerLock();
+    const rank = this.leaderboard.add(this.state.level, this.state.runTime);
+    this._lastEntry = this.leaderboard.load()[0];
+    if (this._goStats) {
+      const t = this.state.runTime;
+      const mm = Math.floor(t / 60);
+      const ss = Math.floor(t % 60).toString().padStart(2, '0');
+      this._goStats.textContent = `Level reached: ${this.state.level} · Total time: ${mm}:${ss}${rank > 0 ? ` · Rank #${rank}` : ''}`;
+    }
+    this._renderLeaderboard(this._goList);
+    if (this._gameOverEl) this._gameOverEl.classList.remove('hidden');
+    this._onGameOverClick = () => this._restartRun();
+    document.addEventListener('click', this._onGameOverClick, { once: true });
+  }
+
+  _restartRun() {
+    if (this._onGameOverClick) {
+      document.removeEventListener('click', this._onGameOverClick);
+      this._onGameOverClick = null;
+    }
+    this._gameOverActive = false;
+    if (this._gameOverEl) this._gameOverEl.classList.add('hidden');
+    this._regenerateDungeon({ newRun: true });
+    this._isRunning = true;
+    this._lastTime = performance.now();
+    this._animate(); // RAF chain died on game over — restart it
+    this._showMessage('A new descent begins', 'goal');
+  }
+
+  _renderLeaderboard(listEl) {
+    if (!listEl) return;
+    const entries = this.leaderboard.load();
+    listEl.innerHTML = entries.length
+      ? entries.map((e, i) => {
+        const me = this._lastEntry && e.level === this._lastEntry.level && e.time === this._lastEntry.time;
+        return `<li class="${me ? 'me' : ''}">#${i + 1} · Lv ${e.level} · ${Math.floor(e.time / 60)}:${(e.time % 60).toString().padStart(2, '0')}</li>`;
+      }).join('')
+      : '<li>No runs yet — descend!</li>';
   }
 
   _checkMessages() {
@@ -340,12 +454,13 @@ export class Game {
     return 'northeast';
   }
 
-  _regenerateDungeon() {
+  _regenerateDungeon({ newRun = false } = {}) {
     this._isRunning = false;
     this.orbs.dispose();
     this.runes.dispose();
     this.particles.dispose();
     this.lighting.dispose();
+    this.smoke.dispose();
     for (const p of (this._waterPuddles || [])) {
       p.mesh.geometry.dispose();
       p.mesh.material.dispose();
@@ -353,13 +468,18 @@ export class Game {
     }
     this._disposeScene();
 
-    this.state = new GameState();
+    this.state = newRun
+      ? new GameState()
+      : new GameState({ runTime: this.state.runTime, level: this.state.level + 1 });
     this._prevOrbCount = 0;
     this._prevInExit = false;
     this._generateDungeon();
     this._buildWorld();
     this.lighting = new LightingSystem(this.scene);
     this.lighting.init(this.dungeonData);
+    this.smoke = new SmokeSystem(this.scene);
+    this.smoke.init();
+    this._rebindSmokeEmitters();
     this.particles = new ParticleSystem(this.scene);
     this.particles.init();
     this.runes = new RuneSystem(this.scene, this.dungeonData);
@@ -369,6 +489,7 @@ export class Game {
     this._placeWaterPuddles();
     this._setupPlayerStart();
     this._showMessage('Find the ' + this.state.totalOrbs + ' glowing blue orbs', 'goal');
+    if (this.state.level > 1) this._showMessage(`Level ${this.state.level} — descend!`, 'goal');
     this._isRunning = true;
     this._lastTime = performance.now();
   }
@@ -402,10 +523,15 @@ export class Game {
 
   dispose() {
     this._isRunning = false;
+    if (this._onGameOverClick) {
+      document.removeEventListener('click', this._onGameOverClick);
+      this._onGameOverClick = null;
+    }
     window.removeEventListener('resize', this._onResize);
     this.input.dispose();
     this.post.dispose();
     this.particles.dispose();
+    this.smoke.dispose();
     this.runes.dispose();
     this.orbs.dispose();
     this.lighting.dispose();

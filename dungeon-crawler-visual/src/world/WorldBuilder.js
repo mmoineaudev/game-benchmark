@@ -89,10 +89,10 @@ export class WorldBuilder {
           this._addWall(wx + cs / 2, wh / 2, wz + cs, cs, wh, wallThickness, 0);
         }
         if (cx === 0 || this.data.grid[cz][cx - 1] === 'empty') {
-          this._addWall(wx, wh / 2, wz + cs / 2, wallThickness, wh, cs, Math.PI / 2);
+          this._addWall(wx, wh / 2, wz + cs / 2, cs, wh, wallThickness, Math.PI / 2);
         }
         if (cx === this.data.gridSize - 1 || this.data.grid[cz][cx + 1] === 'empty') {
-          this._addWall(wx + cs, wh / 2, wz + cs / 2, wallThickness, wh, cs, Math.PI / 2);
+          this._addWall(wx + cs, wh / 2, wz + cs / 2, cs, wh, wallThickness, Math.PI / 2);
         }
       }
     }

@@ -152,7 +152,7 @@ export const Constants = {
     driftMin: 0.5, driftMax: 1.5, tumble: 0.2,
     splitAngle: 0.3142, childBeamMax: 12,
     colors: [0x66e0ff, 0xff66e0, 0x66ffcc],
-    instancedPool: 500,
+    instancedPool: 5000,          // 75 chunks × 8 clusters × ~6 shards ≈ 3600 worst case
     minDistFromShip: 150,
   },
 

@@ -14,6 +14,7 @@ export class WeaponSystem {
 
     this.pool = [];
     this._cooldown = 0;
+    this._childCount = 0;
     this._buildPool();
   }
 
@@ -65,17 +66,24 @@ export class WeaponSystem {
         life: 0,
         travelled: 0,
         dir: new THREE.Vector3(),
+        isChild: false,
       });
     }
   }
 
-  /** Fire a laser from ship position along heading. */
+  /** Fire a laser from ship position along heading (rate-limited). */
   fire(position, heading) {
     if (this._cooldown > 0) return;
     this._cooldown = 1 / Constants.FIRE_RATE;
+    this._spawnBeam(position, heading, false);
+  }
+
+  /** Raw beam spawn (no cooldown) — also used for beam-split children (v2.0 §3.4.1). */
+  _spawnBeam(position, heading, isChild) {
     const laser = this.pool.find((l) => !l.active);
     if (!laser) return;
     laser.active = true;
+    laser.isChild = isChild;
     laser.mesh.visible = true;
     laser.pos.copy(position);
     laser.dir.set(0, 0, -1).applyQuaternion(heading);
@@ -84,6 +92,7 @@ export class WeaponSystem {
     laser.travelled = 0;
     laser.mesh.position.copy(position);
     laser.mesh.quaternion.copy(heading);
+    if (isChild) this._childCount++;
     this.events.emit('weapon:fired', { position: position.clone(), direction: laser.dir.clone() });
   }
 
@@ -118,13 +127,30 @@ export class WeaponSystem {
       if (body.hp <= 0) {
         body.owner.remove(body);
         this.events.emit('weapon:targetDestroyed', { type: body.type, position: laser.pos.clone() });
+        // Beam-split: a green beam through a crystal spawns 2 child beams (v2.0 §3.4.1)
+        if (body.type === 'crystal' && !laser.isChild && this._childCount < Constants.CRYSTAL.childBeamMax) {
+          this._splitBeam(laser, body);
+        }
       }
+    }
+  }
+
+  /** Spawn 2 child beams at ±splitAngle yaw from the impact direction. */
+  _splitBeam(laser, crystal) {
+    const angle = Constants.CRYSTAL.splitAngle;
+    const axis = new THREE.Vector3(0, 1, 0);
+    for (const sign of [-1, 1]) {
+      const q = new THREE.Quaternion().setFromAxisAngle(axis, angle * sign);
+      const childHeading = q.multiply(laser.mesh.quaternion.clone());
+      this._spawnBeam(laser.pos.clone(), childHeading, true);
     }
   }
 
   _despawn(laser) {
     laser.active = false;
     laser.mesh.visible = false;
+    if (laser.isChild) this._childCount = Math.max(0, this._childCount - 1);
+    laser.isChild = false;
     this.events.emit('weapon:despawned');
   }
 

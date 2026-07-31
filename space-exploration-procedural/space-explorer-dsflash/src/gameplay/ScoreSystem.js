@@ -8,6 +8,7 @@ export class ScoreSystem {
       eventBus.on(Events.ASTEROID_DESTROYED, (e) => this._add(e.score, 'asteroid')),
       eventBus.on(Events.DEBRIS_DESTROYED, (e) => this._add(e.score, 'debris')),
       eventBus.on(Events.COMET_DESTROYED, (e) => this._add(e.score, 'comet')),
+      eventBus.on(Events.CRYSTAL_DESTROYED, (e) => this._add(e.score, 'crystal')),
     ];
   }
 

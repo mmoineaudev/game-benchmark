@@ -19,6 +19,7 @@ export class PhysicsSystem {
     if (systems.stationSystem) list.push(...systems.stationSystem.getColliders());
     if (systems.deadStarSystem) list.push(...systems.deadStarSystem.getColliders());
     if (systems.blackHoleSystem) list.push(...systems.blackHoleSystem.getColliders());
+    if (systems.crystalSystem) list.push(...systems.crystalSystem.getColliders());
     return list;
   }
 
@@ -93,6 +94,17 @@ export class PhysicsSystem {
         this._deflectBody(c, ship.position);
         this._bounce(ship, c, dt);
         this.game.onShipCollision(c, Constants.COMET_DAMAGE);
+        if (res === 'dead') { this._kill(ship, gameState, 'collision', c); return; }
+      } else if (c.type === 'crystal') {
+        // Fragile: destroyed by impact, small damage (spec v2.0 §3.4.1)
+        if (ship.shieldActive) {
+          this._shieldDeflect(c, ship.position);
+          continue;
+        }
+        const res = gameState.takeDamage(Constants.CRYSTAL.damage, 'collision');
+        this._bounce(ship, c, dt);
+        if (c.owner) c.owner.remove(c);
+        this.game.onShipCollision(c, Constants.CRYSTAL.damage);
         if (res === 'dead') { this._kill(ship, gameState, 'collision', c); return; }
       } else if (c.type === 'station') {
         const res = gameState.takeDamage(Constants.COLLISION_DAMAGE_LARGE, 'collision');

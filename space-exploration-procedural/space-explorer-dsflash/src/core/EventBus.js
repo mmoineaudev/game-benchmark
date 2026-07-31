@@ -33,6 +33,23 @@ export const Events = {
   CHUNK_CLEANED:      'environment:chunkCleaned',
   BIOME_CHANGED:      'environment:biomeChanged',
 
+  // Ladder (v2.0)
+  LADDER_RUNG_CHANGED:  'ladder:rungChanged',
+  LADDER_FINALE_REACHED: 'ladder:finaleReached',
+
+  // Ladder entities (v2.0)
+  CRYSTAL_DESTROYED:    'environment:crystalDestroyed',
+  PULSAR_SPAWNED:       'environment:pulsarSpawned',
+  STORM_STRIKE:         'environment:stormStrike',
+  STORM_STATIC_CHANGED: 'storm:staticChanged',
+  HULK_DESTROYED:       'environment:hulkDestroyed',
+  CITY_FRAGMENT_SPAWNED: 'environment:cityFragmentSpawned',
+  WRECK_DESTROYED:      'environment:wreckDestroyed',
+
+  // Input (v2.0)
+  INPUT_LADDER_CHART:   'input:ladderChart',
+  INPUT_LIGHT_PROFILE:  'input:lightProfile',
+
   // Score
   SCORE_CHANGED:      'score:changed',
   HIGH_SCORE_SAVED:   'score:highScoreSaved',

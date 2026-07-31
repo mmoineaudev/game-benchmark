@@ -27,6 +27,8 @@ export class InputSystem {
     this.pausePressed = false;
     this.mutePressed = false;
     this.restartPressed = false;
+    this.ladderChartPressed = false; // C — ladder chart overlay
+    this.lightProfilePressed = false; // L — LightManager profile toggle
     this.pointerClicked = false;
 
     // Touch state
@@ -49,6 +51,8 @@ export class InputSystem {
       if (e.code === 'Escape') this.pausePressed = true;
       if (e.code === 'KeyM') this.mutePressed = true;
       if (e.code === 'KeyR') this.restartPressed = true;
+      if (e.code === 'KeyC') this.ladderChartPressed = true;
+      if (e.code === 'KeyL') this.lightProfilePressed = true;
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
     });
     window.addEventListener('keyup', (e) => {
@@ -185,6 +189,8 @@ export class InputSystem {
       pausePressed: this.pausePressed,
       mutePressed: this.mutePressed,
       restartPressed: this.restartPressed,
+      ladderChartPressed: this.ladderChartPressed,
+      lightProfilePressed: this.lightProfilePressed,
       pointerClicked: this.pointerClicked,
       yawDelta: this.yawDelta,
       pitchDelta: this.pitchDelta,
@@ -195,6 +201,8 @@ export class InputSystem {
     this.pausePressed = false;
     this.mutePressed = false;
     this.restartPressed = false;
+    this.ladderChartPressed = false;
+    this.lightProfilePressed = false;
     this.pointerClicked = false;
     this.yawDelta = 0;
     this.pitchDelta = 0;

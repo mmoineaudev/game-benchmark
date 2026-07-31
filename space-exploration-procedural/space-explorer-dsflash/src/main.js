@@ -35,5 +35,10 @@ window.__VOID_DRIFT__ = {
   state: gameState,
   three: THREE,
   constants: Constants,
-  version: '1.0.0',
+  version: '2.0.0',
 };
+
+// Dev perf overlay (?perf=1)
+if (new URLSearchParams(window.location.search).has('perf')) {
+  import('./utils/PerfProbe.js').then((m) => m.installPerfProbe(game));
+}

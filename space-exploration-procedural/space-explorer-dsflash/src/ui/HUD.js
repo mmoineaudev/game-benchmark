@@ -23,6 +23,13 @@ export class HUD {
       .hud-el { position: absolute; color: rgba(200,220,255,0.9); font: 600 16px/1.2 'Segoe UI', system-ui, sans-serif;
         text-shadow: 0 0 6px rgba(80,140,255,0.6); letter-spacing: 0.5px; pointer-events: none; z-index: 20; }
       #hud-score { top: 14px; left: 16px; font-size: 20px; }
+      #hud-rung { top: 44px; left: 16px; font-size: 12px; color: #7dffd4; text-shadow: 0 0 8px rgba(51,255,204,0.5); }
+      #hud-rung-bar { margin-top: 3px; width: 140px; height: 4px; background: rgba(51,255,204,0.18); border-radius: 2px; overflow: hidden; }
+      #hud-rung-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #33ffcc, #66ddff); }
+      #hud-announce { position: absolute; top: 30%; left: 50%; transform: translate(-50%, -50%); text-align: center;
+        font: 800 30px/1.3 'Segoe UI', system-ui, sans-serif; color: #b8ffe0; letter-spacing: 4px; text-shadow: 0 0 24px rgba(80,255,190,0.8);
+        opacity: 0; transition: opacity 0.6s; pointer-events: none; z-index: 30; }
+      #hud-aq { bottom: 6px; right: 6px; font-size: 10px; opacity: 0.6; color: #ffd880; }
       #hud-distance { top: 14px; left: 50%; transform: translateX(-50%); font-size: 18px; }
       #hud-biome { top: 14px; right: 16px; font-size: 15px; opacity: 0.9; transition: opacity 0.6s; }
       #hud-mute { top: 40px; right: 16px; font-size: 14px; opacity: 0.7; }
@@ -58,6 +65,12 @@ export class HUD {
     this.root.appendChild(style);
 
     this.score = this._el('div', 'hud-el', this.root); this.score.id = 'hud-score';
+    const rungWrap = this._el('div', 'hud-el', this.root); rungWrap.id = 'hud-rung';
+    this.rungLabel = this._el('span', '', rungWrap);
+    const rungBar = this._el('div', '', rungWrap); rungBar.id = 'hud-rung-bar';
+    this.rungFill = this._el('div', '', rungBar); this.rungFill.id = 'hud-rung-fill';
+    this.announceEl = this._el('div', '', this.root); this.announceEl.id = 'hud-announce';
+    this.aqEl = this._el('div', 'hud-el', this.root); this.aqEl.id = 'hud-aq';
     this.distance = this._el('div', 'hud-el', this.root); this.distance.id = 'hud-distance';
     this.biome = this._el('div', 'hud-el', this.root); this.biome.id = 'hud-biome';
     this.mute = this._el('div', 'hud-el', this.root); this.mute.id = 'hud-mute';
@@ -140,6 +153,18 @@ export class HUD {
   }
 
   setScore(score) { this.score.textContent = `SCORE: ${score.toLocaleString()}`; }
+  setRung(name, progress, isFinale) {
+    this.rungLabel.textContent = isFinale ? 'SECTOR 9 — DEAD CITY' : `SECTOR ${this._rungNum} — ${name.toUpperCase()}`;
+    this.rungFill.style.width = isFinale ? '100%' : `${Math.round(progress * 100)}%`;
+  }
+  setRungNumber(n) { this._rungNum = n; }
+  announce(text, seconds = 5) {
+    this.announceEl.textContent = text;
+    this.announceEl.style.opacity = '1';
+    clearTimeout(this._announceTimer);
+    this._announceTimer = setTimeout(() => { this.announceEl.style.opacity = '0'; }, seconds * 1000);
+  }
+  setAQ(level) { this.aqEl.textContent = level > 0 ? `AQ${level}` : ''; }
   setDistance(d) { this.distance.textContent = `DISTANCE: ${Math.floor(d).toLocaleString()} u`; }
   setBiome(name) {
     const label = name.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
@@ -180,6 +205,9 @@ export class HUD {
     this.setHealth(Constants.MAX_HEALTH, Constants.MAX_HEALTH);
     this.setThrust(0);
     this.setShield(1, false);
+    this.setRung('Open Space', 0, false);
+    this.setAQ(0);
+    this.announceEl.style.opacity = '0';
     this.setWarning('eventHorizon', false);
     this.setWarning('stellarRemnant', false);
     this.showPause(false);

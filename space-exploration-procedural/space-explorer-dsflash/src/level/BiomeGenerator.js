@@ -1,44 +1,51 @@
 import { Constants } from '../core/Constants.js';
 
-// Biome variant selection per distance zone (spec §6.3).
-// Distance = cumulative odometer (monotonic). Beyond 7000 u the biome
-// cycle repeats with POST_7000_MULTIPLIER intensity.
-const ORDER = ['OPEN_SPACE', 'ASTEROID_BELT', 'NEBULA_CORRIDOR', 'WORMHOLE'];
-
+// Biome ladder (spec v2.0 §3): fixed ascending sequence of 9 content rungs
+// separated by 4 Deep Void travel zones. Distance = cumulative odometer
+// (monotonic — rungs never regress). No cycling.
 export class BiomeGenerator {
-  /** @returns {number} index into ORDER (monotonic) */
-  biomeIndexForDistance(d) {
-    const base = Math.floor(d / 7000);
-    const within = d % 7000;
-    let idx = 0;
-    for (let i = 0; i < ORDER.length; i++) {
-      const [lo, hi] = Constants.BIOMES[ORDER[i]].range;
-      if (within >= lo && within < hi) { idx = i; break; }
-      if (within >= hi && i < ORDER.length - 1 && within < Constants.BIOMES[ORDER[i + 1]].range[0]) { idx = i; break; }
-      if (within >= Constants.BIOMES[ORDER[ORDER.length - 1]].range[1]) { idx = ORDER.length - 1; break; }
+  /** @returns {number} index into Constants.LADDER (monotonic) */
+  ladderIndexForDistance(d) {
+    const ladder = Constants.LADDER;
+    for (let i = 0; i < ladder.length; i++) {
+      if (d >= ladder[i].range[0] && d < ladder[i].range[1]) return i;
     }
-    // Clamp: within >= last range end stays in last biome
-    if (within >= Constants.BIOMES[ORDER[ORDER.length - 1]].range[1]) idx = ORDER.length - 1;
-    return base * ORDER.length + idx;
+    return ladder.length - 1; // beyond the last range end (finale is Infinity)
   }
 
-  /** Full biome descriptor with cycle multiplier. */
+  /** Full ladder entry for a distance. */
   getBiome(d) {
-    const idx = this.biomeIndexForDistance(d);
-    const cycle = Math.floor(idx / ORDER.length);
-    const key = ORDER[idx % ORDER.length];
-    const cfg = Constants.BIOMES[key];
-    const mult = cycle > 0 ? Constants.POST_7000_MULTIPLIER : 1;
-    return { key, cfg, mult, index: idx };
+    const idx = this.ladderIndexForDistance(d);
+    const entry = Constants.LADDER[idx];
+    return { key: entry.key, cfg: entry.cfg, mult: 1, index: idx, rungIndex: idx, scoreMult: entry.scoreMult, name: entry.name };
   }
 
-  /** Intensity multipliers within a zone (spec §6.3). */
+  /** 1-based content-rung number (voids map to the previous content rung). */
+  contentRungForDistance(d) {
+    const idx = this.ladderIndexForDistance(d);
+    let rung = 0;
+    for (let i = 0; i <= idx; i++) {
+      if (Constants.LADDER[i].key !== 'DEEP_VOID') rung++;
+    }
+    return rung;
+  }
+
+  /** Progress 0..1 within the current ladder entry (finale = 1). */
+  progressForDistance(d) {
+    const entry = Constants.LADDER[this.ladderIndexForDistance(d)];
+    const [lo, hi] = entry.range;
+    if (!isFinite(hi)) return 1;
+    return Math.min(1, Math.max(0, (d - lo) / (hi - lo)));
+  }
+
+  /** Intensity multipliers within a zone (capped, spec v2.0 §3.5). */
   intensity(d) {
+    const caps = Constants.INTENSITY_CAPS;
     return {
-      asteroid: 1 + d / 5000,
-      nebula: 1 + d / 8000,
-      comet: 1 + d / 5000,
-      blackHolePull: Math.min(2, 1 + d / 8000),
+      asteroid: Math.min(caps.asteroid, 1 + d / 5000),
+      nebula: Math.min(caps.nebula, 1 + d / 8000),
+      comet: Math.min(caps.comet, 1 + d / 5000),
+      blackHolePull: Math.min(caps.blackHolePull, 1 + d / 8000),
     };
   }
 }

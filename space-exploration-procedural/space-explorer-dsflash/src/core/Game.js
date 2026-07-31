@@ -29,6 +29,7 @@ import { BiomeGenerator } from '../level/BiomeGenerator.js';
 import { HUD } from '../ui/HUD.js';
 import { DeathScreen } from '../ui/DeathScreen.js';
 import { Crosshair } from '../ui/Crosshair.js';
+import { LadderChart } from '../ui/LadderChart.js';
 
 // Orchestrator (spec §3): init, loop, shutdown, restart.
 export class Game {
@@ -84,6 +85,7 @@ export class Game {
     this.hud = new HUD(this.uiOverlay);
     this.deathScreen = new DeathScreen(this.uiOverlay);
     this.crosshair = new Crosshair(this.uiOverlay);
+    this.ladderChart = new LadderChart(this.uiOverlay);
     this._unsubs.push(eventBus.on('input:throttleSet', (e) => {
       if (this.ship) this.ship.throttle = e.value;
     }));
@@ -218,6 +220,8 @@ export class Game {
     if (frame.pausePressed) { this._togglePause(); return; }
     if (frame.mutePressed) this._toggleMute();
     if (frame.restartPressed && gameState.gameState === 'dead') { this.restart(); return; }
+    if (frame.ladderChartPressed) this.ladderChart.setOpen(!this.ladderChart.open);
+    if (frame.lightProfilePressed) this._cycleLightProfile();
 
     // Touch look
     const yawDelta = frame.yawDelta + (frame.touchLook ? frame.touchLook.x : 0);
@@ -260,6 +264,32 @@ export class Game {
     if (biome.key !== gameState.biomeName) {
       eventBus.emit(Events.BIOME_CHANGED, { from: gameState.biomeName, to: biome.key });
       gameState.biomeName = biome.key;
+    }
+
+    // Ladder (v2.0 §3): rung state, events, HUD, chart
+    const contentRung = this.biomeGen.contentRungForDistance(gameState.distance);
+    const progress = this.biomeGen.progressForDistance(gameState.distance);
+    gameState.rungKey = biome.key;
+    gameState.rungName = biome.name;
+    gameState.rungProgress = progress;
+    gameState.scoreMult = biome.scoreMult;
+    this.hud.setRungNumber(contentRung);
+    this.hud.setRung(biome.name, progress, biome.key === 'SPATIAL_GRAVEYARD');
+    this.ladderChart.update(gameState.distance, biome.key, progress);
+    if (contentRung !== gameState.rungIndex) {
+      const prevRung = gameState.rungIndex;
+      gameState.rungIndex = contentRung;
+      eventBus.emit(Events.LADDER_RUNG_CHANGED, {
+        rung: contentRung, key: biome.key, name: biome.name,
+        fromKey: gameState.biomeName, distance: gameState.distance,
+      });
+      this.audio.play(contentRung === 9 ? 'finale' : 'biome', { volume: 0.4 });
+      if (contentRung === 9 && !gameState.finaleReached) {
+        gameState.finaleReached = true;
+        eventBus.emit(Events.LADDER_FINALE_REACHED, { distance: gameState.distance });
+        this.hud.announce('SECTOR: DEAD CITY — you should not be here', 5);
+        this.cameraSystem.addShake(0.6, 0.8);
+      }
     }
 
     // World
@@ -390,9 +420,19 @@ export class Game {
     } else if (gameState.gameState === 'playing') {
       gameState.gameState = 'paused';
       eventBus.emit(Events.GAME_PAUSED);
+      this.ladderChart.setOpen(false); // spec v2.0 §12: chart closes on pause
     }
     this.hud.showPause(gameState.gameState === 'paused');
     if (this._running) this.post.update(0, 0, 0);
+  }
+
+  /** L key: cycle LightManager profile auto → eco → auto (v2.0 §6.3). */
+  _cycleLightProfile() {
+    gameState.lightProfile = gameState.lightProfile === 'auto' ? 'eco' : 'auto';
+    try {
+      localStorage.setItem(Constants.LIGHT_MANAGER.storageKey, gameState.lightProfile);
+    } catch { /* private mode */ }
+    eventBus.emit(Events.INPUT_LIGHT_PROFILE, { profile: gameState.lightProfile });
   }
 
   _toggleMute() {
@@ -423,6 +463,7 @@ export class Game {
     if (gameState.gameState !== 'playing') return;
     gameState.gameState = 'dying';
     this._deathTimer = 0;
+    this.ladderChart.setOpen(false);
     eventBus.emit(Events.PLAYER_DIED, { reason: gameState.deathReason });
     eventBus.emit(Events.PLAYER_HEALTH_CHANGED, { health: 0, maxHealth: Constants.MAX_HEALTH });
 
@@ -506,5 +547,6 @@ export class Game {
     this.hud.dispose();
     this.deathScreen.dispose();
     this.crosshair.dispose();
+    this.ladderChart.dispose();
   }
 }

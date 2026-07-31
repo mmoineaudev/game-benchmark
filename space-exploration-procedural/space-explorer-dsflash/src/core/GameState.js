@@ -23,6 +23,16 @@ class GameState {
     this.deathReason = null;
     this.deathTime = 0;
     this.lastBiomeIndex = 0;
+
+    // Ladder state (spec v2.0 §9)
+    this.rungIndex = 1;            // 1..9 content rungs (voids map to previous)
+    this.rungKey = 'OPEN_SPACE';
+    this.rungName = 'Open Space';
+    this.rungProgress = 0;         // 0..1 within current rung (finale = 1)
+    this.scoreMult = 1.0;
+    this.adaptiveQualityLevel = 0; // 0 | 1 | 2
+    this.lightProfile = 'auto';    // 'auto' | 'eco'
+    this.finaleReached = false;    // latched once per run
   }
 
   get alive() {
@@ -50,7 +60,7 @@ class GameState {
 
   addScore(delta, reason) {
     if (!this.alive) return;
-    this.score += delta;
+    this.score += Math.round(delta * this.scoreMult); // rung multiplier (spec v2.0 §3.5)
     return this.score;
   }
 

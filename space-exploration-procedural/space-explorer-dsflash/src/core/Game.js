@@ -225,6 +225,9 @@ export class Game {
     on(Events.PLAYER_HEALTH_REGEN, (e) => {
       // passive repair: no damage feedback, just fade the scorch as the hull recovers
       if (this.ship.setDamageLevel) this.ship.setDamageLevel(e.health, e.maxHealth);
+      // heal sparkles: gentle green repair motes drifting off the hull
+      const p = this.ship.position;
+      this.particles.burst('sparkle', p.x, p.y, p.z, 8, 4, { size: 0.45, lifetime: 0.7, color: [0.55, 1.0, 0.8] });
     });
   }
 

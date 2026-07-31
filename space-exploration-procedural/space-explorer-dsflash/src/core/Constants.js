@@ -246,7 +246,7 @@ export const Constants = {
     cometDust:  { maxParticles: 800, lifetime: 4.0, size: 0.8 },
     cometSmoke: { maxParticles: 300, lifetime: 6.0, size: 2.0 },
     ember:      { maxParticles: 100, lifetime: 2.0, size: 0.3 },
-    sparkle:    { maxParticles: 160, lifetime: 0.8, size: 0.7 },
+    sparkle:    { maxParticles: 256, lifetime: 0.8, size: 0.7 },
   },
 
   // Scoring

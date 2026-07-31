@@ -414,9 +414,14 @@ export class LightingSystem {
   }
 
   dispose() {
+    if (this.ambient) {
+      this.ambient.dispose?.();
+      this.scene.remove(this.ambient); // <-- ambient was never removed (leak)
+    }
     for (const t of this.torches) {
       if (t.light.shadow) t.light.shadow.dispose?.();
       t.light.dispose?.();
+      this.scene.remove(t.light); // <-- torch lights were never removed (leak)
       t.glow.material.dispose?.();
       if (t.flame.material) t.flame.material.dispose();
       t.bracket.traverse(c => { if (c.geometry) c.geometry.dispose(); });

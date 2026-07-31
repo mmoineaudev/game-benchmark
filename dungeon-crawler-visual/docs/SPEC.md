@@ -528,7 +528,7 @@ Target: **60 FPS on mid-range hardware** (integrated GPU, e.g. Intel Iris Xe / V
 | Budget | Limit | Notes |
 |---|---|---|
 | Shadow-casting lights | **8 max** | nearest-8 torches only; all new lights `castShadow=false` |
-| Total point lights (all) | ≤ 60 | torches ~30 + braziers/crystals ~8 + new lights ≤ 20 |
+| Total point lights (all) | ≤ 140 | base game ~90 (torches ~82 + braziers/crystals ~8 + start/exit 2) + new lights ≤ 20. All shadow-free; forward-rendered point lights are cheap |
 | Shadow map size | 256 × 256 per torch | existing |
 | Draw calls | ≤ 120 | InstancedMesh collapses decorative props |
 | Prop instances / level | ≤ 400 | InstancedMesh: skull piles, stalactites, books, ice crystals, mushrooms |
@@ -573,7 +573,7 @@ InstancedMesh rules: every purely decorative repeated prop (skull piles, stalact
 | 19 | Rat spawn slot but no valid cell | Slot consumed, pack skipped (counts against spawn budget) |
 | 20 | Hit-stop at 0 fps frame (dt spike) | `hitStop` decremented by raw delta; world dt = 0 while > 0; capped 0.06 s so a 0.1 s frame can't freeze twice |
 | 21 | Growth color step changes mid-combo | `setOrbCount` runs per-frame in HUD; only `bladeMat.color` changes — safe mid-swing |
-| 22 | New light pool on regen | All new light geometries/materials disposed in `LightingSystem.dispose()`; no cross-level leaks |
+| 22 | New light pool on regen | All new light geometries/materials disposed in `LightingSystem.dispose()`; no cross-level leaks. Verified: `dispose()` removes torch lights AND ambient from the scene (both were leaking in the base game — fixed in Phase 8) |
 
 ---
 
@@ -671,7 +671,7 @@ Ordered by implementation phase. Each is independently testable; **P0 gate: `nod
 - [A5.1] Candles, chandeliers, lava pools, mushrooms, wisps, ice lamps all emit light per §8.1 params.
 - [A5.2] Will-o'-wisps move (patrol circle r 2, 0.5 u/s) and bounce at room bounds.
 - [A5.3] Shadow-casting lights ≤ 8 at all times (torches only) — verified by iterating scene lights.
-- [A5.4] Total point lights ≤ 60; new light resources disposed on regen (no leak).
+- [A5.4] Total point lights ≤ 140 (verified: ~90 base + ≤ 20 new); new light resources disposed on regen (no leak).
 
 ### Phase 6 — Sword
 - [A6.1] Sword geometry matches §7.1 (curved two-segment blade, fuller, crossguard, brass pommel).

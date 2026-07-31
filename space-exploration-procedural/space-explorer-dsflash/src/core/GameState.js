@@ -1,5 +1,6 @@
 // Centralized state: player, combat, game (spec §2 architecture principle 3).
 import { Constants } from './Constants.js';
+import { eventBus, Events } from './EventBus.js';
 
 class GameState {
   constructor() {
@@ -63,7 +64,12 @@ class GameState {
     if (!this.alive) return;
     const p = this.player;
     if (p.health >= p.maxHealth) return;
+    const before = Math.ceil(p.health);
     p.health = Math.min(p.maxHealth, p.health + p.maxHealth * Constants.HEALTH_REGEN_PERCENT_PER_SEC * dt);
+    // Emit only when the displayed value ticks up (or hits cap) — keeps the bus quiet
+    if (Math.ceil(p.health) !== before || p.health >= p.maxHealth) {
+      eventBus.emit(Events.PLAYER_HEALTH_REGEN, { health: p.health, maxHealth: p.maxHealth });
+    }
   }
 
   addScore(delta, reason) {

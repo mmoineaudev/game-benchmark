@@ -14,6 +14,7 @@ export const Events = {
   PLAYER_DAMAGED:     'player:damaged',
   PLAYER_DIED:        'player:died',
   PLAYER_HEALTH_CHANGED: 'player:healthChanged',
+  PLAYER_HEALTH_REGEN:    'player:healthRegen',
 
   // Weapon
   WEAPON_FIRED:       'weapon:fired',

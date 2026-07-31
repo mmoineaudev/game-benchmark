@@ -222,6 +222,10 @@ export class Game {
       this.audio.play('collision', { volume: 0.5 });
       if (this.ship.setDamageLevel) this.ship.setDamageLevel(e.health, e.maxHealth); // ship remaster v2.0
     });
+    on(Events.PLAYER_HEALTH_REGEN, (e) => {
+      // passive repair: no damage feedback, just fade the scorch as the hull recovers
+      if (this.ship.setDamageLevel) this.ship.setDamageLevel(e.health, e.maxHealth);
+    });
   }
 
   _spawnInitialWorld() {
@@ -414,6 +418,17 @@ export class Game {
     // Speed lines at high throttle (v2.0 §5)
     if (speedFraction > 0.9 && this.cameraSystem.camera.fov > 88) {
       this.particles.emitSpeedLines(this.camera.position, this.camera.quaternion, 3);
+    }
+    // Max-speed sparkles: bright motes hugging the hull at full throttle.
+    // Particles inherit ~85% of ship velocity so they linger around the hull
+    // instead of instantly streaming off the tail (density ramps up to cap).
+    if (speedFraction >= 0.97) {
+      const sp = this.ship.position;
+      const sv = this.ship.velocity;
+      this.particles.emitStream('sparkle', sp.x, sp.y, sp.z, sv.x * 0.85, sv.y * 0.85, sv.z * 0.85, {
+        perFrame: Math.max(1, Math.round((speedFraction - 0.97) * 100)),
+        jitter: 3.0, size: 0.3, lifetime: 0.5, color: [1.0, 0.95, 0.7],
+      });
     }
     if (this.worldSystems.stormSystem) {
       this.post.stormCA = this.worldSystems.stormSystem.getShipDist() < 200 ? 0.002 : 0;

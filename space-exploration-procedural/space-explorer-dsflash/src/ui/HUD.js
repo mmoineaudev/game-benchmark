@@ -155,6 +155,7 @@ export class HUD {
       eventBus.on(Events.BIOME_CHANGED, (e) => this.setBiome(e.to)),
       eventBus.on(Events.AUDIO_MUTED, (e) => this.setMuted(e.muted)),
       eventBus.on(Events.PLAYER_HEALTH_CHANGED, (e) => this.setHealth(e.health, e.maxHealth)),
+      eventBus.on(Events.PLAYER_HEALTH_REGEN, (e) => this.setHealth(e.health, e.maxHealth)),
       eventBus.on(Events.STORM_STATIC_CHANGED, (e) => this.setStatic(e.active, e.intensity)),
     ];
   }

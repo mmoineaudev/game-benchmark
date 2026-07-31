@@ -3,7 +3,7 @@ import { Constants } from '../core/Constants.js';
 import { softDotTexture } from '../utils/ShaderHelpers.js';
 
 // Pool-based particle manager (spec §5.5) with per-particle size/color/alpha.
-// Named pools: exhaust, laserSpark, explosion, cometDust, cometSmoke, ember.
+// Named pools: exhaust, laserSpark, explosion, ember, sparkle.
 // Zero allocations in the update loop.
 
 const PARTICLE_VERTEX = `
@@ -38,8 +38,6 @@ const POOL_STYLE = {
   exhaust:    { color: [0.5, 0.7, 1.0], blending: THREE.AdditiveBlending,   curve: null, grow: 0.6 },
   laserSpark: { color: [1.0, 0.9, 0.6], blending: THREE.AdditiveBlending,   curve: null, grow: 0.4 },
   explosion:  { color: [1.0, 1.0, 1.0], blending: THREE.AdditiveBlending,   curve: [[1.0, 0.9, 0.2], [1.0, 0.3, 0.05], [0.1, 0.02, 0.0]], grow: 1.4 },
-  cometDust:  { color: [1.0, 0.95, 0.8], blending: THREE.AdditiveBlending,  curve: null, grow: 0.8 },
-  cometSmoke: { color: [0.62, 0.66, 0.74], blending: THREE.NormalBlending,   curve: null, grow: 3.0 },
   ember:      { color: [0.9, 0.25, 0.08], blending: THREE.AdditiveBlending, curve: null, grow: 0.5 },
   sparkle:    { color: [0.9, 0.95, 1.0], blending: THREE.AdditiveBlending, curve: null, grow: 2.5 },
 };

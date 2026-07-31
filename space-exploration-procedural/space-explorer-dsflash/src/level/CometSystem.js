@@ -148,22 +148,6 @@ export class CometSystem {
         const ang = Math.atan2(b.vx, b.vz);
         b.group.rotation.y = ang;
       }
-
-      // Trails (only within COMET_TRAIL_RADIUS — distant comets are specks and
-      // their emission would thrash the shared pools): warm dust + a long,
-      // slowly-drifting smoke tail that stretches far behind the comet.
-      const px = b.group.position.x, py = b.group.position.y, pz = b.group.position.z;
-      const ds = Math.hypot(px - shipPos.x, py - shipPos.y, pz - shipPos.z);
-      if (ds <= Constants.COMET_TRAIL_RADIUS) {
-        const spd = Math.hypot(b.vx, b.vy, b.vz);
-        const nx = -b.vx / (spd || 1), ny = -b.vy / (spd || 1), nz = -b.vz / (spd || 1);
-        this.particles.emitStream('cometDust', px, py, pz, nx * spd * 0.35, ny * spd * 0.35, nz * spd * 0.35, {
-          perFrame: 3, jitter: b.scale * 0.4, size: 0.5 + b.scale * 0.1,
-        });
-        this.particles.emitStream('cometSmoke', px, py, pz, nx * spd * 0.12, ny * spd * 0.12, nz * spd * 0.12, {
-          perFrame: 2, jitter: b.scale * 0.8, size: 2.0 + b.scale * 0.2,
-        });
-      }
     }
   }
 

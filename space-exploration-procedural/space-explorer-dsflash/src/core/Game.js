@@ -421,17 +421,6 @@ export class Game {
     if (speedFraction > 0.9 && this.cameraSystem.camera.fov > 88) {
       this.particles.emitSpeedLines(this.camera.position, this.camera.quaternion, 3);
     }
-    // Max-speed electric smoke: white crackling puffs hugging the hull at full
-    // throttle. Particles inherit ~85% of ship velocity so they linger around
-    // the hull instead of instantly streaming off the tail.
-    if (speedFraction >= 0.97) {
-      const sp = this.ship.position;
-      const sv = this.ship.velocity;
-      this.particles.emitStream('sparkle', sp.x, sp.y, sp.z, sv.x * 0.85, sv.y * 0.85, sv.z * 0.85, {
-        perFrame: Math.max(2, Math.round((speedFraction - 0.97) * 150)),
-        jitter: 4.0, size: 0.7, lifetime: 0.8, color: [0.9, 0.95, 1.0],
-      });
-    }
     if (this.worldSystems.stormSystem) {
       this.post.stormCA = this.worldSystems.stormSystem.getShipDist() < 200 ? 0.002 : 0;
     }

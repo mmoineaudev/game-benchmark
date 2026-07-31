@@ -4,8 +4,8 @@ export const Constants = {
   VERSION: '2.0.0',
 
   // Ship
-  MAX_SHIP_SPEED: 80,
-  SHIP_ACCELERATION: 40,
+  MAX_SHIP_SPEED: 88,          // +10% (was 80)
+  SHIP_ACCELERATION: 44,       // +10% (was 40), keeps time-to-max identical
   SHIP_DRAG: 0.98,          // per-frame multiplier for lateral drift decay (60 fps basis)
   SHIP_ROLL_SPEED: 3.0,
   MOUSE_LOOK_SPEED: 0.0025, // rad per pixel, yaw & pitch

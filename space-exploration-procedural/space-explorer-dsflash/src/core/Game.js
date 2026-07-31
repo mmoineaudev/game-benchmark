@@ -397,6 +397,7 @@ export class Game {
 
     // State ticking
     gameState.tickInvulnerability(dt);
+    gameState.regenHealth(dt);
 
     // Warnings
     this._updateWarnings();

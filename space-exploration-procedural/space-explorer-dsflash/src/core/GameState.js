@@ -58,6 +58,14 @@ class GameState {
     if (this._invulnTimer > 0) this._invulnTimer -= dt;
   }
 
+  /** Passive hull repair: heals REGEN% of max health per second, capped at full. */
+  regenHealth(dt) {
+    if (!this.alive) return;
+    const p = this.player;
+    if (p.health >= p.maxHealth) return;
+    p.health = Math.min(p.maxHealth, p.health + p.maxHealth * Constants.HEALTH_REGEN_PERCENT_PER_SEC * dt);
+  }
+
   addScore(delta, reason) {
     if (!this.alive) return;
     this.score += Math.round(delta * this.scoreMult); // rung multiplier (spec v2.0 §3.5)

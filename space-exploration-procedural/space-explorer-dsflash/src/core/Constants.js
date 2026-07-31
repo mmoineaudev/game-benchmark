@@ -49,6 +49,7 @@ export const Constants = {
 
   // Health
   MAX_HEALTH: 100,
+  HEALTH_REGEN_PERCENT_PER_SEC: 0.02, // passive hull repair: 2% of max health per second
   COLLISION_THRESHOLD_LARGE: 2.0,
   COLLISION_DAMAGE_LARGE: 20,
   COLLISION_DAMAGE_SMALL: 5,

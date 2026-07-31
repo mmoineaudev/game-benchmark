@@ -1,17 +1,54 @@
 import * as THREE from 'three';
 import { DROP } from '../core/Constants.js';
 
+// Shared resources created once at init — no per-pickup GPU allocations.
+const RING_POOL_SIZE = 8;
+const RING_TTL = 0.45;
+
 export class OrbSystem {
   constructor(scene, dungeonData, state) {
     this.scene = scene;
     this.data = dungeonData;
     this.state = state;
     this.orbs = [];
-    this.rings = []; // pickup feedback rings
+    this.rings = []; // pickup feedback rings (pooled)
     this.drops = []; // skeleton death drops (auto-collect)
+    this._ringPool = []; // reusable rings
+    this._ringIdx = 0;
+    this._ringGeo = null;
+    this._dropGeo = null;
+    this._dropGlowGeo = null;
+    this._dropMat = null;
+    this._dropGlowMat = null;
   }
 
   init() {
+    // --- Shared pickup-ring resources (pooled to avoid per-pickup allocation) ---
+    this._ringGeo = new THREE.TorusGeometry(0.5, 0.04, 8, 24);
+    for (let i = 0; i < RING_POOL_SIZE; i++) {
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0x66ccff, transparent: true, opacity: 0,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      });
+      const mesh = new THREE.Mesh(this._ringGeo, mat);
+      mesh.rotation.x = Math.PI / 2;
+      mesh.visible = false;
+      this.scene.add(mesh);
+      this._ringPool.push({ mesh, active: false });
+    }
+
+    // --- Shared drop resources (one geometry/material for all skeleton drops) ---
+    this._dropGeo = new THREE.SphereGeometry(0.18, 12, 10);
+    this._dropGlowGeo = new THREE.SphereGeometry(0.4, 10, 8);
+    this._dropMat = new THREE.MeshStandardMaterial({
+      color: 0x44aaff, emissive: 0x44aaff, emissiveIntensity: 2.5,
+      roughness: 0.15, metalness: 0.4,
+    });
+    this._dropGlowMat = new THREE.MeshBasicMaterial({
+      color: 0x44aaff, transparent: true, opacity: 0.2,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+
     const vaultCells = [];
     const otherCells = [];
     const gs = this.data.gridSize;
@@ -112,7 +149,7 @@ export class OrbSystem {
       if (dist < 1.5) {
         orb.collected = true;
         this.state.collectedOrbs++;
-        this._spawnPickupRing(orb.x, orb.y, orb.z);
+        this._spawnPickupRing(orb.x, orb.y, orb.z, time);
         orb.mesh.scale.set(0, 0, 0);
         orb.glow.scale.set(0, 0, 0);
         orb.light.intensity = 0;
@@ -129,20 +166,18 @@ export class OrbSystem {
       }
     }
 
-    // Animate pickup rings: expand + fade
-    for (let i = this.rings.length - 1; i >= 0; i--) {
-      const ring = this.rings[i];
-      ring.life += 1 / 60;
-      const t = ring.life / ring.ttl;
-      ring.mesh.scale.setScalar(0.3 + t * 2.5);
-      ring.mesh.material.opacity = ring.baseOpacity * (1 - t);
-      ring.mesh.rotation.x += 0.02;
+    // Animate pickup rings (pooled, time-based fade)
+    for (const ring of this._ringPool) {
+      if (!ring.active) continue;
+      const t = (time - ring.start) / RING_TTL;
       if (t >= 1) {
-        ring.mesh.geometry.dispose();
-        ring.mesh.material.dispose();
-        this.scene.remove(ring.mesh);
-        this.rings.splice(i, 1);
+        ring.active = false;
+        ring.mesh.visible = false;
+        continue;
       }
+      ring.mesh.scale.setScalar(0.3 + t * 2.5);
+      ring.mesh.material.opacity = 0.8 * (1 - t);
+      ring.mesh.rotation.x += 0.02;
     }
 
     // Skeleton drops: bob + auto-collect on proximity
@@ -155,10 +190,7 @@ export class OrbSystem {
       const dz = p.z - drop.z;
       if (dx * dx + dz * dz < DROP.RADIUS * DROP.RADIUS) {
         this.state.collectedOrbs++;
-        this._spawnPickupRing(drop.x, drop.y, drop.z);
-        drop.mesh.geometry.dispose();
-        drop.mesh.material.dispose();
-        drop.glow.material.dispose();
+        this._spawnPickupRing(drop.x, drop.y, drop.z, time);
         this.scene.remove(drop.mesh);
         this.scene.remove(drop.glow);
         this.drops.splice(i, 1);
@@ -166,39 +198,30 @@ export class OrbSystem {
     }
   }
 
-  // Spawn an auto-collect orb at a skeleton's death position
+  // Spawn an auto-collect orb at a skeleton's death position.
+  // Uses shared geometry/material — no allocation per drop.
   spawnDrop(x, z) {
-    const geo = new THREE.SphereGeometry(0.18, 12, 10);
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0x44aaff, emissive: 0x44aaff, emissiveIntensity: 2.5,
-      roughness: 0.15, metalness: 0.4,
-    });
-    const glowGeo = new THREE.SphereGeometry(0.4, 10, 8);
-    const glowMat = new THREE.MeshBasicMaterial({
-      color: 0x44aaff, transparent: true, opacity: 0.2,
-      blending: THREE.AdditiveBlending, depthWrite: false,
-    });
-    const mesh = new THREE.Mesh(geo, mat);
     const y = DROP.Y;
+    const mesh = new THREE.Mesh(this._dropGeo, this._dropMat);
     mesh.position.set(x, y, z);
     this.scene.add(mesh);
-    const glow = new THREE.Mesh(glowGeo, glowMat);
+    const glow = new THREE.Mesh(this._dropGlowGeo, this._dropGlowMat);
     glow.position.set(x, y, z);
     this.scene.add(glow);
     this.drops.push({ mesh, glow, x, z, y, phase: Math.random() * Math.PI * 2 });
   }
 
-  _spawnPickupRing(x, y, z) {
-    const geo = new THREE.TorusGeometry(0.5, 0.04, 8, 24);
-    const mat = new THREE.MeshBasicMaterial({
-      color: 0x66ccff, transparent: true, opacity: 0.8,
-      blending: THREE.AdditiveBlending, depthWrite: false,
-    });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.rotation.x = Math.PI / 2;
-    mesh.position.set(x, y, z);
-    this.scene.add(mesh);
-    this.rings.push({ mesh, life: 0, ttl: 0.45, baseOpacity: 0.8 });
+  // Reuse a pooled ring — no geometry/material creation at pickup time
+  _spawnPickupRing(x, y, z, time) {
+    const ring = this._ringPool[this._ringIdx];
+    this._ringIdx = (this._ringIdx + 1) % this._ringPool.length;
+    ring.active = true;
+    ring.start = time;
+    ring.mesh.visible = true;
+    ring.mesh.scale.setScalar(0.3);
+    ring.mesh.material.opacity = 0.8;
+    ring.mesh.rotation.x = Math.PI / 2;
+    ring.mesh.position.set(x, y, z);
   }
 
   nearestOrbDist(playerPos) {
@@ -236,20 +259,18 @@ export class OrbSystem {
       const g0 = this.orbs[0].glow.material;
       if (g0 && !g0._disposed) { g0.dispose(); g0._disposed = true; }
     }
-    for (const ring of this.rings) {
-      ring.mesh.geometry.dispose();
+    // Dispose pooled ring resources once
+    if (this._ringGeo) this._ringGeo.dispose();
+    for (const ring of this._ringPool) {
       ring.mesh.material.dispose();
       this.scene.remove(ring.mesh);
     }
-    for (const drop of this.drops) {
-      drop.mesh.geometry.dispose();
-      drop.mesh.material.dispose();
-      drop.glow.geometry.dispose();
-      drop.glow.material.dispose();
-      this.scene.remove(drop.mesh);
-      this.scene.remove(drop.glow);
-    }
-    this.rings = [];
+    // Dispose shared drop resources once
+    if (this._dropGeo) this._dropGeo.dispose();
+    if (this._dropGlowGeo) this._dropGlowGeo.dispose();
+    if (this._dropMat) this._dropMat.dispose();
+    if (this._dropGlowMat) this._dropGlowMat.dispose();
+    this._ringPool = [];
     this.drops = [];
     this.orbs = [];
   }

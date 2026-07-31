@@ -98,7 +98,6 @@ export const SMOKE = {
 
 export const SKELETON = {
   HP: 2,
-  WAKE_RADIUS: 9,        // distance at which a dormant skeleton activates
   CHASE_SPEED: 2.6,
   ATTACK_RANGE: 1.6,
   ATTACK_DAMAGE: 1,

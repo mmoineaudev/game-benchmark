@@ -8,8 +8,23 @@ import { generateGlowTexture } from '../world/Textures.js';
 // The arc is translation-driven (the grip carries the blade across the screen)
 // with gentle blade rotation, so the whole sword stays on screen throughout.
 //
-// Progression: the sword grows +10% per 10 orbs held (capped at +100%).
-// Danger glow: the blade glows when skeletons are close, brighter as they approach.
+// Progression: the sword grows +10% per 10 orbs held (capped at +100%) and
+// changes its base color at each size bonus. Danger glow: the blade glows when
+// skeletons are close, brighter as they approach.
+const SWORD_COLORS = [
+  0xc8ccd8, // step 0: steel (base)
+  0xb08a5a, // step 1: bronze
+  0x8a9ab0, // step 2: iron-blue
+  0xd8c86a, // step 3: gold
+  0x6ad86a, // step 4: emerald
+  0x5ac8d8, // step 5: teal
+  0x5a8ad8, // step 6: sapphire
+  0x9a5ad8, // step 7: amethyst
+  0xd85aa0, // step 8: magenta
+  0xff5544, // step 9: inferno
+  0xfff4d8, // step 10: radiant
+];
+
 export class PlayerSword {
   constructor(camera) {
     this.camera = camera;
@@ -19,6 +34,7 @@ export class PlayerSword {
     this.group = new THREE.Group();
     this._glow = 0;        // current danger glow intensity (damped)
     this._glowTarget = 0;
+    this._colorStep = 0;
     this._build();
     camera.add(this.group);
     this._setRest();
@@ -78,11 +94,17 @@ export class PlayerSword {
     this.group.rotation.set(-0.1, 0, 0.4);
   }
 
-  // Grows the sword +10% per 10 orbs held, capped at +100% (2x at 100 orbs)
+  // Grows the sword +10% per 10 orbs held (capped at +100% = 2x at 100 orbs)
+  // and shifts the base color to the next palette step at each size bonus.
   setOrbCount(count) {
     const steps = Math.floor(count / 10);
-    const scale = 1 + Math.min(steps, 10) * 0.1;
+    const capped = Math.min(steps, 10);
+    const scale = 1 + capped * 0.1;
     this.group.scale.setScalar(scale);
+    if (capped !== this._colorStep) {
+      this._colorStep = capped;
+      this.bladeMat.color.setHex(SWORD_COLORS[capped]);
+    }
   }
 
   // Danger glow: 0 at >= GLOW_MAX_DIST, ramps to 1 as skeletons approach

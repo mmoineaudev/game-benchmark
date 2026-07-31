@@ -7,11 +7,11 @@ import { generateGlowTexture } from '../world/Textures.js';
 // States: DORMANT -> WAKING -> CHASE -> ATTACK -> DEAD
 // Magician variant (1 in 10): hood + glowing staff instead of a sword.
 export class Skeleton {
-  constructor(scene, { isMagician = false } = {}) {
+  constructor(scene, { isMagician = false, active = false } = {}) {
     this.scene = scene;
     this.isMagician = isMagician;
     this.hp = SKELETON.HP;
-    this.state = 'DORMANT';
+    this.state = active ? 'CHASE' : 'DORMANT';
     this.animTime = 0;
     this.phase = Math.random() * Math.PI * 2;
     this.facingYaw = Math.random() * Math.PI * 2;
@@ -52,7 +52,11 @@ export class Skeleton {
 
     this._buildRig();
     scene.add(this.group);
-    this._setPose('dormant');
+    if (active) {
+      this._setEye(1);
+    } else {
+      this._setPose('dormant');
+    }
   }
 
   // ------------------------------------------------------------------ rig

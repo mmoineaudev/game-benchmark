@@ -72,8 +72,8 @@ export class Game {
     this._initCombat();
     this._placeWaterPuddles();
     this._setupPlayerStart();
-    this._showMessage('Collect orbs — shoot the skeletons!', 'goal');
-    this._showMessage('Reach the golden exit before time runs out', 'goal');
+    this._showMessage('Skeletons hunt you — reach the golden exit!', 'goal');
+    this._showMessage('Slay them for orbs — shoot or swing', 'goal');
     this._updateHUD();
     this._isRunning = true;
     this._lastTime = performance.now();
@@ -187,7 +187,6 @@ export class Game {
 
     this.skeletons = new SkeletonSystem(this.scene, this.state);
     this.skeletons.init(this.dungeonData, this.state);
-    this.skeletons.onWake = (x, z) => this.smoke.addTransient(x, 0.3, z, 6, 0.5);
     this.skeletons.onKill = (x, z) => {
       this.orbs.spawnDrop(x, z);
       this.smoke.addTransient(x, 0.6, z, 10, 0.4);
@@ -353,7 +352,7 @@ export class Game {
 
     if (this.state.collectedOrbs <= 0) {
       if (!this._noAmmoWarned) {
-        this._showMessage('No orbs! Find glowing orbs to shoot', 'goal');
+        this._showMessage('No orbs! Slay skeletons to gather orbs', 'goal');
         this._noAmmoWarned = true;
       }
       return;
@@ -512,22 +511,6 @@ export class Game {
     const ex = this.dungeonData.exitCell.x * this.dungeonData.cellSize + this.dungeonData.cellSize / 2;
     const ez = this.dungeonData.exitCell.z * this.dungeonData.cellSize + this.dungeonData.cellSize / 2;
 
-    // Low ammo: point to the nearest remaining orb first
-    if (this.state.collectedOrbs <= 1 && this.orbs) {
-      let nearest = null, nearestDist = Infinity;
-      for (const orb of this.orbs.orbs) {
-        if (orb.collected) continue;
-        const dx = orb.x - p.x, dz = orb.z - p.z;
-        const d = Math.sqrt(dx * dx + dz * dz);
-        if (d < nearestDist) { nearestDist = d; nearest = orb; }
-      }
-      if (nearest) {
-        const dx = nearest.x - p.x, dz = nearest.z - p.z;
-        this._showMessage('Nearest orb lies ' + this._compassDir(dx, dz), 'goal');
-        return;
-      }
-    }
-    // Otherwise point to the exit
     const dx = ex - p.x, dz = ez - p.z;
     const dist = Math.sqrt(dx * dx + dz * dz).toFixed(0);
     this._showMessage('Golden exit lies ' + this._compassDir(dx, dz) + ' (' + dist + 'm)', 'goal');

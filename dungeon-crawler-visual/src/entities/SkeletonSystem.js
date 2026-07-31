@@ -11,7 +11,6 @@ export class SkeletonSystem {
     this.skeletons = []; // { skel, x, z, cellX, cellZ, nextThink, active, magician }
     this.enemyOrbs = []; // pooled red orbs fired by magicians
     this._nextOrb = 0;
-    this.onWake = null;
     this.onKill = null;
     this.onPlayerDamaged = null;
     this.onPlayerDeath = null;
@@ -103,18 +102,25 @@ export class SkeletonSystem {
     );
 
     const cs = dungeonData.cellSize;
+    const ex = state.entranceCell.x * cs + cs / 2;
+    const ez = state.entranceCell.z * cs + cs / 2;
     for (let i = 0; i < Math.min(count, candidates.length); i++) {
       const { x, z } = candidates[i];
       const magician = Math.random() < MAGICIAN.CHANCE;
-      const skel = new Skeleton(this.scene, { isMagician: magician });
-      skel.group.position.set(x * cs + cs / 2, 0, z * cs + cs / 2);
+      const skel = new Skeleton(this.scene, { isMagician: magician, active: true });
+      const sx = x * cs + cs / 2;
+      const sz = z * cs + cs / 2;
+      skel.group.position.set(sx, 0, sz);
       skel.onAttackHit = () => {
         if (magician) this._fireEnemyOrb(skel);
         else this._tryDamagePlayer(skel);
       };
       skel.onDeathComplete = () => this._removeSkeleton(skel);
+      // Face the player immediately (they are the objective)
+      skel.facingYaw = Math.atan2(ex - sx, ez - sz);
+      skel.group.rotation.y = skel.facingYaw;
       this.skeletons.push({
-        skel, x: skel.group.position.x, z: skel.group.position.z,
+        skel, x: sx, z: sz,
         cellX: x, cellZ: z, nextThink: 0, active: false, magician,
       });
     }
@@ -130,18 +136,6 @@ export class SkeletonSystem {
       const dx = player.x - s.x;
       const dz = player.z - s.z;
       const dist = Math.hypot(dx, dz);
-
-      // Wake when player gets close
-      if (skel.state === 'DORMANT') {
-        if (dist < SKELETON.WAKE_RADIUS) {
-          skel.state = 'WAKING';
-          skel.animTime = 0;
-          this.onWake?.(s.x, s.z);
-        } else {
-          skel.update(dt, time);
-          continue;
-        }
-      }
 
       // Attack cycle (from CHASE or WAKING). Magicians attack from cast range.
       const atkRange = s.magician ? MAGICIAN.CAST_RANGE : SKELETON.ATTACK_RANGE;

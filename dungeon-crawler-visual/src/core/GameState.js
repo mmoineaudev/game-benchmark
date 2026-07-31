@@ -16,5 +16,10 @@ export class GameState {
     this.runTime = runTime;   // total seconds across all levels (never resets mid-run)
     this.level = level;       // 1-based current level
     this.levelTime = 0;       // seconds spent on the current level
+    // --- Extended spec ---
+    this.biome = 'STONE';     // current biome id (string key of BIOMES)
+    this.biomeIndex = 0;      // floor((level-1)/2) % 5
+    this.swordCombo = 0;      // 0 | 1 | 2 — current combo step for HUD
+    this.hitStop = 0;         // seconds of world-freeze remaining (Game-managed)
   }
 }

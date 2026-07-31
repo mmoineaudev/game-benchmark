@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON, SWORD } from './Constants.js';
 import { GameState } from './GameState.js';
 import { Leaderboard } from './Leaderboard.js';
+import { EventBus } from './EventBus.js';
 import { DungeonGenerator } from '../world/DungeonGenerator.js';
 import { WorldBuilder } from '../world/WorldBuilder.js';
 import { LightingSystem } from '../systems/LightingSystem.js';
@@ -35,6 +36,7 @@ export class Game {
     this._lastHintTime = 0;
     this._sprinting = false;
     this.leaderboard = new Leaderboard();
+    this.events = new EventBus();
     this.smoke = null;
     this._tabWasDown = false;
     this._gameOverActive = false;
@@ -74,6 +76,7 @@ export class Game {
     this._setupPlayerStart();
     this._showMessage('Skeletons hunt you — reach the golden exit!', 'goal');
     this._showMessage('Slay them for orbs — shoot or swing', 'goal');
+    this._emitLevelStart();
     this._updateHUD();
     this._isRunning = true;
     this._lastTime = performance.now();
@@ -224,6 +227,13 @@ export class Game {
     this.state.player.z = z * cs + cs / 2;
     this.state.player.yaw = Math.PI;
     this.state.player.pitch = 0;
+  }
+
+  _emitLevelStart() {
+    this.events.emit('level:start', {
+      level: this.state.level,
+      biome: this.state.biome,
+    });
   }
 
   _animate() {
@@ -574,6 +584,7 @@ export class Game {
     this._setupPlayerStart();
     this._showMessage('Collect orbs — shoot the skeletons!', 'goal');
     if (this.state.level > 1) this._showMessage(`Level ${this.state.level} — descend!`, 'goal');
+    this._emitLevelStart();
     this._isRunning = true;
     this._lastTime = performance.now();
   }

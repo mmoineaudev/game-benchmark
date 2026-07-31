@@ -2,8 +2,6 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
-import { VignetteShader } from 'three/examples/jsm/shaders/VignetteShader.js';
 
 export class PostProcessing {
   constructor(renderer, scene, camera) {
@@ -25,11 +23,6 @@ export class PostProcessing {
       new THREE.Vector2(w, h), 1.4, 0.5, 0.5,
     );
     this.composer.addPass(this.bloomPass);
-
-    this.vignettePass = new ShaderPass(VignetteShader);
-    this.vignettePass.uniforms['darkness'].value = 0.22;
-    this.vignettePass.uniforms['offset'].value = 0.98;
-    this.composer.addPass(this.vignettePass);
 
     this.composer.renderToScreen = true;
   }

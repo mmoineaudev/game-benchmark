@@ -7,10 +7,11 @@ import { generateGlowTexture } from '../world/Textures.js';
 // windup (pull back) -> thrust (stab forward toward the screen center) -> recover.
 // Because the blade drives forward into the view, a longer sword reads as more reach.
 //
-// Progression: the sword grows +10% per 10 orbs held (capped at +100%), which
-// also extends its effective melee range. It changes base color at each size
-// bonus. Danger glow: the blade glows and casts light when skeletons are close,
-// brighter as they approach.
+// Progression: the sword grows +20% per 10 orbs held (capped at +200% = 3x at
+// 100 orbs), which also extends its effective melee range. It changes base
+// color at each size bonus. Danger glow: the blade glows red and casts light
+// when skeletons are close. Growth light: a subtle green light on the blade,
+// more intense as the sword grows.
 const SWORD_COLORS = [
   0xc8ccd8, // step 0: steel (base)
   0xb08a5a, // step 1: bronze
@@ -91,6 +92,25 @@ export class PlayerSword {
     this.dangerLight.position.set(0, 0.45, 0.2);
     this.group.add(this.dangerLight);
 
+    // Growth light: subtle green light, more intense as the sword grows.
+    this.growthLight = new THREE.PointLight(0x44ff88, 0, 8, 1.6);
+    this.growthLight.position.set(0, 0.5, 0.05);
+    this.group.add(this.growthLight);
+
+    // Green glow sprite around the blade (marks the growth light source)
+    this.growthGlowMat = new THREE.SpriteMaterial({
+      map: this._glowTex,
+      color: 0x44ff88,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      transparent: true,
+      opacity: 0,
+    });
+    this.growthGlow = new THREE.Sprite(this.growthGlowMat);
+    this.growthGlow.position.set(0, 0.45, 0);
+    this.growthGlow.scale.setScalar(0.3);
+    this.group.add(this.growthGlow);
+
     this.group.traverse((m) => { if (m.isMesh) m.castShadow = false; });
   }
 
@@ -105,13 +125,18 @@ export class PlayerSword {
     return SWORD.RANGE * this._rangeScale;
   }
 
-  // Grows the sword +10% per 10 orbs held (capped at +100% = 2x at 100 orbs),
-  // extends melee range accordingly, and shifts the base color each size bonus.
+  // Grows the sword +20% per 10 orbs held (capped at +200% = 3x at 100 orbs),
+  // extends melee range accordingly, shifts the base color each size bonus,
+  // and intensifies the green growth light.
   setOrbCount(count) {
     const steps = Math.floor(count / 10);
     const capped = Math.min(steps, 10);
-    this._rangeScale = 1 + capped * 0.1;
+    this._rangeScale = 1 + capped * 0.2;
     this.group.scale.setScalar(this._rangeScale);
+    const growth = capped / 10; // 0..1
+    this.growthLight.intensity = growth * 2.8;
+    this.growthGlowMat.opacity = growth * 0.35;
+    this.growthGlow.scale.setScalar(0.3 + growth * 0.5);
     if (capped !== this._colorStep) {
       this._colorStep = capped;
       this.bladeMat.color.setHex(SWORD_COLORS[capped]);
@@ -207,7 +232,9 @@ export class PlayerSword {
     });
     for (const m of this._mats) m.dispose();
     this.glowMat.dispose();
+    this.growthGlowMat.dispose();
     this.dangerLight.dispose();
+    this.growthLight.dispose();
     if (this._glowTex) this._glowTex.dispose();
   }
 }

@@ -5,6 +5,7 @@ import { Leaderboard } from './Leaderboard.js';
 import { EventBus } from './EventBus.js';
 import { DungeonGenerator } from '../world/DungeonGenerator.js';
 import { WorldBuilder } from '../world/WorldBuilder.js';
+import { BiomeSystem } from '../world/BiomeSystem.js';
 import { LightingSystem } from '../systems/LightingSystem.js';
 import { InputSystem } from '../systems/InputSystem.js';
 import { PostProcessing } from '../systems/PostProcessing.js';
@@ -37,6 +38,7 @@ export class Game {
     this._sprinting = false;
     this.leaderboard = new Leaderboard();
     this.events = new EventBus();
+    this.biomes = new BiomeSystem();
     this.smoke = null;
     this._tabWasDown = false;
     this._gameOverActive = false;
@@ -64,6 +66,7 @@ export class Game {
     this._initCamera();
     this._initPostProcessing();
     this._initInput();
+    this.biomes.applyLevel(this.state.level, this.state);
     this._generateDungeon();
     this._buildWorld();
     this._initLighting();
@@ -138,20 +141,21 @@ export class Game {
 
   _generateDungeon() {
     this.state.dungeonSeed = Date.now();
-    const gen = new DungeonGenerator(this.state.dungeonSeed);
+    const gen = new DungeonGenerator(this.state.dungeonSeed, this.state.biome);
     this.dungeonData = gen.generate();
     this.state.entranceCell = this.dungeonData.entranceCell;
     this.state.exitCell = this.dungeonData.exitCell;
   }
 
   _buildWorld() {
-    this.worldBuilder = new WorldBuilder(this.scene, this.dungeonData);
+    const textures = this.biomes.texturesFor(this.state.biome);
+    this.worldBuilder = new WorldBuilder(this.scene, this.dungeonData, textures);
     const result = this.worldBuilder.build();
     this._collisionBoxes = result.collisionBoxes || [];
   }
 
   _initLighting() {
-    this.lighting = new LightingSystem(this.scene);
+    this.lighting = new LightingSystem(this.scene, this.biomes.current.palette);
     this.lighting.init(this.dungeonData);
   }
 
@@ -566,9 +570,13 @@ export class Game {
     this._prevOrbCount = 0;
     this._prevInExit = false;
     this._noAmmoWarned = false;
+    const biomeChanged = this.biomes.applyLevel(this.state.level, this.state);
+    if (biomeChanged) {
+      this.events.emit('biome:change', { biome: this.state.biome, biomeIndex: this.state.biomeIndex });
+    }
     this._generateDungeon();
     this._buildWorld();
-    this.lighting = new LightingSystem(this.scene);
+    this.lighting = new LightingSystem(this.scene, this.biomes.current.palette);
     this.lighting.init(this.dungeonData);
     this.smoke = new SmokeSystem(this.scene);
     this.smoke.init();
@@ -640,6 +648,7 @@ export class Game {
       this.scene.remove(p.mesh);
     }
     this._disposeScene();
+    if (this.biomes) this.biomes.dispose();
     this.renderer.dispose();
     this.container.removeChild(this.renderer.domElement);
   }
@@ -655,9 +664,12 @@ export class Game {
       if (obj.geometry) obj.geometry.dispose();
       if (obj.material) {
         if (Array.isArray(obj.material)) {
-          obj.material.forEach((m) => { if (m.map) m.map.dispose(); m.dispose(); });
+          obj.material.forEach((m) => {
+            if (m.map && !m.map.userData?.biomeCached) m.map.dispose();
+            m.dispose();
+          });
         } else {
-          if (obj.material.map) obj.material.map.dispose();
+          if (obj.material.map && !obj.material.map.userData?.biomeCached) obj.material.map.dispose();
           obj.material.dispose();
         }
       }

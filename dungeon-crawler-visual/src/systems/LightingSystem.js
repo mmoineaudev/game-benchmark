@@ -3,8 +3,9 @@ import { LIGHTING } from '../core/Constants.js';
 import { generateGlowTexture } from '../world/Textures.js';
 
 export class LightingSystem {
-  constructor(scene) {
+  constructor(scene, biomePalette = null) {
     this.scene = scene;
+    this.biomePalette = biomePalette; // { torchColor, fog, fogDensity, ambient, ambientIntensity } or null
     this.torches = [];
     this.godRays = [];
     this._glowTex = null;
@@ -20,9 +21,16 @@ export class LightingSystem {
   }
 
   init(dungeonData) {
-    this.ambient = new THREE.AmbientLight(LIGHTING.AMBIENT_COLOR, LIGHTING.AMBIENT_INTENSITY);
+    const pal = this.biomePalette;
+    this.ambient = new THREE.AmbientLight(
+      pal?.ambient ?? LIGHTING.AMBIENT_COLOR,
+      pal?.ambientIntensity ?? LIGHTING.AMBIENT_INTENSITY,
+    );
     this.scene.add(this.ambient);
-    this.scene.fog = new THREE.FogExp2(LIGHTING.FOG_COLOR, LIGHTING.FOG_DENSITY);
+    this.scene.fog = new THREE.FogExp2(
+      pal?.fog ?? LIGHTING.FOG_COLOR,
+      pal?.fogDensity ?? LIGHTING.FOG_DENSITY,
+    );
 
     this._glowTex = generateGlowTexture();
     this._glowMat = new THREE.SpriteMaterial({
@@ -119,8 +127,9 @@ export class LightingSystem {
     sconceGroup.traverse(c => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
     this.scene.add(sconceGroup);
 
-    // Flame — cone geometry, animated via scale in update()
-    const flameMat = new THREE.MeshBasicMaterial({ color: LIGHTING.FLAME_COLOR });
+    // PointLight
+    const torchColor = this.biomePalette?.torchColor ?? LIGHTING.TORCH_COLOR;
+    const flameMat = new THREE.MeshBasicMaterial({ color: this.biomePalette?.torchColor ?? LIGHTING.FLAME_COLOR });
     const flame = new THREE.Mesh(this._flameGeo, flameMat);
     flame.position.set(x, y, z);
     flame.rotation.z = Math.PI; // point up
@@ -132,9 +141,8 @@ export class LightingSystem {
     glowSprite.scale.set(1.2, 1.2, 1);
     this.scene.add(glowSprite);
 
-    // PointLight
     const light = new THREE.PointLight(
-      LIGHTING.TORCH_COLOR, LIGHTING.TORCH_INTENSITY,
+      torchColor, LIGHTING.TORCH_INTENSITY,
       LIGHTING.TORCH_DISTANCE, LIGHTING.TORCH_DECAY,
     );
     light.position.set(x, y, z);

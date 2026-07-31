@@ -1,20 +1,30 @@
 // Procedural textures generated at init time
 // All use Canvas 2D — no external assets needed
 
-export function generateStoneWallTexture(size = 256) {
+// Mix a hex color toward a tint hex by `amount` (0..1). Used for biome tints.
+function mixHex(base, tint, amount) {
+  const b = [base >> 16 & 255, base >> 8 & 255, base & 255];
+  const t = [tint >> 16 & 255, tint >> 8 & 255, tint & 255];
+  const m = (i) => Math.round(b[i] + (t[i] - b[i]) * amount);
+  return `rgb(${m(0)},${m(1)},${m(2)})`;
+}
+
+export function generateStoneWallTexture(size = 256, tint = null) {
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext('2d');
 
   // Base dark stone
-  ctx.fillStyle = '#2a2a38';
+  ctx.fillStyle = tint ? mixHex(0x2a2a38, tint, 0.35) : '#2a2a38';
   ctx.fillRect(0, 0, size, size);
 
   // Individual stones with mortar lines
   const stoneRows = 8;
   const rowH = size / stoneRows;
-  const colors = ['#2e2e3c', '#262634', '#303040', '#282838', '#2c2c3a'];
+  const colors = tint
+    ? ['#2e2e3c', '#262634', '#303040', '#282838', '#2c2c3a'].map((c) => c)
+    : ['#2e2e3c', '#262634', '#303040', '#282838', '#2c2c3a'];
 
   for (let row = 0; row < stoneRows; row++) {
     const y = row * rowH;
@@ -25,7 +35,7 @@ export function generateStoneWallTexture(size = 256) {
       const x = col * rowH * 1.6 + offset - rowH * 0.8;
       const w = rowH * 1.5 + (Math.random() - 0.5) * rowH * 0.3;
       const h = rowH * 0.9 + (Math.random() - 0.5) * rowH * 0.15;
-      ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)];
+      ctx.fillStyle = tint ? mixHex(parseInt(colors[Math.floor(Math.random() * colors.length)].slice(1), 16), tint, 0.35) : colors[Math.floor(Math.random() * colors.length)];
       ctx.fillRect(x, y + rowH * 0.05, w, h);
 
       // Subtle highlight on top edge
@@ -66,20 +76,22 @@ export function generateStoneWallTexture(size = 256) {
   return new THREE.CanvasTexture(canvas);
 }
 
-export function generateFloorTexture(size = 256) {
+export function generateFloorTexture(size = 256, tint = null) {
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext('2d');
 
   // Base dark stone
-  ctx.fillStyle = '#22222a';
+  ctx.fillStyle = tint ? mixHex(0x22222a, tint, 0.35) : '#22222a';
   ctx.fillRect(0, 0, size, size);
 
   // Large flagstones
   const tileCount = 5;
   const tileSize = size / tileCount;
-  const colors = ['#24242e', '#20202a', '#262630', '#22222c', '#282832'];
+  const colors = tint
+    ? ['#24242e', '#20202a', '#262630', '#22222c', '#282832']
+    : ['#24242e', '#20202a', '#262630', '#22222c', '#282832'];
 
   for (let row = 0; row < tileCount; row++) {
     for (let col = 0; col < tileCount; col++) {
@@ -87,7 +99,7 @@ export function generateFloorTexture(size = 256) {
       const y = row * tileSize + (Math.random() - 0.5) * 6;
       const w = tileSize - 4;
       const h = tileSize - 4;
-      ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)];
+      ctx.fillStyle = tint ? mixHex(parseInt(colors[Math.floor(Math.random() * colors.length)].slice(1), 16), tint, 0.35) : colors[Math.floor(Math.random() * colors.length)];
       ctx.fillRect(x, y, w, h);
 
       // Edge highlight
@@ -115,14 +127,14 @@ export function generateFloorTexture(size = 256) {
   return new THREE.CanvasTexture(canvas);
 }
 
-export function generateCeilingTexture(size = 256) {
+export function generateCeilingTexture(size = 256, tint = null) {
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext('2d');
 
   // Dark rough stone — simpler than walls
-  ctx.fillStyle = '#181820';
+  ctx.fillStyle = tint ? mixHex(0x181820, tint, 0.35) : '#181820';
   ctx.fillRect(0, 0, size, size);
 
   // Rough patches
@@ -130,7 +142,9 @@ export function generateCeilingTexture(size = 256) {
     const x = Math.random() * size;
     const y = Math.random() * size;
     const r = Math.random() * 20 + 5;
-    ctx.fillStyle = `rgba(${20 + Math.random() * 15},${20 + Math.random() * 15},${25 + Math.random() * 15},0.3)`;
+    ctx.fillStyle = tint
+      ? mixHex(0x141420, tint, 0.35).replace('rgb', 'rgba').replace(')', ',0.3)')
+      : `rgba(${20 + Math.random() * 15},${20 + Math.random() * 15},${25 + Math.random() * 15},0.3)`;
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fill();

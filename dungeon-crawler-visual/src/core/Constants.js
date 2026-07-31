@@ -77,6 +77,56 @@ export const DUNGEON = {
   DEAD_END_MAX: 4,
 };
 
+// --- Extended spec: biomes -------------------------------------------------
+export const BIOMES = {
+  SEQUENCE: ['STONE', 'HAUNTED_CRYPT', 'FUNGAL_CAVERN', 'VOLCANIC_DEPTHS', 'FROZEN_HALLS'],
+  LEVELS_PER_BIOME: 2,
+  STONE: {
+    wall: 0x3a3a4a, floor: 0x2a2a35, ceiling: 0x1a1a25,
+    fog: 0x0a0a15, fogDensity: 0.015,
+    ambient: 0x111122, ambientIntensity: 0.2,
+    torchColor: 0xff9944, label: 'STONE DUNGEON',
+  },
+  HAUNTED_CRYPT: {
+    wall: 0x2e2e3e, floor: 0x20202c, ceiling: 0x14141c,
+    fog: 0x060610, fogDensity: 0.016,
+    ambient: 0x10101e, ambientIntensity: 0.22,
+    torchColor: 0x88ddff, label: 'HAUNTED CRYPT',
+  },
+  FUNGAL_CAVERN: {
+    wall: 0x2a3a2e, floor: 0x1e2a22, ceiling: 0x141e18,
+    fog: 0x0a140e, fogDensity: 0.014,
+    ambient: 0x0c1a10, ambientIntensity: 0.25,
+    torchColor: 0x44ff88, label: 'FUNGAL CAVERN',
+  },
+  VOLCANIC_DEPTHS: {
+    wall: 0x3a2420, floor: 0x2a1814, ceiling: 0x1e100e,
+    fog: 0x1a0a06, fogDensity: 0.018,
+    ambient: 0x2a0e06, ambientIntensity: 0.25,
+    torchColor: 0xff5522, label: 'VOLCANIC DEPTHS',
+  },
+  FROZEN_HALLS: {
+    wall: 0x3a4654, floor: 0x28303c, ceiling: 0x1a2028,
+    fog: 0x0c1220, fogDensity: 0.013,
+    ambient: 0x16203a, ambientIntensity: 0.28,
+    torchColor: 0x66ccff, label: 'FROZEN HALLS',
+  },
+};
+
+// Biome id for a given level (cyclic, 2 levels per biome)
+export function biomeForLevel(level) {
+  return BIOMES.SEQUENCE[Math.floor((level - 1) / BIOMES.LEVELS_PER_BIOME) % BIOMES.SEQUENCE.length];
+}
+
+// Room-type weight modifiers per biome (multiplier on base DUNGEON.ROOM_TYPES weight)
+export const BIOME_ROOM_MODIFIERS = {
+  STONE: {},
+  HAUNTED_CRYPT: { CRYPT: 3, LIBRARY: 1.5, ARMORY: 0.5 },
+  FUNGAL_CAVERN: { MUSHROOM_GROVE: 3, VAULT: 0.7 },
+  VOLCANIC_DEPTHS: { ARMORY: 2, CHAMBER: 0.8 },
+  FROZEN_HALLS: { VAULT: 1.5, CHAMBER: 1.2, MUSHROOM_GROVE: 0 },
+};
+
 export const RENDERER = {
   ANTIALIAS: true,
   TONE_MAPPING: 'ACESFilmicToneMapping', // set via renderer.toneMapping

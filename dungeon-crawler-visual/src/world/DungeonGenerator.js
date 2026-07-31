@@ -11,8 +11,9 @@ function mulberry32(a) {
 }
 
 export class DungeonGenerator {
-  constructor(seed) {
+  constructor(seed, biome = 'STONE') {
     this.rng = mulberry32(seed || Date.now());
+    this.biome = biome; // used for room-type weight modifiers (extended spec)
     this.gridSize = WORLD.GRID_MIN + Math.floor(this.rng() * (WORLD.GRID_MAX - WORLD.GRID_MIN + 1));
     this.cellSize = WORLD.CELL_SIZE;
     this.grid = []; // 2D array of cell types: 'empty' | 'room' | 'corridor'

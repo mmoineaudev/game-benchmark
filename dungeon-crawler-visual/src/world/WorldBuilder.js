@@ -3,11 +3,13 @@ import { WORLD, MATERIALS } from '../core/Constants.js';
 import { generateStoneWallTexture, generateFloorTexture, generateCeilingTexture } from './Textures.js';
 
 export class WorldBuilder {
-  constructor(scene, dungeonData) {
+  constructor(scene, dungeonData, biomeTextures = null) {
     this.scene = scene;
     this.data = dungeonData;
 
-    const wallTex = generateStoneWallTexture();
+    // biomeTextures: { wallTex, floorTex, ceilingTex } from BiomeSystem,
+    // or null to generate the default stone set (existing behavior).
+    const wallTex = biomeTextures?.wallTex ?? generateStoneWallTexture();
     wallTex.wrapS = THREE.RepeatWrapping;
     wallTex.wrapT = THREE.RepeatWrapping;
     wallTex.repeat.set(2, 2);
@@ -18,7 +20,7 @@ export class WorldBuilder {
       metalness: MATERIALS.WALL_METALNESS,
     });
 
-    const floorTex = generateFloorTexture();
+    const floorTex = biomeTextures?.floorTex ?? generateFloorTexture();
     floorTex.wrapS = THREE.RepeatWrapping;
     floorTex.wrapT = THREE.RepeatWrapping;
     floorTex.repeat.set(2, 2);
@@ -30,7 +32,7 @@ export class WorldBuilder {
     });
 
     this.ceilingMaterial = new THREE.MeshStandardMaterial({
-      map: generateCeilingTexture(),
+      map: biomeTextures?.ceilingTex ?? generateCeilingTexture(),
       roughness: MATERIALS.CEILING_ROUGHNESS,
       metalness: 0,
     });

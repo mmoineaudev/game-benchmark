@@ -1,4 +1,4 @@
-import { WORLD, DUNGEON } from '../core/Constants.js';
+import { WORLD, DUNGEON, BIOME_ROOM_MODIFIERS } from '../core/Constants.js';
 
 // Simple seeded RNG (mulberry32)
 function mulberry32(a) {
@@ -97,10 +97,25 @@ export class DungeonGenerator {
   }
 
   _pickRoomType() {
-    const r = this.rng() * 100;
-    if (r < 40) return 'CHAMBER';
-    if (r < 75) return 'HALL';
-    return 'VAULT';
+    // Weighted pick over room types, filtered by biome eligibility and
+    // multiplied by biome-specific weight modifiers (BIOME_ROOM_MODIFIERS).
+    const mods = BIOME_ROOM_MODIFIERS[this.biome] || {};
+    const total = [];
+    let sum = 0;
+    for (const [key, cfg] of Object.entries(DUNGEON.ROOM_TYPES)) {
+      const elig = DUNGEON.ROOM_BIOME_ELIGIBILITY[key];
+      if (elig !== 'all' && !elig.includes(this.biome)) continue;
+      const w = cfg.weight * (mods[key] ?? 1);
+      if (w <= 0) continue;
+      total.push([key, w]);
+      sum += w;
+    }
+    let r = this.rng() * sum;
+    for (const [key, w] of total) {
+      r -= w;
+      if (r <= 0) return key;
+    }
+    return total[total.length - 1][0];
   }
 
   _connectRooms() {

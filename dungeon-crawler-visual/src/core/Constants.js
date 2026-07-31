@@ -67,6 +67,23 @@ export const DUNGEON = {
     CHAMBER: { weight: 40, minSize: 2, maxSize: 3 },
     HALL: { weight: 35, minSize: 1, maxSize: 2 },
     VAULT: { weight: 25, minSize: 3, maxSize: 4 },
+    // --- Extended spec: new room types ---
+    ARMORY: { weight: 10, minSize: 3, maxSize: 3 },
+    LIBRARY: { weight: 10, minSize: 3, maxSize: 3 },
+    CRYPT: { weight: 10, minSize: 2, maxSize: 3 },
+    MUSHROOM_GROVE: { weight: 8, minSize: 2, maxSize: 3 },
+    ARENA: { weight: 6, minSize: 4, maxSize: 4 },
+  },
+  // Room-type eligibility: which biomes may generate a given room type
+  ROOM_BIOME_ELIGIBILITY: {
+    CHAMBER: 'all',
+    HALL: 'all',
+    VAULT: 'all',
+    ARMORY: ['STONE', 'VOLCANIC_DEPTHS'],
+    LIBRARY: ['STONE', 'HAUNTED_CRYPT'],
+    CRYPT: ['HAUNTED_CRYPT'],
+    MUSHROOM_GROVE: ['FUNGAL_CAVERN'],
+    ARENA: 'all',
   },
   MIN_ROOMS: 8,
   MAX_ROOMS: 12,

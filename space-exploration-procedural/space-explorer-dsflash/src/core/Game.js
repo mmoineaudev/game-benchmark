@@ -25,6 +25,7 @@ import { DeadStarSystem } from '../level/DeadStarSystem.js';
 import { StationSystem } from '../level/StationSystem.js';
 import { CrystalSystem } from '../level/CrystalSystem.js';
 import { PulsarSystem } from '../level/PulsarSystem.js';
+import { StormSystem } from '../level/StormSystem.js';
 import { ChunkManager } from '../level/ChunkManager.js';
 import { BiomeGenerator } from '../level/BiomeGenerator.js';
 
@@ -104,6 +105,7 @@ export class Game {
       stationSystem: new StationSystem(this.scene, eventBus),
       crystalSystem: new CrystalSystem(this.scene, eventBus),
       pulsarSystem: new PulsarSystem(this.scene, eventBus),
+      stormSystem: new StormSystem(this.scene, eventBus),
       nebulaSystem: this.nebulaSystem,
     };
 
@@ -312,6 +314,7 @@ export class Game {
     this.worldSystems.blackHoleSystem.update(dt);
     if (this.worldSystems.crystalSystem) this.worldSystems.crystalSystem.update(dt);
     if (this.worldSystems.pulsarSystem) this.worldSystems.pulsarSystem.update(dt, this.ship.position);
+    if (this.worldSystems.stormSystem) this.worldSystems.stormSystem.update(dt, this.ship.position);
 
     // Physics (collisions, gravity, consumption, wormhole blur)
     this.physics.update(dt, this.ship, gameState);
@@ -359,6 +362,9 @@ export class Game {
       this.hud.throttleSlider.value = String(Math.round(thrustFraction * 100));
     }
     const speedFraction = this.ship.speed / Constants.MAX_SHIP_SPEED;
+    if (this.worldSystems.stormSystem) {
+      this.post.stormCA = this.worldSystems.stormSystem.getShipDist() < 200 ? 0.002 : 0;
+    }
     this.post.update(dt, speedFraction, this.physics.wormholeBlurIntensity);
   }
 
@@ -561,6 +567,7 @@ export class Game {
     this.worldSystems.stationSystem.dispose();
     this.worldSystems.crystalSystem.dispose();
     this.worldSystems.pulsarSystem.dispose();
+    this.worldSystems.stormSystem.dispose();
     this.particles.dispose();
     this.weaponSystem.dispose();
     this.ship.dispose(this.scene);

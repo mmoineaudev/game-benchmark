@@ -111,6 +111,7 @@ export class PostProcessingSystem {
 
     this.caPass = new ShaderPass(ChromaticAberrationShader);
     this.caPass.uniforms.uOffset.value = 0;
+    this.stormCA = 0; // storm distortion (v2.0 §3.4.3)
     this.composer.addPass(this.caPass);
 
     this.vignettePass = new ShaderPass(VignetteShader);
@@ -130,7 +131,7 @@ export class PostProcessingSystem {
 
   /** Speed fraction 0..1 drives chromatic aberration (spec §5.9). */
   update(dt, speedFraction, wormholeBlurIntensity) {
-    this.caPass.uniforms.uOffset.value = Constants.CHROMATIC_ABERRATION_MAX * speedFraction;
+    this.caPass.uniforms.uOffset.value = Constants.CHROMATIC_ABERRATION_MAX * speedFraction + this.stormCA;
     this.grainPass.uniforms.uTime.value += dt;
     this.wormholePass.uniforms.uTime.value += dt;
     this.wormholePass.uniforms.uIntensity.value = wormholeBlurIntensity;

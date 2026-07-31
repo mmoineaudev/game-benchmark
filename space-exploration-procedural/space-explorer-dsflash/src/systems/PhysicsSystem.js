@@ -140,6 +140,27 @@ export class PhysicsSystem {
       }
     }
 
+    // ---- Storm lightning strike (v2.0 §3.4.3): 40 dmg within 25 u of a bolt ----
+    if (systems.stormSystem) {
+      for (const b of systems.stormSystem.getBolts()) {
+        // distance from ship to segment a-b
+        const abx = b.bx - b.ax, aby = b.by - b.ay, abz = b.bz - b.az;
+        const len2 = abx * abx + aby * aby + abz * abz || 1;
+        const t = Math.max(0, Math.min(1, ((ship.position.x - b.ax) * abx + (ship.position.y - b.ay) * aby + (ship.position.z - b.az) * abz) / len2));
+        const qx = ship.position.x - (b.ax + abx * t), qy = ship.position.y - (b.ay + aby * t), qz = ship.position.z - (b.az + abz * t);
+        const d2 = qx * qx + qy * qy + qz * qz;
+        if (d2 < Constants.STORM.strikeRadius * Constants.STORM.strikeRadius) {
+          if (ship.shieldActive) {
+            this.game.onShieldDeflect(ship.position.x + qx, ship.position.y + qy, ship.position.z + qz);
+            continue;
+          }
+          const res = gameState.takeDamage(Constants.STORM.strikeDamage, 'lightning');
+          this.game.onShipCollision({ type: 'lightning' }, Constants.STORM.strikeDamage);
+          if (res === 'dead') { this._kill(ship, gameState, 'lightning', { type: 'lightning' }); return; }
+        }
+      }
+    }
+
     // ---- Black hole gravity + consumption ---------------------------------
     if (systems.blackHoleSystem) {
       const holes = systems.blackHoleSystem.holes;

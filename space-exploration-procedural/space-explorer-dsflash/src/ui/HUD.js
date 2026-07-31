@@ -30,6 +30,9 @@ export class HUD {
         font: 800 30px/1.3 'Segoe UI', system-ui, sans-serif; color: #b8ffe0; letter-spacing: 4px; text-shadow: 0 0 24px rgba(80,255,190,0.8);
         opacity: 0; transition: opacity 0.6s; pointer-events: none; z-index: 30; }
       #hud-aq { bottom: 6px; right: 6px; font-size: 10px; opacity: 0.6; color: #ffd880; }
+      #hud-static { position: absolute; inset: 0; background: rgba(160,255,220,0.04); opacity: 0; pointer-events: none; z-index: 16;
+        animation: staticFlicker 0.05s steps(2) infinite; }
+      @keyframes staticFlicker { 0% { filter: none; } 50% { filter: brightness(1.4); } 100% { filter: none; } }
       #hud-distance { top: 14px; left: 50%; transform: translateX(-50%); font-size: 18px; }
       #hud-biome { top: 14px; right: 16px; font-size: 15px; opacity: 0.9; transition: opacity 0.6s; }
       #hud-mute { top: 40px; right: 16px; font-size: 14px; opacity: 0.7; }
@@ -115,6 +118,7 @@ export class HUD {
 
     this.flashEl = this._el('div', '', this.root); this.flashEl.id = 'hud-flash';
     this.lowhp = this._el('div', '', this.root); this.lowhp.id = 'hud-lowhp';
+    this.staticEl = this._el('div', '', this.root); this.staticEl.id = 'hud-static';
 
     this.hint = this._el('div', 'hud-el', this.root); this.hint.id = 'hud-hint';
     this.hint.innerHTML = 'Z/S pitch · Q/D strafe · A/E roll · Mouse look<br>Scroll throttle 0-100% · Space fire · Esc pause · M mute';
@@ -151,6 +155,7 @@ export class HUD {
       eventBus.on(Events.BIOME_CHANGED, (e) => this.setBiome(e.to)),
       eventBus.on(Events.AUDIO_MUTED, (e) => this.setMuted(e.muted)),
       eventBus.on(Events.PLAYER_HEALTH_CHANGED, (e) => this.setHealth(e.health, e.maxHealth)),
+      eventBus.on(Events.STORM_STATIC_CHANGED, (e) => this.setStatic(e.active, e.intensity)),
     ];
   }
 
@@ -167,6 +172,9 @@ export class HUD {
     this._announceTimer = setTimeout(() => { this.announceEl.style.opacity = '0'; }, seconds * 1000);
   }
   setAQ(level) { this.aqEl.textContent = level > 0 ? `AQ${level}` : ''; }
+  setStatic(active, intensity) {
+    this.staticEl.style.opacity = active ? String(intensity) : '0';
+  }
   setDistance(d) { this.distance.textContent = `DISTANCE: ${Math.floor(d).toLocaleString()} u`; }
   setBiome(name) {
     const label = name.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
@@ -211,6 +219,7 @@ export class HUD {
     this.setRung('Open Space', 0, false);
     this.setAQ(0);
     this.announceEl.style.opacity = '0';
+    this.setStatic(false, 0);
     this.setWarning('eventHorizon', false);
     this.setWarning('stellarRemnant', false);
     this.setWarning('pulsarBeam', false);

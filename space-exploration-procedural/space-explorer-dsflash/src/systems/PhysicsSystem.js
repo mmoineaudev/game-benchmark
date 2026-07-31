@@ -63,6 +63,10 @@ export class PhysicsSystem {
 
       // Resolve per type
       if (c.type === 'asteroid') {
+        if (ship.shieldActive) {
+          this._shieldDeflect(c, ship.position);
+          continue;
+        }
         const dmg = c.scale > Constants.COLLISION_THRESHOLD_LARGE ? Constants.COLLISION_DAMAGE_LARGE : Constants.COLLISION_DAMAGE_SMALL;
         const res = gameState.takeDamage(dmg, 'collision');
         this._bounce(ship, c, dt);
@@ -70,12 +74,20 @@ export class PhysicsSystem {
         this.game.onShipCollision(c, dmg);
         if (res === 'dead') { this._kill(ship, gameState, 'collision', c); return; }
       } else if (c.type === 'debris') {
+        if (ship.shieldActive) {
+          this._shieldDeflect(c, ship.position);
+          continue;
+        }
         const res = gameState.takeDamage(Constants.COLLISION_DAMAGE_SMALL, 'collision');
         this._bounce(ship, c, dt);
         if (c.owner) c.owner.remove(c);
         this.game.onShipCollision(c, Constants.COLLISION_DAMAGE_SMALL);
         if (res === 'dead') { this._kill(ship, gameState, 'collision', c); return; }
       } else if (c.type === 'comet') {
+        if (ship.shieldActive) {
+          this._shieldDeflect(c, ship.position);
+          continue;
+        }
         const res = gameState.takeDamage(Constants.COMET_DAMAGE, 'collision');
         // deflect comet, don't destroy it (spec open point: ship takes 25, comet survives)
         this._deflectBody(c, ship.position);
@@ -209,6 +221,17 @@ export class PhysicsSystem {
       c.vy -= 2 * vn * (ny / len);
       c.vz -= 2 * vn * (nz / len);
     }
+  }
+
+  /** Shield: strongly push the body away, no damage, no destruction. */
+  _shieldDeflect(c, shipPos) {
+    const nx = c.x - shipPos.x, ny = c.y - shipPos.y, nz = c.z - shipPos.z;
+    const len = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+    const push = Constants.SHIELD.deflectPower;
+    c.vx += (nx / len) * push;
+    c.vy += (ny / len) * push;
+    c.vz += (nz / len) * push;
+    this.game.onShieldDeflect(c.x, c.y, c.z);
   }
 
   _kill(ship, gameState, reason, source) {

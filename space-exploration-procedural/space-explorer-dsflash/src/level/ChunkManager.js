@@ -44,20 +44,24 @@ export class ChunkManager {
     const s = Constants.CHUNK_SIZE;
     return {
       cx: Math.floor(pos.x / s),
+      cy: Math.floor(pos.y / s),
       cz: Math.floor(pos.z / s),
     };
   }
 
   update(shipPos, odometer) {
-    const { cx, cz } = this.currentChunk(shipPos);
+    const { cx, cy, cz } = this.currentChunk(shipPos);
     const R = Constants.CHUNKS_RADIUS;
+    const VR = Constants.CHUNKS_VERTICAL_RADIUS;
 
-    // Spawn missing chunks around the ship
-    for (let dx = -R; dx <= R; dx++) {
-      for (let dz = -R; dz <= R; dz++) {
-        const key = `${cx + dx},${cz + dz}`;
-        if (!this.chunks.has(key)) {
-          this._spawnChunk(cx + dx, cz + dz, odometer, shipPos);
+    // Spawn missing chunks around the ship (5x5 horizontal, 3 vertical layers)
+    for (let dy = -VR; dy <= VR; dy++) {
+      for (let dx = -R; dx <= R; dx++) {
+        for (let dz = -R; dz <= R; dz++) {
+          const key = `${cx + dx},${cy + dy},${cz + dz}`;
+          if (!this.chunks.has(key)) {
+            this._spawnChunk(cx + dx, cy + dy, cz + dz, odometer, shipPos);
+          }
         }
       }
     }
@@ -65,19 +69,20 @@ export class ChunkManager {
     // Cleanup chunks too far away
     const cleanup = Constants.CHUNKS_CLEANUP_RADIUS;
     for (const [key, chunk] of [...this.chunks]) {
-      const d = Math.max(Math.abs(chunk.cx - cx), Math.abs(chunk.cz - cz));
+      const d = Math.max(Math.abs(chunk.cx - cx), Math.abs(chunk.cz - cz), Math.abs(chunk.cy - cy));
       if (d > cleanup) this._cleanupChunk(chunk);
     }
   }
 
-  _spawnChunk(cx, cz, odometer, shipPos) {
+  _spawnChunk(cx, cy, cz, odometer, shipPos) {
     const biome = this.biomeGen.getBiome(odometer);
     const cfg = biome.cfg;
     const mult = this.biomeGen.intensity(odometer);
     const rng = mulberry32(hash2(cx, cz));
     const chunk = {
       cx, cz,
-      key: `${cx},${cz}`,
+      cy,
+      key: `${cx},${cy},${cz}`,
       biome: biome.key,
       rng,
     };
@@ -101,7 +106,7 @@ export class ChunkManager {
     const s = Constants.CHUNK_SIZE;
     const x0 = chunk.cx * s;
     const z0 = chunk.cz * s;
-    const y = randRange(rng, -30, 30);
+    const y = chunk.cy * s + randRange(rng, -30, 30);
     const points = [
       new THREE.Vector3(x0 + randRange(rng, 0, s), y, z0 + randRange(rng, 0, s)),
       new THREE.Vector3(x0 + randRange(rng, 0, s), y + randRange(rng, -35, 35), z0 + randRange(rng, 0, s)),

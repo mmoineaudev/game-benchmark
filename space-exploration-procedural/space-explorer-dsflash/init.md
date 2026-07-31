@@ -12,7 +12,7 @@
 
 ### 1.1 Player Ship (the fighter)
 - **Look:** low-poly fighter — elongated fuselage, swept wings, tail fins; glass cockpit canopy (`MeshPhysicalMaterial`, transparent); two glowing engine nacelles with emissive exhaust cones; red (port) / green (starboard) wingtip lights; flickering engine flame (cone + noise shader); blue accent point light under the hull; PBR materials (roughness 0.8–1.0, metalness 0.1–0.3). Exhaust particle trail appears only while thrusting.
-- **Interact:** **free flight** — **Z = dive, S = climb (keyboard pitch)**, Q/D = strafe (local X), A/E = roll, **mouse X = yaw, mouse Y = pitch** (pointer lock on canvas click — **confirmed**), **scroll wheel = throttle 0–100%** (forward velocity accelerates toward throttle × max speed; 0 = decelerate to stop), arrow keys alias Z/S/Q/D. Inertia physics (accel 40 u/s², lateral drift decay 0.98, max 80 u/s). Space / left-click = fire. 100 HP; **0.75 s invulnerability after any hit**; collision damage (20 large / 5 small+debris / 25 comet); red vignette + warning beep below 30 HP. Camera trails the heading but **does not inherit roll** (eases to world-up). Death → dissolve → death screen → R to restart.
+- **Interact:** **free flight** — **Z = dive, S = climb (keyboard pitch)**, Q/D = strafe (local X), A/E = roll, **mouse X = yaw, mouse Y = pitch** (pointer lock on canvas click — **confirmed**), **scroll wheel = throttle 0–100%** (forward velocity accelerates toward throttle × max speed; 0 = decelerate to stop), arrow keys alias Z/S/Q/D. Space / left-click = fire. **Right-click hold = EM shield** (bubble deflects asteroids/debris/comets, 100 energy draining 25/s, regen 15/s). **Powerful headlight** (spotlight, intensity 4, range 70) reveals asteroids ahead. Inertia physics (accel 40 u/s², lateral drift decay 0.98, max 80 u/s). 100 HP; **0.75 s invulnerability after any hit**; collision damage (20 large / 5 small+debris / 25 comet); red vignette + warning beep below 30 HP. Camera trails the heading but **does not inherit roll** (eases to world-up). Death → dissolve → death screen → R to restart.
 
 ### 1.2 Laser Projectiles
 - **Look:** thin glowing beam (cylinder), emissive + bloom halo.
@@ -39,7 +39,7 @@
 ### 1.6 Black Holes
 - **Look:** pure-black event-horizon sphere (8 u radius, renders black under all light), thin emissive orange-white **photon ring** with bloom, rotating **accretion disk** (ring shader: radial falloff, Doppler beaming, white→yellow→orange). Brief radial flash when something gets eaten.
 - **Interact:**
-  - **Gravity:** asteroids, comets, debris within 150 u accelerate toward the center with `a = 2500 / d²` (capped 120 u/s²) — **pull grows as you get closer**.
+  - **Gravity:** asteroids, comets, debris within **450 u** accelerate toward the center with `a = 7500 / d²` (capped 120 u/s²) — **tripled range and strength; pull grows as you get closer**.
   - **Ship:** pulled at **0.5×** strength (**confirmed**) — escapable with thrust. Pulsing red **"⚠ EVENT HORIZON"** warning within 40 u of the horizon surface.
   - **Consumption:** anything touching the horizon (8 u) disappears with a flash + low descending sweep sound — asteroids, comets, debris, projectiles… and the ship (instant death, bypasses invulnerability).
   - **Not destroyable**, no score. Spawn: never in Open Space/Asteroid Belt; 4% of chunks in Nebula Corridor, 8% in Wormhole.
@@ -110,8 +110,8 @@ Also baked in from the review: asteroid HP (100/50/25), drift 1–4 u/s, debris 
 
 - Orchestrator `Game.js`; all communication via `EventBus` (catalog in spec §11); `GameState` singleton with `reset()`; every number in `Constants.js` (zero magic numbers in logic).
 - Event namespaces: `game:*`, `player:*` (died reasons: `collision` | `black_hole` | `dead_star`), `weapon:*`, `environment:*` (incl. `cometDestroyed`, `objectConsumed`, `blackHoleSpawned`, `deadStarSpawned`, `stationSpawned`), `score:*`, `audio:*`, `visual:*`.
-- Chunked infinite world: 200 u chunks, 3 ahead / 2 behind, mulberry32 seeded by chunk coords → deterministic regeneration; biome distance = monotonic odometer; content in ±60 u Y band. Stations live in a persistent world registry (not chunk-owned).
-- Gravity (black holes): cap iterations (~32 bodies/frame), squared distances, skip beyond 150 u, cap acceleration at 120 u/s².
+- Chunked infinite world: 200 u chunks, **3 vertical layers** (below/current/above, `CHUNKS_VERTICAL_RADIUS` 1) × 5×5 horizontal grid, mulberry32 seeded by chunk coords → deterministic regeneration; per-layer density ×0.75; biome distance = monotonic odometer; content in `cy×200 ± 90 u`. Stations live in a persistent world registry (not chunk-owned).
+- Gravity (black holes): cap iterations (~32 bodies/frame), squared distances, skip beyond 450 u, cap acceleration at 120 u/s².
 - Post-processing: RenderPass → UnrealBloom (1.5 / 0.4 / 0.15) → chromatic aberration (speed-scaled) → vignette → film grain → **WormholeBlurPass (only while inside a wall shell)**; CA + grain skipped when `hardwareConcurrency < 4`.
 - Dynamic lights: dead star + nebula point lights only, cull by range, ≤8 active.
 - Delta-time capped at 0.1 s; `setPixelRatio(min(dpr, 2))`; `near=0.1`; dispose everything on cleanup (restart-safe, tested 3×).

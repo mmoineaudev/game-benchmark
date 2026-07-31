@@ -19,8 +19,8 @@ export class AsteroidField {
 
     this._buildGeometries();
     this._meshLarge = [];
-    this._instMedium = this._makeInstanced(this._geoMedium, 1600);
-    this._instSmall = this._makeInstanced(this._geoSmall, 1600);
+    this._instMedium = this._makeInstanced(this._geoMedium, 5000);
+    this._instSmall = this._makeInstanced(this._geoSmall, 5000);
     this._nextMedium = 0;
     this._nextSmall = 0;
     this._slotChunk = new Map(); // instanceSlot key -> chunkKey
@@ -57,7 +57,7 @@ export class AsteroidField {
   _bodyBase(chunk, rng, tier, scale) {
     const x = chunk.cx * Constants.CHUNK_SIZE + randRange(rng, 0, Constants.CHUNK_SIZE);
     const z = chunk.cz * Constants.CHUNK_SIZE + randRange(rng, 0, Constants.CHUNK_SIZE);
-    const y = randRange(rng, -Constants.WORLD_Y_BAND, Constants.WORLD_Y_BAND);
+    const y = chunk.cy * Constants.CHUNK_SIZE + randRange(rng, -Constants.CONTENT_Y_BAND, Constants.CONTENT_Y_BAND);
     const speed = randRange(rng, Constants.ASTEROID_DRIFT_MIN, Constants.ASTEROID_DRIFT_MAX);
     const dir = new THREE.Vector3(randRange(rng, -1, 1), randRange(rng, -1, 1), randRange(rng, -1, 1)).normalize();
     return {
@@ -81,14 +81,17 @@ export class AsteroidField {
   }
 
   spawnChunk(chunk, rng, biomeCfg, mult) {
-    const count = Math.round(biomeCfg.asteroidDensity * mult.asteroid);
+    const count = Math.round(biomeCfg.asteroidDensity * mult.asteroid * Constants.DENSITY_REDUCTION);
     chunk.asteroidBodies = [];
+    let largeCount = 0;
     for (let i = 0; i < count; i++) {
       const roll = rng();
       let tier;
       if (roll < 0.1) tier = TIER.LARGE;
       else if (roll < 0.4) tier = TIER.MEDIUM;
       else tier = TIER.SMALL;
+      if (tier === TIER.LARGE && largeCount >= 4) tier = TIER.MEDIUM; // cap big rocks per chunk
+      if (tier === TIER.LARGE) largeCount++;
 
       const scale = tier === TIER.LARGE ? randRange(rng, 2, 5)
         : tier === TIER.MEDIUM ? randRange(rng, 0.8, 2)
@@ -168,7 +171,7 @@ export class AsteroidField {
       if (!b.active) continue;
       const dx = center.x - b.x, dy = center.y - b.y, dz = center.z - b.z;
       const d2 = dx * dx + dy * dy + dz * dz;
-      if (d2 < 1 || d2 > 150 * 150) continue;
+      if (d2 < 1 || d2 > Constants.BLACK_HOLE_GRAVITY_RADIUS * Constants.BLACK_HOLE_GRAVITY_RADIUS) continue;
       const a = Math.min(strength / d2, maxPull);
       const inv = a / Math.sqrt(d2);
       b.vx += dx * inv * dt;

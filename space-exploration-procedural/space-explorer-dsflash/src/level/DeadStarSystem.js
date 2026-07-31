@@ -82,7 +82,7 @@ export class DeadStarSystem {
   spawnChunk(chunk, rng, biomeCfg, shipPos) {
     const pct = biomeCfg.deadStarDensity;
     if (pct <= 0) { chunk.deadStars = []; return; }
-    if (rng() * 100 >= pct) { chunk.deadStars = []; return; }
+    if (rng() * 100 >= pct * Constants.DENSITY_REDUCTION) { chunk.deadStars = []; return; }
     // max 1 per chunk already implied; spacing guard
     for (const s of this.stars) {
       const dcx = s.x / Constants.CHUNK_SIZE, dcz = s.z / Constants.CHUNK_SIZE;
@@ -91,7 +91,7 @@ export class DeadStarSystem {
     }
     const x = chunk.cx * Constants.CHUNK_SIZE + randRange(rng, 0, Constants.CHUNK_SIZE);
     const z = chunk.cz * Constants.CHUNK_SIZE + randRange(rng, 0, Constants.CHUNK_SIZE);
-    const y = randRange(rng, -Constants.WORLD_Y_BAND, Constants.WORLD_Y_BAND);
+    const y = chunk.cy * Constants.CHUNK_SIZE + randRange(rng, -Constants.CONTENT_Y_BAND, Constants.CONTENT_Y_BAND);
     const ds = Math.hypot(x - shipPos.x, y - shipPos.y, z - shipPos.z);
     if (ds < Constants.DEAD_STAR_MIN_DIST_FROM_SHIP) { chunk.deadStars = []; return; }
 

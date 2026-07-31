@@ -30,6 +30,14 @@ export class HUD {
       #hud-health-bg { width: 100%; height: 12px; background: rgba(10,20,40,0.7); border: 1px solid rgba(120,180,255,0.4); border-radius: 6px; overflow: hidden; }
       #hud-health-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #22cc44, #88ff44); border-radius: 6px; transition: width 0.15s, background 0.3s; }
       #hud-health-label { text-align: center; margin-top: 4px; font-size: 12px; }
+      #hud-shield-wrap { bottom: 52px; left: 50%; transform: translateX(-50%); width: 260px; max-width: 50vw; }
+      #hud-shield-bg { width: 100%; height: 7px; background: rgba(10,20,40,0.7); border: 1px solid rgba(80,180,255,0.45); border-radius: 4px; overflow: hidden; }
+      #hud-shield-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #1a6bff, #66ddff); border-radius: 4px; transition: width 0.15s; }
+      #hud-shield-label { text-align: center; margin-top: 2px; font-size: 10px; letter-spacing: 1.5px; opacity: 0.8; }
+      #hud-shield-btn { position: absolute; bottom: 70px; right: 16px; width: 64px; height: 64px; border-radius: 50%;
+        background: radial-gradient(circle at 35% 35%, rgba(80,180,255,0.55), rgba(20,60,140,0.75));
+        border: 2px solid rgba(120,200,255,0.8); color: #dff1ff; font-size: 26px; display: none;
+        align-items: center; justify-content: center; pointer-events: auto; user-select: none; z-index: 25; }
       #hud-thrust { bottom: 22px; left: 16px; width: 120px; }
       #hud-thrust-label { font-size: 11px; opacity: 0.7; margin-bottom: 3px; }
       #hud-thrust-bg { width: 100%; height: 6px; background: rgba(10,20,40,0.7); border-radius: 3px; overflow: hidden; }
@@ -59,6 +67,24 @@ export class HUD {
     this.healthFill = this._el('div', '', hb); this.healthFill.id = 'hud-health-fill';
     this.healthLabel = this._el('div', '', hw); this.healthLabel.id = 'hud-health-label';
 
+    const sw = this._el('div', 'hud-el', this.root); sw.id = 'hud-shield-wrap';
+    const sb = this._el('div', '', sw); sb.id = 'hud-shield-bg';
+    this.shieldFill = this._el('div', '', sb); this.shieldFill.id = 'hud-shield-fill';
+    const sl = this._el('div', '', sw); sl.id = 'hud-shield-label';
+    sl.textContent = 'SHIELD (RIGHT CLICK)';
+
+    // Touch shield button (hidden on desktop)
+    this.shieldBtn = this._el('div', '', this.root); this.shieldBtn.id = 'hud-shield-btn';
+    this.shieldBtn.textContent = '🛡';
+    const press = () => eventBus.emit('input:shield', { active: true });
+    const release = () => eventBus.emit('input:shield', { active: false });
+    this.shieldBtn.addEventListener('pointerdown', press);
+    this.shieldBtn.addEventListener('pointerup', release);
+    this.shieldBtn.addEventListener('pointerleave', release);
+    if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
+      this.shieldBtn.style.display = 'flex';
+    }
+
     const tw = this._el('div', 'hud-el', this.root); tw.id = 'hud-thrust';
     this._el('div', '', tw).id = 'hud-thrust-label';
     this.thrustLabel = tw.firstChild;
@@ -72,7 +98,7 @@ export class HUD {
     this.warnStar = this._el('div', 'hud-warn', warns);
     this.warnStar.textContent = '⚠ STELLAR REMNANT';
 
-    this.flash = this._el('div', '', this.root); this.flash.id = 'hud-flash';
+    this.flashEl = this._el('div', '', this.root); this.flashEl.id = 'hud-flash';
     this.lowhp = this._el('div', '', this.root); this.lowhp.id = 'hud-lowhp';
 
     this.hint = this._el('div', 'hud-el', this.root); this.hint.id = 'hud-hint';
@@ -129,15 +155,22 @@ export class HUD {
     this.lowhp.style.opacity = pct < 30 && pct > 0 ? '1' : '0';
   }
   setThrust(f) { this.thrustFill.style.width = `${Math.round(f * 100)}%`; }
+  setShield(fraction, active) {
+    const pct = Math.round(fraction * 100);
+    this.shieldFill.style.width = `${pct}%`;
+    this.shieldFill.style.background = active
+      ? 'linear-gradient(90deg, #44ccff, #aaffff)'
+      : 'linear-gradient(90deg, #1a6bff, #66ddff)';
+  }
   setWarning(name, active) {
     if (name === 'eventHorizon') this.warnHorizon.style.display = active ? 'block' : 'none';
     else if (name === 'stellarRemnant') this.warnStar.style.display = active ? 'block' : 'none';
   }
   setMuted(muted) { this.mute.textContent = muted ? '🔇 muted (M)' : '🔊 (M to mute)'; }
   flash(color = 'rgba(255,30,30,0.35)') {
-    this.flash.style.background = color;
-    this.flash.style.opacity = '1';
-    setTimeout(() => { this.flash.style.opacity = '0'; }, 120);
+    this.flashEl.style.background = color;
+    this.flashEl.style.opacity = '1';
+    setTimeout(() => { this.flashEl.style.opacity = '0'; }, 120);
   }
   showPause(on) { this.pause.style.display = on ? 'flex' : 'none'; }
 
@@ -146,6 +179,7 @@ export class HUD {
     this.setDistance(0);
     this.setHealth(Constants.MAX_HEALTH, Constants.MAX_HEALTH);
     this.setThrust(0);
+    this.setShield(1, false);
     this.setWarning('eventHorizon', false);
     this.setWarning('stellarRemnant', false);
     this.showPause(false);

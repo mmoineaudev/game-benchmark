@@ -208,6 +208,7 @@ export class Game {
       right: mv.right || this.input.touchMove.x > 0.3,
       rollLeft: mv.rollLeft || this.input.touchRoll < -0.3,
       rollRight: mv.rollRight || this.input.touchRoll > 0.3,
+      shieldHeld: mv.shieldHeld,
       yawDelta,
       pitchDelta,
       throttleDelta: frame.throttleDelta,
@@ -273,6 +274,8 @@ export class Game {
 
     // Engine audio follows throttle
     this.audio.setThrust(thrustFraction);
+    this.audio.setShield(this.ship.shieldActive);
+    this.hud.setShield(this.ship.shieldEnergy / Constants.SHIELD.energyMax, this.ship.shieldActive);
 
     // Camera
     this.cameraSystem.update(dt, this.ship, thrustFraction);
@@ -387,6 +390,12 @@ export class Game {
     this._startDeathSequence();
   }
 
+  /** Shield deflection feedback: spark + ping at contact point. */
+  onShieldDeflect(x, y, z) {
+    this.particles.burst('laserSpark', x, y, z, 10, 10, { size: 0.2, color: [0.4, 0.8, 1.0] });
+    this.audio.play('shield', { volume: 0.4 });
+  }
+
   _startDeathSequence() {
     if (gameState.gameState !== 'playing') return;
     gameState.gameState = 'dying';
@@ -418,6 +427,8 @@ export class Game {
     this.ship.heading.identity();
     this.ship.throttle = 0;
     this.ship.thrustFraction = 0;
+    this.ship.shieldEnergy = Constants.SHIELD.energyMax;
+    this.ship.shieldActive = false;
     this.ship.alive = true;
     this.ship.group.visible = true;
     this.cameraSystem.reset();

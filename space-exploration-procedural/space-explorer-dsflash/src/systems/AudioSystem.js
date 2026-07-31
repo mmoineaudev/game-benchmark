@@ -11,6 +11,8 @@ export class AudioSystem {
     this._engineOsc = null;
     this._engineFilter = null;
     this._warningTimer = null;
+    this._shieldOsc = null;
+    this._shieldGain = null;
     this._initUnsub = eventBus.on(Events.AUDIO_MUTED, (m) => this.setMuted(m.muted));
     this._resumeHandler = () => this._ensureContext();
     window.addEventListener('pointerdown', this._resumeHandler);
@@ -53,6 +55,29 @@ export class AudioSystem {
     this._engineGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.1);
   }
 
+  /** Shield hum loop while active. */
+  setShield(active) {
+    if (!this.ctx) return;
+    if (active && !this._shieldOsc) {
+      this._shieldOsc = this.ctx.createOscillator();
+      this._shieldOsc.type = 'triangle';
+      this._shieldOsc.frequency.value = 220;
+      this._shieldGain = this.ctx.createGain();
+      this._shieldGain.gain.value = 0;
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = 900;
+      this._shieldOsc.connect(filter).connect(this._shieldGain).connect(this.master);
+      this._shieldOsc.start();
+      this._shieldGain.gain.setTargetAtTime(0.05, this.ctx.currentTime, 0.08);
+    } else if (!active && this._shieldOsc) {
+      this._shieldGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.08);
+      const osc = this._shieldOsc;
+      this._shieldOsc = null;
+      setTimeout(() => { try { osc.stop(); } catch { /* already stopped */ } }, 400);
+    }
+  }
+
   setMuted(muted) {
     this.muted = muted;
     if (this.master && this.ctx) {
@@ -71,6 +96,7 @@ export class AudioSystem {
       case 'biome': this._biome(volume); break;
       case 'consumption': this._consumption(volume); break;
       case 'comet': this._comet(volume); break;
+      case 'shield': this._shieldPing(volume); break;
       default: break;
     }
   }
@@ -206,6 +232,32 @@ export class AudioSystem {
     osc.connect(og).connect(this.master);
     osc.start(t);
     osc.stop(t + 0.52);
+  }
+
+  /** Shield deflection: metallic ping. */
+  _shieldPing(vol) {
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(1200, t);
+    osc.frequency.exponentialRampToValueAtTime(300, t + 0.08);
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(vol * 0.35, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+    osc.connect(g).connect(this.master);
+    osc.start(t);
+    osc.stop(t + 0.1);
+    const src = this.ctx.createBufferSource();
+    src.buffer = this._noiseBuffer();
+    const nf = this.ctx.createBiquadFilter();
+    nf.type = 'highpass';
+    nf.frequency.value = 2500;
+    const ng = this.ctx.createGain();
+    ng.gain.setValueAtTime(vol * 0.2, t);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+    src.connect(nf).connect(ng).connect(this.master);
+    src.start(t);
+    src.stop(t + 0.06);
   }
 
   /** Warning beep loop while health < 30 (800Hz, 3 pulses, repeats 2s). */

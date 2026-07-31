@@ -19,16 +19,32 @@ export class PlayerShip {
     this.group.position.copy(this.position);
     scene.add(this.group);
 
-    // Headlight + accent light (spec §5.3)
-    this.headlight = new THREE.SpotLight(0xffffff, 1.0, 30, Math.PI / 5, 0.6, 1.5);
-    this.headlight.position.set(0, 0.4, -2.2);
+    // Headlight + accent light (spec §5.3) — powerful, reveals asteroids ahead
+    const HL = Constants.HEADLIGHT;
+    this.headlight = new THREE.SpotLight(HL.color, HL.intensity, HL.range, HL.angle, HL.penumbra, 1.5);
+    this.headlight.position.set(0, 0.6, -3.0);
     this.group.add(this.headlight);
-    this.headlight.target.position.set(0, 0, -10);
+    this.headlight.target.position.set(0, 0, -20);
     this.group.add(this.headlight.target);
 
     this.accentLight = new THREE.PointLight(0x6644ff, 0.4, 12, 2);
     this.accentLight.position.set(0, -0.8, 0.5);
     this.group.add(this.accentLight);
+
+    // Electromagnetic shield bubble (right-click)
+    this.shieldEnergy = Constants.SHIELD.energyMax;
+    this.shieldActive = false;
+    this.shieldMat = new THREE.MeshBasicMaterial({
+      color: 0x55ccff,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    this.shieldMesh = new THREE.Mesh(new THREE.SphereGeometry(Constants.SHIELD.radius, 24, 18), this.shieldMat);
+    this.shieldMesh.visible = false;
+    this.group.add(this.shieldMesh);
 
     // Emissive materials for flicker
     this._flameMeshes = [];
@@ -139,6 +155,23 @@ export class PlayerShip {
     // ---- Throttle (scroll wheel, 0..100%) --------------------------------
     if (move.throttleDelta) {
       this.throttle = clamp(this.throttle + move.throttleDelta * C.THROTTLE_SCROLL_SENSITIVITY, 0, 1);
+    }
+
+    // ---- Shield (right-click) --------------------------------------------
+    const S = C.SHIELD;
+    if (move.shieldHeld && this.shieldEnergy > 0) {
+      this.shieldActive = true;
+      this.shieldEnergy = Math.max(0, this.shieldEnergy - S.drainPerSec * dt);
+    } else {
+      this.shieldActive = false;
+      this.shieldEnergy = Math.min(S.energyMax, this.shieldEnergy + S.regenPerSec * dt);
+    }
+    this.shieldMesh.visible = this.shieldActive;
+    if (this.shieldActive) {
+      const pulse = 0.16 + 0.06 * Math.sin(this._time * 12);
+      this.shieldMat.opacity = pulse;
+    } else {
+      this.shieldMat.opacity = 0;
     }
 
     // ---- Orientation -------------------------------------------------------

@@ -14,6 +14,18 @@ export const Constants = {
   PITCH_LIMIT: 1.2,         // rad, prevents gimbal flip
   SHIP_SPAWN: { x: 0, y: 2, z: 0 },
 
+  // Headlight (powerful — reveals asteroids ahead)
+  HEADLIGHT: { intensity: 4.0, range: 70, angle: 0.65, penumbra: 0.5, color: 0xffffff },
+
+  // Electromagnetic shield (right-click)
+  SHIELD: {
+    radius: 5.5,
+    energyMax: 100,
+    drainPerSec: 25,
+    regenPerSec: 15,
+    deflectPower: 25,
+  },
+
   // Camera
   CAMERA_DISTANCE: 12,
   CAMERA_HEIGHT: 5,
@@ -59,8 +71,8 @@ export const Constants = {
 
   // Black holes
   BLACK_HOLE_RADIUS: 8,
-  BLACK_HOLE_GRAVITY_RADIUS: 150,
-  BLACK_HOLE_GRAVITY_STRENGTH: 2500,
+  BLACK_HOLE_GRAVITY_RADIUS: 450,    // tripled (was 150)
+  BLACK_HOLE_GRAVITY_STRENGTH: 7500, // tripled (was 2500)
   BLACK_HOLE_SHIP_PULL_FACTOR: 0.5,
   BLACK_HOLE_MAX_PULL: 120,
   BLACK_HOLE_WARNING_RANGE: 40,
@@ -101,7 +113,9 @@ export const Constants = {
   CHUNK_SIZE: 200,
   CHUNKS_RADIUS: 2,         // chunks kept around ship (Chebyshev distance, 5x5 grid)
   CHUNKS_CLEANUP_RADIUS: 2.6,
-  WORLD_Y_BAND: 60,         // ± units around ship Y for content
+  CHUNKS_VERTICAL_RADIUS: 1, // 3 vertical layers: below, current, above
+  CONTENT_Y_BAND: 90,        // ±u within each chunk's Y layer
+  DENSITY_REDUCTION: 0.75,   // per-layer density (3 layers → total ≈ 2.25× old, per user)
   SHIP_FORWARD_AXIS: 'z',
 
   // Biomes (distance in units traveled, odometer)

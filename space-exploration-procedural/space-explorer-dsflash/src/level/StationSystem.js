@@ -40,14 +40,14 @@ export class StationSystem {
   spawnChunk(chunk, rng, biomeCfg, shipPos) {
     const pct = biomeCfg.stationDensity;
     if (pct <= 0) { chunk.stations = []; return; }
-    if (rng() * 100 >= pct) { chunk.stations = []; return; }
+    if (rng() * 100 >= pct * Constants.DENSITY_REDUCTION) { chunk.stations = []; return; }
     // A chunk may host at most one station; if one already exists nearby, skip
     for (const s of this.stations) {
       if (s.chunkKey === chunk.key) { chunk.stations = []; return; }
     }
     const x = chunk.cx * Constants.CHUNK_SIZE + randRange(rng, 0, Constants.CHUNK_SIZE);
     const z = chunk.cz * Constants.CHUNK_SIZE + randRange(rng, 0, Constants.CHUNK_SIZE);
-    const y = randRange(rng, -Constants.WORLD_Y_BAND, Constants.WORLD_Y_BAND);
+    const y = chunk.cy * Constants.CHUNK_SIZE + randRange(rng, -Constants.CONTENT_Y_BAND, Constants.CONTENT_Y_BAND);
     const ds = Math.hypot(x - shipPos.x, y - shipPos.y, z - shipPos.z);
     if (ds < Constants.STATION_MIN_DIST_FROM_SHIP) { chunk.stations = []; return; }
 

@@ -19,6 +19,7 @@ export class InputSystem {
     this.right = false;
     this.rollLeft = false;
     this.rollRight = false;
+    this.shieldHeld = false;
     this.thrustHeld = false;
 
     // Edge-triggered flags (consumed by Game each frame)
@@ -73,6 +74,14 @@ export class InputSystem {
     });
     document.addEventListener('mousedown', (e) => {
       if (e.button === 0 && this.pointerLocked) this.firePressed = true;
+      if (e.button === 2 && this.pointerLocked) this.shieldHeld = true;
+    });
+    document.addEventListener('mouseup', (e) => {
+      if (e.button === 2) this.shieldHeld = false;
+    });
+    document.addEventListener('contextmenu', (e) => e.preventDefault());
+    eventBus.on('input:shield', (e) => {
+      this.shieldHeld = e.active;
     });
 
     // Scroll wheel = throttle 0-100% (scroll up = more thrust)
@@ -204,6 +213,7 @@ export class InputSystem {
       right: this.right,
       rollLeft: this.rollLeft,
       rollRight: this.rollRight,
+      shieldHeld: this.shieldHeld,
     };
   }
 }

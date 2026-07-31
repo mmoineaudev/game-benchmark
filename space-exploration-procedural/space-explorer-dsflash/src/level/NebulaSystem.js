@@ -15,7 +15,7 @@ export class NebulaSystem {
 
   /** Spawn `count` clusters into a chunk record. */
   spawnChunk(chunk, rng, biomeCfg, mult) {
-    const count = Math.max(1, Math.round(biomeCfg.nebulaCount * mult.nebula));
+    const count = Math.min(4, Math.max(1, Math.round(biomeCfg.nebulaCount * mult.nebula * Constants.DENSITY_REDUCTION)));
     chunk.nebulae = [];
     for (let i = 0; i < count; i++) {
       chunk.nebulae.push(this._spawnCluster(chunk, rng, biomeCfg));
@@ -25,7 +25,7 @@ export class NebulaSystem {
   _spawnCluster(chunk, rng, biomeCfg) {
     const center = new THREE.Vector3(
       chunk.cx * Constants.CHUNK_SIZE + randRange(rng, 0, Constants.CHUNK_SIZE),
-      randRange(rng, -Constants.WORLD_Y_BAND, Constants.WORLD_Y_BAND),
+      chunk.cy * Constants.CHUNK_SIZE + randRange(rng, -Constants.CONTENT_Y_BAND, Constants.CONTENT_Y_BAND),
       chunk.cz * Constants.CHUNK_SIZE + randRange(rng, 0, Constants.CHUNK_SIZE),
     );
 

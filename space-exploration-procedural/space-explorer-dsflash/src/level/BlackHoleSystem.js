@@ -19,10 +19,10 @@ export class BlackHoleSystem {
   spawnChunk(chunk, rng, biomeCfg, mult) {
     const pct = biomeCfg.blackHoleDensity;
     if (pct <= 0) { chunk.blackHoles = []; return; }
-    if (rng() * 100 >= pct) { chunk.blackHoles = []; return; }
+    if (rng() * 100 >= pct * Constants.DENSITY_REDUCTION) { chunk.blackHoles = []; return; }
     const x = chunk.cx * Constants.CHUNK_SIZE + randRange(rng, 0, Constants.CHUNK_SIZE);
     const z = chunk.cz * Constants.CHUNK_SIZE + randRange(rng, 0, Constants.CHUNK_SIZE);
-    const y = randRange(rng, -Constants.WORLD_Y_BAND, Constants.WORLD_Y_BAND);
+    const y = chunk.cy * Constants.CHUNK_SIZE + randRange(rng, -Constants.CONTENT_Y_BAND, Constants.CONTENT_Y_BAND);
 
     const hole = {
       type: 'blackHole',

@@ -16,8 +16,8 @@ export class DebrisSystem {
 
     this._geoBox = new THREE.BoxGeometry(1, 1, 1);
     this._geoJunk = new THREE.CylinderGeometry(0.5, 0.5, 1, 7);
-    this._instBox = this._makeInstanced(this._geoBox, 600);
-    this._instJunk = this._makeInstanced(this._geoJunk, 600);
+    this._instBox = this._makeInstanced(this._geoBox, 2000);
+    this._instJunk = this._makeInstanced(this._geoJunk, 2000);
     this._nextBox = 0;
     this._nextJunk = 0;
   }
@@ -38,7 +38,7 @@ export class DebrisSystem {
   }
 
   spawnChunk(chunk, rng, biomeCfg) {
-    const count = Math.round(biomeCfg.asteroidDensity * Constants.DEBRIS_DENSITY_FACTOR);
+    const count = Math.round(biomeCfg.asteroidDensity * Constants.DEBRIS_DENSITY_FACTOR * Constants.DENSITY_REDUCTION);
     chunk.debrisBodies = [];
     for (let i = 0; i < count; i++) {
       const isBox = rng() < 0.55;
@@ -56,7 +56,7 @@ export class DebrisSystem {
         hp: 25,
         score: Constants.SCORE_DEBRIS,
         x: chunk.cx * Constants.CHUNK_SIZE + randRange(rng, 0, Constants.CHUNK_SIZE),
-        y: randRange(rng, -Constants.WORLD_Y_BAND, Constants.WORLD_Y_BAND),
+        y: chunk.cy * Constants.CHUNK_SIZE + randRange(rng, -Constants.CONTENT_Y_BAND, Constants.CONTENT_Y_BAND),
         z: chunk.cz * Constants.CHUNK_SIZE + randRange(rng, 0, Constants.CHUNK_SIZE),
         vx: dir.x * speed, vy: dir.y * speed, vz: dir.z * speed,
         rotAxis: new THREE.Vector3(rng() - 0.5, rng() - 0.5, rng() - 0.5).normalize(),
@@ -107,7 +107,7 @@ export class DebrisSystem {
       if (!b.active) continue;
       const dx = center.x - b.x, dy = center.y - b.y, dz = center.z - b.z;
       const d2 = dx * dx + dy * dy + dz * dz;
-      if (d2 < 1 || d2 > 150 * 150) continue;
+      if (d2 < 1 || d2 > Constants.BLACK_HOLE_GRAVITY_RADIUS * Constants.BLACK_HOLE_GRAVITY_RADIUS) continue;
       const a = Math.min(strength / d2, maxPull);
       const inv = a / Math.sqrt(d2);
       b.vx += dx * inv * dt;

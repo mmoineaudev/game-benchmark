@@ -642,6 +642,12 @@ export class Game {
   }
 
   _disposeScene() {
+    // Detach the camera (and its children — the first-person sword) before
+    // disposal so its resources survive, and re-add it after clear() so it
+    // stays in the scene graph and keeps rendering.
+    const cameraAttached = this.scene.getObjectById(this.camera.id) === this.camera;
+    if (cameraAttached) this.scene.remove(this.camera);
+
     this.scene.traverse((obj) => {
       if (obj.geometry) obj.geometry.dispose();
       if (obj.material) {
@@ -654,5 +660,7 @@ export class Game {
       }
     });
     this.scene.clear();
+
+    if (cameraAttached) this.scene.add(this.camera);
   }
 }

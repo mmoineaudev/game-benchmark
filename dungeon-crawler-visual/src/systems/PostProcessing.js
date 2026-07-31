@@ -27,8 +27,8 @@ export class PostProcessing {
     this.composer.addPass(this.bloomPass);
 
     this.vignettePass = new ShaderPass(VignetteShader);
-    this.vignettePass.uniforms['darkness'].value = 0.4;
-    this.vignettePass.uniforms['offset'].value = 0.95;
+    this.vignettePass.uniforms['darkness'].value = 0.22;
+    this.vignettePass.uniforms['offset'].value = 0.98;
     this.composer.addPass(this.vignettePass);
 
     this.composer.renderToScreen = true;

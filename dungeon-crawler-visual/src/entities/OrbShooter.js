@@ -48,7 +48,8 @@ export class OrbShooter {
     }
   }
 
-  fire(x, y, z, yaw) {
+  // Fire along the camera look direction (yaw + pitch) so the crosshair is the aim.
+  fire(x, y, z, yaw, pitch = 0) {
     const p = this.projectiles[this._next];
     this._next = (this._next + 1) % this.projectiles.length;
     p.active = true;
@@ -56,19 +57,29 @@ export class OrbShooter {
     p.glow.visible = true;
     p.mesh.position.set(x, y, z);
     p.glow.position.set(x, y, z);
-    p.dirX = -Math.sin(yaw);   // matches Game forward convention
-    p.dirZ = -Math.cos(yaw);
+    // Camera look vector (matches Game._updateCamera)
+    p.dirX = -Math.sin(yaw) * Math.cos(pitch);
+    p.dirY = Math.sin(pitch);
+    p.dirZ = -Math.cos(yaw) * Math.cos(pitch);
     p.life = ORB_WEAPON.LIFETIME;
     return p;
   }
 
   update(dt, collisionBoxes, skeletons) {
+    const speed = ORB_WEAPON.SPEED;
     for (const p of this.projectiles) {
       if (!p.active) continue;
-      p.mesh.position.x += p.dirX * ORB_WEAPON.SPEED * dt;
-      p.mesh.position.z += p.dirZ * ORB_WEAPON.SPEED * dt;
+      p.mesh.position.x += p.dirX * speed * dt;
+      p.mesh.position.y += p.dirY * speed * dt;
+      p.mesh.position.z += p.dirZ * speed * dt;
       p.glow.position.copy(p.mesh.position);
       p.life -= dt;
+
+      // Floor / ceiling fizzle (walls are checked in 2D below — full height)
+      if (p.mesh.position.y < 0.15 || p.mesh.position.y > 3.85) {
+        this._deactivate(p);
+        continue;
+      }
 
       // Wall hit
       if (circleHitsBox(collisionBoxes, p.mesh.position.x, p.mesh.position.z, ORB_WEAPON.RADIUS)) {
@@ -88,7 +99,8 @@ export class OrbShooter {
         if (s.skel.state === 'DEAD') continue;
         const dx = p.mesh.position.x - s.x;
         const dz = p.mesh.position.z - s.z;
-        if (dx * dx + dz * dz < 1.0) { // ~1 unit hit radius
+        // 2D proximity + height band (skeleton body ~0.2-2.2u) so aimed shots connect
+        if (dx * dx + dz * dz < 1.0 && p.mesh.position.y > 0.15 && p.mesh.position.y < 2.4) {
           this.hitSkeleton?.(s.skel);
           hit = true;
           break;

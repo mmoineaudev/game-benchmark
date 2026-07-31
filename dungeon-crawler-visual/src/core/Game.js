@@ -428,7 +428,14 @@ export class Game {
     }
     this._noAmmoWarned = false;
     this.state.collectedOrbs--;
-    this.shooter.fire(this.state.player.x, 1.4, this.state.player.z, this.state.player.yaw);
+    const p = this.state.player;
+    this.shooter.fire(
+      p.x,
+      WORLD.PLAYER_EYE_HEIGHT - 0.1,
+      p.z,
+      p.yaw,
+      p.pitch,
+    );
     this._fireCooldown = 0.18; // ~5.5 shots/s max — tunable
   }
 

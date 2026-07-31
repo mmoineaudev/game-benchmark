@@ -22,6 +22,7 @@ export class PhysicsSystem {
     if (systems.crystalSystem) list.push(...systems.crystalSystem.getColliders());
     if (systems.pulsarSystem) list.push(...systems.pulsarSystem.getColliders());
     if (systems.hulkSystem) list.push(...systems.hulkSystem.getColliders());
+    if (systems.citySystem) list.push(...systems.citySystem.getColliders());
     return list;
   }
 
@@ -119,6 +120,26 @@ export class PhysicsSystem {
         const res = gameState.takeDamage(Constants.HULK.damage, 'collision');
         this._bounce(ship, c, dt);
         this.game.onShipCollision(c, Constants.HULK.damage);
+        if (res === 'dead') { this._kill(ship, gameState, 'collision', c); return; }
+      } else if (c.type === 'wreck') {
+        // Finale wreck: 20 dmg, survives impact (spec v2.0 §3.4.5)
+        if (ship.shieldActive) {
+          this._shieldDeflect(c, ship.position);
+          continue;
+        }
+        const res = gameState.takeDamage(Constants.CITY.wreckDamage, 'collision');
+        this._bounce(ship, c, dt);
+        this.game.onShipCollision(c, Constants.CITY.wreckDamage);
+        if (res === 'dead') { this._kill(ship, gameState, 'collision', c); return; }
+      } else if (c.type === 'cityFragment') {
+        // Indestructible: bounce + 25 dmg (spec v2.0 §3.4.5)
+        if (ship.shieldActive) {
+          this._shieldDeflect(c, ship.position);
+          continue;
+        }
+        const res = gameState.takeDamage(Constants.CITY.damage, 'collision');
+        this._bounce(ship, c, dt);
+        this.game.onShipCollision(c, Constants.CITY.damage);
         if (res === 'dead') { this._kill(ship, gameState, 'collision', c); return; }
       } else if (c.type === 'station') {
         const res = gameState.takeDamage(Constants.COLLISION_DAMAGE_LARGE, 'collision');

@@ -104,10 +104,14 @@ export class SkeletonSystem {
     const cs = dungeonData.cellSize;
     const ex = state.entranceCell.x * cs + cs / 2;
     const ez = state.entranceCell.z * cs + cs / 2;
+    // Level scaling: +5% move speed and +5% attack speed every 3 levels
+    const tier = Math.floor((state.level - 1) / 3);
+    this.speedMult = 1 + 0.05 * tier;
+    const attackMult = 1 + 0.05 * tier;
     for (let i = 0; i < Math.min(count, candidates.length); i++) {
       const { x, z } = candidates[i];
       const magician = Math.random() < MAGICIAN.CHANCE;
-      const skel = new Skeleton(this.scene, { isMagician: magician, active: true });
+      const skel = new Skeleton(this.scene, { isMagician: magician, active: true, attackMult });
       const sx = x * cs + cs / 2;
       const sz = z * cs + cs / 2;
       skel.group.position.set(sx, 0, sz);
@@ -169,7 +173,7 @@ export class SkeletonSystem {
         }
 
         if (moveX !== 0 || moveZ !== 0) {
-          const speed = SKELETON.CHASE_SPEED * dt;
+          const speed = SKELETON.CHASE_SPEED * (this.speedMult || 1) * dt;
           s.x += moveX * speed;
           s.z += moveZ * speed;
           // Wall collision (same push-out as player)

@@ -3,14 +3,14 @@ import { SWORD } from '../core/Constants.js';
 import { generateGlowTexture } from '../world/Textures.js';
 
 // First-person sword attached to the camera. Held in a blade-up ready pose,
-// clearly visible bottom-right of the view. Swing animation:
-// windup (raise to top-right) -> swing (diagonal chop to bottom-left) -> recover.
-// The arc is translation-driven (the grip carries the blade across the screen)
-// with gentle blade rotation, so the whole sword stays on screen throughout.
+// clearly visible bottom-right of the view. Attack animation is a PIERCE:
+// windup (pull back) -> thrust (stab forward toward the screen center) -> recover.
+// Because the blade drives forward into the view, a longer sword reads as more reach.
 //
-// Progression: the sword grows +10% per 10 orbs held (capped at +100%) and
-// changes its base color at each size bonus. Danger glow: the blade glows when
-// skeletons are close, brighter as they approach.
+// Progression: the sword grows +10% per 10 orbs held (capped at +100%), which
+// also extends its effective melee range. It changes base color at each size
+// bonus. Danger glow: the blade glows and casts light when skeletons are close,
+// brighter as they approach.
 const SWORD_COLORS = [
   0xc8ccd8, // step 0: steel (base)
   0xb08a5a, // step 1: bronze
@@ -28,13 +28,14 @@ const SWORD_COLORS = [
 export class PlayerSword {
   constructor(camera) {
     this.camera = camera;
-    this.state = 'idle'; // idle | windup | swing | recover
+    this.state = 'idle'; // idle | windup | thrust | recover
     this.time = 0;
     this.cool = 0;
     this.group = new THREE.Group();
     this._glow = 0;        // current danger glow intensity (damped)
     this._glowTarget = 0;
     this._colorStep = 0;
+    this._rangeScale = 1;
     this._build();
     camera.add(this.group);
     this._setRest();
@@ -51,8 +52,7 @@ export class PlayerSword {
     });
     this._mats = [this.bladeMat, dark];
 
-    // Blade points UP from the guard (ready pose, tip high). Kept short enough
-    // that the tip stays inside the frame during the swing arc.
+    // Blade points UP from the guard (ready pose, tip high).
     const blade = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.5, 0.1), this.bladeMat);
     blade.position.y = 0.38;
     this.group.add(blade);
@@ -85,6 +85,12 @@ export class PlayerSword {
     this.glowSprite.scale.setScalar(0.35);
     this.group.add(this.glowSprite);
 
+    // Danger light: illuminates the surroundings when enemies are close.
+    // No shadows (the 8-torch shadow budget is untouched).
+    this.dangerLight = new THREE.PointLight(0xff3322, 0, 7, 1.6);
+    this.dangerLight.position.set(0, 0.45, 0.2);
+    this.group.add(this.dangerLight);
+
     this.group.traverse((m) => { if (m.isMesh) m.castShadow = false; });
   }
 
@@ -94,20 +100,25 @@ export class PlayerSword {
     this.group.rotation.set(-0.1, 0, 0.4);
   }
 
-  // Grows the sword +10% per 10 orbs held (capped at +100% = 2x at 100 orbs)
-  // and shifts the base color to the next palette step at each size bonus.
+  // Effective melee reach — grows with the sword size bonus
+  get range() {
+    return SWORD.RANGE * this._rangeScale;
+  }
+
+  // Grows the sword +10% per 10 orbs held (capped at +100% = 2x at 100 orbs),
+  // extends melee range accordingly, and shifts the base color each size bonus.
   setOrbCount(count) {
     const steps = Math.floor(count / 10);
     const capped = Math.min(steps, 10);
-    const scale = 1 + capped * 0.1;
-    this.group.scale.setScalar(scale);
+    this._rangeScale = 1 + capped * 0.1;
+    this.group.scale.setScalar(this._rangeScale);
     if (capped !== this._colorStep) {
       this._colorStep = capped;
       this.bladeMat.color.setHex(SWORD_COLORS[capped]);
     }
   }
 
-  // Danger glow: 0 at >= GLOW_MAX_DIST, ramps to 1 as skeletons approach
+  // Danger glow + light: 0 at >= GLOW_MAX_DIST, ramps to 1 as skeletons approach
   setDanger(nearestSkelDist, dt) {
     const glowMax = 12;
     const glowMin = 1.8;
@@ -119,10 +130,11 @@ export class PlayerSword {
     this.bladeMat.emissiveIntensity = this._glow * 1.5;
     this.glowMat.opacity = this._glow * 0.7;
     this.glowSprite.scale.setScalar(0.35 + this._glow * 0.65);
+    this.dangerLight.intensity = this._glow * 3.2;
   }
 
-  // Returns true if the swing started (false if still recovering/cooldown)
-  swing() {
+  // Returns true if the attack started (false if still recovering/cooldown)
+  attack() {
     if (this.state !== 'idle' || this.cool > 0) return false;
     this.state = 'windup';
     this.time = 0;
@@ -130,26 +142,26 @@ export class PlayerSword {
   }
 
   get isSwinging() {
-    return this.state === 'swing';
+    return this.state === 'thrust';
   }
 
   update(dt, nearestSkelDist = Infinity) {
     if (this.cool > 0) this.cool -= dt;
 
-    // Danger glow updates every frame, independent of swing state
+    // Danger glow updates every frame, independent of attack state
     this.setDanger(nearestSkelDist, dt);
 
     if (this.state === 'idle') return;
     this.time += dt;
 
     const windup = SWORD.WINDUP;
-    const swingEnd = windup + SWORD.SWING;
+    const thrustEnd = windup + SWORD.SWING;
     const total = windup + SWORD.SWING + SWORD.RECOVER;
     const t = this.time;
 
     // State transitions drive the hit window (isSwinging)
-    if (t >= windup && this.state === 'windup') this.state = 'swing';
-    if (t >= swingEnd && this.state === 'swing') this.state = 'recover';
+    if (t >= windup && this.state === 'windup') this.state = 'thrust';
+    if (t >= thrustEnd && this.state === 'thrust') this.state = 'recover';
     if (t >= total) {
       this._setRest();
       this.state = 'idle';
@@ -159,25 +171,26 @@ export class PlayerSword {
     }
 
     if (t < windup) {
-      // Raise to top-right: grip up-right, blade tilts slightly right-back
+      // Pull back: sword retreats toward the right hip, blade cocks back
       const p = t / windup;
-      this.group.position.x = THREE.MathUtils.lerp(0.4, 0.46, p);
-      this.group.position.y = THREE.MathUtils.lerp(-0.26, 0.02, p);
-      this.group.position.z = THREE.MathUtils.lerp(-0.8, -0.75, p);
-      this.group.rotation.x = THREE.MathUtils.lerp(-0.1, -0.05, p);
-      this.group.rotation.z = THREE.MathUtils.lerp(0.4, -0.3, p);
-    } else if (t < swingEnd) {
-      // Diagonal chop: grip sweeps top-right -> bottom-left, blade swings across
+      this.group.position.x = THREE.MathUtils.lerp(0.4, 0.36, p);
+      this.group.position.y = THREE.MathUtils.lerp(-0.26, -0.3, p);
+      this.group.position.z = THREE.MathUtils.lerp(-0.8, -0.72, p);
+      this.group.rotation.x = THREE.MathUtils.lerp(-0.1, -0.55, p);
+      this.group.rotation.z = THREE.MathUtils.lerp(0.4, 0.55, p);
+    } else if (t < thrustEnd) {
+      // THRUST: drive the blade forward toward the screen center.
+      // The tip extends INTO the view — a longer sword reads as more reach.
       const p = (t - windup) / SWORD.SWING;
       const eased = 1 - Math.pow(1 - p, 2);
-      this.group.position.x = THREE.MathUtils.lerp(0.46, -0.5, eased);
-      this.group.position.y = THREE.MathUtils.lerp(0.02, -0.32, eased);
-      this.group.position.z = THREE.MathUtils.lerp(-0.75, -0.8, eased);
-      this.group.rotation.x = THREE.MathUtils.lerp(-0.05, 0.1, eased);
-      this.group.rotation.z = THREE.MathUtils.lerp(-0.3, 0.5, eased);
+      this.group.position.x = THREE.MathUtils.lerp(0.36, 0.02, eased);
+      this.group.position.y = THREE.MathUtils.lerp(-0.3, -0.06, eased);
+      this.group.position.z = THREE.MathUtils.lerp(-0.72, -1.05, eased);
+      this.group.rotation.x = THREE.MathUtils.lerp(-0.55, -1.4, eased);
+      this.group.rotation.z = THREE.MathUtils.lerp(0.55, 0, eased);
     } else {
       // Recover to rest
-      const p = (t - swingEnd) / SWORD.RECOVER;
+      const p = (t - thrustEnd) / SWORD.RECOVER;
       const eased = p * p;
       this.group.position.x = THREE.MathUtils.lerp(this.group.position.x, 0.4, eased);
       this.group.position.y = THREE.MathUtils.lerp(this.group.position.y, -0.26, eased);
@@ -194,6 +207,7 @@ export class PlayerSword {
     });
     for (const m of this._mats) m.dispose();
     this.glowMat.dispose();
+    this.dangerLight.dispose();
     if (this._glowTex) this._glowTex.dispose();
   }
 }

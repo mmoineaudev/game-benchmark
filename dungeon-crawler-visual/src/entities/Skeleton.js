@@ -7,9 +7,10 @@ import { generateGlowTexture } from '../world/Textures.js';
 // States: DORMANT -> WAKING -> CHASE -> ATTACK -> DEAD
 // Magician variant (1 in 10): hood + glowing staff instead of a sword.
 export class Skeleton {
-  constructor(scene, { isMagician = false, active = false } = {}) {
+  constructor(scene, { isMagician = false, active = false, attackMult = 1 } = {}) {
     this.scene = scene;
     this.isMagician = isMagician;
+    this.attackMult = attackMult; // >1 = faster attack cycle (higher levels)
     this.hp = SKELETON.HP;
     this.state = active ? 'CHASE' : 'DORMANT';
     this.animTime = 0;
@@ -300,9 +301,10 @@ export class Skeleton {
   _animAttack(dt) {
     const b = this.bones;
     const t = this.animTime;
-    const windup = SKELETON.ATTACK_WINDUP;
-    const swingEnd = windup + SKELETON.ATTACK_SWING;
-    const total = windup + SKELETON.ATTACK_SWING + SKELETON.ATTACK_RECOVER;
+    // Attack speed scales with level: higher attackMult = faster cycle
+    const windup = SKELETON.ATTACK_WINDUP / this.attackMult;
+    const swingEnd = windup + SKELETON.ATTACK_SWING / this.attackMult;
+    const total = windup + (SKELETON.ATTACK_SWING + SKELETON.ATTACK_RECOVER) / this.attackMult;
 
     if (t < windup) {
       // Telegraph: sword overhead-behind, torso leans back, tension shake
@@ -342,7 +344,7 @@ export class Skeleton {
     if (t >= total) {
       this.state = 'CHASE';
       this.animTime = 0;
-      this.attackCooldown = SKELETON.ATTACK_COOLDOWN;
+      this.attackCooldown = SKELETON.ATTACK_COOLDOWN / this.attackMult;
     }
   }
 

@@ -367,25 +367,27 @@ export class Game {
     if (this._gameOverActive) return;
     if (!this.sword) return;
 
-    // Right mouse = swing. Only when pointer-locked (gameplay active).
+    // Right mouse = pierce. Only when pointer-locked (gameplay active).
     if (this.input.isMouseDown(2) && this.input.isPointerLocked()) {
-      if (this.sword.swing()) this._swordHitApplied = false;
+      if (this.sword.attack()) this._swordHitApplied = false;
     }
     this.sword.update(this._delta, this._nearestSkeletonDist());
 
-    // Damage lands during the active swing window, once per swing
+    // Damage lands during the active thrust window, once per attack.
+    // Range scales with the sword size bonus (longer sword = longer reach).
     if (this.sword.isSwinging && !this._swordHitApplied && this.skeletons) {
       this._swordHitApplied = true;
       const p = this.state.player;
       const fx = -Math.sin(p.yaw);
       const fz = -Math.cos(p.yaw);
       const maxDot = Math.cos(SWORD.ARC);
+      const range = this.sword.range;
       for (const s of this.skeletons.skeletons) {
         if (s.skel.state === 'DEAD') continue;
         const dx = s.x - p.x;
         const dz = s.z - p.z;
         const dist = Math.hypot(dx, dz);
-        if (dist > SWORD.RANGE || dist < 0.001) continue;
+        if (dist > range || dist < 0.001) continue;
         const dot = (dx / dist) * fx + (dz / dist) * fz;
         if (dot < maxDot) continue; // outside the hit cone
         this.skeletons.hitSkeleton(s.skel, SWORD.DAMAGE);

@@ -530,13 +530,14 @@ export class Game {
     this._updateHUD();
     this._eKeyWasDown = this.input.isPressed('KeyE');
 
-    // Enemy highlight: feed the living enemy groups to the glow pass
+    // Enemy highlight: feed the living enemy groups + nearest distance
     if (this.post && this.skeletons) {
       this._hlTargets.length = 0;
       for (const s of this.skeletons.skeletons) {
         if (s.skel.state !== 'DEAD') this._hlTargets.push(s.skel.group);
       }
       this.post.setEnemyTargets(this._hlTargets);
+      this.post.setEnemyDist(this._nearestSkeletonDist());
     }
 
     this.post.render();

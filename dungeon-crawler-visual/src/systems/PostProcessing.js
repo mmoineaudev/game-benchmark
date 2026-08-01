@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { AfterimagePass } from 'three/examples/jsm/postprocessing/AfterimagePass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { VignetteShader } from 'three/examples/jsm/shaders/VignetteShader.js';
@@ -102,24 +101,20 @@ export class PostProcessing {
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
 
-    // Bloom — stronger than before: more glow on lights/embers/projectiles
-    this.bloomPass = new UnrealBloomPass(size, 1.9, 0.75, 0.4);
+    // Bloom — restrained: no persistent ghosting, just a soft glow on light
+    // sources. (Strength 1.9 + afterimage ghosting made it look like smoke.)
+    this.bloomPass = new UnrealBloomPass(size, 1.1, 0.5, 0.5);
     this.composer.addPass(this.bloomPass);
 
-    // Motion blur: afterimage ghosting smears movement into streaks.
-    // Tuned down (0.72) so combat stays readable — 0.93 was a smeary blur.
-    this.motionBlurPass = new AfterimagePass(0.72);
-    this.composer.addPass(this.motionBlurPass);
-
-    // Punchier colors (saturation 1.45x)
+    // Punchier colors (saturation 1.35x)
     this.saturationPass = new ShaderPass(HueSaturationShader);
-    this.saturationPass.uniforms['saturation'].value = 0.45;
+    this.saturationPass.uniforms['saturation'].value = 0.35;
     this.composer.addPass(this.saturationPass);
 
-    // Moderate dungeon vignette (0.9 darkness crushed the edges too hard)
+    // Moderate dungeon vignette
     this.vignettePass = new ShaderPass(VignetteShader);
     this.vignettePass.uniforms['offset'].value = 0.9;
-    this.vignettePass.uniforms['darkness'].value = 0.75;
+    this.vignettePass.uniforms['darkness'].value = 0.7;
     this.composer.addPass(this.vignettePass);
 
     // Enemy highlight (final pass — added last so it pops on top)
@@ -135,6 +130,7 @@ export class PostProcessing {
       color: 0xff7733, depthTest: false, depthWrite: false,
     });
     this.xray = false;
+    this.enemyDist = 30; // nearest living enemy distance (for the highlight fade)
     const hw = Math.max(1, Math.floor(w / 2));
     const hh = Math.max(1, Math.floor(h / 2));
     const rtOpts = { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter };
@@ -209,13 +205,21 @@ export class PostProcessing {
     this.renderer.setRenderTarget(prevTarget);
   }
 
+  // Nearest living enemy, refreshed each frame. Drives the highlight fade:
+  // enemies are only highlighted when FAR (small / hard to see); once they
+  // close in they stop glowing (and stop blinding the player).
+  setEnemyDist(d) { this.enemyDist = d; }
+
   render() {
     if (this.enabled && this.composer) {
       this._renderEnemyGlow();
       // Slow pulse (~2s period) so the highlight reads as alive, not static
       this.enemyGlowPass.uniforms.uPulse.value = 0.75 + 0.25 * Math.sin(performance.now() * 0.003);
-      // VISION buff: much stronger, unmistakable wall-piercing highlight
-      this.enemyGlowPass.uniforms.uIntensity.value = this.xray ? 2.4 : 1.0;
+      // Distance fade: glow strongly when far, fade out as enemies approach
+      const d = this.enemyDist || 30;
+      const far = THREE.MathUtils.clamp((d - 1.2) / 4.5, 0.15, 1.0);
+      const intensity = (this.xray ? 1.5 : 1.0) * far + (this.xray ? 0.7 : 0.1);
+      this.enemyGlowPass.uniforms.uIntensity.value = intensity;
       this.composer.render();
     } else {
       this.renderer.render(this.scene, this.camera);
@@ -234,7 +238,6 @@ export class PostProcessing {
     if (this.bloomPass) {
       this.bloomPass.resolution.set(w, h);
     }
-    if (this.motionBlurPass) this.motionBlurPass.setSize(w, h);
     if (this._enemyRT) {
       const hw = Math.max(1, Math.floor(w / 2));
       const hh = Math.max(1, Math.floor(h / 2));

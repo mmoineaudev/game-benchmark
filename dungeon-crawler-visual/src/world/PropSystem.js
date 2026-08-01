@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { WORLD, PROPS, LIGHT_SOURCES } from '../core/Constants.js';
 import { generateGlowTexture } from './Textures.js';
+import { makeWood, makeStone, makeMetal, makeCloth, makeBone, makeHide } from '../core/Materials.js';
 
 // Props & decorations: breakables, interactives, structural collision props,
 // and InstancedMesh decoratives. Placed per room type + biome rules (spec §6).
@@ -257,8 +258,8 @@ export class PropSystem {
     if (placed.breakables >= PROPS.MAX_BREAKABLES_PER_ROOM) return false;
     placed.breakables++;
     const group = new THREE.Group();
-    const wood = new THREE.MeshStandardMaterial({ color: 0x6a4a2a, roughness: 0.8 });
-    const band = new THREE.MeshStandardMaterial({ color: 0x3a3a3a, roughness: 0.4, metalness: 0.7 });
+    const wood = makeWood(0x6a4a2a, { seed: 71, rough: 0.8, metal: 0.1 });
+    const band = makeMetal(0x3a3a3a, { seed: 73, rough: 0.4, metal: 0.7 });
     const body = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.9, 10), wood);
     body.position.y = 0.45;
     body.castShadow = true;
@@ -279,8 +280,8 @@ export class PropSystem {
     if (placed.breakables >= PROPS.MAX_BREAKABLES_PER_ROOM) return false;
     placed.breakables++;
     const group = new THREE.Group();
-    const wood = new THREE.MeshStandardMaterial({ color: 0x7a5a3a, roughness: 0.8 });
-    const plank = new THREE.MeshStandardMaterial({ color: 0x5a3a2a, roughness: 0.8 });
+    const wood = makeWood(0x7a5a3a, { seed: 79, rough: 0.8, metal: 0.1 });
+    const plank = makeWood(0x5a3a2a, { seed: 83, rough: 0.8, metal: 0.1 });
     const box = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.0, 1.0), wood);
     box.position.y = 0.5;
     box.castShadow = true;
@@ -301,7 +302,7 @@ export class PropSystem {
   // ---------------------------------------------------------- decoratives
 
   _spawnChain(x, z) {
-    const mat = new THREE.MeshStandardMaterial({ color: 0x4a4a52, roughness: 0.4, metalness: 0.8 });
+    const mat = makeMetal(0x4a4a52, { seed: 89, rough: 0.4, metal: 0.8 });
     const chain = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 2.5, 6), mat);
     chain.position.set(x, WORLD.WALL_HEIGHT - 1.25, z);
     this._add(chain);
@@ -314,21 +315,22 @@ export class PropSystem {
       STONE: 0x7a2a2a, HAUNTED_CRYPT: 0x2a3a5a, FUNGAL_CAVERN: 0x2a5a3a,
       VOLCANIC_DEPTHS: 0x7a3a1a, FROZEN_HALLS: 0x2a4a6a,
     };
-    const mat = new THREE.MeshStandardMaterial({
-      color: palettes[this.biome] || 0x7a2a2a,
-      side: THREE.DoubleSide, roughness: 0.9,
-    });
+    const mat = makeCloth(palettes[this.biome] || 0x7a2a2a, { seed: 97, rough: 0.9, metal: 0 });
+    mat.side = THREE.DoubleSide;
     const banner = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.8), mat);
     banner.position.set(x, 2.2, z);
     banner.rotation.y = Math.random() * Math.PI;
     this._add(banner);
+    // Track banners for cloth sway in update().
+    this._banners = this._banners || [];
+    this._banners.push({ mesh: banner, baseZ: x, seed: Math.random() * 10 });
     this._mats.push(mat);
     return true;
   }
 
   _spawnSkullPile(x, z) {
     // 8 skulls, instanced per pile via small meshes (kept cheap)
-    const bone = new THREE.MeshStandardMaterial({ color: 0xcfc6b0, roughness: 0.85 });
+    const bone = makeBone(0xcfc6b0, { seed: 101, rough: 0.85, metal: 0.05 });
     const geo = new THREE.SphereGeometry(0.12, 6, 5);
     for (let i = 0; i < 8; i++) {
       const s = new THREE.Mesh(geo, bone);
@@ -346,7 +348,7 @@ export class PropSystem {
   }
 
   _spawnRoot(x, z) {
-    const mat = new THREE.MeshStandardMaterial({ color: 0x2a3a2a, roughness: 0.95 });
+    const mat = makeHide(0x2a3a2a, { seed: 103, rough: 0.95, metal: 0 });
     for (let i = 0; i < 3; i++) {
       const r = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.02, 1.2, 5), mat);
       r.position.set(x + (Math.random() - 0.5), WORLD.WALL_HEIGHT - 0.6 + (Math.random() - 0.5), z + (Math.random() - 0.5));
@@ -417,7 +419,7 @@ export class PropSystem {
 
   _spawnStalactite(x, z) {
     const tints = { FUNGAL_CAVERN: 0x3a4a3e, VOLCANIC_DEPTHS: 0x4a3a30, FROZEN_HALLS: 0x8ac0d8 };
-    const mat = new THREE.MeshStandardMaterial({ color: tints[this.biome] || 0x4a4a5a, roughness: 0.85 });
+    const mat = makeStone(tints[this.biome] || 0x4a4a5a, { seed: 107, rough: 0.85, metal: 0.05 });
     const h = 0.6 + Math.random() * 0.6;
     const s = new THREE.Mesh(new THREE.ConeGeometry(0.15 + Math.random() * 0.15, h, 6), mat);
     s.position.set(x, WORLD.WALL_HEIGHT - h / 2, z);
@@ -428,7 +430,7 @@ export class PropSystem {
   }
 
   _spawnRubble(x, z) {
-    const mat = new THREE.MeshStandardMaterial({ color: 0x3a3a40, roughness: 0.9 });
+    const mat = makeStone(0x3a3a40, { seed: 109, rough: 0.9, metal: 0.05 });
     const geo = new THREE.SphereGeometry(0.1, 4, 3);
     for (let i = 0; i < 5; i++) {
       const r = new THREE.Mesh(geo, mat);
@@ -443,7 +445,7 @@ export class PropSystem {
   // ----------------------------------------------------------- structural
 
   _placePillars(room, count) {
-    const mat = new THREE.MeshStandardMaterial({ color: 0x4a4a5a, roughness: 0.85 });
+    const mat = makeStone(0x4a4a5a, { seed: 113, rough: 0.85, metal: 0.05 });
     const cs = this.data.cellSize;
     for (let i = 0; i < count; i++) {
       const p = this._randomPointInRoomClear(room, 2.0);
@@ -460,8 +462,8 @@ export class PropSystem {
   }
 
   _placeBookshelves(room, count) {
-    const wood = new THREE.MeshStandardMaterial({ color: 0x5a3a2a, roughness: 0.85 });
-    const shelfMat = new THREE.MeshStandardMaterial({ color: 0x3a2a1a, roughness: 0.9 });
+    const wood = makeWood(0x5a3a2a, { seed: 127, rough: 0.85, metal: 0.1 });
+    const shelfMat = makeWood(0x3a2a1a, { seed: 131, rough: 0.9, metal: 0.1 });
     for (let i = 0; i < count; i++) {
       const p = this._randomPointInRoomClear(room, 1.5);
       const shelf = new THREE.Mesh(new THREE.BoxGeometry(1.4, 2.4, 0.4), wood);
@@ -494,8 +496,8 @@ export class PropSystem {
   // --------------------------------------------------------- interactives
 
   _placeSarcophagi(room, count) {
-    const stone = new THREE.MeshStandardMaterial({ color: 0x6a6a5a, roughness: 0.9 });
-    const lidMat = new THREE.MeshStandardMaterial({ color: 0x7a7a6a, roughness: 0.9 });
+    const stone = makeStone(0x6a6a5a, { seed: 137, rough: 0.9, metal: 0.05 });
+    const lidMat = makeStone(0x7a7a6a, { seed: 139, rough: 0.9, metal: 0.05 });
     for (let i = 0; i < count; i++) {
       const p = this._randomPointInRoomClear(room, 1.5);
       const base = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.8, 1.6), stone);
@@ -519,8 +521,8 @@ export class PropSystem {
   }
 
   _placeWeaponRacks(room, count) {
-    const wood = new THREE.MeshStandardMaterial({ color: 0x4a3a2a, roughness: 0.8 });
-    const metal = new THREE.MeshStandardMaterial({ color: 0x6a6a72, roughness: 0.4, metalness: 0.9 });
+    const wood = makeWood(0x4a3a2a, { seed: 149, rough: 0.8, metal: 0.1 });
+    const metal = makeMetal(0x6a6a72, { seed: 151, rough: 0.4, metal: 0.9 });
     for (let i = 0; i < count; i++) {
       const p = this._randomPointInRoomClear(room, 1.5);
       const stand = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.1, 0.5), wood);
@@ -685,6 +687,14 @@ export class PropSystem {
   update(dt, time, playerPos) {
     this._updateShards(dt);
     this._updateWisps(dt, time);
+    // Banner cloth sway (gentle idle wave; depth-consistent so each hangs
+    // straight from its own wall point).
+    if (this._banners) {
+      for (const b of this._banners) {
+        b.mesh.rotation.z = Math.sin(time * 1.6 + b.seed) * 0.06;
+        b.mesh.position.y = 2.2 + Math.sin(time * 1.2 + b.seed) * 0.02;
+      }
+    }
     // Interactive props (sarcophagus lid slide + wraith spawn handled once)
     for (const it of this.interactives) {
       if (it.opened && it.openT < 0.6) {
@@ -807,6 +817,7 @@ export class PropSystem {
     this.lavaPools = [];
     this._shards = [];
     this._added = [];
+    this._banners = [];
     this.collisionBoxes = [];
   }
 }

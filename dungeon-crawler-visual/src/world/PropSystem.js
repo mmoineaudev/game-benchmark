@@ -709,6 +709,8 @@ export class PropSystem {
   _breakProp(b) {
     const idx = this.breakables.indexOf(b);
     if (idx !== -1) this.breakables.splice(idx, 1);
+    // Loot hook (Game: 5% chance to drop a temporary buff)
+    this.onBreak?.(b.x, b.z);
     // Debris shards
     const shardMat = new THREE.MeshStandardMaterial({ color: 0x5a3a2a, roughness: 0.8 });
     for (let i = 0; i < b.shards; i++) {

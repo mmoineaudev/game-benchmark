@@ -284,6 +284,22 @@ export const SWORD = {
 
 export const HIT_STOP = 0.06; // seconds of world-freeze on sword hit
 
+// Temporary buffs looted from breakables (5% per break). One random effect
+// lasts BUFF.DURATION seconds. Effects:
+//   1 = BRIGHT: level lights up (ambient up, fog down), mobs flee the player
+//   2 = FIREBALL: dagger replaced by a free explosive fireball on right click
+//   3 = EMPOWERED: dagger +50% longer, move speed +20%, attack speed +20%
+export const BUFF = {
+  DURATION: 15,
+  CHANCE: 0.05,            // drop chance per broken breakable
+  FIREBALL_COOLDOWN: 0.35, // seconds between free fireballs
+  BRIGHT_AMBIENT: 2.5,     // ambient intensity multiplier while BRIGHT
+  BRIGHT_FOG: 0.35,        // fog density multiplier while BRIGHT (less fog)
+  EMPOWER_LENGTH: 1.5,     // dagger length multiplier
+  EMPOWER_SPEED: 1.2,      // move speed multiplier
+  EMPOWER_ATTACK: 1.2,     // dagger attack speed multiplier (faster cycle)
+};
+
 export const ORB_WEAPON = {
   SPEED: 2 * PLAYER.SPEED * PLAYER.SPRINT_MULTIPLIER, // 12.4 u/s — 2× sprint
   LIFETIME: 2.5,          // seconds before fizzle (~31 units max range)

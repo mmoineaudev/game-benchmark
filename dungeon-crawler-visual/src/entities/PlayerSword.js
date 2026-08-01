@@ -55,6 +55,8 @@ export class PlayerSword {
     this._glowTarget = 0;
     this._colorStep = 0;
     this._rangeScale = 1;
+    this.lengthMult = 1;   // temporary length boost (EMPOWERED buff)
+    this.attackSpeedMult = 1; // temporary attack-speed boost (EMPOWERED buff)
     this._flashTimer = 0;
     this._build();
     this._buildTrails();
@@ -296,8 +298,9 @@ export class PlayerSword {
   // orbs), extends melee range, shifts base color, intensifies the green
   // growth light.
   setOrbCount(count) {
-    // Same multiplier drives the enemy spawn rate (orbPowerMultiplier)
-    this._rangeScale = orbPowerMultiplier(count);
+    // Same multiplier drives the enemy spawn rate (orbPowerMultiplier);
+    // lengthMult stacks on top (EMPOWERED buff: +50% longer).
+    this._rangeScale = orbPowerMultiplier(count) * this.lengthMult;
     this.group.scale.setScalar(this._rangeScale);
     const capped = Math.min(Math.floor(count / 10), 10);
     const growth = capped / 10; // 0..1
@@ -371,7 +374,17 @@ export class PlayerSword {
 
     if (this.state === 'idle') return;
     this.time += dt;
-    const C = SWORD.COMBO;
+    // Attack speed: scale the duration fields (windups/slashes/recoveries/
+    // windows/cooldown) by 1/attackSpeedMult; arcs and damage stay as-is.
+    let C = SWORD.COMBO;
+    if (this.attackSpeedMult !== 1) {
+      const scaled = {};
+      for (const k of Object.keys(C)) {
+        scaled[k] = /^(WINDUP|SLASH|RECOVER|COMBO_WINDOW|COOLDOWN)/.test(k)
+          ? C[k] / this.attackSpeedMult : C[k];
+      }
+      C = scaled;
+    }
 
     // State transitions (explicit — pose math alone never flips the state)
     if (this.state === 'windup1' && this.time >= C.WINDUP1) this._enter('slash1');

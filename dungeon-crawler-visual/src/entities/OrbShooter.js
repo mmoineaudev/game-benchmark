@@ -61,9 +61,38 @@ export class OrbShooter {
       this.scene.add(glow);
       this.projectiles.push({
         mesh, glow, dirX: 0, dirY: 0, dirZ: 0, life: 0,
-        active: false, bounces: 0, explode: false,
+        active: false, bounces: 0, explode: false, fireball: false,
       });
     }
+
+    // Fireball slots (temporary buff weapon): same pool/loop, fiery visuals.
+    // Fired via fireFireball() — always explodes on contact, no ammo cost.
+    const fireGeo = new THREE.SphereGeometry(0.19, 10, 8);
+    const fireMat = new THREE.MeshStandardMaterial({
+      color: 0xff8830, emissive: 0xff5522, emissiveIntensity: 3.0,
+      roughness: 0.2, metalness: 0.1,
+    });
+    const fireGlowMat = new THREE.SpriteMaterial({
+      map: this._tex, color: 0xff8844,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+      transparent: true, opacity: 0.9,
+    });
+    for (let i = 0; i < 10; i++) {
+      const mesh = new THREE.Mesh(fireGeo, fireMat);
+      const glow = new THREE.Sprite(fireGlowMat);
+      glow.scale.set(1.5, 1.5, 1);
+      mesh.visible = false;
+      glow.visible = false;
+      this.scene.add(mesh);
+      this.scene.add(glow);
+      this.projectiles.push({
+        mesh, glow, dirX: 0, dirY: 0, dirZ: 0, life: 0,
+        active: false, bounces: 0, explode: true, fireball: true,
+        isFireballSlot: true,
+      });
+    }
+    this._fireMat = fireMat;
+    this._fireGlowMat = fireGlowMat;
 
     // Pooled explosion rings (additive) — no per-event allocation
     this._boomGeo = new THREE.TorusGeometry(0.5, 0.06, 6, 20);
@@ -78,6 +107,20 @@ export class OrbShooter {
       m.visible = false;
       this.scene.add(m);
       this._booms.push({ mesh: m, life: 0, active: false });
+    }
+
+    // Fiery rings for fireball explosions
+    this._boomFireMat = new THREE.MeshBasicMaterial({
+      color: 0xff8830, transparent: true, opacity: 0.8,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    this._boomFires = [];
+    for (let i = 0; i < 6; i++) {
+      const m = new THREE.Mesh(this._boomGeo, this._boomFireMat);
+      m.rotation.x = -Math.PI / 2;
+      m.visible = false;
+      this.scene.add(m);
+      this._boomFires.push({ mesh: m, life: 0, active: false });
     }
   }
 
@@ -94,8 +137,8 @@ export class OrbShooter {
     if (isExplosive) { this.step = 0; this.window = 0; }
     else this.window = ORB_WEAPON.SEQUENCE_WINDOW;
 
-    const p = this.projectiles[this._next];
-    this._next = (this._next + 1) % this.projectiles.length;
+    const p = this._nextSlot(false); // blue orb slot (never a fireball slot)
+    if (!p) return { step: firedStep, startingNew, projectile: null };
     p.active = true;
     p.mesh.visible = true;
     p.glow.visible = true;
@@ -112,6 +155,38 @@ export class OrbShooter {
     // The LAST step of the sequence is the explosive one
     p.explode = isExplosive;
     return { step: firedStep, startingNew, projectile: p };
+  }
+
+  // Fire a free fireball (temporary buff weapon): a fiery projectile that
+  // explodes on its first contact. No sequence, no ammo cost.
+  fireFireball(x, y, z, yaw, pitch = 0) {
+    const p = this._nextSlot(true); // fireball slot only
+    if (!p) return null;
+    p.active = true;
+    p.mesh.visible = true;
+    p.glow.visible = true;
+    p.mesh.position.set(x, y, z);
+    p.glow.position.set(x, y, z);
+    p.dirX = -Math.sin(yaw) * Math.cos(pitch);
+    p.dirY = Math.sin(pitch);
+    p.dirZ = -Math.cos(yaw) * Math.cos(pitch);
+    const len = Math.hypot(p.dirX, p.dirY, p.dirZ) || 1;
+    p.dirX /= len; p.dirY /= len; p.dirZ /= len;
+    p.life = ORB_WEAPON.LIFETIME;
+    p.bounces = 0;
+    p.explode = true;
+    return p;
+  }
+
+  // Round-robin pool allocation, filtered by slot type (fireball slots stay
+  // fireball slots so the volley never spawns an orange orb mid-sequence).
+  _nextSlot(wantFireball) {
+    for (let tries = 0; tries < this.projectiles.length; tries++) {
+      const cand = this.projectiles[this._next];
+      this._next = (this._next + 1) % this.projectiles.length;
+      if (!!cand.isFireballSlot === wantFireball) return cand;
+    }
+    return null;
   }
 
   update(dt, collisionBoxes, skeletons) {
@@ -206,8 +281,13 @@ export class OrbShooter {
       if (p.life <= 0) this._deactivate(p);
     }
 
-    // Explosion rings
-    for (const b of this._booms) {
+    // Explosion rings (orb + fireball pools)
+    this._tickBooms(this._booms, dt);
+    this._tickBooms(this._boomFires, dt);
+  }
+
+  _tickBooms(booms, dt) {
+    for (const b of booms) {
       if (!b.active) continue;
       b.life -= dt;
       const t = 1 - Math.max(0, b.life / 0.3);
@@ -239,7 +319,8 @@ export class OrbShooter {
     const { x, y, z } = p.mesh.position;
     // AOE damage + visual ring, then the orb is gone
     this.onExplode?.(x, y, z);
-    const b = this._booms.find((b) => !b.active) || this._booms[0];
+    const pool = p.fireball ? this._boomFires : this._booms;
+    const b = pool.find((b) => !b.active) || pool[0];
     b.active = true;
     b.life = 0.3;
     b.mesh.visible = true;
@@ -266,9 +347,12 @@ export class OrbShooter {
     if (this._boomGeo) {
       this._boomGeo.dispose();
       this._boomMat.dispose();
+      this._boomFireMat.dispose();
       for (const b of this._booms) this.scene.remove(b.mesh);
+      for (const b of this._boomFires) this.scene.remove(b.mesh);
     }
     this.projectiles = [];
     this._booms = [];
+    this._boomFires = [];
   }
 }

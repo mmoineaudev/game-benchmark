@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON, SWORD, PROPS, HIT_STOP, LIGHTING, DROP } from './Constants.js';
+import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON, SWORD, PROPS, HIT_STOP, LIGHTING, DROP, BUFF } from './Constants.js';
 import { GameState } from './GameState.js';
 import { Leaderboard } from './Leaderboard.js';
 import { EventBus } from './EventBus.js';
@@ -49,6 +49,7 @@ export class Game {
     this._onGameOverClick = null;
     this._timerEl = document.getElementById('timer');
     this._sprintBonusEl = document.getElementById('sprint-bonus');
+    this._buffBadgeEl = document.getElementById('buff-badge');
     this._lbPanel = document.getElementById('leaderboard-panel');
     this._lbList = document.getElementById('leaderboard-list');
     this._gameOverEl = document.getElementById('game-over');
@@ -66,6 +67,9 @@ export class Game {
     this._swordHitApplied = false;
     this._rmbWasDown = false;
     this._lmbWasDown = false;
+    this._fireballCd = 0;   // FIREBALL buff: RMB fireball cooldown
+    this._moveSpeedMult = 1; // EMPOWERED buff: +20% move speed
+    this._heldFireball = null; // FIREBALL buff: hand visual replacing the dagger
   }
 
   init() {
@@ -149,6 +153,26 @@ export class Game {
     this.headlight.position.set(0, 0.15, -0.4);
     this.headlight.castShadow = false;
     this.camera.add(this.headlight);
+
+    // Held fireball (FIREBALL buff): replaces the dagger in hand. Camera
+    // child, so it survives level regens like the sword. Hidden by default.
+    this._heldFireball = new THREE.Group();
+    const fbMat = new THREE.MeshStandardMaterial({
+      color: 0xff8830, emissive: 0xff5522, emissiveIntensity: 3,
+      roughness: 0.2, metalness: 0.1,
+    });
+    const fbMesh = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), fbMat);
+    const fbGlowMat = new THREE.SpriteMaterial({
+      map: this.sword._glowTex, color: 0xff8844,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+      transparent: true, opacity: 0.9,
+    });
+    this._heldFbGlow = new THREE.Sprite(fbGlowMat);
+    this._heldFbGlow.scale.setScalar(0.8);
+    this._heldFireball.add(fbMesh, this._heldFbGlow);
+    this._heldFireball.position.set(0.25, -0.2, -0.6);
+    this._heldFireball.visible = false;
+    this.camera.add(this._heldFireball);
   }
 
   _initPostProcessing() {
@@ -188,6 +212,10 @@ export class Game {
     // Merge prop AABBs into the collision list BEFORE enemies spawn
     this._collisionBoxes.push(...(result.collisionBoxes || []));
     this.props.lavaHazard = ({ x, z }) => this._lavaDamage(x, z);
+    // Breakables: 5% chance to drop a temporary buff
+    this.props.onBreak = (x, z) => {
+      if (Math.random() < BUFF.CHANCE) this.orbs.spawnBuff(x, z);
+    };
   }
 
   _lavaDamage(x, z) {
@@ -229,6 +257,8 @@ export class Game {
   _initOrbs() {
     this.orbs = new OrbSystem(this.scene, this.dungeonData, this.state);
     this.orbs.init();
+    // Buff pickup collected -> roll a random 15s effect
+    this.orbs.onBuffCollected = () => this._applyBuff();
   }
 
   _initCombat() {
@@ -334,6 +364,7 @@ export class Game {
     if (this.props) this.props.update(this._delta, t, this.state.player);
     this._handleShooting();
     this._handleSwordAttack();
+    this._updateBuff(this._delta);
     if (this.skeletons) this.skeletons.update(this._delta, t, this.state.player, this._collisionBoxes);
     if (this.shooter) this.shooter.update(this._delta, this._collisionBoxes, this.skeletons.skeletons || []);
     if (this.state.invulnTimer > 0) this.state.invulnTimer -= this._delta;
@@ -359,7 +390,7 @@ export class Game {
     const sprintMult = this._sprinting
       ? PLAYER.SPRINT_MULTIPLIER * this.state.sprintSpeedMult
       : 1;
-    const speed = PLAYER.SPEED * sprintMult * dt;
+    const speed = PLAYER.SPEED * sprintMult * this._moveSpeedMult * dt;
 
     const mouse = this.input.consumeMouse();
     p.yaw -= mouse.x * PLAYER.MOUSE_SENSITIVITY;
@@ -400,6 +431,13 @@ export class Game {
     if (Math.abs(this.camera.fov - targetFov) > 0.01) {
       this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, this._delta * 8);
       this.camera.updateProjectionMatrix();
+    }
+
+    // Held fireball pulse (FIREBALL buff)
+    if (this._heldFireball && this._heldFireball.visible) {
+      const t = performance.now() * 0.01;
+      this._heldFireball.rotation.z = Math.sin(t) * 0.15;
+      this._heldFbGlow.scale.setScalar(0.7 + Math.sin(t * 2) * 0.15);
     }
 
     this.camera.position.set(p.x, WORLD.PLAYER_EYE_HEIGHT, p.z);
@@ -489,6 +527,20 @@ export class Game {
     if (this._gameOverActive) return;
     if (!this.sword) return;
 
+    // FIREBALL buff: right click hurls free explosive fireballs instead of
+    // the dagger combo (held to spam at FIREBALL_COOLDOWN).
+    if (this.state.buffEffect === 2) {
+      if (this._fireballCd > 0) this._fireballCd -= this._delta;
+      if (this.input.isMouseDown(2) && this.input.isPointerLocked() && this._fireballCd <= 0) {
+        this._fireballCd = BUFF.FIREBALL_COOLDOWN;
+        const p = this.state.player;
+        this.shooter.fireFireball(
+          p.x, WORLD.PLAYER_EYE_HEIGHT - 0.1, p.z, p.yaw, p.pitch,
+        );
+      }
+      return;
+    }
+
     // Right mouse = combo. Edge-triggered: a new press starts the attack or
     // buffers the second hit inside the combo window.
     if (this.input.isMouseDown(2) && this.input.isPointerLocked()) {
@@ -557,6 +609,51 @@ export class Game {
     if (this.state.hitStop > 0) {
       this.state.hitStop -= this._delta;
       this._delta = 0;
+    }
+  }
+
+  // Roll a random buff (1..3) and apply its side effects for 15 seconds.
+  _applyBuff() {
+    this._clearBuffEffects(); // replacing any active buff
+    const effect = 1 + Math.floor(Math.random() * 3);
+    this.state.applyBuff(effect);
+    switch (effect) {
+      case 1: // BRIGHT: level lights up, mobs flee
+        this.lighting.brightness = BUFF.BRIGHT_AMBIENT;
+        this.skeletons.fleeing = true;
+        break;
+      case 2: // FIREBALL: dagger swapped for a free explosive fireball
+        this.sword.group.visible = false;
+        this._heldFireball.visible = true;
+        this._fireballCd = 0;
+        this.sword.state = 'idle'; // abort any in-flight combo
+        this.sword.comboStep = 0;
+        this._swordHitApplied = false;
+        break;
+      case 3: // EMPOWERED: longer dagger, +20% move & attack speed
+        this.sword.lengthMult = BUFF.EMPOWER_LENGTH;
+        this.sword.attackSpeedMult = BUFF.EMPOWER_ATTACK;
+        this._moveSpeedMult = BUFF.EMPOWER_SPEED;
+        break;
+    }
+    this._updateHUD();
+  }
+
+  // Remove every buff side effect (called on expiry or replacement).
+  _clearBuffEffects() {
+    this.lighting.brightness = 1;
+    this.skeletons.fleeing = false;
+    this.sword.group.visible = true;
+    if (this._heldFireball) this._heldFireball.visible = false;
+    this.sword.lengthMult = 1;
+    this.sword.attackSpeedMult = 1;
+    this._moveSpeedMult = 1;
+  }
+
+  _updateBuff(dt) {
+    if (this.state.updateBuff(dt)) {
+      this._clearBuffEffects();
+      this._updateHUD();
     }
   }
 
@@ -785,6 +882,15 @@ export class Game {
         ? `SPRINT ×${mult.toFixed(2)}`
         : '';
     }
+    if (this._buffBadgeEl) {
+      const labels = ['', 'BRIGHT', 'FIREBALL', 'EMPOWERED'];
+      const colors = ['', '#ffe066', '#ff8844', '#66ff88'];
+      const e = this.state.buffEffect;
+      this._buffBadgeEl.textContent = e
+        ? `${labels[e]} ${Math.ceil(this.state.buffTime)}s`
+        : '';
+      this._buffBadgeEl.style.color = e ? colors[e] : '';
+    }
     if (this._heartsEl) {
       const h = Math.max(0, this.state.health);
       this._heartsEl.textContent = '♥'.repeat(h) + '♡'.repeat(Math.max(0, PLAYER.MAX_HEALTH - h));
@@ -817,6 +923,14 @@ export class Game {
       this.camera.remove(this.headlight);
       this.headlight.dispose();
       this.headlight = null;
+    }
+    if (this._heldFireball) {
+      this.camera.remove(this._heldFireball);
+      this._heldFireball.traverse((o) => {
+        if (o.isMesh && o.geometry) o.geometry.dispose();
+        if (o.material && o.material.dispose) o.material.dispose();
+      });
+      this._heldFireball = null;
     }
     if (this.skeletons) this.skeletons.dispose();
     if (this.shooter) this.shooter.dispose();

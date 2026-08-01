@@ -210,6 +210,59 @@ console.log('== Shared power multiplier ==');
 }
 
 // ===========================================================================
+// 4b) FIREBALL BUFF — free explosive fireball weapon
+// ===========================================================================
+console.log('== Fireball (buff weapon) ==');
+{
+  const { scene, shooter } = newShooter();
+  const blasts = [];
+  shooter.onExplode = (x, y, z) => blasts.push({ x, y, z });
+
+  const fb = shooter.fireFireball(0, 1, 0, 0, 0); // straight -z
+  ok(fb && fb.explode && fb.fireball, 'fireball is explosive and fiery');
+  ok(fb.active && fb.mesh.visible, 'fireball active on fire');
+  // no sequence side effects: step/window untouched
+  ok(shooter.step === 0 && shooter.window === 0, 'fireball does not advance the orb sequence');
+
+  // wall contact -> detonate -> onExplode + orange ring
+  const wall = { minX: 1, maxX: 1.4, minZ: -10, maxZ: 10 };
+  const fb2 = shooter.fireFireball(0, 1, 0, -Math.PI / 2, 0); // +x into the wall
+  for (let i = 0; i < 60 * 2 && fb2.active; i++) shooter.update(dt, [wall], []);
+  ok(!fb2.active, 'fireball consumed by detonation');
+  ok(blasts.length === 1, `onExplode fired for the fireball (${blasts.length})`);
+  const fireRings = shooter._boomFires.filter((b) => b.active).length;
+  ok(fireRings === 1, `fiery ring active (${fireRings})`);
+
+  // volley integrity: fire() must never allocate a fireball slot
+  const step = shooter.fire(0, 1, 0, 0, 0);
+  ok(step.projectile && !step.projectile.fireball,
+    'orb volley never uses fireball slots');
+  shooter.dispose();
+}
+
+// ===========================================================================
+// 4c) BUFF PICKUP — golden octahedron, collect -> onBuffCollected
+// ===========================================================================
+console.log('== Buff pickup ==');
+{
+  const scene = makeScene();
+  const state = { collectedOrbs: 0, totalOrbs: 0, health: 2 };
+  const orbs = new OrbSystem(scene, {}, state);
+  orbs.init();
+  let collected = 0;
+  orbs.onBuffCollected = () => collected++;
+  orbs.spawnBuff(0, 0);
+  ok(orbs.drops.length === 1 && orbs.drops[0].kind === 'buff', 'buff pickup spawned');
+  ok(scene.children.some((c) => c.type === 'Group'), 'buff group in scene');
+  orbs.update(0, { x: 0.05, z: 0.05 }); // player on top
+  ok(collected === 1, 'onBuffCollected fired on collect');
+  ok(state.collectedOrbs === 0 && state.health === 2,
+    'buff pickup grants no orbs and no heal');
+  ok(orbs.drops.length === 0, 'buff drop consumed');
+  orbs.dispose();
+}
+
+// ===========================================================================
 // 5) HEALTH RESET DROP — red cross pickup, full heal on collect
 // ===========================================================================
 console.log('== Health drop ==');

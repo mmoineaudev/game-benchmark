@@ -61,6 +61,17 @@ export class OrbSystem {
       blending: THREE.AdditiveBlending, depthWrite: false,
     });
 
+    // --- Shared buff pickup resources (golden mystery octahedron) ---
+    this._buffGeo = new THREE.OctahedronGeometry(0.22);
+    this._buffMat = new THREE.MeshStandardMaterial({
+      color: 0xffd76a, emissive: 0xffb040, emissiveIntensity: 1.6,
+      roughness: 0.2, metalness: 0.6,
+    });
+    this._buffGlowMat = new THREE.MeshBasicMaterial({
+      color: 0xffc860, transparent: true, opacity: 0.3,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+
     // No orbs are placed on the map — they only come from skeleton drops.
     this.state.totalOrbs = 0;
   }
@@ -85,7 +96,7 @@ export class OrbSystem {
     // Skeleton drops: bob + auto-collect on proximity
     for (let i = this.drops.length - 1; i >= 0; i--) {
       const drop = this.drops[i];
-      if (drop.kind === 'health') {
+      if (drop.kind === 'health' || drop.kind === 'buff') {
         drop.group.position.y = drop.y + Math.sin(time * 2.5 + drop.phase) * 0.12;
         drop.group.rotation.y += 0.02;
       } else {
@@ -99,6 +110,11 @@ export class OrbSystem {
         if (drop.kind === 'health') {
           // Health reset: full heal
           this.state.health = PLAYER.MAX_HEALTH;
+          this._spawnPickupRing(drop.x, drop.y, drop.z, time);
+          this.scene.remove(drop.group);
+        } else if (drop.kind === 'buff') {
+          // Temporary buff: Game picks the random effect
+          this.onBuffCollected?.(drop.x, drop.z);
           this._spawnPickupRing(drop.x, drop.y, drop.z, time);
           this.scene.remove(drop.group);
         } else {
@@ -148,6 +164,24 @@ export class OrbSystem {
     });
   }
 
+  // Spawn a buff pickup (golden mystery octahedron) at a breakable's
+  // position. Auto-collect -> Game applies a random 15s effect.
+  spawnBuff(x, z) {
+    const y = DROP.HEALTH_Y;
+    const group = new THREE.Group();
+    const gem = new THREE.Mesh(this._buffGeo, this._buffMat);
+    const glow = new THREE.Mesh(this._dropGlowGeo, this._buffGlowMat);
+    group.add(gem, glow);
+    const ox = (Math.random() - 0.5) * 0.8;
+    const oz = (Math.random() - 0.5) * 0.8;
+    group.position.set(x + ox, y, z + oz);
+    this.scene.add(group);
+    this.drops.push({
+      group, x: x + ox, z: z + oz, y,
+      phase: Math.random() * Math.PI * 2, kind: 'buff',
+    });
+  }
+
   // Reuse a pooled ring — no geometry/material creation at pickup time
   _spawnPickupRing(x, y, z, time) {
     const ring = this._ringPool[this._ringIdx];
@@ -182,6 +216,10 @@ export class OrbSystem {
     if (this._healthGeoB) this._healthGeoB.dispose();
     if (this._healthMat) this._healthMat.dispose();
     if (this._healthGlowMat) this._healthGlowMat.dispose();
+    // Dispose shared buff-pickup resources once
+    if (this._buffGeo) this._buffGeo.dispose();
+    if (this._buffMat) this._buffMat.dispose();
+    if (this._buffGlowMat) this._buffGlowMat.dispose();
     this._ringPool = [];
     this.drops = [];
     this.orbs = [];

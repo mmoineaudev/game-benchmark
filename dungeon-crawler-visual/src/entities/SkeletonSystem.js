@@ -28,6 +28,7 @@ export class SkeletonSystem {
     this.onPlayerDamaged = null;
     this.onPlayerDeath = null;
     this.speedMult = 1;
+    this.fleeing = false; // BRIGHT buff: mobs run away instead of attacking
   }
 
   _initProjectilePools() {
@@ -275,6 +276,23 @@ export class SkeletonSystem {
       const dx = player.x - s.x;
       const dz = player.z - s.z;
       const dist = Math.hypot(dx, dz);
+
+      // --- Flee (BRIGHT buff): every enemy runs away, no attacks ---
+      if (this.fleeing) {
+        const speed = (skel.speed ?? SKELETON.CHASE_SPEED) * this.speedMult * dt;
+        if (dist > 0.01) {
+          s.x -= (dx / dist) * speed;
+          s.z -= (dz / dist) * speed;
+          resolveCircleCollisions(collisionBoxes, s, 0.35);
+          skel.group.position.set(s.x, 0, s.z);
+          skel.setFacing(Math.atan2(-dx, -dz));
+          skel.group.rotation.y = THREE.MathUtils.damp(
+            skel.group.rotation.y, skel.facingYaw, 8, dt,
+          );
+        }
+        skel.update(dt, time);
+        continue;
+      }
 
       // --- Ranged attackers: Archer (kite) & Magician (cast) ---
       if (s.type === 'ARCHER') {

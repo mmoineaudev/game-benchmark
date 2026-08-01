@@ -180,6 +180,40 @@ ok(Math.abs(sword.scale - 3) < 1e-9, `max size = 3x (got ${sword.scale})`);
     ok(d > 0.12, `max-size ${name} clear of crosshair (NDC dist ${d.toFixed(3)} > 0.12)`);
   }
 }
+
+// EMPOWERED buff: +50% dagger length stacks on the orb scale, and +20%
+// attack speed shortens the full combo cycle.
+{
+  sword.lengthMult = 1.5;
+  sword.setOrbCount(100);
+  ok(Math.abs(sword.scale - 4.5) < 1e-9, `EMPOWERED at 100 orbs: 3x -> 4.5x (got ${sword.scale})`);
+  ok(Math.abs(sword.range - SWORD.RANGE * 4.5) < 1e-6, 'melee range scales with the length boost');
+  sword.lengthMult = 1;
+
+  function comboCycleFrames(swd) {
+    swd.attack();
+    let frames = 0;
+    for (let i = 0; i < 60 * 4; i++) {
+      // Buffer as soon as a recover starts (idempotent) — no heuristic lag
+      if (swd.state === 'recover1' || swd.state === 'recover2') swd.bufferCombo();
+      swd.update(1 / 60, Infinity);
+      frames++;
+      if (swd.state === 'idle' && frames > 10) break;
+    }
+    return frames;
+  }
+  const cN = new THREE.PerspectiveCamera(75, 16 / 9, 0.1, 50);
+  const sN = new PlayerSword(cN);
+  const baseFrames = comboCycleFrames(sN);
+  sN.dispose();
+  const cF = new THREE.PerspectiveCamera(75, 16 / 9, 0.1, 50);
+  const sF = new PlayerSword(cF);
+  sF.attackSpeedMult = 1.2;
+  const fastFrames = comboCycleFrames(sF);
+  sF.dispose();
+  ok(fastFrames < baseFrames * 0.9,
+    `+20% attack speed shortens the combo (${baseFrames} -> ${fastFrames} frames)`);
+}
 console.log(`  ...${frames} frames checked, strikes=${Object.keys(arcByState).length}, trail peaks ${JSON.stringify(trailActive)}, thrust z ${thrustZ[0]?.toFixed(3) ?? '?'}->${thrustZ[thrustZ.length - 1]?.toFixed(3) ?? '?'}`);
 
 // ===========================================================================

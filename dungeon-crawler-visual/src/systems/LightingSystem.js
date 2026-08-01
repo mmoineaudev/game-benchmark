@@ -31,6 +31,11 @@ export class LightingSystem {
       pal?.fog ?? LIGHTING.FOG_COLOR,
       pal?.fogDensity ?? LIGHTING.FOG_DENSITY,
     );
+    // Base values for the BRIGHT buff: brightness > 1 raises ambient and
+    // thins the fog ("the level becomes bright, everything is visible").
+    this._baseAmbient = pal?.ambientIntensity ?? LIGHTING.AMBIENT_INTENSITY;
+    this._baseFog = pal?.fogDensity ?? LIGHTING.FOG_DENSITY;
+    this.brightness = 1;
 
     this._glowTex = generateGlowTexture();
     this._glowMat = new THREE.SpriteMaterial({
@@ -164,6 +169,11 @@ export class LightingSystem {
   }
 
   update(time, playerPos) {
+    // BRIGHT buff: ambient up, fog thinned — the level reads as daylit
+    if (this.ambient && this.scene.fog) {
+      this.ambient.intensity = this._baseAmbient * this.brightness;
+      this.scene.fog.density = this._baseFog / this.brightness;
+    }
     for (const t of this.torches) {
       const flicker = Math.sin(time * 9 + t.x * 3.7) * 0.1 + Math.sin(time * 14 + t.z * 5.2) * 0.08;
       t.light.intensity = t.baseIntensity * (1 + flicker);

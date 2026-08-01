@@ -1,4 +1,4 @@
-import { PLAYER } from './Constants.js';
+import { PLAYER, BUFF } from './Constants.js';
 
 export class GameState {
   constructor({ runTime = 0, level = 1, collectedOrbs = 0 } = {}) {
@@ -26,6 +26,32 @@ export class GameState {
     // sprint speed per tier, cumulative. Resets when sprinting stops.
     this.sprintHoldTime = 0;
     this.sprintTier = 0;
+    // Temporary buff (from broken breakables): 0 = none | 1 = BRIGHT |
+    // 2 = FIREBALL | 3 = EMPOWERED, lasting BUFF.DURATION seconds.
+    this.buffEffect = 0;
+    this.buffTime = 0;
+  }
+
+  // Apply a buff (1..3) — replaces any active buff with a fresh duration.
+  applyBuff(effect) {
+    this.buffEffect = effect;
+    this.buffTime = BUFF.DURATION;
+  }
+
+  // Tick the buff timer; returns true on the frame the buff expires.
+  updateBuff(dt) {
+    if (this.buffTime <= 0) return false;
+    this.buffTime -= dt;
+    if (this.buffTime <= 0) {
+      this.buffTime = 0;
+      this.buffEffect = 0;
+      return true;
+    }
+    return false;
+  }
+
+  get buffActive() {
+    return this.buffEffect !== 0 && this.buffTime > 0;
   }
 
   // Tick the sprint-acceleration clock. `sprinting` = Shift held,

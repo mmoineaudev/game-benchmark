@@ -15,6 +15,8 @@ export const PLAYER = {
   INVULN_TIME: 0.8,
   MOUSE_SENSITIVITY: 0.002,
   PITCH_CLAMP: Math.PI / 2 - 0.1, // ±85°
+  SPRINT_ACCEL_WINDOW: 5,  // seconds of continuous sprinting per acceleration tier
+  SPRINT_ACCEL_STEP: 0.05, // +5% sprint speed per tier, cumulative; resets when sprinting stops
 };
 
 export const CAMERA = {

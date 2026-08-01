@@ -48,6 +48,7 @@ export class Game {
     this._lastEntry = null;
     this._onGameOverClick = null;
     this._timerEl = document.getElementById('timer');
+    this._sprintBonusEl = document.getElementById('sprint-bonus');
     this._lbPanel = document.getElementById('leaderboard-panel');
     this._lbList = document.getElementById('leaderboard-list');
     this._gameOverEl = document.getElementById('game-over');
@@ -349,7 +350,16 @@ export class Game {
     const dt = this._delta;
     const p = this.state.player;
     this._sprinting = this.input.isPressed('ShiftLeft') || this.input.isPressed('ShiftRight');
-    const speed = PLAYER.SPEED * (this._sprinting ? PLAYER.SPRINT_MULTIPLIER : 1) * dt;
+
+    // Sprint acceleration: holding Shift + moving for 5s grants +5% sprint
+    // speed per tier, cumulative; resets the moment sprinting stops.
+    const moving = this.input.isPressed('KeyW') || this.input.isPressed('KeyS')
+      || this.input.isPressed('KeyA') || this.input.isPressed('KeyD');
+    this.state.updateSprint(dt, this._sprinting, moving);
+    const sprintMult = this._sprinting
+      ? PLAYER.SPRINT_MULTIPLIER * this.state.sprintSpeedMult
+      : 1;
+    const speed = PLAYER.SPEED * sprintMult * dt;
 
     const mouse = this.input.consumeMouse();
     p.yaw -= mouse.x * PLAYER.MOUSE_SENSITIVITY;
@@ -384,8 +394,9 @@ export class Game {
   _updateCamera() {
     const p = this.state.player;
 
-    // Smooth FOV kick while sprinting
-    const targetFov = CAMERA.FOV + (this._sprinting ? CAMERA.SPRINT_FOV_BOOST : 0);
+    // Smooth FOV kick while sprinting — scales up with the sprint bonus
+    const targetFov = CAMERA.FOV
+      + (this._sprinting ? CAMERA.SPRINT_FOV_BOOST * this.state.sprintSpeedMult : 0);
     if (Math.abs(this.camera.fov - targetFov) > 0.01) {
       this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, this._delta * 8);
       this.camera.updateProjectionMatrix();
@@ -767,6 +778,12 @@ export class Game {
       const pips = this._comboPipsEl.querySelectorAll('.pip');
       pips.forEach((el, i) => el.classList.toggle('lit', i < step));
       this._comboPipsEl.style.opacity = step > 0 ? '1' : '0.25';
+    }
+    if (this._sprintBonusEl) {
+      const mult = this.state.sprintSpeedMult;
+      this._sprintBonusEl.textContent = mult > 1.001
+        ? `SPRINT ×${mult.toFixed(2)}`
+        : '';
     }
     if (this._heartsEl) {
       const h = Math.max(0, this.state.health);

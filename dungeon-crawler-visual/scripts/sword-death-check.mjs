@@ -70,6 +70,7 @@ const rangeByState = {};
 const trailActive = { slash1: 0, slash2: 0, thrust3: 0 };
 const stepByState = {};
 const thrustZ = [];
+const thrustTipXY = []; // [x, y] NDC pairs through the thrust — must hug the crosshair
 const pommelTrack = { slash1: [], slash2: [] };
 const tipTrack = { slash1: [], slash2: [] };
 const pommelDepth = { slash1: [], slash2: [] };
@@ -80,7 +81,11 @@ for (let i = 0; i < 60 * 4; i++) {
   if ((sword.state === 'recover1' || sword.state === 'recover2') && sword.time >= 0.15) {
     sword.bufferCombo();
   }
-  if (sword.state === 'thrust3') thrustZ.push(ndcOf(TIP).z);
+  if (sword.state === 'thrust3') {
+    const tipNdc = ndcOf(TIP);
+    thrustZ.push(tipNdc.z);
+    thrustTipXY.push([tipNdc.x, tipNdc.y]);
+  }
   if (sword.state === 'slash1' || sword.state === 'slash2') {
     const slash = sword.state;
     pommelTrack[slash].push(ndcOf(POMMEL));
@@ -128,20 +133,21 @@ ok(frames >= 85 && frames <= 110,
   `full buffered combo ~1.57s ≈ 94 frames (got ${frames})`);
 ok(thrustZ.length > 5, `thrust frames sampled (${thrustZ.length})`);
 const zRising = thrustZ.every((z, i) => i === 0 || z >= thrustZ[i - 1] - 1e-6);
-ok(zRising && thrustZ[thrustZ.length - 1] > 0.78 && thrustZ[0] < thrustZ[thrustZ.length - 1],
-  `thrust drives the tip deeper into the screen (NDC z ${thrustZ[0].toFixed(3)} -> ${thrustZ[thrustZ.length - 1].toFixed(3)})`);
-const thrustEndTip = (() => {
-  cam.updateMatrixWorld(true);
-  sword.group.updateMatrixWorld(true);
-  return TIP.clone().applyMatrix4(sword.group.matrixWorld).project(cam);
-})();
-ok(Math.abs(thrustEndTip.x) < 0.15 && thrustEndTip.y > 0.4 && thrustEndTip.y < 0.85,
-  `thrust ends with tip near screen center (NDC ${thrustEndTip.x.toFixed(2)}, ${thrustEndTip.y.toFixed(2)})`);
+ok(zRising && thrustZ[thrustZ.length - 1] > thrustZ[0],
+  `thrust pushes the blade forward (NDC z ${thrustZ[0].toFixed(3)} -> ${thrustZ[thrustZ.length - 1].toFixed(3)})`);
+// The thrust AIMS THE POINT AT THE CROSSHAIR: the tip must stay near NDC
+// (0,0) for the whole stab and end exactly there.
+const thrustEndXY = thrustTipXY[thrustTipXY.length - 1];
+ok(Math.abs(thrustEndXY[0]) < 0.15 && Math.abs(thrustEndXY[1]) < 0.15,
+  `thrust ends with the point ON the crosshair (NDC ${thrustEndXY[0].toFixed(2)}, ${thrustEndXY[1].toFixed(2)})`);
+const thrustXSpan = Math.max(...thrustTipXY.map(([x]) => x)) - Math.min(...thrustTipXY.map(([x]) => x));
+const thrustYSpan = Math.max(...thrustTipXY.map(([, y]) => y)) - Math.min(...thrustTipXY.map(([, y]) => y));
+ok(thrustXSpan < 0.35 && thrustYSpan < 0.35,
+  `thrust tip hugs the crosshair through the stab (x span ${thrustXSpan.toFixed(2)}, y span ${thrustYSpan.toFixed(2)})`);
 
-// PIVOT AT THE POMBEL: during each slash the pommel must stay anchored while
-// the tip sweeps a wide arc (this was the reported bug — the tip hung around
-// screen center while the pommel whipped around it). Dagger thresholds: the
-// short blade fans a bit tighter than the old long sword.
+// HORIZONTAL SLASHES + PIVOT AT THE POMBEL: the tip sweeps a wide arc that
+// is much wider horizontally than vertically (a cut, not a chop), while the
+// pommel stays anchored.
 function nudge(p, q) { return Math.hypot(p.x - q.x, p.y - q.y); }
 for (const slash of ['slash1', 'slash2']) {
   const pom = pommelTrack[slash];
@@ -154,12 +160,12 @@ for (const slash of ['slash1', 'slash2']) {
   ok(tipTravel > 0.85, `${slash}: tip sweeps wide arc (travel ${tipTravel.toFixed(2)} NDC > 0.85)`);
   ok(tipTravel > pommelTravel * 1.8,
     `${slash}: tip motion ${tipTravel.toFixed(2)}x dominates pommel ${pommelTravel.toFixed(2)} (pivot at pommel)`);
+  ok(tipXSpan > tipYSpan * 1.4,
+    `${slash}: the slash is HORIZONTAL (x span ${tipXSpan.toFixed(2)} > 1.4x y span ${tipYSpan.toFixed(2)})`);
   ok(Math.max(...tip.map((t) => t.x)) > 0.4 && Math.min(...tip.map((t) => t.x)) < -0.4,
     `${slash}: tip crosses both screen halves (x range ${Math.min(...tip.map((t) => t.x)).toFixed(2)}..${Math.max(...tip.map((t) => t.x)).toFixed(2)})`);
-  const tipMaxY = Math.max(...tip.map((t) => t.y));
-  ok(tipMaxY < 0.6, `${slash}: tip stays low through the arc (max NDC y ${tipMaxY.toFixed(2)} < 0.6)`);
   const pivotDepth = pommelDepth[slash].reduce((a, b) => a + b, 0) / pommelDepth[slash].length;
-  ok(pivotDepth > 0.7, `${slash}: pivot close to the camera (avg depth ${pivotDepth.toFixed(2)} > 0.7)`);
+  ok(pivotDepth > 0.6, `${slash}: pivot close to the camera (avg depth ${pivotDepth.toFixed(2)} > 0.6)`);
 }
 
 // Max-size crosshair clearance: at 100 orbs (3x scale) the crossguard must

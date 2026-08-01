@@ -471,94 +471,105 @@ export class PlayerSword {
 
     switch (s) {
       case 'windup1': {
-        // Cock right: hand pulls back slightly and the dagger cocks to the
-        // right — the telegraph for the rising slash.
+        // Cock right: blade forward, rolled right (rz) — tip out to the right.
         const k = easeOut(Math.min(1, t / C.WINDUP1));
-        p.x = lerp(0.30, 0.16, k);
-        p.y = lerp(-0.22, -0.24, k);
+        p.x = lerp(0.30, 0.05, k);
+        p.y = lerp(-0.22, -0.10, k);
         p.z = lerp(-0.70, -0.80, k);
-        r.x = lerp(-0.15, -0.2, k);
-        r.z = lerp(0.35, -1.15, k);
+        r.x = lerp(-0.15, -1.35, k);
+        r.y = lerp(0, 0, k);
+        r.z = lerp(0.35, 1.45, k);
         break;
       }
       case 'slash1': {
-        // Rising diagonal "/": the short blade fans right -> left (±1.15 rad)
-        // around the anchored hand — the POMBEL stays put, the tip sweeps.
+        // Horizontal cut right -> left ACROSS the aim line: the group stays
+        // anchored while the forward blade spins around its axis (rz), so the
+        // TIP sweeps a wide flat arc through the screen center and the pommel
+        // (near the spin axis) barely moves.
         const k = easeOut(Math.min(1, t / C.SLASH1));
-        p.x = lerp(0.16, -0.02, k);
-        p.y = lerp(-0.24, -0.18, k);
-        p.z = lerp(-0.80, -0.82, k);
-        r.x = lerp(-0.2, -0.15, k);
-        r.z = lerp(-1.15, 1.15, k);
+        p.x = lerp(0.0, 0.0, k);
+        p.y = lerp(-0.10, -0.10, k);
+        p.z = lerp(-0.80, -0.80, k);
+        r.x = lerp(-1.35, -1.35, k);
+        r.y = lerp(0, 0, k);
+        r.z = lerp(1.45, -1.45, k);
         break;
       }
       case 'recover1': {
         const k = easeIn(Math.min(1, t / C.RECOVER1));
-        p.x = lerp(-0.02, 0.10, k);
-        p.y = lerp(-0.18, -0.18, k);
-        p.z = lerp(-0.82, -0.78, k);
-        r.x = lerp(-0.15, -0.15, k);
-        r.z = lerp(1.15, 0.3, k);
+        p.x = lerp(0.0, 0.0, k);
+        p.y = lerp(-0.10, -0.10, k);
+        p.z = lerp(-0.80, -0.78, k);
+        r.x = lerp(-1.35, -1.35, k);
+        r.y = lerp(0, 0, k);
+        r.z = lerp(-1.45, -1.1, k);
         break;
       }
       case 'windup2': {
-        // Cock left — dagger pulls back on the other side
+        // Cock left: blade forward, rolled left (rz).
         const k = easeOut(Math.min(1, t / C.WINDUP2));
-        p.x = lerp(0.10, -0.08, k);
-        p.y = lerp(-0.18, -0.16, k);
+        p.x = lerp(0.0, 0.0, k);
+        p.y = lerp(-0.10, -0.10, k);
         p.z = lerp(-0.78, -0.80, k);
-        r.x = lerp(-0.15, -0.2, k);
-        r.z = lerp(0.3, 1.15, k);
+        r.x = lerp(-1.35, -1.35, k);
+        r.y = lerp(0, 0, k);
+        r.z = lerp(-1.1, -1.45, k);
         break;
       }
       case 'slash2': {
-        // Falling diagonal "\": the blade fans left -> right around the
-        // anchored hand, crossing slash 1 into an X.
+        // Horizontal back-cut left -> right ACROSS the aim line (mirror).
         const k = easeOut(Math.min(1, t / C.SLASH2));
-        p.x = lerp(-0.08, 0.12, k);
-        p.y = lerp(-0.16, -0.26, k);
-        p.z = lerp(-0.80, -0.82, k);
-        r.x = lerp(-0.2, -0.15, k);
-        r.z = lerp(1.15, -1.15, k);
+        p.x = lerp(0.0, 0.0, k);
+        p.y = lerp(-0.10, -0.10, k);
+        p.z = lerp(-0.80, -0.80, k);
+        r.x = lerp(-1.35, -1.35, k);
+        r.y = lerp(0, 0, k);
+        r.z = lerp(-1.45, 1.45, k);
         break;
       }
       case 'recover2': {
         const k = easeIn(Math.min(1, t / C.RECOVER2));
-        p.x = lerp(0.12, 0.14, k);
-        p.y = lerp(-0.26, -0.20, k);
-        p.z = lerp(-0.82, -0.76, k);
-        r.x = lerp(-0.15, -0.15, k);
-        r.z = lerp(-1.15, 0.25, k);
+        p.x = lerp(0.05, 0.12, k);
+        p.y = lerp(-0.10, -0.06, k);
+        p.z = lerp(-0.80, -0.62, k);
+        r.x = lerp(-1.35, -1.50, k);
+        r.y = lerp(0, 0, k);
+        r.z = lerp(1.2, 0.05, k);
         break;
       }
       case 'windup3': {
-        // Thrust cock: dagger drawn back beside the head — visible pull-back
+        // Thrust cock: blade rotated to point FORWARD (rx ~ -PI/2), and the
+        // group already positioned so the tip sits ON the crosshair — the
+        // upcoming stab only needs to push straight in along the aim axis.
         const k = easeOut(Math.min(1, t / C.WINDUP3));
-        p.x = lerp(0.14, 0.18, k);
-        p.y = lerp(-0.20, -0.12, k);
-        p.z = lerp(-0.76, -0.64, k);
-        r.x = lerp(-0.15, -0.5, k);
-        r.z = lerp(0.25, 0.3, k);
+        p.x = lerp(0.12, 0.0, k);
+        p.y = lerp(-0.06, -0.05, k);
+        p.z = lerp(-0.62, -0.52, k);
+        r.x = lerp(-1.50, -1.57, k);
+        r.y = lerp(0, 0, k);
+        r.z = lerp(0.05, 0, k);
         break;
       }
       case 'thrust3': {
-        // Piercing thrust: the hand drives the dagger forward, point at the
-        // enemy — the one translation-driven move (a stab, not a swing).
+        // Piercing thrust: p.x / p.y stay pinned so the tip HOLDS the
+        // crosshair — only p.z pushes the blade forward along the aim axis.
         const k = easeOut(Math.min(1, t / C.THRUST3));
-        p.x = lerp(0.18, 0.05, k);
-        p.y = lerp(-0.12, -0.16, k);
-        p.z = lerp(-0.64, -1.0, k);
-        r.x = lerp(-0.5, -0.1, k);
-        r.z = lerp(0.3, 0.03, k);
+        p.x = 0.0;
+        p.y = -0.05;
+        p.z = lerp(-0.52, -0.95, k);
+        r.x = lerp(-1.57, -1.57, k);
+        r.y = lerp(0, 0, k);
+        r.z = lerp(0, 0, k);
         break;
       }
       case 'recover3': {
         const k = easeIn(Math.min(1, t / C.RECOVER3));
-        p.x = lerp(0.05, 0.30, k);
-        p.y = lerp(-0.16, -0.22, k);
-        p.z = lerp(-1.0, -0.70, k);
-        r.x = lerp(-0.1, -0.15, k);
-        r.z = lerp(0.03, 0.35, k);
+        p.x = lerp(0.0, 0.30, k);
+        p.y = lerp(-0.05, -0.22, k);
+        p.z = lerp(-0.95, -0.70, k);
+        r.x = lerp(-1.57, -0.15, k);
+        r.y = lerp(0, 0, k);
+        r.z = lerp(0, 0.35, k);
         break;
       }
       case 'cooldown':

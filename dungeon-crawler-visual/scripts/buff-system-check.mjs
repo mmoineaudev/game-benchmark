@@ -54,10 +54,29 @@ console.log('== Buff system (GameState timer) ==');
 
 // --- Constants sanity ---
 {
-  ok(BUFF.DURATION === 15 && BUFF.CHANCE === 0.05,
-    `constants: duration=${BUFF.DURATION}s, chance=${BUFF.CHANCE}`);
+  ok(BUFF.DURATION === 15 && BUFF.CHANCE === 0.06,
+    `constants: duration=${BUFF.DURATION}s, chance=${BUFF.CHANCE} (was 0.05, +20%)`);
   ok(BUFF.EMPOWER_LENGTH === 1.5 && BUFF.EMPOWER_SPEED === 1.2 && BUFF.EMPOWER_ATTACK === 1.2,
     'empowered constants (length 1.5, move 1.2, attack 1.2)');
+  ok(BUFF.BOSS_DURATION === 300, `boss buff lasts 5 min (${BUFF.BOSS_DURATION}s)`);
+}
+
+// --- Buff 4 (VISION) + boss-duration applyBuff ---
+{
+  const s = new GameState();
+  s.applyBuff(4);
+  ok(s.buffEffect === 4 && Math.abs(s.buffTime - 15) < 1e-9, 'applyBuff(4) = VISION, 15s');
+  // boss buff: explicit long duration
+  s.applyBuff(1, BUFF.BOSS_DURATION);
+  ok(s.buffEffect === 1 && Math.abs(s.buffTime - 300) < 1e-9,
+    'boss buff applies for 300s (5 min)');
+  // random roll covers all 4 effects
+  const seen = new Set();
+  for (let i = 0; i < 400; i++) {
+    s.applyBuff(1 + Math.floor(Math.random() * 4));
+    seen.add(s.buffEffect);
+  }
+  ok(seen.size === 4, `buff roll covers all 4 effects (got ${[...seen].sort().join(',')})`);
 }
 
 // ===========================================================================

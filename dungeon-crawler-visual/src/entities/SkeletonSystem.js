@@ -5,9 +5,11 @@ import { ArcherSkeleton } from './enemies/ArcherSkeleton.js';
 import { Brute } from './enemies/Brute.js';
 import { Rat } from './enemies/Rat.js';
 import { Wraith } from './enemies/Wraith.js';
+import { GhostBoss } from './enemies/GhostBoss.js';
 import {
   SKELETON, PLAYER, MAGICIAN, ENEMY, ENEMY_SPAWN_WEIGHTS, ENEMY_TYPES,
-  ROOM_ENEMY_MODIFIERS, ARCHER, BRUTE, orbPowerMultiplier, enemyHpMultiplier,
+  ROOM_ENEMY_MODIFIERS, ARCHER, BRUTE, BOSS, WRAITH,
+  orbPowerMultiplier, enemyHpMultiplier,
 } from '../core/Constants.js';
 import { resolveCircleCollisions, circleHitsBox } from '../core/Collision.js';
 import { generateGlowTexture } from '../world/Textures.js';
@@ -29,6 +31,8 @@ export class SkeletonSystem {
     this.onPlayerDeath = null;
     this.speedMult = 1;
     this.fleeing = false; // BRIGHT buff: mobs run away instead of attacking
+    this.boss = null;     // GhostBoss on boss levels
+    this.onBossKill = null; // Game hook: boss died -> buff + heart + portal
   }
 
   _initProjectilePools() {
@@ -117,6 +121,12 @@ export class SkeletonSystem {
     for (let i = candidates.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+    }
+
+    // --- Boss level: spawn ONLY the ghost boss (plus its summons later) ---
+    if (this._isBossLevel(state)) {
+      this._spawnBoss(dungeonData, state, candidates);
+      return;
     }
 
     // Level scaling: +5% move speed PER LEVEL; attack speed still +5% per
@@ -213,6 +223,59 @@ export class SkeletonSystem {
     }
   }
 
+  _isBossLevel(state) {
+    return BOSS.INTERVAL > 0 && state.level % BOSS.INTERVAL === 0;
+  }
+
+  // Spawn the ghost boss at the exit cell (the arena heart). No other enemies.
+  _spawnBoss(dungeonData, state, candidates) {
+    const cs = dungeonData.cellSize;
+    const exit = dungeonData.exitCell;
+    const bx = exit.x * cs + cs / 2;
+    const bz = exit.z * cs + cs / 2;
+    const baseHp = 4; // base enemy HP; boss = 15x this
+    const boss = new GhostBoss(this.scene, baseHp);
+    boss.group.position.set(bx, 0, bz);
+    boss.onSummon = () => this._summonMinions(boss, candidates, dungeonData, state);
+    boss.onChargeHit = () => this._damagePlayer(BOSS.CHARGE_DMG);
+    boss.onKill = () => this._onBossKill(boss);
+    boss.onDeathComplete = () => this._removeSkeleton(boss);
+    this.boss = boss;
+    this.skeletons.push({
+      skel: boss, x: bx, z: bz, cellX: exit.x, cellZ: exit.z,
+      nextThink: 0, type: 'BOSS', elite: false, magician: false,
+    });
+  }
+
+  // Boss summons a pack of small wraiths that shoot projectiles.
+  _summonMinions(boss, candidates, dungeonData, state) {
+    const liveMinions = this.skeletons.filter((s) => s.type === 'WRAITH' && s.skel.state !== 'DEAD').length;
+    const room = Math.max(0, Math.min(BOSS.SUMMON_COUNT, BOSS.MAX_MINIONS - liveMinions));
+    if (room <= 0) return;
+    const cs = dungeonData.cellSize;
+    for (let i = 0; i < room; i++) {
+      const c = candidates.length
+        ? candidates[Math.floor(Math.random() * candidates.length)]
+        : { x: Math.floor(boss.group.position.x / cs), z: Math.floor(boss.group.position.z / cs) };
+      const w = new Wraith(this.scene, { attackMult: 1 });
+      const sx = c.x * cs + cs / 2;
+      const sz = c.z * cs + cs / 2;
+      w.group.position.set(sx, 0, sz);
+      w.magician = true; // these wraiths SHOOT projectiles
+      w.onKill = () => this._onKill(w);
+      w.onDeathComplete = () => this._removeSkeleton(w);
+      this.skeletons.push({
+        skel: w, x: sx, z: sz, cellX: c.x, cellZ: c.z,
+        nextThink: 0, type: 'WRAITH', elite: false, magician: true,
+      });
+    }
+  }
+
+  _onBossKill(boss) {
+    this.boss = null;
+    this.onBossKill?.();
+  }
+
   // Biome weights + room-type multipliers -> enemy type
   _pickType(roomType, biome) {
     const weights = ENEMY_SPAWN_WEIGHTS[biome] || ENEMY_SPAWN_WEIGHTS.STONE;
@@ -285,6 +348,14 @@ export class SkeletonSystem {
       const dx = player.x - s.x;
       const dz = player.z - s.z;
       const dist = Math.hypot(dx, dz);
+
+      // --- Ghost boss: self-contained AI (charge + summon) ---
+      if (s.type === 'BOSS') {
+        s.skel.update(dt, time, player, collisionBoxes, resolveCircleCollisions);
+        s.x = s.skel.group.position.x;
+        s.z = s.skel.group.position.z;
+        continue;
+      }
 
       // --- Flee (BRIGHT buff): every enemy runs away, no attacks ---
       if (this.fleeing) {

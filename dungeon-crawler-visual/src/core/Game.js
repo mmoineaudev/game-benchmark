@@ -58,6 +58,7 @@ export class Game {
     this._goNgPlusBtn = document.getElementById('go-ngplus');
     this._goKeyHandler = null; // Y/N keyboard choice on the death screen
     this._heartsEl = document.getElementById('hearts');
+    this._bossBarEl = document.getElementById('boss-bar');
     this._damageFlashEl = document.getElementById('damage-flash');
     this.skeletons = null;
     this.shooter = null;
@@ -73,6 +74,9 @@ export class Game {
     this._moveSpeedMult = 1; // EMPOWERED buff: +20% move speed
     this._heldFireball = null; // FIREBALL buff: hand visual replacing the dagger
     this._hlTargets = [];    // scratch array: alive enemy groups for the highlight pass
+    this._maxHealth = PLAYER.MAX_HEALTH; // grows by 1 per boss kill
+    this._bossPortalOpen = true; // boss arenas gate the exit portal
+    this._bossBarEl = null;
   }
 
   init() {
@@ -215,10 +219,24 @@ export class Game {
     // Merge prop AABBs into the collision list BEFORE enemies spawn
     this._collisionBoxes.push(...(result.collisionBoxes || []));
     this.props.lavaHazard = ({ x, z }) => this._lavaDamage(x, z);
-    // Breakables: 5% chance to drop a temporary buff
+    // Breakables: 6% chance to drop a temporary buff
     this.props.onBreak = (x, z) => {
       if (Math.random() < BUFF.CHANCE) this.orbs.spawnBuff(x, z);
     };
+  }
+
+  // Stepping on a breakable shatters it (same drop roll as a weapon break).
+  _stepOnBreakables() {
+    if (!this.props) return;
+    const p = this.state.player;
+    for (let i = this.props.breakables.length - 1; i >= 0; i--) {
+      const b = this.props.breakables[i];
+      const dx = p.x - b.x;
+      const dz = p.z - b.z;
+      if (dx * dx + dz * dz < 0.45 * 0.45) {
+        this.props._breakProp(b);
+      }
+    }
   }
 
   _lavaDamage(x, z) {
@@ -276,6 +294,8 @@ export class Game {
       if (Math.random() < DROP.HEALTH_CHANCE) this.orbs.spawnHealth(x, z);
       this.smoke.addTransient(x, 0.6, z, 10, 0.4);
     };
+    // Boss kill: 5-minute buff + a permanent extra heart, then the exit portal opens
+    this.skeletons.onBossKill = () => this._onBossDefeated();
     this.skeletons.onPlayerDamaged = () => this._flashDamage();
     this.skeletons.onPlayerDeath = () => this._gameOver('dead');
     this.shooter.hitSkeleton = (skel) => this.skeletons.hitSkeleton(skel, ORB_WEAPON.DAMAGE);
@@ -297,6 +317,40 @@ export class Game {
       if (!this.props) return false;
       return this.props.hitBreakables(x, z);
     };
+
+    // Boss arena: exit portal stays closed until the boss is dead
+    this._bossPortalOpen = !this.skeletons.boss;
+    this._setupExitPortal();
+  }
+
+  // The golden exit portal. Hidden in boss arenas until the boss falls.
+  _setupExitPortal() {
+    if (this._exitPortal) {
+      this.scene.remove(this._exitPortal);
+      this._exitPortal.traverse((o) => { if (o.isMesh && o.geometry) o.geometry.dispose(); });
+      if (this._exitPortalMat) this._exitPortalMat.dispose();
+      this._exitPortal = null;
+    }
+    const exit = this.dungeonData.exitCell;
+    const cs = this.dungeonData.cellSize;
+    const ex = exit.x * cs + cs / 2;
+    const ez = exit.z * cs + cs / 2;
+    const portal = new THREE.Group();
+    this._exitPortalMat = new THREE.MeshStandardMaterial({
+      color: 0xffcc44, emissive: 0xffaa22, emissiveIntensity: 1.6, roughness: 0.3, metalness: 0.7,
+    });
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(1.1, 0.12, 10, 24), this._exitPortalMat);
+    ring.position.y = 1.3;
+    const disc = new THREE.Mesh(
+      new THREE.CircleGeometry(1.0, 24),
+      new THREE.MeshBasicMaterial({ color: 0xffe6a0, transparent: true, opacity: 0.35, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }),
+    );
+    disc.position.y = 1.3;
+    portal.add(ring, disc);
+    portal.position.set(ex, 0, ez);
+    portal.visible = this._bossPortalOpen;
+    this.scene.add(portal);
+    this._exitPortal = portal;
   }
 
   _placeWaterPuddles() {
@@ -365,6 +419,7 @@ export class Game {
     this.runes.update(t);
     this.orbs.update(t, this.state.player);
     if (this.props) this.props.update(this._delta, t, this.state.player);
+    this._stepOnBreakables();
     this._handleShooting();
     this._handleSwordAttack();
     this._updateBuff(this._delta);
@@ -485,6 +540,8 @@ export class Game {
   }
 
   _handleExitRegeneration() {
+    // Boss arenas: the portal only works once the boss is dead
+    if (!this._bossPortalOpen) return;
     if (!this.state.inExitRoom) return;
     const eDown = this.input.isPressed('KeyE');
     if (eDown && !this._eKeyWasDown) {
@@ -534,6 +591,18 @@ export class Game {
       p.yaw,
       p.pitch,
     );
+  }
+
+  // Boss defeated: 5-minute buff + a permanent extra heart, and the exit
+  // portal (closed during the fight) opens.
+  _onBossDefeated() {
+    this._applyBuff(BUFF.BOSS_DURATION); // 5-minute buff
+    this._maxHealth += 1;
+    this.state.health = Math.min(this._maxHealth, this.state.health + 1);
+    this._bossPortalOpen = true;
+    if (this._exitPortal) this._exitPortal.visible = true;
+    this._showMessage('The Spectral Lord falls — a heart and a blessing are yours. The portal opens!', 'success');
+    this._updateHUD();
   }
 
   _handleSwordAttack() {
@@ -625,11 +694,11 @@ export class Game {
     }
   }
 
-  // Roll a random buff (1..3) and apply its side effects for 15 seconds.
-  _applyBuff() {
+  // Roll a random buff (1..4) and apply its side effects for 15 seconds.
+  _applyBuff(duration = BUFF.DURATION) {
     this._clearBuffEffects(); // replacing any active buff
-    const effect = 1 + Math.floor(Math.random() * 3);
-    this.state.applyBuff(effect);
+    const effect = 1 + Math.floor(Math.random() * 4);
+    this.state.applyBuff(effect, duration);
     switch (effect) {
       case 1: // BRIGHT: level lights up, mobs flee
         this.lighting.brightness = BUFF.BRIGHT_AMBIENT;
@@ -648,6 +717,9 @@ export class Game {
         this.sword.attackSpeedMult = BUFF.EMPOWER_ATTACK;
         this._moveSpeedMult = BUFF.EMPOWER_SPEED;
         break;
+      case 4: // VISION: enemies glow through walls
+        this.post.xray = true;
+        break;
     }
     this._updateHUD();
   }
@@ -661,6 +733,7 @@ export class Game {
     this.sword.lengthMult = 1;
     this.sword.attackSpeedMult = 1;
     this._moveSpeedMult = 1;
+    if (this.post) this.post.xray = false;
   }
 
   _updateBuff(dt) {
@@ -927,20 +1000,37 @@ export class Game {
         : '';
     }
     if (this._buffBadgeEl) {
-      const labels = ['', 'BRIGHT', 'FIREBALL', 'EMPOWERED'];
-      const colors = ['', '#ffe066', '#ff8844', '#66ff88'];
+      const labels = ['', 'BRIGHT', 'FIREBALL', 'EMPOWERED', 'VISION'];
+      const colors = ['', '#ffe066', '#ff8844', '#66ff88', '#88ddff'];
       const e = this.state.buffEffect;
+      const t = this.state.buffTime;
+      const m = t >= 60 ? Math.floor(t / 60) : 0;
+      const ss = t >= 60 ? Math.floor(t % 60).toString().padStart(2, '0') : '';
       this._buffBadgeEl.textContent = e
-        ? `${labels[e]} ${Math.ceil(this.state.buffTime)}s`
+        ? `${labels[e]} ${t >= 60 ? `${m}:${ss}` : `${Math.ceil(t)}s`}`
         : '';
       this._buffBadgeEl.style.color = e ? colors[e] : '';
     }
     if (this._heartsEl) {
       const h = Math.max(0, this.state.health);
-      this._heartsEl.textContent = '♥'.repeat(h) + '♡'.repeat(Math.max(0, PLAYER.MAX_HEALTH - h));
+      this._heartsEl.textContent = '♥'.repeat(h) + '♡'.repeat(Math.max(0, this._maxHealth - h));
     }
     if (this._exitEl) {
-      this._exitEl.style.display = this.state.inExitRoom ? 'block' : 'none';
+      // Boss arenas hide the "press E" prompt until the portal opens
+      this._exitEl.style.display = (this.state.inExitRoom && this._bossPortalOpen) ? 'block' : 'none';
+    }
+    // Boss health bar: visible while a boss is alive
+    if (this._bossBarEl && this.skeletons && this.skeletons.boss) {
+      const b = this.skeletons.boss;
+      const pct = Math.max(0, b.hp / b.maxHp);
+      this._bossBarEl.style.display = 'block';
+      const fill = this._bossBarEl.querySelector('.boss-bar-fill');
+      if (fill) {
+        fill.style.width = `${(pct * 100).toFixed(1)}%`;
+        fill.style.backgroundColor = pct > 0.5 ? '#66cc66' : pct > 0.25 ? '#ffcc44' : '#ff5544';
+      }
+    } else if (this._bossBarEl) {
+      this._bossBarEl.style.display = 'none';
     }
     if (this._promptEl) {
       this._promptEl.style.display = this.input.isPointerLocked() ? 'none' : 'block';

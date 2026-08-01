@@ -102,8 +102,9 @@ export class PostProcessing {
     this.bloomPass = new UnrealBloomPass(size, 1.9, 0.75, 0.4);
     this.composer.addPass(this.bloomPass);
 
-    // Motion blur: afterimage ghosting smears movement into streaks
-    this.motionBlurPass = new AfterimagePass(0.93);
+    // Motion blur: afterimage ghosting smears movement into streaks.
+    // Tuned down (0.72) so combat stays readable — 0.93 was a smeary blur.
+    this.motionBlurPass = new AfterimagePass(0.72);
     this.composer.addPass(this.motionBlurPass);
 
     // Punchier colors (saturation 1.45x)
@@ -111,10 +112,10 @@ export class PostProcessing {
     this.saturationPass.uniforms['saturation'].value = 0.45;
     this.composer.addPass(this.saturationPass);
 
-    // Heavy dungeon vignette
+    // Moderate dungeon vignette (0.9 darkness crushed the edges too hard)
     this.vignettePass = new ShaderPass(VignetteShader);
-    this.vignettePass.uniforms['offset'].value = 0.85;
-    this.vignettePass.uniforms['darkness'].value = 0.9;
+    this.vignettePass.uniforms['offset'].value = 0.9;
+    this.vignettePass.uniforms['darkness'].value = 0.75;
     this.composer.addPass(this.vignettePass);
 
     // Enemy highlight (final pass — added last so it pops on top)
@@ -125,6 +126,11 @@ export class PostProcessing {
     this._enemyCam = this.camera.clone();
     this._enemyCam.layers.set(1);
     this._enemyMat = new THREE.MeshBasicMaterial({ color: 0xff5522 });
+    // VISION buff: same glow but rendered through walls (no depth test)
+    this._enemyXrayMat = new THREE.MeshBasicMaterial({
+      color: 0xff7733, depthTest: false, depthWrite: false,
+    });
+    this.xray = false;
     const hw = Math.max(1, Math.floor(w / 2));
     const hh = Math.max(1, Math.floor(h / 2));
     const rtOpts = { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter };
@@ -166,7 +172,8 @@ export class PostProcessing {
     const prevTarget = this.renderer.getRenderTarget();
     const prevOverride = this.scene.overrideMaterial;
     const prevBg = this.scene.background;
-    this.scene.overrideMaterial = this._enemyMat;
+    // VISION buff renders enemies through walls (no depth test)
+    this.scene.overrideMaterial = this.xray ? this._enemyXrayMat : this._enemyMat;
     this.scene.background = null;
 
     // Enemy-only camera: same transform as the main camera, layer 1 only
@@ -254,6 +261,10 @@ export class PostProcessing {
     if (this._enemyMat) {
       this._enemyMat.dispose();
       this._enemyMat = null;
+    }
+    if (this._enemyXrayMat) {
+      this._enemyXrayMat.dispose();
+      this._enemyXrayMat = null;
     }
     this._enemyMeshes = new Set();
     this._enemyGroups = [];

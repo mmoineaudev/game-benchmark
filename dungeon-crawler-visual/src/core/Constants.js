@@ -135,10 +135,32 @@ export const BIOMES = {
     ambient: 0x16203a, ambientIntensity: 0.28,
     torchColor: 0x66ccff, label: 'FROZEN HALLS',
   },
+  // Boss arena: a haunted court lit by cold spectral flames.
+  SPECTRAL_COURT: {
+    wall: 0x2c3448, floor: 0x1c2434, ceiling: 0x10141e,
+    fog: 0x0a1024, fogDensity: 0.012,
+    ambient: 0x14204a, ambientIntensity: 0.3,
+    torchColor: 0x66e0ff, label: 'SPECTRAL COURT',
+  },
+};
+
+// Boss levels: every BOSS.INTERVAL-th level is a single-boss arena.
+export const BOSS = {
+  INTERVAL: 7,          // levels 7, 14, 21, ... are boss levels
+  HP_MULT: 15,          // boss HP = 15x a base enemy's HP
+  CHARGE_SPEED: 14,     // dash speed during the charge
+  CHARGE_TIME: 0.9,     // seconds the charge lasts
+  CHARGE_COOLDOWN: 3.2, // seconds between charges
+  CHARGE_DMG: 1,        // damage on charge contact
+  SUMMON_COOLDOWN: 6,   // seconds between wraith summons
+  SUMMON_COUNT: 3,      // wraiths per summon
+  MAX_MINIONS: 6,       // cap on live summoned wraiths
 };
 
 // Biome id for a given level (cyclic, 2 levels per biome)
 export function biomeForLevel(level) {
+  // Boss levels (every BOSS.INTERVAL-th) use the spectral boss biome.
+  if (BOSS.INTERVAL > 0 && level % BOSS.INTERVAL === 0) return 'SPECTRAL_COURT';
   return BIOMES.SEQUENCE[Math.floor((level - 1) / BIOMES.LEVELS_PER_BIOME) % BIOMES.SEQUENCE.length];
 }
 
@@ -284,20 +306,22 @@ export const SWORD = {
 
 export const HIT_STOP = 0.06; // seconds of world-freeze on sword hit
 
-// Temporary buffs looted from breakables (5% per break). One random effect
+// Temporary buffs looted from breakables (6% per break). One random effect
 // lasts BUFF.DURATION seconds. Effects:
 //   1 = BRIGHT: level lights up (ambient up, fog down), mobs flee the player
 //   2 = FIREBALL: dagger replaced by a free explosive fireball on right click
 //   3 = EMPOWERED: dagger +50% longer, move speed +20%, attack speed +20%
+//   4 = VISION: see enemies through walls (highlight ignores depth)
 export const BUFF = {
   DURATION: 15,
-  CHANCE: 0.05,            // drop chance per broken breakable
+  CHANCE: 0.06,            // drop chance per broken breakable (+20% from 5%)
   FIREBALL_COOLDOWN: 0.35, // seconds between free fireballs
   BRIGHT_AMBIENT: 2.5,     // ambient intensity multiplier while BRIGHT
   BRIGHT_FOG: 0.35,        // fog density multiplier while BRIGHT (less fog)
   EMPOWER_LENGTH: 1.5,     // dagger length multiplier
   EMPOWER_SPEED: 1.2,      // move speed multiplier
   EMPOWER_ATTACK: 1.2,     // dagger attack speed multiplier (faster cycle)
+  BOSS_DURATION: 300,      // boss-kill buff lasts 5 minutes
 };
 
 export const ORB_WEAPON = {

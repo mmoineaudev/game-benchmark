@@ -33,10 +33,11 @@ export class GameState {
     this.buffTime = 0;
   }
 
-  // Apply a buff (1..3) — replaces any active buff with a fresh duration.
-  applyBuff(effect) {
+  // Apply a buff (1..4) — replaces any active buff. Boss-kill buffs last
+  // BUFF.BOSS_DURATION (5 min); breakable buffs last BUFF.DURATION (15 s).
+  applyBuff(effect, duration = BUFF.DURATION) {
     this.buffEffect = effect;
-    this.buffTime = BUFF.DURATION;
+    this.buffTime = duration;
   }
 
   // Tick the buff timer; returns true on the frame the buff expires.

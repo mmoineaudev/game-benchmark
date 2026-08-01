@@ -150,6 +150,9 @@ export class Game {
       CAMERA.FOV, window.innerWidth / window.innerHeight, CAMERA.NEAR, CAMERA.FAR,
     );
     this.scene.add(this.camera);
+    // Render layer 2 as well: the first-person dagger lives there so the
+    // ×10 headlight (layer 0) never reflects off it.
+    this.camera.layers.enable(2);
     this.sword = new PlayerSword(this.camera);
     // Each new slash (hit 1 or hit 2) re-arms the damage window
     this.sword.onSlash = () => { this._swordHitApplied = false; };

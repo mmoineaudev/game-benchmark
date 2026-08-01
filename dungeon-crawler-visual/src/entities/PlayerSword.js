@@ -71,19 +71,26 @@ export class PlayerSword {
   _build() {
     const dark = new THREE.MeshStandardMaterial({
       color: 0x3a2f24, roughness: 0.6, metalness: 0.6,
+      emissive: 0x2a241e, emissiveIntensity: 0.8, // self-lit (see _freezeLighting)
     });
     // Separate blade material so the danger glow (emissive) can animate
     this.bladeMat = new THREE.MeshStandardMaterial({
       color: 0xc8ccd8, roughness: 0.25, metalness: 0.95,
-      emissive: 0xff2211, emissiveIntensity: 0,
+      emissive: 0xff2211, emissiveIntensity: 0.35, // faint warm ember at rest
     });
     this.steelMat = new THREE.MeshStandardMaterial({
       color: 0xc8ccd8, roughness: 0.25, metalness: 0.95,
+      emissive: 0x4a5468, emissiveIntensity: 0.75,
     });
     this.brassMat = new THREE.MeshStandardMaterial({
       color: 0xd8b44a, roughness: 0.4, metalness: 0.8,
+      emissive: 0x6a552c, emissiveIntensity: 0.75,
     });
     this._mats = [this.bladeMat, this.steelMat, this.brassMat, dark];
+    // The dagger must NOT catch the ×10 player headlight: put every sword
+    // mesh on layer 2, which the layer-0 headlight never lights. Emissive
+    // above keeps the blade readable on its own.
+    this.group.traverse((o) => { if (o.isMesh) o.layers.set(2); });
 
     // Blade: two tapered segments — short, narrow and pointed (dagger)
     const lower = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.26, 0.07), this.steelMat);
@@ -390,8 +397,8 @@ export class PlayerSword {
       ? 0
       : Math.max(0, Math.min(1, 1 - (nearestSkelDist - glowMin) / (glowMax - glowMin)));
     this._glow = THREE.MathUtils.damp(this._glow, this._glowTarget, 6, dt);
-
-    this.bladeMat.emissiveIntensity = this._glow * 1.5;
+    // base ember (0.35) + danger glow ramps on top
+    this.bladeMat.emissiveIntensity = 0.35 + this._glow * 1.5;
     this.glowMat.opacity = this._glow * 0.7;
     this.glowSprite.scale.setScalar(0.28 + this._glow * 0.5);
     this.dangerLight.intensity = this._glow * 3.2;

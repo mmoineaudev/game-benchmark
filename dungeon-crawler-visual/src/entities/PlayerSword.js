@@ -306,15 +306,16 @@ export class PlayerSword {
     }
   }
 
-  // Subtle blue smoke bleeding off the blade, proportional to held orbs.
-  // 0 orbs -> barely a trace; 500 orbs -> a steady wisp (capped at 500).
+  // Black smoke coiling around the blade. Uses NORMAL blending (additive black
+  // would be invisible) with a dark color, and bleeds off the whole blade
+  // length so it "wraps" the weapon rather than just the tip.
   _buildSmoke() {
     this._smokeSprites = [];
     this._smokeIdx = 0;
     for (let i = 0; i < 28; i++) {
       const mat = new THREE.SpriteMaterial({
-        map: this._glowTex, color: 0x5599ff,
-        blending: THREE.AdditiveBlending, depthWrite: false,
+        map: this._glowTex, color: 0x08090b,
+        blending: THREE.NormalBlending, depthWrite: false,
         transparent: true, opacity: 0,
       });
       this._mats.push(mat);
@@ -322,34 +323,41 @@ export class PlayerSword {
       s.visible = false;
       this.camera.add(s);
       this._smokeSprites.push({
-        sprite: s, vel: new THREE.Vector3(), life: 0, maxLife: 0.7, active: false,
+        sprite: s, vel: new THREE.Vector3(), life: 0, maxLife: 0.9, active: false,
       });
     }
   }
 
+  // Emit from a random point along the blade length (pommel -> tip), so the
+  // smoke swirls up and wraps the whole weapon.
   _emitSmoke() {
-    const p = this._tipCamSpace();
+    // sample a point along the blade (local y between -0.18 grip and 0.60 tip)
+    const along = -0.18 + Math.random() * 0.78;
+    const local = new THREE.Vector3((Math.random() - 0.5) * 0.06, along, (Math.random() - 0.5) * 0.05)
+      .applyEuler(this.group.rotation).add(this.group.position);
     for (let k = 0; k < 2; k++) {
       const s = this._smokeSprites[this._smokeIdx];
       this._smokeIdx = (this._smokeIdx + 1) % this._smokeSprites.length;
       s.active = true;
-      s.life = s.maxLife * (0.6 + Math.random() * 0.6);
+      s.life = s.maxLife * (0.6 + Math.random() * 0.7);
       s.sprite.visible = true;
-      s.sprite.position.copy(p);
-      s.sprite.scale.setScalar(0.12 + Math.random() * 0.08);
-      s.sprite.material.opacity = 0.24 + Math.random() * 0.1;
+      s.sprite.position.copy(local);
+      s.sprite.scale.setScalar(0.16 + Math.random() * 0.12);
+      s.sprite.material.opacity = 0.5 + Math.random() * 0.2;
       s.vel.set(
-        (Math.random() - 0.5) * 0.6,
-        0.3 + Math.random() * 0.5,
-        -0.2 - Math.random() * 0.4,
+        (Math.random() - 0.5) * 0.5,
+        0.4 + Math.random() * 0.5,
+        (Math.random() - 0.5) * 0.3,
       );
     }
   }
 
   // Called every frame from Game. Emission rate scales with orbs, and each
-  // wisp rises / drifts / expands / fades.
+  // wisp rises / drifts / expands / fades (dark smoke wraps the blade).
   updateSmoke(dt) {
-    this._smokeAcc += dt * (0.5 + this._orbSmokeFactor * 4.0);
+    // Always emit a baseline (independent of orb count) so the black smoke
+    // wrap is always visible.
+    this._smokeAcc += dt * (2.0 + this._orbSmokeFactor * 2.0);
     while (this._smokeAcc >= 1) {
       this._emitSmoke();
       this._smokeAcc -= 1;
@@ -363,8 +371,8 @@ export class PlayerSword {
         continue;
       }
       const f = s.life / s.maxLife;
-      s.sprite.material.opacity = 0.26 * f;
-      s.sprite.scale.addScalar(dt * 0.5);
+      s.sprite.material.opacity = (0.5 + 0.2 * f) * f; // fade out over life
+      s.sprite.scale.addScalar(dt * 0.6);
       s.sprite.position.addScaledVector(s.vel, dt);
     }
   }

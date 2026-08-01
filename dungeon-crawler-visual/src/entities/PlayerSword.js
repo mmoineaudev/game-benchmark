@@ -39,8 +39,12 @@ const BLADE_COLORS = [
   0xfff4d8, // step 10: radiant
 ];
 
-// Blade tip in group-local space (upper segment top).
-const TIP_LOCAL = new THREE.Vector3(0, 0.51, 0.02);
+// Blade tip in group-local space (pointed apex of the executioner blade).
+const TIP_LOCAL = new THREE.Vector3(0, 0.60, 0.02);
+// Grip-bottom / pommel pivot probe (no crossguard — repurposed for tests).
+const POMMEL_LOCAL = new THREE.Vector3(0, -0.21, 0);
+// Grip-top reference (what the legacy 'guard' probe points at now).
+const GRIP_LOCAL = new THREE.Vector3(0, 0.0, 0.03);
 
 export class PlayerSword {
   constructor(camera) {
@@ -92,39 +96,51 @@ export class PlayerSword {
     // above keeps the blade readable on its own.
     this.group.traverse((o) => { if (o.isMesh) o.layers.set(2); });
 
-    // Blade: two tapered segments — short, narrow and pointed (dagger)
-    const lower = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.26, 0.07), this.steelMat);
-    lower.position.y = 0.20;
-    this.group.add(lower);
-    const upper = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.20, 0.05), this.bladeMat);
-    upper.position.y = 0.42;
-    upper.rotation.x = -0.1; // tip leans forward
-    upper.castShadow = false;
-    this.group.add(upper);
-    this._upperBlade = upper;
+    // ------------------------------------------------------------------
+    // Executioner's sword: ONE long broad straight blade with a pointed
+    // tip, NO crossguard, single-edged (sharpened on the front side only —
+    // a fuller runs near the back edge, mirroring a real executioner
+    // sword's asymmetric grind). No bend anywhere.
+    // Group origin sits at the grip; blade points up (+y), flat faces ±z.
 
-    // Blood groove along the blade face (lower segment only)
-    const groove = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.26, 0.003), dark);
-    groove.position.set(0, 0.20, 0.036);
-    this.group.add(groove);
+    // Ricasso/blade base: broad flat steel slab from the grip upward.
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.42, 0.08), this.bladeMat);
+    blade.position.y = 0.21;
+    this.group.add(blade);
+    this._upperBlade = blade;
 
-    // Small quillon crossguard with swept tips
-    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.04, 0.04), dark);
-    guard.position.y = 0.06;
-    this.group.add(guard);
-    for (const sx of [-1, 1]) {
-      const tip = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.02, 0.045), dark);
-      tip.position.set(sx * 0.095, 0.06, 0);
-      tip.rotation.z = sx * 0.35;
-      this.group.add(tip);
-    }
+    // Pointed tip: a tapered, flattened wedge that comes to a clean point.
+    // (cone with 4 radial segs = a diamond cross-section; flattened in x.)
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.34, 4), this.bladeMat);
+    tip.position.y = 0.56;
+    tip.rotation.y = Math.PI / 4;        // align the flat faces to ±z
+    tip.scale.set(0.6, 1, 1);            // flatten x -> broad, flat blade point
+    this.group.add(tip);
+    this._tip = tip;
 
-    // Wrapped grip + brass pommel (compact)
-    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.02, 0.16, 8), dark);
-    grip.position.y = -0.04;
+    // Fuller (blood groove) near the BACK edge — signals a single-edged
+    // grind with the sharpened edge on the front (camera-facing) side.
+    const fullerMat = new THREE.MeshStandardMaterial({
+      color: 0x8a8e98, roughness: 0.6, metalness: 0.95,
+      emissive: 0x333a44, emissiveIntensity: 0.6,
+    });
+    this._mats.push(fullerMat);
+    const fuller = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.4, 0.006), fullerMat);
+    fuller.position.set(0, 0.21, 0.033); // toward the +z (back) face
+    this.group.add(fuller);
+
+    // Wrapped grip directly below the blade — no crossguard between them.
+    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.024, 0.18, 8), dark);
+    grip.position.y = -0.09;
     this.group.add(grip);
-    const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 6), this.brassMat);
-    pommel.position.y = -0.16;
+    // Grip collar (where blade seats into the grip).
+    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.03, 0.03, 8), dark);
+    collar.position.y = 0.0;
+    this.group.add(collar);
+
+    // Brass pommel at the very bottom (the pivot the combos swing around).
+    const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 6), this.brassMat);
+    pommel.position.y = -0.21;
     this.group.add(pommel);
 
     // Danger glow sprite around the blade
@@ -164,7 +180,7 @@ export class PlayerSword {
     this.growthGlow.scale.setScalar(0.26);
     this.group.add(this.growthGlow);
 
-    this.group.traverse((m) => { if (m.isMesh) m.castShadow = false; });
+    this.group.traverse((m) => { if (m.isMesh) { m.castShadow = false; m.layers.set(2); } });
   }
 
   // Movement strike traces: pooled additive sprites, one pool per strike so

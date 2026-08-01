@@ -36,9 +36,9 @@ console.log('== Sword combo ==');
 const cam = new THREE.PerspectiveCamera(75, 16 / 9, 0.1, 50);
 const sword = new PlayerSword(cam);
 
-const TIP = new THREE.Vector3(0, 0.51, 0.02);
-const POMMEL = new THREE.Vector3(0, -0.16, 0);
-const GUARD = new THREE.Vector3(0, 0.06, 0);
+const TIP = new THREE.Vector3(0, 0.60, 0.02);
+const POMMEL = new THREE.Vector3(0, -0.21, 0);
+const GUARD = new THREE.Vector3(0, 0.0, 0.03); // grip reference (executioner sword has no crossguard)
 
 let frames = 0;
 function ndcOf(local) {
@@ -168,15 +168,16 @@ for (const slash of ['slash1', 'slash2']) {
   ok(pivotDepth > 0.6, `${slash}: pivot close to the camera (avg depth ${pivotDepth.toFixed(2)} > 0.6)`);
 }
 
-// Max-size crosshair clearance: at 100 orbs (3x scale) the crossguard must
-// stay clear of the aim point at NDC (0,0) — reported bug at max sword size.
+// Max-size crosshair clearance: at 100 orbs (3x scale) the widest points of
+// the blade must stay clear of the aim point at NDC (0,0) — a straight
+// executioner blade must not cover the center even at max size.
 sword.setOrbCount(100);
 ok(Math.abs(sword.scale - 3) < 1e-9, `max size = 3x (got ${sword.scale})`);
 {
   const guardPts = [
-    ['guardCenter', new THREE.Vector3(0, 0.06, 0)],
-    ['guardTipL', new THREE.Vector3(-0.095, 0.06, 0)],
-    ['guardTipR', new THREE.Vector3(0.095, 0.06, 0)],
+    ['bladeSideL', new THREE.Vector3(-0.0225, 0.21, 0)],
+    ['bladeSideR', new THREE.Vector3(0.0225, 0.21, 0)],
+    ['gripNeck', new THREE.Vector3(0, 0.0, 0)],
   ];
   for (const [name, pt] of guardPts) {
     const ndc = ndcOf(pt);

@@ -31,7 +31,7 @@ export class Rat {
   _build() {
     const bodyMat = new THREE.MeshStandardMaterial({ color: RAT.BODY, roughness: 0.9, transparent: true });
     const headMat = new THREE.MeshStandardMaterial({ color: RAT.HEAD, roughness: 0.9, transparent: true });
-    const eyeMat = new THREE.MeshBasicMaterial({ color: RAT.EYE });
+    const eyeMat = new THREE.MeshBasicMaterial({ color: RAT.EYE, transparent: true });
     this._mats = [bodyMat, headMat, eyeMat];
 
     // Body: squashed sphere, low to the ground
@@ -70,6 +70,21 @@ export class Rat {
     if (this._removed) return;
     if (this.attackCooldown > 0) this.attackCooldown -= dt;
     this.animTime += dt;
+
+    // DEAD: flop onto the side, hold the corpse, vanish 2 s after death
+    if (this.state === 'DEAD') {
+      this.body.rotation.z = Math.min(Math.PI / 2, this.body.rotation.z + dt * 14);
+      this.body.rotation.x = Math.min(Math.PI / 2, this.body.rotation.x + dt * 10);
+      this.group.position.y = Math.max(0.02, this.group.position.y - dt * 0.12);
+      const fadeStart = RAT.DEATH_HOLD - RAT.DEATH_FADE;
+      if (this.animTime > fadeStart) {
+        const f = Math.max(0, 1 - (this.animTime - fadeStart) / RAT.DEATH_FADE);
+        for (const m of this._mats) m.opacity = f;
+      }
+      if (this.animTime >= RAT.DEATH_HOLD) this.onDeathComplete?.();
+      return;
+    }
+
     const wobble = Math.sin(this.animTime * 10 + this.phase) * 0.4;
     this.body.rotation.z = wobble;
     this.group.position.y = Math.abs(Math.sin(this.animTime * 10 + this.phase)) * 0.03;
@@ -88,6 +103,7 @@ export class Rat {
     this.hp -= damage;
     if (this.hp <= 0) {
       this.state = 'DEAD';
+      this.animTime = 0; // death timer starts now
       this.onKill?.();
       return true;
     }

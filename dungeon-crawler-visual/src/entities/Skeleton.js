@@ -356,20 +356,22 @@ export class Skeleton {
   _animDeath(dt) {
     const b = this.bones;
     const t = this.animTime;
-    // Fall forward, then fade
-    b.root.rotation.x = THREE.MathUtils.damp(b.root.rotation.x, -Math.PI / 2, 6, dt);
-    b.root.position.y = THREE.MathUtils.damp(b.root.position.y, 0.05, 6, dt);
+    // Fall forward fast, then lie still — the corpse stays visible the full
+    // DEATH_HOLD, fading only in the last DEATH_FADE seconds.
+    b.root.rotation.x = THREE.MathUtils.damp(b.root.rotation.x, -Math.PI / 2, 8, dt);
+    b.root.position.y = THREE.MathUtils.damp(b.root.position.y, 0.05, 8, dt);
     // Limbs relax
-    b.armL.rotation.x = THREE.MathUtils.damp(b.armL.rotation.x, 0.9, 6, dt);
-    b.armR.rotation.x = THREE.MathUtils.damp(b.armR.rotation.x, 0.9, 6, dt);
-    b.legL.rotation.x = THREE.MathUtils.damp(b.legL.rotation.x, 0.5, 6, dt);
-    b.legR.rotation.x = THREE.MathUtils.damp(b.legR.rotation.x, 0.5, 6, dt);
+    b.armL.rotation.x = THREE.MathUtils.damp(b.armL.rotation.x, 0.9, 8, dt);
+    b.armR.rotation.x = THREE.MathUtils.damp(b.armR.rotation.x, 0.9, 8, dt);
+    b.legL.rotation.x = THREE.MathUtils.damp(b.legL.rotation.x, 0.5, 8, dt);
+    b.legR.rotation.x = THREE.MathUtils.damp(b.legR.rotation.x, 0.5, 8, dt);
 
-    if (t > 0.4) {
-      this.fade = Math.max(0, 1 - (t - 0.4) / 0.4);
+    const fadeStart = SKELETON.DEATH_HOLD - SKELETON.DEATH_FADE;
+    if (t > fadeStart) {
+      this.fade = Math.max(0, 1 - (t - fadeStart) / SKELETON.DEATH_FADE);
       this._applyFade(this.fade);
     }
-    if (t >= 0.85) {
+    if (t >= SKELETON.DEATH_HOLD) {
       this.onDeathComplete?.();
     }
   }

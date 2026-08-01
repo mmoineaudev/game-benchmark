@@ -57,11 +57,13 @@ export class Wraith {
     this._glowTex = generateGlowTexture();
     this._trail = [];
     for (let i = 0; i < 3; i++) {
+      const baseOpacity = 0.25 - i * 0.06;
       const mat = new THREE.SpriteMaterial({
         map: this._glowTex, color,
         blending: THREE.AdditiveBlending, depthWrite: false,
-        transparent: true, opacity: 0.25 - i * 0.06,
+        transparent: true, opacity: baseOpacity,
       });
+      mat.userData.baseOpacity = baseOpacity;
       const sprite = new THREE.Sprite(mat);
       sprite.scale.setScalar(0.7 - i * 0.15);
       sprite.position.set(0, -i * 0.4, 0);
@@ -77,6 +79,24 @@ export class Wraith {
     if (this._removed) return;
     if (this.attackCooldown > 0) this.attackCooldown -= dt;
     this.animTime += dt;
+
+    // DEAD: dissipate — fade out and sink, gone 2 s after death
+    if (this.state === 'DEAD') {
+      const fadeStart = WRAITH.DEATH_HOLD - WRAITH.DEATH_FADE;
+      let f = 1;
+      if (this.animTime > fadeStart) {
+        f = Math.max(0, 1 - (this.animTime - fadeStart) / WRAITH.DEATH_FADE);
+      }
+      this.bodyMat.opacity = 0.35 * f;
+      this.eyeMat.opacity = 0.9 * f;
+      for (const s of this._trail) {
+        s.material.opacity = s.material.userData.baseOpacity * f;
+      }
+      this.group.position.y -= dt * 0.4 * f;
+      if (this.animTime >= WRAITH.DEATH_HOLD) this.onDeathComplete?.();
+      return;
+    }
+
     // Sine bob
     this.group.position.y = Math.sin(time * WRAITH.BOB_FREQ + this.phase) * WRAITH.BOB_AMP;
     // Eyes flicker
@@ -95,6 +115,7 @@ export class Wraith {
     this.hp -= damage;
     if (this.hp <= 0) {
       this.state = 'DEAD';
+      this.animTime = 0; // death timer starts now
       this.onKill?.();
       return true;
     }

@@ -157,6 +157,7 @@ export class SkeletonSystem {
           const oz = (Math.random() - 0.5) * 2;
           rat.group.position.set(sx + ox, 0, sz + oz);
           rat.onKill = () => this._onKill(rat);
+          rat.onDeathComplete = () => this._removeSkeleton(rat);
           this.skeletons.push({
             skel: rat, x: sx + ox, z: sz + oz,
             cellX: x, cellZ: z, nextThink: 0, type: 'RAT', elite: false, magician: false,

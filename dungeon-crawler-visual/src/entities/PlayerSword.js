@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { SWORD, orbPowerMultiplier } from '../core/Constants.js';
 import { generateGlowTexture } from '../world/Textures.js';
-import { makeLeather } from '../core/Materials.js';
 
 // First-person DAGGER attached to the camera: a short, tapered double-edged
 // blade with a blood groove, small quillon crossguard, wrapped grip and brass
@@ -62,63 +61,11 @@ export class PlayerSword {
     this._orbSmokeFactor = 0; // 0..1, ~ shared with orb count (capped at 500)
     this._smokeAcc = 0;
     this._build();
-    this._buildArms();
     this._buildTrails();
     this._buildSparks();
     this._buildSmoke();
     camera.add(this.group);
     this._setRest();
-  }
-
-  // First-person presence: a gloved hand gripping the dagger + a forearm
-  // sleeve, so the POV reads as a body in the world (coherent with enemies).
-  // Separate camera-child group that MIRRORS the sword's transform every
-  // frame (never the scale — so the hand stays human-size when the blade
-  // grows). Layer 2: the ×10 headlight (layer 0) never lights it.
-  _buildArms() {
-    this.armGroup = new THREE.Group();
-    this.armMat = makeLeather(0x2a2018, { seed: 61, rough: 0.6, metal: 0.1 });
-    this._mats.push(this.armMat);
-    this.armMats = [this.armMat];
-
-    // Forearm sleeve: runs from the grip down toward the screen bottom-left.
-    const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.075, 0.5, 10), this.armMat);
-    sleeve.position.set(0.12, -0.42, 0);
-    sleeve.rotation.z = 0.25;
-    this.armGroup.add(sleeve);
-    // Cuff
-    const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.06, 0.06, 10), this.armMat);
-    cuff.position.set(0.135, -0.18, 0);
-    cuff.rotation.z = 0.2;
-    this.armGroup.add(cuff);
-
-    // Gloved hand gripping the grip (sits at the pommel/grip local origin).
-    const palm = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), this.armMat);
-    palm.scale.set(1, 0.8, 0.7);
-    palm.position.set(0.02, -0.02, 0);
-    this.armGroup.add(palm);
-    // 3 fingers wrapping the grip
-    for (const sx of [-1, 1]) {
-      const f = new THREE.Mesh(new THREE.SphereGeometry(0.028, 6, 4), this.armMat);
-      f.scale.set(1, 1.4, 0.8);
-      f.position.set(sx * 0.04, 0.015, 0.03);
-      this.armGroup.add(f);
-      const f2 = new THREE.Mesh(new THREE.SphereGeometry(0.024, 6, 4), this.armMat);
-      f2.scale.set(1, 1.3, 0.7);
-      f2.position.set(sx * 0.03, 0.015, -0.04);
-      this.armGroup.add(f2);
-    }
-    // Thumb along the blade side
-    const thumb = new THREE.Mesh(new THREE.SphereGeometry(0.024, 6, 4), this.armMat);
-    thumb.scale.set(0.8, 1.5, 0.8);
-    thumb.position.set(0, 0.02, 0.05);
-    this.armGroup.add(thumb);
-
-    // Never in the world's shadow path; no shadow cast (matches the dagger).
-    this.armGroup.traverse((o) => { if (o.isMesh) { o.layers.set(2); o.castShadow = false; } });
-    this.camera.add(this.armGroup);
-    this.armGroup.position.copy(this.group.position);
-    this.armGroup.rotation.copy(this.group.rotation);
   }
 
   _build() {
@@ -502,12 +449,6 @@ export class PlayerSword {
     this.setDanger(nearestSkelDist, dt);
     this._updateTrails(dt);
     this._updateSparks(dt);
-    // Hand/arm mirrors the dagger's transform (position + rotation only — the
-    // hand never inherits the orb-growth scale so it stays human-sized).
-    if (this.armGroup) {
-      this.armGroup.position.copy(this.group.position);
-      this.armGroup.rotation.copy(this.group.rotation);
-    }
     if (this._flashTimer > 0) {
       this._flashTimer -= dt;
       if (this._flashTimer <= 0) this.bladeMat.emissive.setHex(0xff2211);
@@ -721,12 +662,6 @@ export class PlayerSword {
 
   dispose() {
     this.camera.remove(this.group);
-    if (this.armGroup) {
-      this.camera.remove(this.armGroup);
-      this.armGroup.traverse((m) => {
-        if (m.isMesh && m.geometry) m.geometry.dispose();
-      });
-    }
     for (const s of this._sparks) this.camera.remove(s.mesh);
     for (const pool of this._trailPools) {
       for (const t of pool.sprites) this.camera.remove(t.sprite);

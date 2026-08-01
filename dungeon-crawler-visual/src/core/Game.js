@@ -997,7 +997,8 @@ export class Game {
   }
 
   // Start a new run after death: fresh (level 1, no carry, ngPlus 0) or
-  // New Game+ (half level, orbs kept, ngPlus +1).
+  // New Game+ (half level, orbs kept, ngPlus +1). Orb loss on death is a
+  // flat 10% in NG+ — you keep 90% of your banked orbs.
   _startNewRun(newGamePlus = false) {
     if (this._goKeyHandler) {
       window.removeEventListener('keydown', this._goKeyHandler);
@@ -1008,7 +1009,7 @@ export class Game {
     this._clearBuffEffects(); // no lingering buff side effects across runs
     const nextState = new GameState({
       level: newGamePlus ? Math.max(1, Math.floor(this.state.level / 2)) : 1,
-      collectedOrbs: newGamePlus ? Math.floor(this.state.collectedOrbs * 0.5) : 0,
+      collectedOrbs: newGamePlus ? Math.floor(this.state.collectedOrbs * 0.9) : 0,
       ngPlus: newGamePlus ? (this.state.ngPlus || 0) + 1 : 0,
     });
     this._regenerateDungeon({ nextState });

@@ -4,8 +4,9 @@ import { circleHitsBox } from '../core/Collision.js';
 
 // Orb economy: 1 collected orb = ONE SEQUENCE of VOLLEY steps, and ONE
 // CLICK = ONE STEP. The player builds the sequence across clicks:
-//   - step 1 and step 2 are normal orbs: 1 damage on a direct hit and one
-//     BOUNCE off walls / floor / ceiling, then fizzle on the next contact.
+//   - step 1 and step 2 are normal orbs: 1 damage on a direct hit and up to
+//     BOUNCES ricochets off walls / floor / ceiling, then fizzle on the next
+//     surface contact.
 //   - step 3 (the last) is explosive: it detonates on its first contact and
 //     deals EXPLODE_DAMAGE to every enemy within EXPLODE_RADIUS (handled by
 //     Game via onExplode).
@@ -39,14 +40,20 @@ export class OrbShooter {
     ctx.fillRect(0, 0, size, size);
     this._tex = new THREE.CanvasTexture(canvas);
 
-    const meshGeo = new THREE.SphereGeometry(0.16, 10, 8); // smaller orbs
+    const meshGeo = new THREE.SphereGeometry(0.2, 10, 8); // bigger orbs
     const meshMat = new THREE.MeshStandardMaterial({
-      color: 0x44aaff, emissive: 0x44aaff, emissiveIntensity: 2.5,
+      color: 0x44aaff, emissive: 0x44aaff, emissiveIntensity: 3.5,
       roughness: 0.15, metalness: 0.4,
     });
     const glowMat = new THREE.SpriteMaterial({
       map: this._tex, blending: THREE.AdditiveBlending,
-      depthWrite: false, transparent: true, opacity: 0.8,
+      depthWrite: false, transparent: true, opacity: 1,
+    });
+    // Shot-trace smear: a lagging additive sprite behind every projectile
+    const smearMat = new THREE.SpriteMaterial({
+      map: this._tex, color: 0x88ccff,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+      transparent: true, opacity: 0.35,
     });
 
     // Sized for the sustained rate: 5.5 shots/s x 3 orbs x 2.5 s life ≈ 41
@@ -54,39 +61,52 @@ export class OrbShooter {
     for (let i = 0; i < POOL; i++) {
       const mesh = new THREE.Mesh(meshGeo, meshMat);
       const glow = new THREE.Sprite(glowMat);
-      glow.scale.set(1.2, 1.2, 1);
+      glow.scale.set(1.6, 1.6, 1);
+      const smear = new THREE.Sprite(smearMat);
+      smear.scale.set(1.3, 1.3, 1);
       mesh.visible = false;
       glow.visible = false;
+      smear.visible = false;
       this.scene.add(mesh);
       this.scene.add(glow);
+      this.scene.add(smear);
       this.projectiles.push({
-        mesh, glow, dirX: 0, dirY: 0, dirZ: 0, life: 0,
+        mesh, glow, smear, dirX: 0, dirY: 0, dirZ: 0, life: 0,
         active: false, bounces: 0, explode: false, fireball: false,
       });
     }
 
     // Fireball slots (temporary buff weapon): same pool/loop, fiery visuals.
     // Fired via fireFireball() — always explodes on contact, no ammo cost.
-    const fireGeo = new THREE.SphereGeometry(0.19, 10, 8);
+    const fireGeo = new THREE.SphereGeometry(0.24, 10, 8);
     const fireMat = new THREE.MeshStandardMaterial({
-      color: 0xff8830, emissive: 0xff5522, emissiveIntensity: 3.0,
+      color: 0xff8830, emissive: 0xff5522, emissiveIntensity: 4.0,
       roughness: 0.2, metalness: 0.1,
     });
     const fireGlowMat = new THREE.SpriteMaterial({
       map: this._tex, color: 0xff8844,
       blending: THREE.AdditiveBlending, depthWrite: false,
-      transparent: true, opacity: 0.9,
+      transparent: true, opacity: 1,
+    });
+    const fireSmearMat = new THREE.SpriteMaterial({
+      map: this._tex, color: 0xff6622,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+      transparent: true, opacity: 0.45,
     });
     for (let i = 0; i < 10; i++) {
       const mesh = new THREE.Mesh(fireGeo, fireMat);
       const glow = new THREE.Sprite(fireGlowMat);
-      glow.scale.set(1.5, 1.5, 1);
+      glow.scale.set(1.9, 1.9, 1);
+      const smear = new THREE.Sprite(fireSmearMat);
+      smear.scale.set(1.6, 1.6, 1);
       mesh.visible = false;
       glow.visible = false;
+      smear.visible = false;
       this.scene.add(mesh);
       this.scene.add(glow);
+      this.scene.add(smear);
       this.projectiles.push({
-        mesh, glow, dirX: 0, dirY: 0, dirZ: 0, life: 0,
+        mesh, glow, smear, dirX: 0, dirY: 0, dirZ: 0, life: 0,
         active: false, bounces: 0, explode: true, fireball: true,
         isFireballSlot: true,
       });
@@ -142,6 +162,7 @@ export class OrbShooter {
     p.active = true;
     p.mesh.visible = true;
     p.glow.visible = true;
+    p.smear.visible = true;
     p.mesh.position.set(x, y, z);
     p.glow.position.set(x, y, z);
     // Camera look vector (matches Game._updateCamera)
@@ -165,6 +186,7 @@ export class OrbShooter {
     p.active = true;
     p.mesh.visible = true;
     p.glow.visible = true;
+    p.smear.visible = true;
     p.mesh.position.set(x, y, z);
     p.glow.position.set(x, y, z);
     p.dirX = -Math.sin(yaw) * Math.cos(pitch);
@@ -204,6 +226,12 @@ export class OrbShooter {
       p.mesh.position.y += p.dirY * speed * dt;
       p.mesh.position.z += p.dirZ * speed * dt;
       p.glow.position.copy(p.mesh.position);
+      // Shot trace: smear lags behind along the flight direction
+      p.smear.position.set(
+        p.mesh.position.x - p.dirX * 0.5,
+        p.mesh.position.y - p.dirY * 0.5,
+        p.mesh.position.z - p.dirZ * 0.5,
+      );
       p.life -= dt;
 
       // Floor contact
@@ -333,6 +361,7 @@ export class OrbShooter {
     p.active = false;
     p.mesh.visible = false;
     p.glow.visible = false;
+    p.smear.visible = false;
   }
 
   dispose() {
@@ -340,8 +369,10 @@ export class OrbShooter {
       p.mesh.geometry.dispose();
       p.mesh.material.dispose();
       p.glow.material.dispose();
+      p.smear.material.dispose();
       this.scene.remove(p.mesh);
       this.scene.remove(p.glow);
+      this.scene.remove(p.smear);
     }
     if (this._tex) this._tex.dispose();
     if (this._boomGeo) {

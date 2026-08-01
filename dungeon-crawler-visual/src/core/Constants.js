@@ -308,7 +308,7 @@ export const ORB_WEAPON = {
   VOLLEY: 3,              // orbs per SEQUENCE — 1 collected orb = 1 sequence of 3 steps
   STEP_INTERVAL: 0.22,    // min time between steps; also the held-fire repeat cadence
   SEQUENCE_WINDOW: 1.2,   // max pause between steps before the sequence resets
-  BOUNCES: 1,             // the first VOLLEY-1 steps bounce once off walls/floor/ceiling
+  BOUNCES: 3,             // the first VOLLEY-1 steps bounce this many times off walls/floor/ceiling
   EXPLODE_RADIUS: 1.5,    // last step: AOE damage radius around the explosion
   EXPLODE_DAMAGE: 1,      // last step: AOE damage dealt (same as a direct hit)
 };

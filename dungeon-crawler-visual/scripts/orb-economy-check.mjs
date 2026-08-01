@@ -23,6 +23,7 @@ const { OrbShooter } = await import(`${BASE}/entities/OrbShooter.js`);
 const { OrbSystem } = await import(`${BASE}/entities/OrbSystem.js`);
 const { Rat } = await import(`${BASE}/entities/enemies/Rat.js`);
 const { PlayerSword } = await import(`${BASE}/entities/PlayerSword.js`);
+const { PropSystem } = await import(`${BASE}/world/PropSystem.js`);
 const { ORB_WEAPON, DROP, PLAYER, RAT, orbPowerMultiplier } = await import(`${BASE}/core/Constants.js`);
 
 let failures = 0;
@@ -116,7 +117,8 @@ console.log('== Orb bounce ==');
     shooter.dispose();
   }
 
-  // Wall double-bounce: corridor -> bounce once, then fizzle on 2nd contact
+  // Wall triple-bounce: corridor -> bounce 3x (axis flips each time), then
+  // fizzle on the 4th contact.
   {
     const { scene, shooter } = newShooter();
     const corridor = [
@@ -124,18 +126,20 @@ console.log('== Orb bounce ==');
       { minX: 0.4, maxX: 0.8, minZ: -10, maxZ: 10 },
     ];
     const { projectile: wall } = shooter.fire(0, 1, 0, -Math.PI / 2, 0); // straight +x into the wall
-    let wallBounced = false;
-    for (let i = 0; i < 60 * 4; i++) {
+    const bouncesSeen = [];
+    for (let i = 0; i < 60 * 6; i++) {
       shooter.update(dt, corridor, []);
       if (!wall.active) break;
-      if (wall.bounces === 1 && !wallBounced) {
-        wallBounced = true;
+      if (wall.bounces > bouncesSeen.length) {
+        bouncesSeen.push(wall.dirX);
         ok(Math.abs(wall.dirZ) < 0.001 && Math.abs(wall.dirX) > 0.9,
-          `wall bounce reflects the dominant axis (dirX=${wall.dirX.toFixed(2)}, dirZ=${wall.dirZ.toFixed(2)})`);
+          `bounce #${wall.bounces} reflects the dominant axis (dirX=${wall.dirX.toFixed(2)})`);
       }
     }
-    ok(wallBounced, 'orb bounced once off a wall');
-    ok(!wall.active, 'orb fizzles on the second wall contact');
+    ok(bouncesSeen.length === 3, `orb bounces 3x off walls (${bouncesSeen.length})`);
+    ok(bouncesSeen[0] !== bouncesSeen[1] && bouncesSeen[1] !== bouncesSeen[2],
+      `direction flips each bounce (${bouncesSeen.map((d) => d.toFixed(1)).join(' -> ')})`);
+    ok(!wall.active, 'orb fizzles on the 4th wall contact');
     shooter.dispose();
   }
 }
@@ -221,8 +225,14 @@ console.log('== Fireball (buff weapon) ==');
   const fb = shooter.fireFireball(0, 1, 0, 0, 0); // straight -z
   ok(fb && fb.explode && fb.fireball, 'fireball is explosive and fiery');
   ok(fb.active && fb.mesh.visible, 'fireball active on fire');
+  ok(fb.smear && fb.smear.visible, 'fireball carries a shot-trace smear');
   // no sequence side effects: step/window untouched
   ok(shooter.step === 0 && shooter.window === 0, 'fireball does not advance the orb sequence');
+  // the smear trails BEHIND the projectile along its flight direction
+  shooter.update(dt, [], []);
+  const expectedZ = fb.mesh.position.z - fb.dirZ * 0.5;
+  ok(Math.abs(fb.smear.position.z - expectedZ) < 0.001,
+    `smear sits 0.5u behind along the flight dir (z=${fb.smear.position.z.toFixed(2)} vs ${expectedZ.toFixed(2)})`);
 
   // wall contact -> detonate -> onExplode + orange ring
   const wall = { minX: 1, maxX: 1.4, minZ: -10, maxZ: 10 };
@@ -260,6 +270,25 @@ console.log('== Buff pickup ==');
     'buff pickup grants no orbs and no heal');
   ok(orbs.drops.length === 0, 'buff drop consumed');
   orbs.dispose();
+}
+
+// ===========================================================================
+// 4d) SPAWN CLEARANCE — no props within ~2u of the entrance cell center
+// ===========================================================================
+console.log('== Spawn clearance ==');
+{
+  const cs = 6;
+  const props = new PropSystem(
+    makeScene(),
+    { cellSize: cs, entranceCell: { x: 3, z: 4 }, exitCell: { x: 8, z: 8 } },
+    'STONE', {},
+  );
+  const ex = 3 * cs + cs / 2;
+  const ez = 4 * cs + cs / 2;
+  ok(props._nearEntrance(ex, ez), 'entrance cell center is protected');
+  ok(props._nearEntrance(ex + 1.9, ez), '1.9u from spawn is protected');
+  ok(!props._nearEntrance(ex + 2.5, ez), '2.5u from spawn is clear');
+  ok(!props._nearEntrance(ex + 10, ez), 'far from spawn is clear');
 }
 
 // ===========================================================================

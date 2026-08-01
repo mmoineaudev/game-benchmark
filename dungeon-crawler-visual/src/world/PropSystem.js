@@ -82,11 +82,33 @@ export class PropSystem {
     return { x, z };
   }
 
+  // Random point that also keeps the spawn/exit cells clear (structural
+  // props like pillars/bookshelves must never cover the player's spawn).
+  _randomPointInRoomClear(room, margin = 1.0) {
+    for (let i = 0; i < 20; i++) {
+      const p = this._randomPointInRoom(room, margin);
+      if (this._nearEntrance(p.x, p.z)) continue;
+      if (this._nearExit(p.x, p.z)) continue;
+      return p;
+    }
+    return this._randomPointInRoom(room, margin);
+  }
+
   _nearExit(x, z) {
     const exit = this.data.exitCell;
+    const ex = exit.x * this.data.cellSize + this.data.cellSize / 2;
+    const ez = exit.z * this.data.cellSize + this.data.cellSize / 2;
+    return (x - ex) ** 2 + (z - ez) ** 2 < 4;
+  }
+
+  // Keep the player spawn spot clear — no decorative/structural props within
+  // ~2u of the entrance cell center (spawning inside a prop is unplayable).
+  _nearEntrance(x, z) {
+    const ent = this.data.entranceCell;
+    if (!ent) return false;
     const cs = this.data.cellSize;
-    const ex = exit.x * cs + cs / 2;
-    const ez = exit.z * cs + cs / 2;
+    const ex = ent.x * cs + cs / 2;
+    const ez = ent.z * cs + cs / 2;
     return (x - ex) ** 2 + (z - ez) ** 2 < 4;
   }
 
@@ -101,6 +123,7 @@ export class PropSystem {
       attempts++;
       const p = this._randomPointInRoom(room);
       if (this._nearExit(p.x, p.z)) continue;
+      if (this._nearEntrance(p.x, p.z)) continue;
       if (!this._inRoom(room, p.x, p.z)) continue;
 
       // Pick a prop from the weighted room+biome pool
@@ -423,7 +446,7 @@ export class PropSystem {
     const mat = new THREE.MeshStandardMaterial({ color: 0x4a4a5a, roughness: 0.85 });
     const cs = this.data.cellSize;
     for (let i = 0; i < count; i++) {
-      const p = this._randomPointInRoom(room, 2.0);
+      const p = this._randomPointInRoomClear(room, 2.0);
       const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.8, WORLD.WALL_HEIGHT, 0.8), mat);
       pillar.position.set(p.x, WORLD.WALL_HEIGHT / 2, p.z);
       pillar.castShadow = true;
@@ -440,7 +463,7 @@ export class PropSystem {
     const wood = new THREE.MeshStandardMaterial({ color: 0x5a3a2a, roughness: 0.85 });
     const shelfMat = new THREE.MeshStandardMaterial({ color: 0x3a2a1a, roughness: 0.9 });
     for (let i = 0; i < count; i++) {
-      const p = this._randomPointInRoom(room, 1.5);
+      const p = this._randomPointInRoomClear(room, 1.5);
       const shelf = new THREE.Mesh(new THREE.BoxGeometry(1.4, 2.4, 0.4), wood);
       shelf.position.set(p.x, 1.2, p.z);
       shelf.castShadow = true;
@@ -474,7 +497,7 @@ export class PropSystem {
     const stone = new THREE.MeshStandardMaterial({ color: 0x6a6a5a, roughness: 0.9 });
     const lidMat = new THREE.MeshStandardMaterial({ color: 0x7a7a6a, roughness: 0.9 });
     for (let i = 0; i < count; i++) {
-      const p = this._randomPointInRoom(room, 1.5);
+      const p = this._randomPointInRoomClear(room, 1.5);
       const base = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.8, 1.6), stone);
       base.position.set(p.x, 0.4, p.z);
       base.castShadow = true;
@@ -499,7 +522,7 @@ export class PropSystem {
     const wood = new THREE.MeshStandardMaterial({ color: 0x4a3a2a, roughness: 0.8 });
     const metal = new THREE.MeshStandardMaterial({ color: 0x6a6a72, roughness: 0.4, metalness: 0.9 });
     for (let i = 0; i < count; i++) {
-      const p = this._randomPointInRoom(room, 1.5);
+      const p = this._randomPointInRoomClear(room, 1.5);
       const stand = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.1, 0.5), wood);
       stand.position.set(p.x, 0.05, p.z);
       this._add(stand);

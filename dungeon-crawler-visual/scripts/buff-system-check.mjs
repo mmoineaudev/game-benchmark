@@ -58,7 +58,8 @@ console.log('== Buff system (GameState timer) ==');
     `constants: duration=${BUFF.DURATION}s, chance=${BUFF.CHANCE} (was 5%, now 6%)`);
   ok(BUFF.EMPOWER_LENGTH === 1.5 && BUFF.EMPOWER_SPEED === 1.2 && BUFF.EMPOWER_ATTACK === 1.2,
     'empowered constants (length 1.5, move 1.2, attack 1.2)');
-  ok(BUFF.BOSS_DURATION === 300, `boss buff lasts 5 min (${BUFF.BOSS_DURATION}s)`);
+  ok(BUFF.BOSS_DURATION === 300 && BUFF.MAX_DURATION === 90,
+    `boss buff nominal 300s, hard cap 90s (MAX_DURATION=${BUFF.MAX_DURATION})`);
   ok(orbPowerMultiplier && typeof orbPowerMultiplier === 'function', 'orbPowerMultiplier exported');
   // Excess orbs (>100) feed buff-drop and spawn rate, not sword size
   ok(excessOrbs(50) === 0 && excessOrbs(100) === 0 && excessOrbs(150) === 50 && excessOrbs(250) === 150,
@@ -72,17 +73,15 @@ console.log('== Buff system (GameState timer) ==');
   const s = new GameState();
   s.applyBuff(4);
   ok(s.buffEffect === 4 && Math.abs(s.buffTime - BUFF.DURATION) < 1e-9, 'applyBuff(4) = VISION, 30s');
-  // boss buff: explicit long duration
+  // boss buff: nominal 5 min, but HARD-CAPPED at MAX_DURATION (1:30 = 90s)
   s.applyBuff(1, BUFF.BOSS_DURATION);
-  ok(s.buffEffect === 1 && Math.abs(s.buffTime - 300) < 1e-9,
-    'boss buff applies for 300s (5 min)');
-  // random roll covers all 4 effects
-  const seen = new Set();
-  for (let i = 0; i < 400; i++) {
-    s.applyBuff(1 + Math.floor(Math.random() * 4));
-    seen.add(s.buffEffect);
-  }
-  ok(seen.size === 4, `buff roll covers all 4 effects (got ${[...seen].sort().join(',')})`);
+  ok(s.buffEffect === 1 && Math.abs(s.buffTime - 90) < 1e-9,
+    `boss buff capped at 90s (MAX_DURATION) — actual ${s.buffTime}s`);
+  // any request above MAX_DURATION is clamped
+  s.applyBuff(2, 9999);
+  ok(s.buffTime <= 90, `duration hard-capped at 90s (got ${s.buffTime})`);
+  s.applyBuff(3, 60);
+  ok(Math.abs(s.buffTime - 60) < 1e-9, 'sub-cap duration preserved (60s)');
 }
 
 // ===========================================================================
@@ -131,6 +130,34 @@ console.log('== Buff carry across level advance (x5) ==');
   fresh.applyBuff(1); // discovering a new buff
   ok(fresh.buffEffect === 1 && Math.abs(fresh.buffTime - BUFF.DURATION) < 1e-9,
     'new buff discovered resets to default duration');
+}
+
+// ===========================================================================
+// NO DUPLICATE BUFF — a new roll excludes the currently-active effect, so you
+// can never receive the same buff twice in a row (every pickup is a fresh,
+// labeled buff). Mirrors Game._applyBuff's candidate filtering.
+// Also: carried x5 time is clamped to MAX_DURATION.
+// ===========================================================================
+console.log('== No duplicate buff + carry cap ==');
+{
+  // the carried x5 must be clamped at MAX_DURATION
+  const active = new GameState({ level: 2 });
+  active.buffEffect = 2;
+  active.buffTime = 40;
+  const carriedTime = Math.min(active.buffTime * 5, BUFF.MAX_DURATION);
+  ok(carriedTime === 90, `carried x5 clamped to ${BUFF.MAX_DURATION}s (40 x5 = 200 -> 90)`);
+
+  // duplicate-prevention: pick from all effects except the active one
+  const pickOther = (activeEffect) => {
+    const candidates = [1, 2, 3, 4].filter((e) => e !== activeEffect);
+    return candidates[Math.floor(Math.random() * candidates.length)];
+  };
+  for (const activeEffect of [1, 2, 3, 4]) {
+    const picked = new Set();
+    for (let i = 0; i < 200; i++) picked.add(pickOther(activeEffect));
+    ok(!picked.has(activeEffect), `picking with active=${activeEffect} never returns ${activeEffect}`);
+    ok(picked.size >= 3, `all 3 other effects reachable (active=${activeEffect}, got ${[...picked].sort().join(',')})`);
+  }
 }
 
 // ===========================================================================

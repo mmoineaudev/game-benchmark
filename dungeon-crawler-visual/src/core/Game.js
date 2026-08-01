@@ -80,6 +80,7 @@ export class Game {
     this._heldFireball = null; // FIREBALL buff: hand visual replacing the dagger
     this._hlTargets = [];    // scratch array: alive enemy groups for the highlight pass
     this._maxHealth = PLAYER.MAX_HEALTH; // grows by 1 per boss kill
+    if (this.state) this.state.maxHealth = this._maxHealth;
     this._bossPortalOpen = true; // boss arenas gate the exit portal
     this._bossBarEl = null;
     this._firePatches = [];    // pooled blue magic-fire patches (orb impacts)
@@ -711,6 +712,7 @@ export class Game {
   _onBossDefeated() {
     this._applyBuff(BUFF.BOSS_DURATION); // 5-minute buff
     this._maxHealth += 1;
+    this.state.maxHealth = this._maxHealth;
     this.state.health = Math.min(this._maxHealth, this.state.health + 1);
     this._bossPortalOpen = true;
     if (this._exitPortal) this._exitPortal.visible = true;
@@ -834,11 +836,24 @@ export class Game {
     }
   }
 
-  // Roll a random buff (1..4) and apply its side effects for 15 seconds.
+  // Roll a random buff (1..4) and apply its side effects.
+  // Never rolls the SAME effect twice in a row: if a buff is already active,
+  // the new roll excludes that effect so every pickup gives a visibly
+  // different (and labeled) buff instead of silently re-applying the same one.
+  // Max duration is capped at BUFF.MAX_DURATION (1:30).
   _applyBuff(duration = BUFF.DURATION) {
     this._clearBuffEffects(); // replacing any active buff
-    const effect = 1 + Math.floor(Math.random() * 4);
-    this.state.applyBuff(effect, duration);
+    const active = this.state.buffEffect || 0;
+    let effect;
+    if (active >= 1 && active <= 4) {
+      // pick from the 3 effects OTHER than the active one
+      const candidates = [1, 2, 3, 4].filter((e) => e !== active);
+      effect = candidates[Math.floor(Math.random() * candidates.length)];
+    } else {
+      effect = 1 + Math.floor(Math.random() * 4);
+    }
+    const capped = Math.min(duration, BUFF.MAX_DURATION);
+    this.state.applyBuff(effect, capped);
     this._applyBuffEffects(effect);
     this._updateHUD();
   }
@@ -1119,9 +1134,17 @@ export class Game {
     // that point — this is what fixes the gone-fireball bug.
     if (carriedBuff) {
       this.state.buffEffect = carriedBuff.effect;
-      this.state.buffTime = carriedBuff.time * 5;
+      this.state.buffTime = Math.min(carriedBuff.time * 5, BUFF.MAX_DURATION);
     }
     this._carriedBuff = carriedBuff;
+
+    // A new run starts with the base max heart count; a level advance keeps
+    // whatever permanent hearts were earned. Either way the player ALWAYS
+    // begins the level at full health.
+    if (newRun || nextState) {
+      this._maxHealth = PLAYER.MAX_HEALTH;
+    }
+    this.state.health = this._maxHealth;
 
     this._prevOrbCount = 0;
     this._prevInExit = false;

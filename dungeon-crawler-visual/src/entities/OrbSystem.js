@@ -139,8 +139,11 @@ export class OrbSystem {
       const dz = p.z - drop.z;
       if (dx * dx + dz * dz < DROP.RADIUS * DROP.RADIUS) {
         if (drop.kind === 'health') {
-          // Health reset: full heal
-          this.state.health = PLAYER.MAX_HEALTH;
+          // Health pickup: restore HEALTH_RESTORE hearts, capped at max
+          this.state.health = Math.min(
+            this.state.maxHealth || PLAYER.MAX_HEALTH,
+            this.state.health + DROP.HEALTH_RESTORE,
+          );
           this._spawnPickupRing(drop.x, drop.y, drop.z, time);
           this.scene.remove(drop.group);
         } else if (drop.kind === 'buff') {

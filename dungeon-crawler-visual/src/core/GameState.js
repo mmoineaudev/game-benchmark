@@ -7,6 +7,7 @@ export class GameState {
     this.ngPlus = ngPlus;   // New Game+ cycle: enemies have +10% HP per cycle
     this.totalOrbs = 0;   // pickups present on the current level
     this.health = PLAYER.MAX_HEALTH;
+    this.maxHealth = PLAYER.MAX_HEALTH; // permanent max (grows with boss hearts)
     this.invulnTimer = 0;
     this.visitedCells = new Set();
     this.dungeonSeed = Date.now();
@@ -33,11 +34,12 @@ export class GameState {
     this.buffTime = 0;
   }
 
-  // Apply a buff (1..4) — replaces any active buff. Boss-kill buffs last
-  // BUFF.BOSS_DURATION (5 min); breakable buffs last BUFF.DURATION (15 s).
+  // Apply a buff (1..4) — replaces any active buff. Boss-kill buffs use
+  // BUFF.BOSS_DURATION (5 min nominal); breakable buffs use BUFF.DURATION.
+  // Every application is hard-capped at BUFF.MAX_DURATION (1:30).
   applyBuff(effect, duration = BUFF.DURATION) {
     this.buffEffect = effect;
-    this.buffTime = duration;
+    this.buffTime = Math.min(duration, BUFF.MAX_DURATION);
   }
 
   // Tick the buff timer; returns true on the frame the buff expires.

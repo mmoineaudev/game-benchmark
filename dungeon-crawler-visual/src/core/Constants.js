@@ -330,7 +330,8 @@ export const BUFF = {
   EMPOWER_LENGTH: 1.5,     // dagger length multiplier
   EMPOWER_SPEED: 1.2,      // move speed multiplier
   EMPOWER_ATTACK: 1.2,     // dagger attack speed multiplier (faster cycle)
-  BOSS_DURATION: 300,      // boss-kill buff lasts 5 minutes
+  BOSS_DURATION: 300,      // boss-kill buff nominal 5 minutes
+  MAX_DURATION: 90,        // hard cap on any buff duration (1:30)
 };
 
 export const ORB_WEAPON = {
@@ -398,7 +399,8 @@ export const BURN = {
 export const DROP = {
   RADIUS: 1.4,           // auto-collect distance for dropped orbs
   Y: 0.8,
-  HEALTH_CHANCE: 0.15,   // per kill: chance to also drop a health reset (full heal)
+  HEALTH_CHANCE: 0.15,   // per kill: chance to also drop a health pickup
+  HEALTH_RESTORE: 5,     // hearts restored by a health pickup (capped at max)
   HEALTH_Y: 0.8,
 };
 

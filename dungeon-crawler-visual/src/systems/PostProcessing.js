@@ -211,7 +211,11 @@ export class PostProcessing {
   setEnemyDist(d) { this.enemyDist = d; }
 
   render() {
-    if (this.enabled && this.composer) {
+    // Compose normally when post is enabled. ALSO force the composer when the
+    // VISION buff (xray) is active — its enemy-glow pass is the only thing that
+    // visualizes "see enemies through walls", so it must render even when
+    // post-processing is otherwise off (the game starts with post disabled).
+    if ((this.enabled || this.xray) && this.composer) {
       this._renderEnemyGlow();
       // Slow pulse (~2s period) so the highlight reads as alive, not static
       this.enemyGlowPass.uniforms.uPulse.value = 0.75 + 0.25 * Math.sin(performance.now() * 0.003);

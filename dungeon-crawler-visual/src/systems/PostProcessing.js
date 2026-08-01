@@ -17,6 +17,7 @@ const EnemyGlowShader = {
     uEnemyTex: { value: null },
     uEnemyBlur: { value: null },
     uPulse: { value: 1 },
+    uIntensity: { value: 1 },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -30,12 +31,15 @@ const EnemyGlowShader = {
     uniform sampler2D uEnemyTex;
     uniform sampler2D uEnemyBlur;
     uniform float uPulse;
+    uniform float uIntensity;
     varying vec2 vUv;
     void main() {
       vec4 scene = texture2D(tDiffuse, vUv);
       vec3 glow = texture2D(uEnemyBlur, vUv).rgb;
       vec3 core = texture2D(uEnemyTex, vUv).rgb;
-      vec3 add = glow * (1.6 * uPulse) + core * 0.5;
+      // uIntensity scales both the aura and the sharp silhouette so the
+      // VISION buff reads as a clear wall-piercing x-ray, not a subtle glow.
+      vec3 add = (glow * (1.6 * uPulse) + core * 0.5) * uIntensity;
       gl_FragColor = vec4(scene.rgb + add, 1.0);
     }
   `,
@@ -210,6 +214,8 @@ export class PostProcessing {
       this._renderEnemyGlow();
       // Slow pulse (~2s period) so the highlight reads as alive, not static
       this.enemyGlowPass.uniforms.uPulse.value = 0.75 + 0.25 * Math.sin(performance.now() * 0.003);
+      // VISION buff: much stronger, unmistakable wall-piercing highlight
+      this.enemyGlowPass.uniforms.uIntensity.value = this.xray ? 2.4 : 1.0;
       this.composer.render();
     } else {
       this.renderer.render(this.scene, this.camera);

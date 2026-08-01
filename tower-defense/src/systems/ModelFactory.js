@@ -622,6 +622,36 @@ _buildEnemy[9] = (color, scale, defIdx) => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Static smoke aura for area-effect towers (cheap replacement for per-shot FX)
+// ═══════════════════════════════════════════════════════════════════════════
+const _smokeTex = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, 'rgba(255,255,255,0.5)');
+  g.addColorStop(0.5, 'rgba(255,255,255,0.2)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+
+function _smokeSprite(color, scale, opacity, y) {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: _smokeTex,
+    color: new THREE.Color(color),
+    transparent: true,
+    opacity,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  }));
+  s.scale.setScalar(scale);
+  s.position.y = y;
+  return s;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Public API
 // ═══════════════════════════════════════════════════════════════════════════
 export default class ModelFactory {
@@ -629,6 +659,25 @@ export default class ModelFactory {
     const b = _buildTower[defIdx];
     if (!b) { const g = new THREE.Group(); g.add(_pedestal('#888')); return g; }
     return b;
+  }
+
+  /** Static smoke cloud marking an area-effect tower's zone (zero per-frame cost). */
+  static buildAuraSmoke(color, radius) {
+    const g = new THREE.Group();
+    g.name = '_auraSmoke';
+    // ground haze marking the effect zone
+    g.add(_smokeSprite(color, radius * 2, 0.1, 0.05));
+    // a few floating puffs above the tower
+    const puffs = 5;
+    for (let i = 0; i < puffs; i++) {
+      const a = (i / puffs) * Math.PI * 2 + 0.6;
+      const r = 0.35 + Math.random() * 0.3;
+      const puff = _smokeSprite(color, 0.32 + Math.random() * 0.18, 0.16, 0.45 + Math.random() * 0.5);
+      puff.position.x = Math.cos(a) * r;
+      puff.position.z = Math.sin(a) * r;
+      g.add(puff);
+    }
+    return g;
   }
 
   static buildEnemy(defIdx, scale, color) {

@@ -36,6 +36,10 @@ export default class TowerManager {
     const pos = new THREE.Vector3(qx * 1 + 0.5, 0, qy * 1 + 0.5);
     const group = ModelFactory.buildTower(defIdx)(def.color);
     group.position.copy(pos);
+    // Area-effect towers get a static smoke aura instead of per-shot FX
+    if (def.splash || def.auraSlow || def.gravity) {
+      group.add(ModelFactory.buildAuraSmoke(def.color, def.range));
+    }
     this.scene.add(group);
 
     const tower = {

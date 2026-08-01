@@ -174,6 +174,7 @@ export default class Game {
     this._lastTime = now;
     const state = this._gs.state;
     this._input.update(dt, state, this._renderSystem.camera, this._renderSystem.dom);
+    this._renderSystem.applyPan(this._input.pan.x, this._input.pan.z);
     if (!this._paused) {
       if (!state.over) {
         // Wave spawning (staggered over time via WaveManager)
@@ -209,8 +210,6 @@ export default class Game {
             e.slowUntil = Math.max(e.slowUntil, performance.now() + 400);
           }
         }
-        // faint periodic aura pulse
-        if (Math.random() < dt * 0.6) fx.auraPulse(t.pos.clone().setY(0.05), def.color, t.range);
         return;
       }
 

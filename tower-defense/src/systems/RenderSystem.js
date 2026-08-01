@@ -13,6 +13,10 @@ export default class RenderSystem {
     this.scene.background = new THREE.Color(0x05060d);
     this.scene.fog = new THREE.FogExp2(0x05060d, 0.00008);
     this.camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, CAMERA.near, CAMERA.far);
+    // Pan offset (world units) applied on top of the fitted base view
+    this.pan = { x: 0, z: 0 };
+    this._basePos = new THREE.Vector3();
+    this._baseLook = new THREE.Vector3();
     this._setupLights();
     this._fitCamera();
     window.addEventListener('resize', () => this._resize());
@@ -32,8 +36,21 @@ export default class RenderSystem {
     const yForHeight = halfH / Math.tan(halfFov);
     const yForWidth = halfW / (Math.tan(halfFov) * aspect);
     const y = Math.max(yForHeight, yForWidth) * 1.12; // +12% margin
-    this.camera.position.set(gridCx, y, gridCz);
-    this.camera.lookAt(new THREE.Vector3(gridCx, 0, gridCz));
+    this._basePos.set(gridCx, y, gridCz);
+    this._baseLook.set(gridCx, 0, gridCz);
+    this._applyPan();
+  }
+
+  /** Set the pan offset and reposition the camera. */
+  applyPan(x, z) {
+    this.pan.x = x;
+    this.pan.z = z;
+    this._applyPan();
+  }
+
+  _applyPan() {
+    this.camera.position.set(this._basePos.x + this.pan.x, this._basePos.y, this._basePos.z + this.pan.z);
+    this.camera.lookAt(this._baseLook.x + this.pan.x, this._baseLook.y, this._baseLook.z + this.pan.z);
   }
 
   _setupLights() {

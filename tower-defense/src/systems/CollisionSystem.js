@@ -55,10 +55,9 @@ export default class CollisionSystem {
     const color = projectile.color || '#ffffff';
     if (this.fx) {
       this.fx.hitSpark(enemy.mesh.position, color);
-      if (projectile.splash) this.fx.splash(enemy.mesh.position, color, projectile.splash);
-      if (projectile.gravity) this.fx.gravityPulse(enemy.mesh.position, color, projectile.splash);
+      // Area-effect towers (splash/gravity/dot) carry a static smoke aura —
+      // skip the heavy per-shot rings and spark bursts for them
       if (projectile.slow) this.fx.slowFlash(enemy.mesh.position);
-      if (projectile.dot) this.fx.splash(enemy.mesh.position, '#ff8800', 0.5);
       if (projectile.corrode) this.fx.splash(enemy.mesh.position, '#4ade80', 0.4);
       if (projectile.chain) {
         // chained arcs to nearest nearby enemies

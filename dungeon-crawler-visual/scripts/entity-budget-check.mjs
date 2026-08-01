@@ -144,5 +144,24 @@ for (const elite of [false, true]) {
   s.dispose();
 }
 
+console.log('== Humanoid height stays humanoid (no ~3.6u towers) ==');
+// The skeleton rig was once super-tall (~3.6u, detached legs). After the body
+// fix it must stay ~2.0-2.3u so enemies read against the 1.7u player.
+for (const [n, c, o] of [
+  ['SKELETON', Skeleton, { active: true }],
+  ['MAGICIAN', Skeleton, { isMagician: true, active: true }],
+  ['ARMORED', ArmoredSkeleton, {}],
+  ['ARCHER', ArcherSkeleton, {}],
+  ['BRUTE', Brute, {}],
+]) {
+  const s = new c(scene, o);
+  s.group.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(s.group);
+  const h = box.max.y - box.min.y;
+  ok(h >= 1.7 && h <= 2.6, `${n} humanoid height ${h.toFixed(2)}u in [1.7, 2.6]`);
+  ok(box.min.y > -0.15, `${n} feet rest near y=0 (minY ${box.min.y.toFixed(2)})`);
+  s.dispose();
+}
+
 console.log(failures === 0 ? '\nALL BUDGET CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
 process.exit(failures === 0 ? 0 : 1);

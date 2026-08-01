@@ -4,7 +4,7 @@ export const WORLD = {
   GRID_MAX: 16,
   CELL_SIZE: 6,
   CORRIDOR_WIDTH: 1,
-  WALL_HEIGHT: 4,
+  WALL_HEIGHT: 40,       // ceiling height — raised 10x for a vast, spacious dungeon
   PLAYER_EYE_HEIGHT: 1.7,
 };
 
@@ -17,13 +17,18 @@ export const PLAYER = {
   PITCH_CLAMP: Math.PI / 2 - 0.1, // ±85°
   SPRINT_ACCEL_WINDOW: 5,  // seconds of continuous sprinting per acceleration tier
   SPRINT_ACCEL_STEP: 0.05, // +5% sprint speed per tier, cumulative; resets when sprinting stops
+  // Passive regen: +1 heart every REGEN_INTERVAL seconds once the player has
+  // avoided damage for REGEN_DELAY seconds.
+  REGEN_DELAY: 20,      // seconds without taking a hit before regen starts
+  REGEN_INTERVAL: 5,    // seconds between each regen tick
+  REGEN_AMOUNT: 1,      // hearts restored per tick
 };
 
 export const CAMERA = {
   FOV: 75,
   SPRINT_FOV_BOOST: 8,
   NEAR: 0.1,
-  FAR: 50,
+  FAR: 160,           // raised so the 100m fog-of-war reads (not hard-clipped)
 };
 
 export const LIGHTING = {
@@ -107,38 +112,38 @@ export const BIOMES = {
   LEVELS_PER_BIOME: 2,
   STONE: {
     wall: 0x3a3a4a, floor: 0x2a2a35, ceiling: 0x1a1a25,
-    fog: 0x0a0a15, fogDensity: 0.0065,
+    fog: 0x0a0a15, fogDensity: 0.0195,   // fog-of-war: heavy fade ~100m
     ambient: 0x111122, ambientIntensity: 0.2,
     torchColor: 0xff9944, label: 'STONE DUNGEON',
   },
   HAUNTED_CRYPT: {
     wall: 0x2e2e3e, floor: 0x20202c, ceiling: 0x14141c,
-    fog: 0x060610, fogDensity: 0.007,
+    fog: 0x060610, fogDensity: 0.021,
     ambient: 0x10101e, ambientIntensity: 0.22,
     torchColor: 0x88ddff, label: 'HAUNTED CRYPT',
   },
   FUNGAL_CAVERN: {
     wall: 0x2a3a2e, floor: 0x1e2a22, ceiling: 0x141e18,
-    fog: 0x0a140e, fogDensity: 0.006,
+    fog: 0x0a140e, fogDensity: 0.018,
     ambient: 0x0c1a10, ambientIntensity: 0.25,
     torchColor: 0x44ff88, label: 'FUNGAL CAVERN',
   },
   VOLCANIC_DEPTHS: {
     wall: 0x3a2420, floor: 0x2a1814, ceiling: 0x1e100e,
-    fog: 0x1a0a06, fogDensity: 0.008,
+    fog: 0x1a0a06, fogDensity: 0.024,
     ambient: 0x2a0e06, ambientIntensity: 0.25,
     torchColor: 0xff5522, label: 'VOLCANIC DEPTHS',
   },
   FROZEN_HALLS: {
     wall: 0x3a4654, floor: 0x28303c, ceiling: 0x1a2028,
-    fog: 0x0c1220, fogDensity: 0.0055,
+    fog: 0x0c1220, fogDensity: 0.0165,
     ambient: 0x16203a, ambientIntensity: 0.28,
     torchColor: 0x66ccff, label: 'FROZEN HALLS',
   },
   // Boss arena: a haunted court lit by cold spectral flames.
   SPECTRAL_COURT: {
     wall: 0x2c3448, floor: 0x1c2434, ceiling: 0x10141e,
-    fog: 0x0a1024, fogDensity: 0.005,
+    fog: 0x0a1024, fogDensity: 0.015,
     ambient: 0x14204a, ambientIntensity: 0.3,
     torchColor: 0x66e0ff, label: 'SPECTRAL COURT',
   },
@@ -219,9 +224,9 @@ export const ENEMY = {
   MAX_SLOTS: 10,
   ARENA_EXTRA_SLOTS: 2,
   MAX_ALIVE: 16,      // total living bodies (rats counted individually)
-  RAT_PACK_MIN: 4,
-  RAT_PACK_MAX: 6,
-  RAT_CAP: 12,
+  RAT_PACK_MIN: 2,    // was 4 — rat packs halved (harder enemy, cut 50%)
+  RAT_PACK_MAX: 3,    // was 6
+  RAT_CAP: 6,         // was 12
   ELITE_CHANCE: 0.1,  // 1-in-10 per non-rat spawn
 };
 

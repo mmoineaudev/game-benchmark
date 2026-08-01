@@ -108,6 +108,8 @@ export class Game {
     this._updateHUD();
     this._isRunning = true;
     this._lastTime = performance.now();
+    this._regenClock = 0; // time since last player hit (for passive regen)
+    this._regenTickAcc = 0; // seconds accumulated inside the regen window
     this._animate();
   }
 
@@ -527,6 +529,7 @@ export class Game {
     if (this.skeletons) this.skeletons.update(this._delta, t, this.state.player, this._collisionBoxes);
     if (this.shooter) this.shooter.update(this._delta, this._collisionBoxes, this.skeletons.skeletons || []);
     if (this.state.invulnTimer > 0) this.state.invulnTimer -= this._delta;
+    this._updateRegen(this._delta);
     if (this._shakeTime > 0) this._shakeTime -= this._delta;
 
     this._animateWater(t);
@@ -892,6 +895,28 @@ export class Game {
       this._damageFlashEl.classList.add('flash');
     }
     this._shakeTime = 0.25;
+    // Any hit resets the passive-regen countdown.
+    this._regenClock = 0;
+    this._regenTickAcc = 0;
+  }
+
+  // Passive health regen: after PLAYER.REGEN_DELAY seconds without a hit,
+  // restore PLAYER.REGEN_AMOUNT heart(s) every PLAYER.REGEN_INTERVAL seconds
+  // (never above max, never once the game is over).
+  _updateRegen(dt) {
+    if (this._gameOverActive || this.state.health <= 0) return;
+    if (this.state.health >= this._maxHealth) {
+      this._regenClock = 0;
+      this._regenTickAcc = 0;
+      return;
+    }
+    this._regenClock += dt;
+    if (this._regenClock < PLAYER.REGEN_DELAY) return;
+    this._regenTickAcc += dt;
+    if (this._regenTickAcc >= PLAYER.REGEN_INTERVAL) {
+      this._regenTickAcc = 0;
+      this.state.health = Math.min(this._maxHealth, this.state.health + PLAYER.REGEN_AMOUNT);
+    }
   }
 
   _updateRunTimer() {

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ORB_WEAPON } from '../core/Constants.js';
+import { ORB_WEAPON, WORLD } from '../core/Constants.js';
 import { circleHitsBox } from '../core/Collision.js';
 
 // Orb economy: 1 collected orb = ONE SEQUENCE of VOLLEY steps, and ONE
@@ -247,11 +247,11 @@ export class OrbShooter {
         continue;
       }
 
-      // Ceiling contact
-      if (p.mesh.position.y > 3.85) {
+      // Ceiling contact (derived from the wall/ceiling height)
+      if (p.mesh.position.y > WORLD.WALL_HEIGHT - 0.15) {
         if (p.explode) { this._explode(p); continue; }
         if (p.bounces < ORB_WEAPON.BOUNCES) {
-          p.mesh.position.y = 3.85;
+          p.mesh.position.y = WORLD.WALL_HEIGHT - 0.15;
           p.dirY = -Math.abs(p.dirY);
           p.bounces++;
           continue;

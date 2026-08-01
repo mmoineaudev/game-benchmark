@@ -72,6 +72,7 @@ export class Game {
     this._fireballCd = 0;   // FIREBALL buff: RMB fireball cooldown
     this._moveSpeedMult = 1; // EMPOWERED buff: +20% move speed
     this._heldFireball = null; // FIREBALL buff: hand visual replacing the dagger
+    this._hlTargets = [];    // scratch array: alive enemy groups for the highlight pass
   }
 
   init() {
@@ -376,6 +377,16 @@ export class Game {
     this._checkMessages();
     this._updateHUD();
     this._eKeyWasDown = this.input.isPressed('KeyE');
+
+    // Enemy highlight: feed the living enemy groups to the glow pass
+    if (this.post && this.skeletons) {
+      this._hlTargets.length = 0;
+      for (const s of this.skeletons.skeletons) {
+        if (s.skel.state !== 'DEAD') this._hlTargets.push(s.skel.group);
+      }
+      this.post.setEnemyTargets(this._hlTargets);
+    }
+
     this.post.render();
   }
 

@@ -113,9 +113,9 @@ export class Skeleton {
     this._mesh(new THREE.BoxGeometry(0.06, 0.3, 0.02), this.boneMat, 0, 0.55, 0.16, ribcage);
 
     // Head: skull + jaw + eye sockets + glowing eyes.
-    // Refined skull: higher subdivision, flattened cheekbones, recessed
-    // sockets give a sunken, readable cranium instead of a smooth ball.
-    const skull = new THREE.Mesh(new THREE.SphereGeometry(0.16, 16, 12), this.boneMat);
+    // Refined skull: recessed sockets + brow give a sunken, readable cranium
+    // without blowing the triangle budget (12x10 matches the original).
+    const skull = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 10), this.boneMat);
     skull.scale.set(0.92, 1.12, 0.96);       // elongated cranium, slightly narrow
     skull.position.set(0, 0.15, -0.005);      // face pulled forward a touch
     skull.castShadow = true;
@@ -160,13 +160,13 @@ export class Skeleton {
     for (const side of [-1, 1]) {
       const tag = side < 0 ? 'L' : 'R';
       const arm = this._bone('arm' + tag, side * 0.28, 0.42, 0, ribcage);
-      this._mesh(new THREE.CylinderGeometry(upR * 0.75, upR, upH, 8), this.boneMat, 0, -upH / 2, 0, arm);
+      this._mesh(new THREE.CylinderGeometry(upR * 0.75, upR, upH, 6), this.boneMat, 0, -upH / 2, 0, arm);
       // elbow joint
-      this._mesh(new THREE.SphereGeometry(upR * 0.9, 8, 6), this.boneMat, 0, -upH, 0, arm);
+      this._mesh(new THREE.SphereGeometry(upR * 0.9, 6, 4), this.boneMat, 0, -upH, 0, arm);
       const forearm = this._bone('forearm' + tag, 0, -0.4, 0, arm);
-      this._mesh(new THREE.CylinderGeometry(foreR * 0.6, foreR * 0.9, foreH, 8), this.boneMat, 0, -foreH / 2, 0, forearm);
+      this._mesh(new THREE.CylinderGeometry(foreR * 0.6, foreR * 0.9, foreH, 6), this.boneMat, 0, -foreH / 2, 0, forearm);
       // hand (small, slightly forward — holds the weapon)
-      this._mesh(new THREE.SphereGeometry(foreR * 0.85, 8, 6), this.boneMat, 0, -0.36, 0, forearm);
+      this._mesh(new THREE.SphereGeometry(foreR * 0.85, 6, 4), this.boneMat, 0, -0.36, 0, forearm);
       if (side > 0) {
         if (this.isMagician) this._buildStaff(forearm);
         else this._buildSword(forearm);
@@ -180,11 +180,11 @@ export class Skeleton {
     for (const side of [-1, 1]) {
       const tag = side < 0 ? 'L' : 'R';
       const leg = this._bone('leg' + tag, side * 0.12, -0.95, 0, pelvis);
-      this._mesh(new THREE.CylinderGeometry(thighR * 0.7, thighR, thighH, 8), this.boneMat, 0, -thighH / 2, 0, leg);
+      this._mesh(new THREE.CylinderGeometry(thighR * 0.7, thighR, thighH, 6), this.boneMat, 0, -thighH / 2, 0, leg);
       // knee joint
-      this._mesh(new THREE.SphereGeometry(thighR * 0.85, 8, 6), this.boneMat, 0, -thighH, 0, leg);
+      this._mesh(new THREE.SphereGeometry(thighR * 0.85, 6, 4), this.boneMat, 0, -thighH, 0, leg);
       const shin = this._bone('shin' + tag, 0, -0.45, 0, leg);
-      this._mesh(new THREE.CylinderGeometry(shinR * 0.6, shinR * 0.9, shinH, 8), this.boneMat, 0, -shinH / 2, 0, shin);
+      this._mesh(new THREE.CylinderGeometry(shinR * 0.6, shinR * 0.9, shinH, 6), this.boneMat, 0, -shinH / 2, 0, shin);
       const foot = this._mesh(new THREE.BoxGeometry(0.09, 0.07, 0.16), this.boneMat, 0, -0.03, 0.05, shin);
       foot.rotation.x = -0.15;
     }

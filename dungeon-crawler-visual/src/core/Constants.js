@@ -183,6 +183,8 @@ export const SKELETON = {
   MAX_COUNT: 8,
   EYE_GLOW: 0xff4433,
   BONE_COLOR: 0xcfc6b0,
+  DEATH_HOLD: 2.0,   // corpse stays visible this long after death…
+  DEATH_FADE: 0.35,  // …then fades out over this window (gone at DEATH_HOLD)
 };
 
 // --- Extended spec: enemy roster ------------------------------------------
@@ -219,6 +221,7 @@ export const RAT = {
   HP: 1, SPEED: 4.2, DMG: 1, RANGE: 0.9, COOLDOWN: 0.8,
   DROP: 0, SCORE: 0,
   BODY: 0x5a4a3a, HEAD: 0x4a3a2a, EYE: 0xff2211,
+  DEATH_HOLD: 2.0, DEATH_FADE: 0.3,
 };
 
 export const BRUTE = {
@@ -232,6 +235,7 @@ export const WRAITH = {
   HP: 2, SPEED: 2.4, DMG: 1, RANGE: 0.9, COOLDOWN: 1.0,
   DROP: 2, SCORE: 2,
   BODY: 0x88ffcc, EYE: 0xccffdd, BOB_AMP: 0.15, BOB_FREQ: 2,
+  DEATH_HOLD: 2.0, DEATH_FADE: 0.4,
 };
 
 export const ELITE = {
@@ -262,13 +266,16 @@ export const ROOM_ENEMY_MODIFIERS = {
 export const SWORD = {
   RANGE: 2.2,             // melee reach (base; scales with orb growth)
   COMBO: {
-    WINDUP1: 0.10, SLASH1: 0.16, RECOVER1: 0.18,
-    WINDUP2: 0.08, SLASH2: 0.14, RECOVER2: 0.20,
-    COMBO_WINDOW: 0.35,   // from RECOVER1 start (0.18s recover + 0.17s input grace)
+    WINDUP1: 0.10, SLASH1: 0.16, RECOVER1: 0.14,
+    WINDUP2: 0.08, SLASH2: 0.15, RECOVER2: 0.14,
+    WINDUP3: 0.12, THRUST3: 0.18, RECOVER3: 0.20,
+    COMBO_WINDOW: 0.34,   // from each RECOVER start (0.14s recover + 0.20s input grace)
     COOLDOWN: 0.30,
-    HIT1_DAMAGE: 2, HIT2_DAMAGE: 3,
-    ARC1: Math.PI * 0.39,  // ±70°
-    ARC2: Math.PI * 0.33,  // ±60°
+    HIT1_DAMAGE: 2, HIT2_DAMAGE: 2, HIT3_DAMAGE: 3, // thrust = finisher
+    ARC1: Math.PI * 0.38,  // ±68° diagonal slash
+    ARC2: Math.PI * 0.38,  // ±68° opposite diagonal slash
+    ARC3: Math.PI * 0.09,  // ±16° piercing thrust (line, not a cone)
+    RANGE3: 1.25,          // thrust lunge reach multiplier (range × 1.25)
   },
 };
 

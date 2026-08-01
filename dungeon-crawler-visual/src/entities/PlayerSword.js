@@ -1,12 +1,19 @@
 import * as THREE from 'three';
-import { SWORD, HIT_STOP } from '../core/Constants.js';
+import { SWORD } from '../core/Constants.js';
 import { generateGlowTexture } from '../world/Textures.js';
 
 // First-person sword attached to the camera. Curved two-segment blade with a
-// fuller, crossguard and brass pommel. Attack = 2-hit combo:
-//   WINDUP1 -> SLASH1 (R->L slash) -> RECOVER1 -> [window] -> WINDUP2 -> SLASH2
-//   (overhead chop) -> RECOVER2 -> COOLDOWN -> IDLE
-// Combo window: 0.35 s from RECOVER1 start (0.18 s recover + 0.17 s grace).
+// fuller, crossguard and brass pommel. The ready pose points the blade
+// forward at the enemy; the attack is a 3-hit combo:
+//   WINDUP1 -> SLASH1 (rising diagonal "/") -> RECOVER1 -> [window]
+//   -> WINDUP2 -> SLASH2 (falling diagonal "\", crossing to an X)
+//   -> RECOVER2 -> [window] -> WINDUP3 -> THRUST3 (piercing stab forward)
+//   -> RECOVER3 -> COOLDOWN -> IDLE
+// Combo window: 0.34 s from each RECOVER start (0.14 s recover + 0.20 s grace).
+// Each strike leaves a visible movement trace: pooled additive sprites
+// spawned at the blade tip in camera space while the blade is moving, so the
+// arc path lingers after the sword has moved on (icy blue "/", gold "\",
+// white-hot thrust).
 //
 // Progression: the sword grows +20% per 10 orbs held (capped at +200% = 3x at
 // 100 orbs), extends melee range, shifts base color each size bonus, and
@@ -26,13 +33,17 @@ const SWORD_COLORS = [
   0xfff4d8, // step 10: radiant
 ];
 
+// Blade tip in group-local space (upper segment top).
+const TIP_LOCAL = new THREE.Vector3(0, 0.71, 0.03);
+
 export class PlayerSword {
   constructor(camera) {
     this.camera = camera;
-    this.state = 'idle'; // idle | windup1 | slash1 | recover1 | windup2 | slash2 | recover2 | cooldown
+    // idle | windup1 | slash1 | recover1 | windup2 | slash2 | recover2 | windup3 | thrust3 | recover3 | cooldown
+    this.state = 'idle';
     this.time = 0;
     this.cool = 0;
-    this.comboStep = 0;   // 0 | 1 | 2 (HUD)
+    this.comboStep = 0;   // 0 | 1 | 2 | 3 (HUD)
     this.group = new THREE.Group();
     this._glow = 0;        // current danger glow intensity (damped)
     this._glowTarget = 0;
@@ -40,7 +51,7 @@ export class PlayerSword {
     this._rangeScale = 1;
     this._flashTimer = 0;
     this._build();
-    this._buildTrail();
+    this._buildTrails();
     this._buildSparks();
     camera.add(this.group);
     this._setRest();
@@ -141,61 +152,78 @@ export class PlayerSword {
     this.group.traverse((m) => { if (m.isMesh) m.castShadow = false; });
   }
 
-  _buildTrail() {
-    // 6 pooled additive glow sprites, spawned along the arc during slashes
-    this.trailMat = new THREE.SpriteMaterial({
-      map: this._glowTex,
-      color: 0x88ccff,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      transparent: true,
-      opacity: 0,
-    });
-    this._mats.push(this.trailMat);
-    this._trail = [];
-    for (let i = 0; i < 6; i++) {
-      const s = new THREE.Sprite(this.trailMat);
-      s.visible = false;
-      this.group.add(s);
-      this._trail.push({ sprite: s, life: 0, active: false });
-    }
-    this._trailIdx = 0;
-  }
-
-  _spawnTrail() {
-    for (let k = 0; k < 2; k++) {
-      const t = this._trail[this._trailIdx];
-      this._trailIdx = (this._trailIdx + 1) % this._trail.length;
-      t.active = true;
-      t.life = 0.15;
-      t.sprite.visible = true;
-      // Place along the blade (upper segment tip area)
-      t.sprite.position.set(
-        this.group.position.x + Math.sin(this.group.rotation.z) * 0.5,
-        0.55,
-        this.group.position.z,
-      );
-      t.sprite.scale.setScalar(0.5);
-      t.sprite.material.opacity = 0.5;
-    }
-  }
-
-  _updateTrail(dt) {
-    for (const t of this._trail) {
-      if (!t.active) continue;
-      t.life -= dt;
-      if (t.life <= 0) {
-        t.active = false;
-        t.sprite.visible = false;
-        continue;
+  // Movement strike traces: pooled additive sprites, one pool per strike so
+  // each slash/thrust gets its own color. Sprites are CAMERA children (not
+  // group children) — they linger in space while the sword moves on, tracing
+  // the blade tip's arc across the screen.
+  _buildTrails() {
+    this._trailPools = [
+      { color: 0x88ccff, life: 0.18, size: 0.34, sprites: [], idx: 0 }, // slash 1: icy
+      { color: 0xffcc66, life: 0.18, size: 0.34, sprites: [], idx: 0 }, // slash 2: gold
+      { color: 0xfff0c0, life: 0.20, size: 0.40, sprites: [], idx: 0 }, // thrust: white-hot
+    ];
+    for (const pool of this._trailPools) {
+      pool.mat = new THREE.SpriteMaterial({
+        map: this._glowTex,
+        color: pool.color,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        transparent: true,
+        opacity: 0,
+      });
+      this._mats.push(pool.mat);
+      for (let i = 0; i < 8; i++) {
+        const s = new THREE.Sprite(pool.mat);
+        s.visible = false;
+        this.camera.add(s);
+        pool.sprites.push({ sprite: s, life: 0, active: false });
       }
-      t.sprite.material.opacity = 0.5 * (t.life / 0.15);
-      t.sprite.scale.multiplyScalar(1 + dt * 6);
+    }
+  }
+
+  // Blade tip position in camera space (the sword group is a camera child).
+  _tipCamSpace() {
+    return TIP_LOCAL.clone().applyEuler(this.group.rotation).add(this.group.position);
+  }
+
+  _spawnTrail(pool, burst = false) {
+    const n = burst ? 3 : 1;
+    for (let k = 0; k < n; k++) {
+      const t = pool.sprites[pool.idx];
+      pool.idx = (pool.idx + 1) % pool.sprites.length;
+      t.active = true;
+      t.life = pool.life * (0.8 + Math.random() * 0.4);
+      t.sprite.visible = true;
+      // Small jitter around the blade tip so the trace reads as a glowing arc
+      const p = this._tipCamSpace();
+      p.x += (Math.random() - 0.5) * 0.04;
+      p.y += (Math.random() - 0.5) * 0.04;
+      p.z += (Math.random() - 0.5) * 0.02;
+      t.sprite.position.copy(p);
+      t.sprite.scale.setScalar(pool.size * (0.8 + Math.random() * 0.5));
+      t.sprite.material.opacity = 0.55;
+    }
+  }
+
+  _updateTrails(dt) {
+    for (const pool of this._trailPools) {
+      for (const t of pool.sprites) {
+        if (!t.active) continue;
+        t.life -= dt;
+        if (t.life <= 0) {
+          t.active = false;
+          t.sprite.visible = false;
+          continue;
+        }
+        t.sprite.material.opacity = 0.55 * (t.life / pool.life);
+        t.sprite.scale.multiplyScalar(1 + dt * 5);
+      }
     }
   }
 
   _buildSparks() {
-    // 8 pooled impact spark spheres
+    // 8 pooled impact spark spheres (camera children; burstSparks converts
+    // the world hit position into camera space)
     this.sparkGeo = new THREE.SphereGeometry(0.03, 4, 4);
     this.sparkMat = new THREE.MeshBasicMaterial({ color: 0xffcc88 });
     this._mats.push(this.sparkMat);
@@ -203,7 +231,6 @@ export class PlayerSword {
     for (let i = 0; i < 8; i++) {
       const m = new THREE.Mesh(this.sparkGeo, this.sparkMat);
       m.visible = false;
-      this.scene = this.camera; // sparks live in world space via camera parent
       this.camera.add(m);
       this._sparks.push({
         mesh: m, vel: new THREE.Vector3(), life: 0, active: false,
@@ -213,20 +240,22 @@ export class PlayerSword {
 
   // Burst of sparks at a world position (called by Game on hit)
   burstSparks(worldPos) {
-    const n = this._sparks.length;
+    // Convert the world hit position to camera space: the spark meshes are
+    // camera children, so they need local coordinates to appear at the hit.
+    this.camera.updateMatrixWorld(true);
+    const local = worldPos.clone().applyMatrix4(this.camera.matrixWorldInverse);
     for (const s of this._sparks) {
       if (s.active) continue;
       s.active = true;
       s.life = 0.25;
       s.mesh.visible = true;
-      s.mesh.position.copy(worldPos);
+      s.mesh.position.copy(local);
       s.vel.set(
         (Math.random() - 0.5) * 6,
         Math.random() * 4 + 1,
         (Math.random() - 0.5) * 6,
       );
     }
-    // (uses all 8 regardless of n)
   }
 
   _updateSparks(dt) {
@@ -243,10 +272,11 @@ export class PlayerSword {
     }
   }
 
+  // Ready pose: sword held in front, blade pointing forward at the enemy
+  // (tip projects to the upper-center of the screen, on the aim line).
   _setRest() {
-    // Bottom-right of the view, blade tilted toward the screen center
-    this.group.position.set(0.4, -0.26, -0.8);
-    this.group.rotation.set(-0.1, 0, 0.4);
+    this.group.position.set(0.28, -0.2, -0.72);
+    this.group.rotation.set(-0.28, 0, 0.34);
   }
 
   // Effective melee reach — grows with the sword size bonus
@@ -300,23 +330,34 @@ export class PlayerSword {
     return true;
   }
 
-  // Hit windows during slashes (Game applies damage once per slash)
+  // Hit windows during strikes (Game applies damage once per strike)
   get isSwinging() {
-    return this.state === 'slash1' || this.state === 'slash2';
+    return this.state === 'slash1' || this.state === 'slash2' || this.state === 'thrust3';
   }
 
   get currentArc() {
-    return this.state === 'slash2' ? SWORD.COMBO.ARC2 : SWORD.COMBO.ARC1;
+    if (this.state === 'slash2') return SWORD.COMBO.ARC2;
+    if (this.state === 'thrust3') return SWORD.COMBO.ARC3;
+    return SWORD.COMBO.ARC1;
   }
 
   get currentDamage() {
-    return this.state === 'slash2' ? SWORD.COMBO.HIT2_DAMAGE : SWORD.COMBO.HIT1_DAMAGE;
+    if (this.state === 'slash2') return SWORD.COMBO.HIT2_DAMAGE;
+    if (this.state === 'thrust3') return SWORD.COMBO.HIT3_DAMAGE;
+    return SWORD.COMBO.HIT1_DAMAGE;
+  }
+
+  // The piercing thrust lunges further than the slashes.
+  get currentRange() {
+    return this.state === 'thrust3'
+      ? this.range * SWORD.COMBO.RANGE3
+      : this.range;
   }
 
   update(dt, nearestSkelDist = Infinity) {
     if (this.cool > 0) this.cool -= dt;
     this.setDanger(nearestSkelDist, dt);
-    this._updateTrail(dt);
+    this._updateTrails(dt);
     this._updateSparks(dt);
     if (this._flashTimer > 0) {
       this._flashTimer -= dt;
@@ -327,7 +368,7 @@ export class PlayerSword {
     this.time += dt;
     const C = SWORD.COMBO;
 
-    // State transitions
+    // State transitions (explicit — pose math alone never flips the state)
     if (this.state === 'windup1' && this.time >= C.WINDUP1) this._enter('slash1', C.WINDUP1);
     else if (this.state === 'slash1' && this.time >= C.SLASH1) this._enter('recover1', C.SLASH1);
     else if (this.state === 'recover1') {
@@ -339,7 +380,16 @@ export class PlayerSword {
       }
     } else if (this.state === 'windup2' && this.time >= C.WINDUP2) this._enter('slash2', C.WINDUP2);
     else if (this.state === 'slash2' && this.time >= C.SLASH2) this._enter('recover2', C.SLASH2);
-    else if (this.state === 'recover2' && this.time >= C.RECOVER2) this._enter('cooldown', C.RECOVER2);
+    else if (this.state === 'recover2') {
+      if (this.time >= C.COMBO_WINDOW) {
+        this._enter('cooldown', 0);
+      } else if (this.time >= C.RECOVER2 && this._comboBuffered) {
+        this._comboBuffered = false;
+        this._enter('windup3', C.RECOVER2);
+      }
+    } else if (this.state === 'windup3' && this.time >= C.WINDUP3) this._enter('thrust3', C.WINDUP3);
+    else if (this.state === 'thrust3' && this.time >= C.THRUST3) this._enter('recover3', C.THRUST3);
+    else if (this.state === 'recover3' && this.time >= C.RECOVER3) this._enter('cooldown', C.RECOVER3);
     else if (this.state === 'cooldown' && this.time >= C.COOLDOWN) {
       this._setRest();
       this.state = 'idle';
@@ -350,11 +400,18 @@ export class PlayerSword {
     }
 
     this._animatePose(C);
+
+    // Movement strike traces: while the blade is moving, spawn tip sprites so
+    // the arc path lingers behind the swing.
+    if (this.state === 'slash1') this._spawnTrail(this._trailPools[0]);
+    else if (this.state === 'slash2') this._spawnTrail(this._trailPools[1]);
+    else if (this.state === 'thrust3') this._spawnTrail(this._trailPools[2]);
   }
 
-  // Buffered input: called by Game when RMB pressed during the combo window
+  // Buffered input: called by Game when RMB pressed during a combo window
   bufferCombo() {
-    if (this.state === 'recover1' || this.state === 'slash1') {
+    if (this.state === 'slash1' || this.state === 'recover1'
+      || this.state === 'slash2' || this.state === 'recover2') {
       this._comboBuffered = true;
     }
   }
@@ -364,8 +421,12 @@ export class PlayerSword {
     this.time -= resetFrom;
     if (state === 'slash1') this.comboStep = 1;
     if (state === 'slash2') this.comboStep = 2;
-    if (state === 'slash1' || state === 'slash2') {
-      this._spawnTrail();
+    if (state === 'thrust3') this.comboStep = 3;
+    if (state === 'slash1' || state === 'slash2' || state === 'thrust3') {
+      // Initial flash burst along the arc, then re-arm the damage window
+      const pool = state === 'slash1' ? this._trailPools[0]
+        : state === 'slash2' ? this._trailPools[1] : this._trailPools[2];
+      this._spawnTrail(pool, true);
       this.onSlash?.(this.comboStep);
     }
   }
@@ -381,59 +442,90 @@ export class PlayerSword {
 
     switch (s) {
       case 'windup1': {
+        // Cock back to the bottom-right — start of the rising diagonal
         const k = easeOut(Math.min(1, t / C.WINDUP1));
-        p.x = lerp(0.4, 0.36, k);
-        p.y = lerp(-0.26, -0.3, k);
-        p.z = lerp(-0.8, -0.72, k);
-        r.x = lerp(-0.1, -0.55, k);
-        r.z = lerp(0.4, 0.55, k);
+        p.x = lerp(0.28, 0.42, k);
+        p.y = lerp(-0.2, -0.26, k);
+        p.z = lerp(-0.72, -0.7, k);
+        r.x = lerp(-0.28, -0.1, k);
+        r.z = lerp(0.34, 0.55, k);
         break;
       }
       case 'slash1': {
+        // Rising diagonal "/": bottom-right -> upper-left
         const k = easeOut(Math.min(1, t / C.SLASH1));
-        // R->L horizontal slash across the screen
-        p.x = lerp(0.36, -0.42, k);
-        p.y = lerp(-0.3, -0.22, k);
-        p.z = lerp(-0.72, -0.85, k);
-        r.x = lerp(-0.55, -0.2, k);
-        r.z = lerp(0.55, -0.5, k);
+        p.x = lerp(0.42, -0.34, k);
+        p.y = lerp(-0.26, 0.1, k);
+        p.z = lerp(-0.7, -0.86, k);
+        r.x = lerp(-0.1, -0.3, k);
+        r.z = lerp(0.55, -0.55, k);
         break;
       }
       case 'recover1': {
         const k = easeIn(Math.min(1, t / C.RECOVER1));
-        p.x = lerp(-0.42, 0.3, k);
-        p.y = lerp(-0.22, -0.24, k);
-        p.z = lerp(-0.85, -0.78, k);
-        r.x = lerp(-0.2, -0.1, k);
-        r.z = lerp(-0.5, 0.1, k);
+        p.x = lerp(-0.34, 0.22, k);
+        p.y = lerp(0.1, -0.1, k);
+        p.z = lerp(-0.86, -0.76, k);
+        r.x = lerp(-0.3, -0.22, k);
+        r.z = lerp(-0.55, 0.18, k);
         break;
       }
       case 'windup2': {
+        // Cock back to the upper-left — start of the falling diagonal
         const k = easeOut(Math.min(1, t / C.WINDUP2));
-        p.x = lerp(0.3, 0.1, k);
-        p.y = lerp(-0.24, -0.1, k);
-        p.z = lerp(-0.78, -0.7, k);
-        r.x = lerp(-0.1, -1.2, k);
-        r.z = lerp(0.1, 0, k);
+        p.x = lerp(0.22, -0.26, k);
+        p.y = lerp(-0.1, -0.04, k);
+        p.z = lerp(-0.76, -0.8, k);
+        r.x = lerp(-0.22, -0.3, k);
+        r.z = lerp(0.18, -0.4, k);
         break;
       }
       case 'slash2': {
+        // Falling diagonal "\": upper-left -> bottom-right (crosses slash 1)
         const k = easeOut(Math.min(1, t / C.SLASH2));
-        // Overhead chop down-center
-        p.x = lerp(0.1, 0.02, k);
-        p.y = lerp(-0.1, -0.06, k);
-        p.z = lerp(-0.7, -1.05, k);
-        r.x = lerp(-1.2, 0.9, k);
-        r.z = lerp(0, 0.15, k);
+        p.x = lerp(-0.26, 0.4, k);
+        p.y = lerp(-0.04, -0.28, k);
+        p.z = lerp(-0.8, -0.84, k);
+        r.x = lerp(-0.3, -0.05, k);
+        r.z = lerp(-0.4, 0.52, k);
         break;
       }
       case 'recover2': {
         const k = easeIn(Math.min(1, t / C.RECOVER2));
-        p.x = lerp(0.02, 0.4, k);
-        p.y = lerp(-0.06, -0.26, k);
-        p.z = lerp(-1.05, -0.8, k);
-        r.x = lerp(0.9, -0.1, k);
-        r.z = lerp(0.15, 0.4, k);
+        p.x = lerp(0.4, 0.26, k);
+        p.y = lerp(-0.28, -0.18, k);
+        p.z = lerp(-0.84, -0.74, k);
+        r.x = lerp(-0.05, -0.24, k);
+        r.z = lerp(0.52, 0.24, k);
+        break;
+      }
+      case 'windup3': {
+        // Thrust cock: blade drawn back beside the head — visible pull-back
+        const k = easeOut(Math.min(1, t / C.WINDUP3));
+        p.x = lerp(0.26, 0.34, k);
+        p.y = lerp(-0.18, -0.06, k);
+        p.z = lerp(-0.74, -0.58, k);
+        r.x = lerp(-0.24, -0.55, k);
+        r.z = lerp(0.24, 0.3, k);
+        break;
+      }
+      case 'thrust3': {
+        // Piercing thrust: the whole sword drives INTO the screen center
+        const k = easeOut(Math.min(1, t / C.THRUST3));
+        p.x = lerp(0.34, 0.08, k);
+        p.y = lerp(-0.06, -0.18, k);
+        p.z = lerp(-0.58, -1.06, k);
+        r.x = lerp(-0.55, -0.08, k);
+        r.z = lerp(0.3, 0.04, k);
+        break;
+      }
+      case 'recover3': {
+        const k = easeIn(Math.min(1, t / C.RECOVER3));
+        p.x = lerp(0.08, 0.28, k);
+        p.y = lerp(-0.18, -0.2, k);
+        p.z = lerp(-1.06, -0.72, k);
+        r.x = lerp(-0.08, -0.28, k);
+        r.z = lerp(0.04, 0.34, k);
         break;
       }
       case 'cooldown':
@@ -452,6 +544,9 @@ export class PlayerSword {
   dispose() {
     this.camera.remove(this.group);
     for (const s of this._sparks) this.camera.remove(s.mesh);
+    for (const pool of this._trailPools) {
+      for (const t of pool.sprites) this.camera.remove(t.sprite);
+    }
     this.group.traverse((m) => {
       if (m.isMesh && m.geometry) m.geometry.dispose();
     });
@@ -459,7 +554,6 @@ export class PlayerSword {
     for (const m of this._mats) m.dispose();
     this.glowMat.dispose();
     this.growthGlowMat.dispose();
-    this.trailMat.dispose();
     this.dangerLight.dispose();
     this.growthLight.dispose();
     if (this._glowTex) this._glowTex.dispose();

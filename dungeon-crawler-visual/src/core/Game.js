@@ -467,7 +467,7 @@ export class Game {
       const fx = -Math.sin(p.yaw);
       const fz = -Math.cos(p.yaw);
       const maxDot = Math.cos(this.sword.currentArc);
-      const range = this.sword.range;
+      const range = this.sword.currentRange;
       const damage = this.sword.currentDamage;
       let enemiesHit = 0;
 

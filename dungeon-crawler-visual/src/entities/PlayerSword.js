@@ -209,9 +209,10 @@ export class PlayerSword {
       opacity: 0.9,
     });
     this._mats.push(this._flameBaseMat);
-    for (let i = 0; i < 12; i++) {
+    // Denser sheath: 16 sprites packed along the blade.
+    for (let i = 0; i < 16; i++) {
       // distribute along the blade length + slight sideways jitter
-      const along = 0.02 + (i / 11) * 0.62;
+      const along = -0.04 + (i / 15) * 0.72;
       const mat = new THREE.SpriteMaterial({
         map: this._glowTex,
         color: 0xff6622,
@@ -225,12 +226,34 @@ export class PlayerSword {
       const jx = (Math.random() - 0.5) * 0.05;
       const jz = (Math.random() - 0.5) * 0.05;
       sp.position.set(jx, along, jz);
-      sp.scale.setScalar(0.22 + Math.random() * 0.12);
+      sp.scale.setScalar(0.24 + Math.random() * 0.13);
       this.group.add(sp);
       this._flameMats.push(mat);
       this._flames.push({
         sprite: sp, seed: Math.random() * 40, baseScale: sp.scale.x,
         baseOx: jx, baseOy: along, baseOz: jz,
+      });
+    }
+    // Tall plume licking well above the blade tip (extends the flame height).
+    for (let i = 0; i < 5; i++) {
+      const mat = new THREE.SpriteMaterial({
+        map: this._glowTex,
+        color: 0xff6622,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        transparent: true,
+        opacity: 0.7,
+      });
+      this._mats.push(mat);
+      const sp = new THREE.Sprite(mat);
+      const along = 0.62 + i * 0.16;
+      sp.position.set((Math.random() - 0.5) * 0.03, along, (Math.random() - 0.5) * 0.03);
+      sp.scale.setScalar(0.3 + i * 0.05);
+      this.group.add(sp);
+      this._flameMats.push(mat);
+      this._flames.push({
+        sprite: sp, seed: Math.random() * 40, baseScale: sp.scale.x,
+        baseOx: sp.position.x, baseOy: along, baseOz: sp.position.z,
       });
     }
   }

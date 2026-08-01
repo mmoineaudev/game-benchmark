@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON, SWORD, PROPS, HIT_STOP, LIGHTING, DROP, BUFF, excessOrbs, orbDamageMultiplier } from './Constants.js';
+import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON, SWORD, PROPS, HIT_STOP, LIGHTING, DROP, BUFF, excessOrbs, orbDamageMultiplier, orbPowerMultiplier, enemyHpMultiplier } from './Constants.js';
 import { GameState } from './GameState.js';
 import { Leaderboard } from './Leaderboard.js';
 import { EventBus } from './EventBus.js';
@@ -63,6 +63,7 @@ export class Game {
     this._hpTextEl = document.getElementById('hp-text');
     this._staminaFillEl = document.getElementById('stamina-fill');
     this._bossBarEl = document.getElementById('boss-bar');
+    this._statsEl = document.getElementById('stats-panel');
     this._damageFlashEl = document.getElementById('damage-flash');
     this.skeletons = null;
     this.shooter = null;
@@ -1221,7 +1222,7 @@ export class Game {
       this._heartsEl.style.width = `${(pct * 100).toFixed(1)}%`;
       if (this._hpTextEl) this._hpTextEl.textContent = `${h} / ${this._maxHealth}`;
     }
-    if (this._staminaFillEl) this._staminaFillEl.style.width = '100%';
+    if (this._staminaFillEl) this._staminaFillEl.style.width = '100%'; // removed stamina bar; kept for safety
     if (this._exitEl) {
       // Boss arenas hide the "press E" prompt until the portal opens
       this._exitEl.style.display = (this.state.inExitRoom && this._bossPortalOpen) ? 'block' : 'none';
@@ -1244,6 +1245,30 @@ export class Game {
     if (this._promptEl) {
       this._promptEl.style.display = this.input.isPointerLocked() ? 'none' : 'block';
     }
+    this._updateStatsPanel();
+  }
+
+  // Surface every live tuning coefficient in the HUD stats panel.
+  _updateStatsPanel() {
+    if (!this._statsEl) return;
+    const s = this.state;
+    const sw = this.sword;
+    const orbMult = orbDamageMultiplier(s.collectedOrbs);
+    const rows = [
+      ['DMG ×', `×${(sw ? sw.damageMult : 1).toFixed(2)}`],
+      ['Orb DMG', `${Math.round(ORB_WEAPON.DAMAGE * orbMult)}`],
+      ['Orb AOE', `${Math.round(ORB_WEAPON.EXPLODE_DAMAGE * orbMult)}`],
+      ['Reach', `${(sw ? sw.range : SWORD.RANGE).toFixed(2)}u`],
+      ['Sword size', `×${(sw ? sw.scale : 1).toFixed(2)}`],
+      ['Atk speed', `${this._moveSpeedMult !== 1 || (sw && sw.attackSpeedMult !== 1) ? '×1.2' : '×1.00'}`],
+      ['Move speed', this.state.sprintSpeedMult > 1.001 ? `×${this.state.sprintSpeedMult.toFixed(2)}` : '×1.00'],
+      ['Enemy HP', `×${enemyHpMultiplier(s.ngPlus).toFixed(2)}`],
+      ['Spawns', `×${orbPowerMultiplier(s.collectedOrbs).toFixed(2)}`],
+      ['Regen', '+1/5s @20s'],
+    ];
+    this._statsEl.innerHTML = rows
+      .map(([k, v]) => `<div class="stat-row"><span>${k}</span><b>${v}</b></div>`)
+      .join('');
   }
 
   dispose() {

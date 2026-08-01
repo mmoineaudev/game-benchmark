@@ -287,9 +287,11 @@ export const ORB_WEAPON = {
   LIFETIME: 2.5,          // seconds before fizzle (~31 units max range)
   DAMAGE: 1,
   RADIUS: 0.3,            // projectile collision radius (smaller orbs)
-  VOLLEY: 3,              // orbs fired per shot — 1 collected orb = 3 smaller orbs
+  VOLLEY: 3,              // orbs per SEQUENCE — 1 collected orb = 1 sequence of 3 shots
+  SEQUENCE_GAP: 0.16,     // seconds between orbs inside a sequence
+  SEQUENCE_LOCK: 0.45,    // trigger lockout: one sequence per orb (click -> click)
   BOUNCES: 1,             // the first VOLLEY-1 orbs bounce once off walls/floor/ceiling
-  SPREAD: 0.05,           // volley fan spread (rad) between orbs
+  SPREAD: 0.04,           // slight fan between sequence orbs
   EXPLODE_RADIUS: 1.5,    // last orb: AOE damage radius around the explosion
   EXPLODE_DAMAGE: 1,      // last orb: AOE damage dealt (same as a direct hit)
 };

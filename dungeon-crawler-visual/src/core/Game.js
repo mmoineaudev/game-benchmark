@@ -452,7 +452,7 @@ export class Game {
       p.yaw,
       p.pitch,
     );
-    this._fireCooldown = 0.18; // ~5.5 shots/s max — tunable
+    this._fireCooldown = ORB_WEAPON.SEQUENCE_LOCK; // one sequence (3 orbs) per orb spent
   }
 
   _handleSwordAttack() {

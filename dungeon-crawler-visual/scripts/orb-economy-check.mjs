@@ -38,21 +38,32 @@ function makeScene() {
 const dt = 1 / 60;
 
 // ===========================================================================
-// 1) ORB VOLLEY — 1 shot = 3 smaller orbs, last one explosive
+// 1) ORB SEQUENCE — 1 click = 3 staggered orbs, last one explosive
 // ===========================================================================
-console.log('== Orb volley ==');
+console.log('== Orb sequence ==');
 {
   const scene = makeScene();
   const shooter = new OrbShooter(scene);
   shooter.init();
   const fired = shooter.fire(0, 1, 0, 0, 0); // facing -z
   ok(fired.length === 3, `fire() returns ${fired.length} orbs (expected 3)`);
-  ok(fired.filter((p) => !p.explode).length === 2 && fired.filter((p) => p.explode).length === 1,
-    'first 2 orbs normal, last orb explosive');
-  ok(fired.every((p) => p.active && p.mesh.visible), 'all 3 orbs active on fire');
-  ok(fired.every((p) => Math.abs(p.dirZ) > 0.99), 'volley flies along the aim vector');
-  // fan spread: orb 0 and orb 2 diverge in x
-  ok(Math.abs(fired[0].dirX - fired[2].dirX) > 0.05, `volley has a fan spread (dirX ${fired[0].dirX.toFixed(3)}..${fired[2].dirX.toFixed(3)})`);
+  ok(fired[0].active && fired[1].scheduled && fired[2].scheduled,
+    'orb 1 fires immediately, orbs 2-3 are scheduled');
+  ok(!fired[0].explode && !fired[1].explode && fired[2].explode,
+    'orbs 1-2 normal, orb 3 explosive');
+  ok(fired.every((p) => Math.abs(p.dirZ) > 0.99), 'sequence orbs fly along the aim vector');
+  ok(Math.abs(fired[0].dirX - fired[2].dirX) > 0.03, `sequence has a fan spread (dirX ${fired[0].dirX.toFixed(3)}..${fired[2].dirX.toFixed(3)})`);
+
+  // Timing: orb 2 releases at ~SEQUENCE_GAP, orb 3 at ~2x SEQUENCE_GAP
+  let t1 = -1, t2 = -1;
+  for (let i = 0; i < 60; i++) {
+    shooter.update(dt, [], []);
+    if (t1 < 0 && fired[1].active) t1 = (i + 1) * dt;
+    if (t2 < 0 && fired[2].active) t2 = (i + 1) * dt;
+  }
+  ok(t1 > 0 && t1 < 0.25, `orb 2 releases at ~${ORB_WEAPON.SEQUENCE_GAP}s (got ${t1.toFixed(3)}s)`);
+  ok(t2 > 0.25 && t2 < 0.45, `orb 3 releases at ~${2 * ORB_WEAPON.SEQUENCE_GAP}s (got ${t2.toFixed(3)}s)`);
+  ok(fired[2].active && !fired[2].scheduled, 'orb 3 active after its slot');
   shooter.dispose();
   ok(scene.children.length === 0, 'dispose cleans scene');
 }
@@ -104,12 +115,13 @@ console.log('== Orb bounce ==');
   let wallBounced = false;
   for (let i = 0; i < 60 * 4; i++) {
     shooter.update(dt, corridor, []);
+    if (wall.scheduled) continue; // orb 2 of the sequence: wait for its slot
+    if (!wall.active) break;
     if (wall.bounces === 1 && !wallBounced) {
       wallBounced = true;
       ok(Math.abs(wall.dirZ) < 0.001 && Math.abs(wall.dirX) > 0.9,
         `wall bounce reflects the dominant axis (dirX=${wall.dirX.toFixed(2)}, dirZ=${wall.dirZ.toFixed(2)})`);
     }
-    if (!wall.active) break;
   }
   ok(wallBounced, 'orb bounced once off a wall');
   ok(!wall.active, 'orb fizzles on the second wall contact');
@@ -127,12 +139,13 @@ console.log('== Orb explosion ==');
   const blasts = [];
   shooter.onExplode = (x, y, z) => blasts.push({ x, y, z });
 
-  // Explosive orb fired straight down: detonates on the floor
+  // Explosive orb fired straight down: detonates on the floor (after its slot)
   const volley = shooter.fire(0, 2, 0, 0, -0.9);
   const bomb = volley[2];
   ok(bomb.explode, 'last orb is the explosive one');
   for (let i = 0; i < 60 * 2; i++) {
     shooter.update(dt, [], []);
+    if (bomb.scheduled) continue; // wait for its sequence slot
     if (!bomb.active) break;
   }
   ok(!bomb.active, 'explosive orb deactivated after detonation');
@@ -145,8 +158,10 @@ console.log('== Orb explosion ==');
   const volley2 = shooter.fire(0, 1.5, 0, 0, 0);
   const bomb2 = volley2[2];
   const enemy = { x: 0, z: -0.8, skel: { state: 'CHASE' } };
-  for (let i = 0; i < 60 * 2 && bomb2.active; i++) {
+  for (let i = 0; i < 60 * 2; i++) {
     shooter.update(dt, [], [enemy]);
+    if (bomb2.scheduled) continue; // wait for its sequence slot
+    if (!bomb2.active) break;
   }
   ok(blasts.length === 2, `enemy contact detonates the orb (${blasts.length} blasts)`);
   ok(Math.hypot(blasts[1].x - enemy.x, blasts[1].z - enemy.z) < ORB_WEAPON.EXPLODE_RADIUS,

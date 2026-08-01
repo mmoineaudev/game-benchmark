@@ -2,20 +2,22 @@ import * as THREE from 'three';
 import { ORB_WEAPON } from '../core/Constants.js';
 import { circleHitsBox } from '../core/Collision.js';
 
-// Orb economy: 1 collected orb = ONE SHOT, but each shot fires a VOLLEY of
-// 3 smaller orbs with a slight fan:
+// Orb economy: 1 collected orb = ONE CLICK = one SEQUENCE of VOLLEY smaller
+// orbs, fired one after another (SEQUENCE_GAP apart):
 //   - orbs 1..VOLLEY-1 are normal: they deal 1 damage on a direct hit and
 //     BOUNCE once off walls / floor / ceiling, then fizzle on the next
 //     surface contact — ricochets keep pressure in corridors.
 //   - the last orb is explosive: it detonates on its first contact (enemy,
 //     wall, floor, ceiling) and deals EXPLODE_DAMAGE to every enemy within
 //     EXPLODE_RADIUS (handled by Game via onExplode).
-// So one orb spent can land up to VOLLEY hits — ranged play is now
-// sustainable (2-3 damage per orb against 2 HP skeletons).
+// The trigger is locked for SEQUENCE_LOCK seconds (Game gates clicks), so
+// each orb spent buys exactly one full sequence — up to VOLLEY hits against
+// 2 HP skeletons makes ranged play sustainable.
 export class OrbShooter {
   constructor(scene) {
     this.scene = scene;
     this.projectiles = []; // pooled, round-robin reuse
+    this._scheduled = [];  // sequence orbs waiting for their slot
     this._next = 0;
     this._tex = null;
     this.onExplode = null; // (x, y, z) -> Game applies AOE damage
@@ -78,9 +80,20 @@ export class OrbShooter {
     }
   }
 
-  // Fire a VOLLEY along the camera look direction (yaw + pitch) so the
-  // crosshair is the aim. Returns the array of projectile handles.
+  // Start a SEQUENCE along the camera look direction (yaw + pitch) so the
+  // crosshair is the aim. The first orb fires immediately; the rest release
+  // in update() at SEQUENCE_GAP intervals. Returns the array of handles.
   fire(x, y, z, yaw, pitch = 0) {
+    // Defensive: a new sequence replaces any unfinished one (Game's
+    // SEQUENCE_LOCK cooldown normally prevents overlap).
+    for (const p of this._scheduled) {
+      p.scheduled = false;
+      p.active = false;
+      p.mesh.visible = false;
+      p.glow.visible = false;
+    }
+    this._scheduled.length = 0;
+
     const baseX = -Math.sin(yaw) * Math.cos(pitch);
     const baseY = Math.sin(pitch);
     const baseZ = -Math.cos(yaw) * Math.cos(pitch);
@@ -88,12 +101,7 @@ export class OrbShooter {
     for (let i = 0; i < ORB_WEAPON.VOLLEY; i++) {
       const p = this.projectiles[this._next];
       this._next = (this._next + 1) % this.projectiles.length;
-      p.active = true;
-      p.mesh.visible = true;
-      p.glow.visible = true;
-      p.mesh.position.set(x, y, z);
-      p.glow.position.set(x, y, z);
-      // Slight fan so the volley doesn't stack on one point
+      // Slight fan so sequence orbs don't stack on one point
       const off = (i - (ORB_WEAPON.VOLLEY - 1) / 2) * ORB_WEAPON.SPREAD;
       const cosOff = Math.cos(off);
       const sinOff = Math.sin(off);
@@ -104,14 +112,40 @@ export class OrbShooter {
       p.dirX /= len; p.dirY /= len; p.dirZ /= len;
       p.life = ORB_WEAPON.LIFETIME;
       p.bounces = 0;
-      // The LAST orb of the volley is the explosive one
+      // The LAST orb of the sequence is the explosive one
       p.explode = i === ORB_WEAPON.VOLLEY - 1;
+      p.spawnX = x; p.spawnY = y; p.spawnZ = z;
+      p.delay = i * ORB_WEAPON.SEQUENCE_GAP;
+      p.scheduled = true;
+      p.active = false;
+      p.mesh.visible = false;
+      p.glow.visible = false;
+      if (i === 0) this._activate(p); // first orb fires immediately
+      else this._scheduled.push(p);
       fired.push(p);
     }
     return fired;
   }
 
+  _activate(p) {
+    p.scheduled = false;
+    p.active = true;
+    p.mesh.visible = true;
+    p.glow.visible = true;
+    p.mesh.position.set(p.spawnX, p.spawnY, p.spawnZ);
+    p.glow.position.set(p.spawnX, p.spawnY, p.spawnZ);
+  }
+
   update(dt, collisionBoxes, skeletons) {
+    // Release sequence orbs when their slot comes due
+    for (let i = this._scheduled.length - 1; i >= 0; i--) {
+      const p = this._scheduled[i];
+      p.delay -= dt;
+      if (p.delay <= 0) {
+        this._scheduled.splice(i, 1);
+        this._activate(p);
+      }
+    }
     const speed = ORB_WEAPON.SPEED;
     for (const p of this.projectiles) {
       if (!p.active) continue;

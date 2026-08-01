@@ -293,28 +293,6 @@ console.log('== Spawn clearance ==');
 }
 
 // ===========================================================================
-// 4e) ORB IMPACT FIRE — first contact AND second rebound light blue fire
-// ===========================================================================
-console.log('== Orb impact fire ==');
-{
-  const { scene, shooter } = newShooter();
-  let impacts = 0;
-  shooter.onImpact = (x, z) => impacts++;
-  // Corridor: ricochets right -> left -> right (fire on contacts 1 & 2 only)
-  const corridor = [
-    { minX: -0.8, maxX: -0.4, minZ: -10, maxZ: 10 },
-    { minX: 0.4, maxX: 0.8, minZ: -10, maxZ: 10 },
-  ];
-  shooter.fire(0, 1, 0, -Math.PI / 2, 0); // +x into the right wall
-  for (let i = 0; i < 60 * 4; i++) {
-    shooter.update(dt, corridor, []);
-    if (impacts >= 2) break;
-  }
-  ok(impacts === 2, `first impact + second rebound both fire onImpact (${impacts})`);
-  shooter.dispose();
-}
-
-// ===========================================================================
 // 5) HEALTH RESET DROP — red cross pickup, full heal on collect
 // ===========================================================================
 console.log('== Health drop ==');

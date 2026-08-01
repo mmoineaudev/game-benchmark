@@ -335,8 +335,6 @@ export class Game {
       if (!this.props) return false;
       return this.props.hitBreakables(x, z);
     };
-    // Orb impacts on walls/ground light a brief blue magic fire
-    this.shooter.onImpact = (x, z) => this._spawnFirePatch(x, z);
 
     // Boss arena: exit portal stays closed until the boss is dead
     this._bossPortalOpen = !this.skeletons.boss;

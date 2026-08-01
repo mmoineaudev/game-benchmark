@@ -173,7 +173,6 @@ export class OrbShooter {
     p.dirX /= len; p.dirY /= len; p.dirZ /= len;
     p.life = ORB_WEAPON.LIFETIME;
     p.bounces = 0;
-    p.impactCount = 0;
     // The LAST step of the sequence is the explosive one
     p.explode = isExplosive;
     return { step: firedStep, startingNew, projectile: p };
@@ -197,7 +196,6 @@ export class OrbShooter {
     p.dirX /= len; p.dirY /= len; p.dirZ /= len;
     p.life = ORB_WEAPON.LIFETIME;
     p.bounces = 0;
-    p.impactCount = 0;
     p.explode = true;
     return p;
   }
@@ -238,7 +236,6 @@ export class OrbShooter {
 
       // Floor contact
       if (p.mesh.position.y < 0.15) {
-        this._fireImpact(p);
         if (p.explode) { this._explode(p); continue; }
         if (p.bounces < ORB_WEAPON.BOUNCES) {
           p.mesh.position.y = 0.15;
@@ -265,7 +262,6 @@ export class OrbShooter {
 
       // Wall contact (2D, full-height)
       if (circleHitsBox(collisionBoxes, p.mesh.position.x, p.mesh.position.z, ORB_WEAPON.RADIUS)) {
-        this._fireImpact(p);
         if (p.explode) { this._explode(p); continue; }
         if (p.bounces < ORB_WEAPON.BOUNCES) {
           const axis = this._wallHitAxis(collisionBoxes, p.mesh.position.x, p.mesh.position.z, prevX, prevZ);
@@ -345,15 +341,6 @@ export class OrbShooter {
       }
     }
     return 'z';
-  }
-
-  // Fire the impact hook on the FIRST contact and the SECOND rebound (so a
-  // ricochet lights magic fire twice), then stop.
-  _fireImpact(p) {
-    p.impactCount = (p.impactCount || 0) + 1;
-    if (p.impactCount === 1 || p.impactCount === 2) {
-      this.onImpact?.(p.mesh.position.x, p.mesh.position.z);
-    }
   }
 
   _explode(p) {

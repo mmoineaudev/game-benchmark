@@ -24,7 +24,7 @@ const { OrbSystem } = await import(`${BASE}/entities/OrbSystem.js`);
 const { Rat } = await import(`${BASE}/entities/enemies/Rat.js`);
 const { PlayerSword } = await import(`${BASE}/entities/PlayerSword.js`);
 const { PropSystem } = await import(`${BASE}/world/PropSystem.js`);
-const { ORB_WEAPON, DROP, PLAYER, RAT, orbPowerMultiplier } = await import(`${BASE}/core/Constants.js`);
+const { ORB_WEAPON, DROP, PLAYER, RAT, orbPowerMultiplier, orbDamageMultiplier } = await import(`${BASE}/core/Constants.js`);
 
 let failures = 0;
 const fail = (msg) => { failures++; console.log(`  FAIL: ${msg}`); };
@@ -214,6 +214,20 @@ console.log('== Shared power multiplier ==');
       `sword scale === orbPowerMultiplier(${n}) (${sword.scale.toFixed(2)})`);
   }
   sword.dispose();
+}
+
+// ===========================================================================
+// 4a) ORB DAMAGE BUFF — each held orb adds 2% orb-weapon damage
+// ===========================================================================
+console.log('== Orb damage multiplier ==');
+{
+  ok(orbDamageMultiplier(0) === 1, `orb dmg x1 @0 orbs`);
+  ok(Math.abs(orbDamageMultiplier(50) - 2) < 1e-9, `orb dmg x2 @50 orbs ([50]%*2)`);
+  ok(Math.abs(orbDamageMultiplier(100) - 3) < 1e-9, `orb dmg x3 @100 orbs`);
+  ok(Math.abs(orbDamageMultiplier(25) - 1.5) < 1e-9, `orb dmg x1.5 @25 orbs`);
+  // Applied to base orb damage + explosive orb damage.
+  ok(Math.round(ORB_WEAPON.DAMAGE * orbDamageMultiplier(50)) === 2, `direct orb hits for 2 @50 orbs`);
+  ok(Math.round(ORB_WEAPON.EXPLODE_DAMAGE * orbDamageMultiplier(50)) === 2, `explosive orb hits for 2 @50 orbs`);
 }
 
 // ===========================================================================

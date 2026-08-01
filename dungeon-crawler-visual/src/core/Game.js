@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON, SWORD, PROPS, HIT_STOP, LIGHTING, DROP, BUFF, excessOrbs } from './Constants.js';
+import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON, SWORD, PROPS, HIT_STOP, LIGHTING, DROP, BUFF, excessOrbs, orbDamageMultiplier } from './Constants.js';
 import { GameState } from './GameState.js';
 import { Leaderboard } from './Leaderboard.js';
 import { EventBus } from './EventBus.js';
@@ -195,7 +195,9 @@ export class Game {
   _initPostProcessing() {
     this.post = new PostProcessing(this.renderer, this.scene, this.camera);
     this.post.init();
-    this.state.effectsEnabled = true;
+    // Post-processing starts OFF by default (lighter, clearer view). The
+    // player can toggle it on (the key handler flips state + this.post).
+    this.state.effectsEnabled = this.post.enabled; // false initially
   }
 
   _initInput() {
@@ -318,18 +320,22 @@ export class Game {
     this.skeletons.onBurn = (x, z) => this._spawnFirePatch(x, z);
     this.skeletons.onPlayerDamaged = () => this._flashDamage();
     this.skeletons.onPlayerDeath = () => this._gameOver('dead');
-    this.shooter.hitSkeleton = (skel) => this.skeletons.hitSkeleton(skel, ORB_WEAPON.DAMAGE);
+    // Orb damage scales with total orbs held: +2% per orb.
+    const orbDmg = () => Math.round(ORB_WEAPON.DAMAGE * orbDamageMultiplier(this.state.collectedOrbs));
+    const orbExplodeDmg = () => Math.round(ORB_WEAPON.EXPLODE_DAMAGE * orbDamageMultiplier(this.state.collectedOrbs));
+    this.shooter.hitSkeleton = (skel) => this.skeletons.hitSkeleton(skel, orbDmg());
     // Explosive orb (last of the volley): AOE damage around the blast point.
     // Only counts when the blast is low enough to reach ground-level enemies.
     this.shooter.onExplode = (x, y, z) => {
       if (!this.skeletons || y > 2.6) return;
       const range = ORB_WEAPON.EXPLODE_RADIUS;
+      const dmg = orbExplodeDmg();
       for (const s of this.skeletons.skeletons) {
         if (s.skel.state === 'DEAD') continue;
         const dx = s.x - x;
         const dz = s.z - z;
         if (dx * dx + dz * dz < range * range) {
-          this.skeletons.hitSkeleton(s.skel, ORB_WEAPON.EXPLODE_DAMAGE);
+          this.skeletons.hitSkeleton(s.skel, dmg);
         }
       }
     };

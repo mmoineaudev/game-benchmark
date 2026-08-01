@@ -81,7 +81,7 @@ export class PostProcessing {
     this.renderer = renderer;
     this.scene = scene;
     this.camera = camera;
-    this.enabled = true;
+    this.enabled = false; // post-processing OFF by default (lighter + clearer)
     this.composer = null;
     this._enemyGroups = [];
     this._enemyMeshes = new Set();

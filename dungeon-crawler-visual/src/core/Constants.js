@@ -354,6 +354,14 @@ export function orbPowerMultiplier(orbs) {
   return 1 + Math.min(Math.floor(orbs / 10), 15) * 0.2;
 }
 
+// Orb-weapon damage buff: each held orb adds 2% damage
+// (=[total orbs]% * 2). 0 orbs -> x1; 50 orbs -> x2; 100 orbs -> x3.
+// Gives ranged orbs real teeth that scale with how much ammo you've banked,
+// matching the risk/reward of holding orbs (which also raises enemy spawns).
+export function orbDamageMultiplier(orbs) {
+  return 1 + orbs * 0.02;
+}
+
 // Orbs in excess of 100 (the 'power' threshold) funnel into buff drops
 // and enemy spawn rate rather than sword size.
 export function excessOrbs(orbs) {

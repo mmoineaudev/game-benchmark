@@ -11,12 +11,16 @@ import { generateGlowTexture } from '../world/Textures.js';
 //   -> RECOVER3 -> COOLDOWN -> IDLE
 // Combo window: 0.34 s from each RECOVER start (0.14 s recover + 0.20 s grace).
 // Every strike PIVOTS AT THE POMBEL: the hand stays anchored (a small drift
-// at most) while the blade fans around it, so the tip — not the handle —
-// sweeps the visible arc. Only the thrust is translation-driven (a stab
-// drives the whole sword forward). Each strike leaves a visible movement
-// trace: pooled additive sprites spawned at the blade tip in camera space
-// while the blade is moving, so the arc path lingers after the sword has
-// moved on (icy blue "/", gold "\", white-hot thrust).
+// at most) while the blade fans ±1.3 rad (~74°) around it, so the tip — not
+// the handle — sweeps the visible arc. The pivot sits BACK from the camera
+// (z ≈ -1.0, deeper than the rest pose) so the wide fan fits on screen, and
+// the blade leans forward (rot.x ≈ -0.35) so the tip stays LOW through the
+// arc — wide, flat slashes across the enemy instead of a windmill. Only the
+// thrust is translation-driven (a stab drives the whole sword forward). Each
+// strike leaves a visible movement trace: pooled additive sprites spawned at
+// the blade tip in camera space while the blade is moving, so the arc path
+// lingers after the sword has moved on (icy blue "/", gold "\", white-hot
+// thrust).
 //
 // Progression: the sword grows +20% per 10 orbs held (capped at +200% = 3x at
 // 100 orbs), extends melee range, shifts base color each size bonus, and
@@ -278,8 +282,8 @@ export class PlayerSword {
   // Ready pose: hand anchored bottom-right, blade pointing forward at the
   // enemy (tip projects to the upper-center of the view, on the aim line).
   _setRest() {
-    this.group.position.set(0.28, -0.22, -0.72);
-    this.group.rotation.set(-0.22, 0, 0.32);
+    this.group.position.set(0.26, -0.26, -0.75);
+    this.group.rotation.set(-0.3, 0, 0.28);
   }
 
   // Effective melee reach — grows with the sword size bonus
@@ -449,64 +453,66 @@ export class PlayerSword {
 
     switch (s) {
       case 'windup1': {
-        // Cock to the right — blade pulls back-down beside the hand. The
-        // hand drifts only slightly; the fan rotation does the work.
+        // Cock to the right: hand pulls BACK (z -0.75 -> -1.0, the deep
+        // swing pivot) while the blade cocks right. The pull-back is the
+        // telegraph for the wide slash to come.
         const k = easeOut(Math.min(1, t / C.WINDUP1));
-        p.x = lerp(0.28, 0.12, k);
-        p.y = lerp(-0.22, -0.24, k);
-        p.z = lerp(-0.72, -0.82, k);
-        r.x = lerp(-0.22, -0.25, k);
-        r.z = lerp(0.32, -1.0, k);
+        p.x = lerp(0.26, 0.10, k);
+        p.y = lerp(-0.26, -0.30, k);
+        p.z = lerp(-0.75, -1.0, k);
+        r.x = lerp(-0.3, -0.4, k);
+        r.z = lerp(0.28, -1.3, k);
         break;
       }
       case 'slash1': {
-        // Rising diagonal "/": the blade fans right -> left around the
-        // anchored hand — the POMBEL stays put, the tip sweeps the arc.
+        // Rising diagonal "/": the blade fans right -> left (±1.3 rad)
+        // around the deep, anchored hand. The forward lean (rot.x) keeps
+        // the tip LOW through the arc — a wide, flat slash.
         const k = easeOut(Math.min(1, t / C.SLASH1));
-        p.x = lerp(0.12, -0.02, k);
-        p.y = lerp(-0.24, -0.17, k);
-        p.z = lerp(-0.82, -0.84, k);
-        r.x = lerp(-0.25, -0.1, k);
-        r.z = lerp(-1.0, 1.0, k);
+        p.x = lerp(0.10, -0.02, k);
+        p.y = lerp(-0.30, -0.22, k);
+        p.z = lerp(-1.0, -1.04, k);
+        r.x = lerp(-0.4, -0.35, k);
+        r.z = lerp(-1.3, 1.3, k);
         break;
       }
       case 'recover1': {
         const k = easeIn(Math.min(1, t / C.RECOVER1));
-        p.x = lerp(-0.02, 0.1, k);
-        p.y = lerp(-0.17, -0.17, k);
-        p.z = lerp(-0.84, -0.79, k);
-        r.x = lerp(-0.1, -0.15, k);
-        r.z = lerp(1.0, 0.3, k);
+        p.x = lerp(-0.02, 0.08, k);
+        p.y = lerp(-0.22, -0.22, k);
+        p.z = lerp(-1.04, -0.90, k);
+        r.x = lerp(-0.35, -0.2, k);
+        r.z = lerp(1.3, 0.35, k);
         break;
       }
       case 'windup2': {
         // Cock to the left — blade pulls back-up on the other side
         const k = easeOut(Math.min(1, t / C.WINDUP2));
-        p.x = lerp(0.1, -0.04, k);
-        p.y = lerp(-0.17, -0.15, k);
-        p.z = lerp(-0.79, -0.82, k);
-        r.x = lerp(-0.15, -0.25, k);
-        r.z = lerp(0.3, 1.0, k);
+        p.x = lerp(0.08, -0.06, k);
+        p.y = lerp(-0.22, -0.20, k);
+        p.z = lerp(-0.90, -1.0, k);
+        r.x = lerp(-0.2, -0.4, k);
+        r.z = lerp(0.35, 1.3, k);
         break;
       }
       case 'slash2': {
         // Falling diagonal "\": the blade fans left -> right around the
-        // anchored hand, crossing slash 1 into an X.
+        // deep anchored hand, crossing slash 1 into an X.
         const k = easeOut(Math.min(1, t / C.SLASH2));
-        p.x = lerp(-0.04, 0.1, k);
-        p.y = lerp(-0.15, -0.28, k);
-        p.z = lerp(-0.82, -0.84, k);
-        r.x = lerp(-0.25, -0.05, k);
-        r.z = lerp(1.0, -1.0, k);
+        p.x = lerp(-0.06, 0.10, k);
+        p.y = lerp(-0.20, -0.31, k);
+        p.z = lerp(-1.0, -1.04, k);
+        r.x = lerp(-0.4, -0.35, k);
+        r.z = lerp(1.3, -1.3, k);
         break;
       }
       case 'recover2': {
         const k = easeIn(Math.min(1, t / C.RECOVER2));
-        p.x = lerp(0.1, 0.16, k);
-        p.y = lerp(-0.28, -0.21, k);
-        p.z = lerp(-0.84, -0.77, k);
-        r.x = lerp(-0.05, -0.15, k);
-        r.z = lerp(-1.0, 0.2, k);
+        p.x = lerp(0.10, 0.16, k);
+        p.y = lerp(-0.31, -0.21, k);
+        p.z = lerp(-1.04, -0.77, k);
+        r.x = lerp(-0.35, -0.15, k);
+        r.z = lerp(-1.3, 0.2, k);
         break;
       }
       case 'windup3': {
@@ -532,11 +538,11 @@ export class PlayerSword {
       }
       case 'recover3': {
         const k = easeIn(Math.min(1, t / C.RECOVER3));
-        p.x = lerp(0.06, 0.28, k);
-        p.y = lerp(-0.16, -0.22, k);
-        p.z = lerp(-1.0, -0.72, k);
-        r.x = lerp(-0.06, -0.22, k);
-        r.z = lerp(0.02, 0.32, k);
+        p.x = lerp(0.06, 0.26, k);
+        p.y = lerp(-0.16, -0.26, k);
+        p.z = lerp(-1.0, -0.75, k);
+        r.x = lerp(-0.06, -0.3, k);
+        r.z = lerp(0.02, 0.28, k);
         break;
       }
       case 'cooldown':

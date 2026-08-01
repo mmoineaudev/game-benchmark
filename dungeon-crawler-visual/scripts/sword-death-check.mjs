@@ -72,6 +72,7 @@ const stepByState = {};
 const thrustZ = [];
 const pommelTrack = { slash1: [], slash2: [] };
 const tipTrack = { slash1: [], slash2: [] };
+const pommelDepth = { slash1: [], slash2: [] };
 let prevState = sword.state;
 for (let i = 0; i < 60 * 4; i++) {
   if (sword.state !== prevState) { statesSeen.push(prevState); prevState = sword.state; }
@@ -80,13 +81,14 @@ for (let i = 0; i < 60 * 4; i++) {
     sword.bufferCombo();
   }
   if (sword.state === 'thrust3') thrustZ.push(ndcOf(TIP).z);
-  if (sword.state === 'slash1') {
-    pommelTrack.slash1.push(ndcOf(POMMEL));
-    tipTrack.slash1.push(ndcOf(TIP));
-  }
-  if (sword.state === 'slash2') {
-    pommelTrack.slash2.push(ndcOf(POMMEL));
-    tipTrack.slash2.push(ndcOf(TIP));
+  if (sword.state === 'slash1' || sword.state === 'slash2') {
+    const slash = sword.state;
+    pommelTrack[slash].push(ndcOf(POMMEL));
+    tipTrack[slash].push(ndcOf(TIP));
+    // camera-space depth of the pommel (group is a camera child)
+    cam.updateMatrixWorld(true);
+    sword.group.updateMatrixWorld(true);
+    pommelDepth[slash].push(-POMMEL.clone().applyMatrix4(sword.group.matrixWorld).z);
   }
   sword.update(dt, Infinity);
   checkVisible(`state=${sword.state} t=${sword.time.toFixed(3)}`);
@@ -153,6 +155,10 @@ for (const slash of ['slash1', 'slash2']) {
     `${slash}: tip motion ${tipTravel.toFixed(2)}x dominates pommel ${pommelTravel.toFixed(2)} (pivot at pommel)`);
   ok(Math.max(...tip.map((t) => t.x)) > 0.4 && Math.min(...tip.map((t) => t.x)) < -0.4,
     `${slash}: tip crosses both screen halves (x range ${Math.min(...tip.map((t) => t.x)).toFixed(2)}..${Math.max(...tip.map((t) => t.x)).toFixed(2)})`);
+  const tipMaxY = Math.max(...tip.map((t) => t.y));
+  ok(tipMaxY < 0.6, `${slash}: tip stays low through the arc (max NDC y ${tipMaxY.toFixed(2)} < 0.6)`);
+  const pivotDepth = pommelDepth[slash].reduce((a, b) => a + b, 0) / pommelDepth[slash].length;
+  ok(pivotDepth > 0.9, `${slash}: pivot sits back from the camera (avg depth ${pivotDepth.toFixed(2)} > 0.9)`);
 }
 console.log(`  ...${frames} frames checked, strikes=${Object.keys(arcByState).length}, trail peaks ${JSON.stringify(trailActive)}, thrust z ${thrustZ[0]?.toFixed(3) ?? '?'}->${thrustZ[thrustZ.length - 1]?.toFixed(3) ?? '?'}`);
 

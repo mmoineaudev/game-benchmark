@@ -58,9 +58,12 @@ export class PlayerSword {
     this.lengthMult = 1;   // temporary length boost (EMPOWERED buff)
     this.attackSpeedMult = 1; // temporary attack-speed boost (EMPOWERED buff)
     this._flashTimer = 0;
+    this._orbSmokeFactor = 0; // 0..1, ~ shared with orb count (capped at 500)
+    this._smokeAcc = 0;
     this._build();
     this._buildTrails();
     this._buildSparks();
+    this._buildSmoke();
     camera.add(this.group);
     this._setRest();
   }
@@ -277,6 +280,69 @@ export class PlayerSword {
     }
   }
 
+  // Subtle blue smoke bleeding off the blade, proportional to held orbs.
+  // 0 orbs -> barely a trace; 500 orbs -> a steady wisp (capped at 500).
+  _buildSmoke() {
+    this._smokeSprites = [];
+    this._smokeIdx = 0;
+    for (let i = 0; i < 28; i++) {
+      const mat = new THREE.SpriteMaterial({
+        map: this._glowTex, color: 0x5599ff,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+        transparent: true, opacity: 0,
+      });
+      this._mats.push(mat);
+      const s = new THREE.Sprite(mat);
+      s.visible = false;
+      this.camera.add(s);
+      this._smokeSprites.push({
+        sprite: s, vel: new THREE.Vector3(), life: 0, maxLife: 0.7, active: false,
+      });
+    }
+  }
+
+  _emitSmoke() {
+    const p = this._tipCamSpace();
+    for (let k = 0; k < 2; k++) {
+      const s = this._smokeSprites[this._smokeIdx];
+      this._smokeIdx = (this._smokeIdx + 1) % this._smokeSprites.length;
+      s.active = true;
+      s.life = s.maxLife * (0.6 + Math.random() * 0.6);
+      s.sprite.visible = true;
+      s.sprite.position.copy(p);
+      s.sprite.scale.setScalar(0.12 + Math.random() * 0.08);
+      s.sprite.material.opacity = 0.24 + Math.random() * 0.1;
+      s.vel.set(
+        (Math.random() - 0.5) * 0.6,
+        0.3 + Math.random() * 0.5,
+        -0.2 - Math.random() * 0.4,
+      );
+    }
+  }
+
+  // Called every frame from Game. Emission rate scales with orbs, and each
+  // wisp rises / drifts / expands / fades.
+  updateSmoke(dt) {
+    this._smokeAcc += dt * (0.5 + this._orbSmokeFactor * 4.0);
+    while (this._smokeAcc >= 1) {
+      this._emitSmoke();
+      this._smokeAcc -= 1;
+    }
+    for (const s of this._smokeSprites) {
+      if (!s.active) continue;
+      s.life -= dt;
+      if (s.life <= 0) {
+        s.active = false;
+        s.sprite.visible = false;
+        continue;
+      }
+      const f = s.life / s.maxLife;
+      s.sprite.material.opacity = 0.26 * f;
+      s.sprite.scale.addScalar(dt * 0.5);
+      s.sprite.position.addScaledVector(s.vel, dt);
+    }
+  }
+
   // Ready pose: hand anchored bottom-right (well right of the crosshair),
   // dagger held close, point aimed at the enemy — the short blade and small
   // guard never cover the aim point, even at maximum size.
@@ -302,6 +368,8 @@ export class PlayerSword {
     // lengthMult stacks on top (EMPOWERED buff: +50% longer).
     this._rangeScale = orbPowerMultiplier(count) * this.lengthMult;
     this.group.scale.setScalar(this._rangeScale);
+    // Blue smoke bleeds off the blade proportional to orbs (capped at 500)
+    this._orbSmokeFactor = Math.min(count, 500) / 500;
     const capped = Math.min(Math.floor(count / 10), 10);
     const growth = capped / 10; // 0..1
     this.growthLight.intensity = growth * 2.8;
@@ -591,6 +659,7 @@ export class PlayerSword {
     for (const pool of this._trailPools) {
       for (const t of pool.sprites) this.camera.remove(t.sprite);
     }
+    for (const s of this._smokeSprites) this.camera.remove(s.sprite);
     this.group.traverse((m) => {
       if (m.isMesh && m.geometry) m.geometry.dispose();
     });

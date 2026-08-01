@@ -190,6 +190,16 @@ ok(Math.abs(sword.scale - 3) < 1e-9, `max size = 3x (got ${sword.scale})`);
 // EMPOWERED buff: +50% dagger length stacks on the orb scale, and +20%
 // attack speed shortens the full combo cycle.
 {
+  // Blue blade-smoke scales with orbs, capped at 500
+  sword.setOrbCount(0);
+  ok(Math.abs(sword._orbSmokeFactor) < 1e-9, `smoke factor 0 at 0 orbs (${sword._orbSmokeFactor})`);
+  sword.setOrbCount(250);
+  ok(Math.abs(sword._orbSmokeFactor - 0.5) < 1e-9, `smoke factor 0.5 at 250 orbs (${sword._orbSmokeFactor})`);
+  sword.setOrbCount(500);
+  ok(Math.abs(sword._orbSmokeFactor - 1) < 1e-9, `smoke factor 1 at 500 orbs`);
+  sword.setOrbCount(1000);
+  ok(Math.abs(sword._orbSmokeFactor - 1) < 1e-9, `smoke factor capped at 1 (>500 orbs)`);
+
   // Damage scales with half the size-buff amount (base x1 at scale 1)
   sword.setOrbCount(0); // reset from the max-size test above
   ok(Math.abs(sword.damageMult - 1) < 1e-9, `damage x1 at base size (${sword.damageMult})`);

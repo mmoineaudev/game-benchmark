@@ -529,6 +529,7 @@ export class Game {
     this._checkMessages();
     this._updateHUD();
     this._eKeyWasDown = this.input.isPressed('KeyE');
+    if (this.sword) this.sword.updateSmoke(this._delta);
 
     // Enemy highlight: feed the living enemy groups + nearest distance
     if (this.post && this.skeletons) {

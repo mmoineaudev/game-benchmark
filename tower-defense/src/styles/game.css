@@ -2,6 +2,7 @@
 html, body, #app { margin: 0; height: 100%; background: #05060d; overflow: hidden; color: #e6f1ff; font-family: ui-monospace, 'Courier New', monospace; }
 #gameCanvas { position: fixed; inset: 0; width: 100% !important; height: 100% !important; }
 .overlay { position: fixed; inset: 0; background: transparent; pointer-events: none; display: flex; align-items: center; justify-content: center; }
+#pauseOverlay { align-items: flex-end; justify-content: flex-end; padding: 28px; }
 .hud { position: fixed; top: 12px; left: 12px; pointer-events: none; z-index: 5; }
 .hud-row { display: flex; gap: 10px; background: rgba(0,0,0,0.35); padding: 8px 12px; border-left: 3px solid #00ffc3; }
 .hidden { display: none !important; }

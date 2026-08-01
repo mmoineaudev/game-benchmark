@@ -90,6 +90,9 @@ export default class Game {
         e.preventDefault();
         this.togglePause();
       }
+      if (e.code === 'KeyF') {
+        EventBus.emit('ui:startWave');
+      }
       if (e.code === 'KeyR' && state.over) {
         this.restart();
       }

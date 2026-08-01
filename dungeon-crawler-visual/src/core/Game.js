@@ -351,7 +351,7 @@ export class Game {
         depthWrite: false, transparent: true, opacity: 0,
       }));
       glow.scale.setScalar(3);
-      const light = new THREE.PointLight(0x44aaff, 0, 6, 2);
+      const light = new THREE.PointLight(0x44aaff, 0, 12, 2);
       light.position.y = 1.2;
       const group = new THREE.Group();
       group.add(glow, light);
@@ -378,7 +378,7 @@ export class Game {
     if (!p) { p = this._firePatches.reduce((a, b) => (a.start <= b.start ? a : b)); }
     p.active = true;
     p.start = performance.now() * 0.001;
-    p.ttl = 5;
+    p.ttl = 10; // magic fire lingers 10s
     p.x = x; p.z = z;
     p.group.visible = true;
     p.group.position.set(x, 0.4, z);
@@ -403,7 +403,7 @@ export class Game {
       const t = elapsed / p.ttl;
       const grow = Math.min(1, elapsed / 0.3); // quick grow-in
       const fade = t > 0.88 ? (1 - (t - 0.88) / 0.12) : 1; // fade at the very end
-      p.glow.scale.setScalar(3 * grow);
+      p.glow.scale.setScalar(6 * grow); // ~twice the illumination footprint
       p.glow.material.opacity = 0.6 * fade;
       p.light.intensity = 2.5 * fade * (0.85 + 0.15 * Math.sin(now * 9 + p.x));
     }

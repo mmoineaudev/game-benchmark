@@ -56,6 +56,7 @@ export class Game {
     this._goList = document.getElementById('go-leaderboard-list');
     this._goRestartBtn = document.getElementById('go-restart');
     this._goNgPlusBtn = document.getElementById('go-ngplus');
+    this._goKeyHandler = null; // Y/N keyboard choice on the death screen
     this._heartsEl = document.getElementById('hearts');
     this._damageFlashEl = document.getElementById('damage-flash');
     this.skeletons = null;
@@ -726,15 +727,29 @@ export class Game {
     const ngLevel = Math.max(1, Math.floor(this.state.level / 2));
     if (this._goNgPlusBtn) {
       const ng = (this.state.ngPlus || 0) + 1;
-      this._goNgPlusBtn.textContent = `New Game+ — Level ${ngLevel} (keep ${this.state.collectedOrbs} orbs · mobs +${10 * ng}% HP)`;
+      this._goNgPlusBtn.textContent = `New Game+ [Y] — Level ${ngLevel} (keep ${this.state.collectedOrbs} orbs · mobs +${10 * ng}% HP)`;
     }
-    this._goRestartBtn.onclick = () => this._startNewRun(false);
-    this._goNgPlusBtn.onclick = () => this._startNewRun(true);
+    if (this._goRestartBtn) this._goRestartBtn.onclick = () => this._startNewRun(false);
+    if (this._goNgPlusBtn) this._goNgPlusBtn.onclick = () => this._startNewRun(true);
+    // Y/N keyboard choice — reliable regardless of button focus/click issues
+    if (!this._goKeyHandler) {
+      this._goKeyHandler = (e) => {
+        if (this._gameOverActive && !e.repeat) {
+          if (e.code === 'KeyY') this._startNewRun(true);
+          else if (e.code === 'KeyN') this._startNewRun(false);
+        }
+      };
+      window.addEventListener('keydown', this._goKeyHandler);
+    }
   }
 
   // Start a new run after death: fresh (level 1, no carry, ngPlus 0) or
   // New Game+ (half level, orbs kept, ngPlus +1).
   _startNewRun(newGamePlus = false) {
+    if (this._goKeyHandler) {
+      window.removeEventListener('keydown', this._goKeyHandler);
+      this._goKeyHandler = null;
+    }
     this._gameOverActive = false;
     if (this._gameOverEl) this._gameOverEl.classList.add('hidden');
     this._clearBuffEffects(); // no lingering buff side effects across runs
@@ -923,6 +938,10 @@ export class Game {
 
   dispose() {
     this._isRunning = false;
+    if (this._goKeyHandler) {
+      window.removeEventListener('keydown', this._goKeyHandler);
+      this._goKeyHandler = null;
+    }
     window.removeEventListener('resize', this._onResize);
     this.input.dispose();
     this.post.dispose();

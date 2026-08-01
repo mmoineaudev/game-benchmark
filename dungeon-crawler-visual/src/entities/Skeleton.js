@@ -1,22 +1,28 @@
 import * as THREE from 'three';
 import { SKELETON } from '../core/Constants.js';
 import { generateGlowTexture } from '../world/Textures.js';
+import { makeBone, makeMetal, makeCloth, makeLeather, makeGlow, makeSpriteGlow } from '../core/Materials.js';
+import { Rig } from './Rig.js';
 
 // Procedural skeletal warrior: rig built from primitives, animated by a
 // state machine with damped transitions. No external assets.
 // States: DORMANT -> WAKING -> CHASE -> ATTACK -> DEAD
 // Magician variant (1 in 10): hood + glowing staff instead of a sword.
+//
+// Built on the shared Rig. Geometry uses the shared Materials library
+// (procedural normal/roughness maps when a real canvas exists; flat colors
+// under the headless test shim — so the regression scripts stay green).
 export class Skeleton {
   constructor(scene, { isMagician = false, active = false, attackMult = 1, boneColor = null, eyeColor = null } = {}) {
     this.scene = scene;
     this.isMagician = isMagician;
-    this.attackMult = attackMult; // >1 = faster attack cycle (higher levels)
+    this.attackMult = attackMult;
     this.hp = SKELETON.HP;
     this.maxHp = this.hp;
-    this.speed = SKELETON.CHASE_SPEED; // u/s (unified EnemySystem reads this)
+    this.speed = SKELETON.CHASE_SPEED;
     this.damage = SKELETON.ATTACK_DAMAGE;
     this.attackRange = SKELETON.ATTACK_RANGE;
-    this.dropOrbs = 1; // unified drop count
+    this.dropOrbs = 1;
     this.state = active ? 'CHASE' : 'DORMANT';
     this.animTime = 0;
     this.phase = Math.random() * Math.PI * 2;
@@ -27,34 +33,28 @@ export class Skeleton {
     this._dead = false;
     this._removed = false;
 
-    this.group = new THREE.Group();
-    this.bones = {};
-    this.parts = [];
+    // Shared rig (group, bones, parts, mats) — same joint layout as before.
+    // addToScene:false — this Skeleton constructor owns the single scene.add.
+    this.rig = new Rig(scene, { addToScene: false });
+    this.group = this.rig.group;
+    this.bones = this.rig.bones;
+    this.parts = this.rig.parts;
+    this.mats = this.rig.mats;
 
-    // Per-skeleton material clones so death-fade opacity is independent
-    this.boneMat = new THREE.MeshStandardMaterial({
-      color: boneColor || SKELETON.BONE_COLOR, roughness: 0.85, metalness: 0.05,
-      transparent: true,
-    });
-    this.darkMat = new THREE.MeshStandardMaterial({
-      color: 0x2a2622, roughness: 0.9, transparent: true,
-    });
-    this.eyeMat = new THREE.MeshBasicMaterial({
-      color: eyeColor || SKELETON.EYE_GLOW, transparent: true, opacity: 0.15,
-    });
-    this.bladeMat = new THREE.MeshStandardMaterial({
-      color: 0x6a6a72, roughness: 0.4, metalness: 0.9, transparent: true,
-    });
-    // Eye glow sprite (additive) — makes eyes readable through the dark
+    // Per-skeleton material clones so death-fade opacity is independent.
+    this.boneMat = makeBone(boneColor || SKELETON.BONE_COLOR, { seed: 7, rough: 0.85, metal: 0.05 });
+    this.darkMat = makeCloth(0x2a2622, { seed: 11, rough: 0.9, metal: 0.0 });
+    this.eyeMat = makeGlow(eyeColor || SKELETON.EYE_GLOW, { opacity: 0.15 });
+    this.bladeMat = makeMetal(0x6a6a72, { seed: 13, rough: 0.4, metal: 0.9 });
+    this.rig.trackMat(this.boneMat);
+    this.rig.trackMat(this.darkMat);
+    this.rig.trackMat(this.eyeMat);
+    this.rig.trackMat(this.bladeMat);
+
+    // Eye glow sprite (additive) — makes eyes readable through the dark.
     this._glowTex = generateGlowTexture();
-    this.eyeGlowMat = new THREE.SpriteMaterial({
-      map: this._glowTex,
-      color: eyeColor || SKELETON.EYE_GLOW,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      transparent: true,
-      opacity: 0.9,
-    });
+    this.eyeGlowMat = makeSpriteGlow(eyeColor || SKELETON.EYE_GLOW, this._glowTex, { opacity: 0.9 });
+    this.rig.trackMat(this.eyeGlowMat);
 
     this._buildRig();
     scene.add(this.group);
@@ -68,21 +68,11 @@ export class Skeleton {
   // ------------------------------------------------------------------ rig
 
   _mesh(geo, mat, x, y, z, parent) {
-    const m = new THREE.Mesh(geo, mat);
-    m.position.set(x, y, z);
-    m.castShadow = true;
-    m.receiveShadow = true;
-    parent.add(m);
-    this.parts.push(m);
-    return m;
+    return this.rig.mesh(geo, mat, x, y, z, parent);
   }
 
   _bone(name, x, y, z, parent) {
-    const g = new THREE.Group();
-    g.position.set(x, y, z);
-    parent.add(g);
-    this.bones[name] = g;
-    return g;
+    return this.rig._bone(name, x, y, z, parent);
   }
 
   _buildRig() {
@@ -112,7 +102,7 @@ export class Skeleton {
         this.boneMat,
       );
       rib.scale.set(1, 0.62, 0.85);
-      rib.rotation.z = Math.PI; // arc opens downward, facing forward
+      rib.rotation.z = Math.PI;
       rib.position.set(0, 0.5 + i * 0.1, 0);
       rib.castShadow = true;
       rib.receiveShadow = true;
@@ -140,7 +130,7 @@ export class Skeleton {
       this.parts.push(eye);
     }
 
-    // Additive glow sprite at the skull — makes the eyes pop through fog/bloom
+    // Additive glow sprite at the skull
     this.eyeGlow = new THREE.Sprite(this.eyeGlowMat);
     this.eyeGlow.position.set(0, 0.17, 0.1);
     this.eyeGlow.scale.setScalar(0.5);
@@ -161,7 +151,6 @@ export class Skeleton {
       const forearm = this._bone('forearm' + tag, 0, -0.4, 0, arm);
       this._mesh(new THREE.BoxGeometry(0.08, 0.34, 0.08), this.boneMat, 0, -0.17, 0, forearm);
       this._mesh(new THREE.SphereGeometry(0.055, 8, 6), this.boneMat, 0, -0.36, 0, forearm);
-      // Right hand: sword (warrior) or staff (magician)
       if (side > 0) {
         if (this.isMagician) this._buildStaff(forearm);
         else this._buildSword(forearm);
@@ -184,15 +173,13 @@ export class Skeleton {
     const grip = this._mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.14, 6), this.darkMat, 0, -0.08, 0.1, hand);
     const guard = this._mesh(new THREE.BoxGeometry(0.09, 0.02, 0.03), this.darkMat, 0, -0.16, 0.1, hand);
     const blade = this._mesh(new THREE.BoxGeometry(0.03, 0.5, 0.07), this.bladeMat, 0, -0.36, 0.1, hand);
-    blade.rotation.x = 0.15; // slight tilt
+    blade.rotation.x = 0.15;
   }
 
   _buildStaff(hand) {
-    // Long wooden staff held in the right hand, glowing orb on top
     const shaft = this._mesh(new THREE.CylinderGeometry(0.025, 0.035, 1.3, 8), this.darkMat, 0, -0.15, 0.12, hand);
     shaft.rotation.x = 0.05;
     this.staffOrb = this._mesh(new THREE.SphereGeometry(0.07, 10, 8), this.eyeMat, 0, 0.62, 0.12, hand);
-    // Staff orb glow sprite (shares the eye material color)
     this.staffGlow = new THREE.Sprite(this.eyeGlowMat);
     this.staffGlow.position.set(0, 0.62, 0.12);
     this.staffGlow.scale.setScalar(0.4);
@@ -214,7 +201,6 @@ export class Skeleton {
     };
     zero();
     if (name === 'dormant') {
-      // Crouched, knees folded, head drooped, tilted
       b.root.position.y = -0.35;
       b.root.rotation.x = 0.25;
       b.legL.rotation.x = 1.2; b.legR.rotation.x = 1.2;
@@ -251,7 +237,6 @@ export class Skeleton {
   }
 
   _animDormant(time) {
-    // Breathing + faint eye flicker
     this.bones.ribcage.scale.y = 1 + Math.sin(time * 1.5 + this.phase) * 0.02;
     this.eyeMat.opacity = 0.12 + Math.sin(time * 2 + this.phase) * 0.05;
   }
@@ -261,7 +246,6 @@ export class Skeleton {
     const damp = (obj, key, target, lambda) => {
       obj[key] = THREE.MathUtils.damp(obj[key], target, lambda, dt);
     };
-    // Head snaps up first, then torso, then legs straighten
     damp(b.head.rotation, 'x', 0, 10);
     damp(b.root.rotation, 'x', 0, 6);
     damp(b.root.position, 'y', 0, 6);
@@ -297,7 +281,6 @@ export class Skeleton {
     b.ribcage.rotation.x = Math.sin(t * freq + this.phase) * 0.03;
     b.head.rotation.y = Math.sin(t * 4 + this.phase) * 0.08;
     this._setEye(1);
-    // Magician staff orb: steady pulse
     if (this.staffGlow) {
       this.staffGlow.scale.setScalar(0.35 + Math.sin(time * 5 + this.phase) * 0.08);
     }
@@ -306,39 +289,34 @@ export class Skeleton {
   _animAttack(dt) {
     const b = this.bones;
     const t = this.animTime;
-    // Attack speed scales with level: higher attackMult = faster cycle
     const windup = SKELETON.ATTACK_WINDUP / this.attackMult;
     const swingEnd = windup + SKELETON.ATTACK_SWING / this.attackMult;
     const total = windup + (SKELETON.ATTACK_SWING + SKELETON.ATTACK_RECOVER) / this.attackMult;
 
     if (t < windup) {
-      // Telegraph: sword overhead-behind, torso leans back, tension shake
       const p = t / windup;
       b.armR.rotation.x = THREE.MathUtils.damp(b.armR.rotation.x, -2.4, 8, dt);
       b.forearmR.rotation.x = THREE.MathUtils.damp(b.forearmR.rotation.x, -0.6, 8, dt);
       b.ribcage.rotation.x = THREE.MathUtils.damp(b.ribcage.rotation.x, 0.3, 8, dt);
       b.head.rotation.x = THREE.MathUtils.damp(b.head.rotation.x, 0.2, 8, dt);
       b.armR.rotation.z = Math.sin(t * 60 + this.phase) * 0.02 * p;
-      // Magician: staff orb charges up during windup
       if (this.staffGlow) {
         this.staffGlow.scale.setScalar(0.35 + p * 0.5);
         this.staffGlow.material.opacity = 0.9 + p * 0.5;
       }
     } else if (t < swingEnd) {
-      // Chop: arm sweeps forward, torso lunges
       const p = (t - windup) / SKELETON.ATTACK_SWING;
       const eased = 1 - Math.pow(1 - p, 2);
       b.armR.rotation.x = THREE.MathUtils.damp(b.armR.rotation.x, 0.8, 20, dt);
       b.forearmR.rotation.x = THREE.MathUtils.damp(b.forearmR.rotation.x, 0.2, 20, dt);
       b.ribcage.rotation.x = THREE.MathUtils.damp(b.ribcage.rotation.x, -0.15, 12, dt);
-      b.root.position.z = eased * 0.25; // lunge forward (local -z is forward after yaw)
+      b.root.position.z = eased * 0.25;
       b.armR.rotation.z = 0;
       if (!this.attackHitDone && p >= 0.35) {
         this.attackHitDone = true;
         this.onAttackHit?.();
       }
     } else {
-      // Recover to neutral
       b.armR.rotation.x = THREE.MathUtils.damp(b.armR.rotation.x, 0, 5, dt);
       b.forearmR.rotation.x = THREE.MathUtils.damp(b.forearmR.rotation.x, 0.15, 5, dt);
       b.ribcage.rotation.x = THREE.MathUtils.damp(b.ribcage.rotation.x, 0, 5, dt);
@@ -356,11 +334,8 @@ export class Skeleton {
   _animDeath(dt) {
     const b = this.bones;
     const t = this.animTime;
-    // Fall forward fast, then lie still — the corpse stays visible the full
-    // DEATH_HOLD, fading only in the last DEATH_FADE seconds.
     b.root.rotation.x = THREE.MathUtils.damp(b.root.rotation.x, -Math.PI / 2, 8, dt);
     b.root.position.y = THREE.MathUtils.damp(b.root.position.y, 0.05, 8, dt);
-    // Limbs relax
     b.armL.rotation.x = THREE.MathUtils.damp(b.armL.rotation.x, 0.9, 8, dt);
     b.armR.rotation.x = THREE.MathUtils.damp(b.armR.rotation.x, 0.9, 8, dt);
     b.legL.rotation.x = THREE.MathUtils.damp(b.legL.rotation.x, 0.5, 8, dt);
@@ -384,13 +359,10 @@ export class Skeleton {
     if (this.staffGlow) this.staffGlow.material.opacity = v * 0.9;
   }
 
-  // Called by SkeletonSystem each frame with movement direction (world yaw).
   setFacing(yaw) {
     this.facingYaw = yaw;
   }
 
-  // Unified damage entry (used by EnemySystem for all enemy types).
-  // Returns true if this hit killed the skeleton.
   hit(damage) {
     if (this.state === 'DEAD') return false;
     this.hp -= damage;

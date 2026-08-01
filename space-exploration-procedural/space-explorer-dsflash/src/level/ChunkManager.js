@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Constants } from '../core/Constants.js';
-import { mulberry32, hash2, randRange } from '../utils/MathHelpers.js';
+import { mulberry32, hash3, randRange } from '../utils/MathHelpers.js';
 
 // Chunk/segment spawn (around ship) & cleanup (spec §6.3).
 // Content is seeded by chunk coordinates for deterministic regeneration.
@@ -97,7 +97,7 @@ export class ChunkManager {
     const biome = this.biomeGen.getBiome(odometer);
     const cfg = biome.cfg;
     const mult = this.biomeGen.intensity(odometer);
-    const rng = mulberry32(hash2(cx, cz));
+    const rng = mulberry32(hash3(cx, cy, cz));
     const chunk = {
       cx, cz,
       cy,

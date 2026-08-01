@@ -12,10 +12,20 @@ export function mulberry32(seed) {
   };
 }
 
-/** Integer hash for chunk coordinates -> deterministic seed. */
+/** Integer hash for 2D chunk coordinates -> deterministic seed. */
 export function hash2(x, z) {
   let h = (x * 374761393 + z * 668265263) | 0;
   h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return (h ^ (h >>> 16)) >>> 0;
+}
+
+/** Integer hash for 3D chunk coordinates -> deterministic seed.
+ *  Must include the vertical layer y: seeding only by (x, z) makes every
+ *  vertical layer an exact copy of the others (black holes stacked, etc.). */
+export function hash3(x, y, z) {
+  let h = (x * 374761393 + y * 668265263 + z * 2147483647) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h = Math.imul(h ^ (h >>> 15), 2246822519);
   return (h ^ (h >>> 16)) >>> 0;
 }
 

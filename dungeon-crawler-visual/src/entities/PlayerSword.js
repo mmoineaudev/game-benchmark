@@ -26,7 +26,7 @@ import { generateGlowTexture } from '../world/Textures.js';
 // intensifies the green growth light. Danger glow: red emissive + light when
 // skeletons are close. Trail + impact sparks + hit-stop provide feedback.
 const BLADE_COLORS = [
-  0xc8ccd8, // step 0: steel (base)
+  0x3a3e46, // step 0: black gunmetal steel (base — black & silver look)
   0xb08a5a, // step 1: bronze
   0x8a9ab0, // step 2: iron-blue
   0xd8c86a, // step 3: gold
@@ -77,14 +77,17 @@ export class PlayerSword {
       color: 0x3a2f24, roughness: 0.6, metalness: 0.6,
       emissive: 0x2a241e, emissiveIntensity: 0.8, // self-lit (see _freezeLighting)
     });
-    // Separate blade material so the danger glow (emissive) can animate
+    // Separate blade material so the danger glow (emissive) can animate.
+    // Base is BLACK steel with a cool (NOT red) self-lit tint — red is reserved
+    // for the enemy-presence danger sprite/light, so the idle blade reads as
+    // black & silver, never as a false "enemy nearby" signal.
     this.bladeMat = new THREE.MeshStandardMaterial({
-      color: 0xc8ccd8, roughness: 0.25, metalness: 0.95,
-      emissive: 0xff2211, emissiveIntensity: 0.35, // faint warm ember at rest
+      color: 0x2a2d33, roughness: 0.3, metalness: 0.95,
+      emissive: 0x14181f, emissiveIntensity: 0.8, // cool gunmetal self-lit
     });
     this.steelMat = new THREE.MeshStandardMaterial({
-      color: 0xc8ccd8, roughness: 0.25, metalness: 0.95,
-      emissive: 0x4a5468, emissiveIntensity: 0.75,
+      color: 0x9aa0aa, roughness: 0.25, metalness: 0.95,
+      emissive: 0x20242c, emissiveIntensity: 0.6, // silver, cool self-lit
     });
     this.brassMat = new THREE.MeshStandardMaterial({
       color: 0xd8b44a, roughness: 0.4, metalness: 0.8,
@@ -121,8 +124,8 @@ export class PlayerSword {
     // Fuller (blood groove) near the BACK edge — signals a single-edged
     // grind with the sharpened edge on the front (camera-facing) side.
     const fullerMat = new THREE.MeshStandardMaterial({
-      color: 0x8a8e98, roughness: 0.6, metalness: 0.95,
-      emissive: 0x333a44, emissiveIntensity: 0.6,
+      color: 0xd8dce2, roughness: 0.3, metalness: 0.92, // bright silver edge
+      emissive: 0x4a5058, emissiveIntensity: 0.5,
     });
     this._mats.push(fullerMat);
     const fuller = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.4, 0.006), fullerMat);

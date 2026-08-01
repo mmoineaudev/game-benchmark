@@ -13,7 +13,9 @@ export default class CollisionSystem {
       let hitEnemy = null;
       for (const e of enemies.enemies) {
         if (e.dead) continue;
-        if (pos.distanceTo(e.mesh.position) <= 0.7) {
+        // Generous hit radius: projectiles fly at y=0.45 while enemies sit at
+        // ~0.16-0.5, so the 3D distance includes a vertical component.
+        if (pos.distanceTo(e.mesh.position) <= 1.05) {
           this._hit(state, enemies, e, p, particles);
           hit = true;
           hitEnemy = e;

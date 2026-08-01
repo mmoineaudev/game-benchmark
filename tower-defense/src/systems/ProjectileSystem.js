@@ -31,31 +31,52 @@ export default class ProjectileSystem {
     const col = new THREE.Color(color || '#ffffff');
     const group = new THREE.Group();
     // bright core
-    const core = new THREE.Mesh(new THREE.SphereGeometry(0.1, 6, 6), new THREE.MeshBasicMaterial({ color: col }));
-    // additive glow halo
+    const core = new THREE.Mesh(new THREE.SphereGeometry(0.16, 6, 6), new THREE.MeshBasicMaterial({ color: col }));
+    // colored glow halo — big enough to read from the top-down camera
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({
       map: _glowTex,
       color: col,
       transparent: true,
-      opacity: 0.85,
+      opacity: 1,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
+      depthTest: false, // never hidden behind ground clutter
     }));
-    glow.scale.setScalar(0.55);
-    group.add(core, glow);
+    glow.scale.setScalar(1.35);
+    // hot white center for extra brightness
+    const hot = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: _glowTex,
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      depthTest: false,
+    }));
+    hot.scale.setScalar(0.7);
+    group.add(core, glow, hot);
     group.position.copy(pos);
 
-    // trail line (previous pos -> current pos), additive
+    // ── shot trace: flat additive streak trailing the projectile ─────────
+    const w = 0.35;
     const tGeo = new THREE.BufferGeometry();
-    tGeo.setAttribute('position', new THREE.Float32BufferAttribute([pos.x, pos.y, pos.z, pos.x, pos.y, pos.z], 3));
-    const tMat = new THREE.LineBasicMaterial({
-      color: col,
+    tGeo.setAttribute('position', new THREE.Float32BufferAttribute([
+      -w, 0, -1,  w, 0, -1,  -w, 0, 0,
+      w, 0, -1,   w, 0, 0,   -w, 0, 0,
+    ], 3));
+    // brighten the trace color toward white so it reads as a hot tracer
+    const trailCol = col.clone().lerp(new THREE.Color(0xffffff), 0.35);
+    const tMat = new THREE.MeshBasicMaterial({
+      color: trailCol,
       transparent: true,
       opacity: 0.75,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
+      side: THREE.DoubleSide,
     });
-    const trail = new THREE.Line(tGeo, tMat);
+    const trail = new THREE.Mesh(tGeo, tMat);
+    trail.position.copy(pos);
+    trail.rotation.y = Math.atan2(dir.x, dir.z);
 
     if (this.scene) { this.scene.add(group); this.scene.add(trail); }
     const p = {
@@ -101,18 +122,22 @@ export default class ProjectileSystem {
       p._trailPos.copy(p.mesh.position);
       p.mesh.position.addScaledVector(p.dir, p.speed * dt);
 
-      // pulse the glow halo
-      const glow = p.mesh.children[1];
-      if (glow && glow.material) {
-        glow.material.opacity = 0.7 + Math.sin(performance.now() * 0.02) * 0.2;
-      }
-      // update trail line (prev -> new)
-      const arr = p.trail.geometry.attributes.position.array;
-      arr[0] = p._trailPos.x; arr[1] = p._trailPos.y; arr[2] = p._trailPos.z;
-      arr[3] = p.mesh.position.x; arr[4] = p.mesh.position.y; arr[5] = p.mesh.position.z;
-      p.trail.geometry.attributes.position.needsUpdate = true;
+      // pulse the glow halos
+      const pulse = 0.85 + Math.sin(performance.now() * 0.02) * 0.15;
+      if (p.mesh.children[1] && p.mesh.children[1].material) p.mesh.children[1].material.opacity = pulse;
+      if (p.mesh.children[2] && p.mesh.children[2].material) p.mesh.children[2].material.opacity = 0.75 + Math.sin(performance.now() * 0.03) * 0.2;
+
+      // shot trace follows the projectile, stretched along its direction
+      p.trail.position.copy(p.mesh.position);
+      p.trail.rotation.y = Math.atan2(p.dir.x, p.dir.z);
+      p.trail.scale.set(1, 1, 2.2 + p.speed * 0.02);
 
       p.life -= dt;
+      // Kill projectiles that flew off the map (missed target died mid-flight)
+      if (p.mesh.position.x < -3 || p.mesh.position.x > 59 || p.mesh.position.z < -3 || p.mesh.position.z > 43) {
+        this._remove(p);
+        continue;
+      }
       if (p.life <= 0) this._remove(p);
     }
     for (let i = this._beams.length - 1; i >= 0; i--) {

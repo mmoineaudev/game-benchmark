@@ -272,7 +272,12 @@ export default class PathSystem {
     this.scene.add(this._edgeGlows);
   }
   _buildFlowDots() {
-    if (this._flowDots) { this.scene.remove(this._flowDots.points); this._flowDots.geo.dispose(); this._flowDots.mat.dispose(); }
+    if (this._flowDots) {
+      this.scene.remove(this._flowDots.points);
+      this._flowDots.geo.dispose();
+      this._flowDots.mat.dispose();
+      this._flowDots = null; // never keep a stale reference to a disposed set
+    }
     if (this._centerline.length < 2) return;
     const count = 24;
     const positions = new Float32Array(count * 3);
@@ -324,6 +329,9 @@ export default class PathSystem {
           const frac = (dp.offsets[i] * (len - 1)) % 1;
           const a = this._centerline[idx];
           const b = this._centerline[Math.min(idx + 1, len - 1)];
+          // Guard against a degenerate/corrupt centerline — a single bad point
+          // must never crash the whole render loop (it froze rendering).
+          if (!a || !b) continue;
           const i3 = i * 3;
           dp.positions[i3] = a.x + (b.x - a.x) * frac;
           dp.positions[i3 + 1] = 0.07;

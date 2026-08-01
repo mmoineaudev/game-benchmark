@@ -253,9 +253,11 @@ export default class Game {
         } else {
           fx.muzzle(muzzlePos, def.color, 0.4);
         }
-        const dir = target.mesh.position.clone().sub(t.pos).normalize();
+        const dir = target.mesh.position.clone().sub(t.pos);
+        dir.y = 0; // level flight — projectiles travel at a fixed height, not along the tower-base line
+        dir.normalize();
         this._projectiles.spawn({
-          pos: t.pos.clone(), dir, damage: t.damage, speed: def.projSpeed || 10,
+          pos: t.pos.clone().setY(0.45), dir, damage: t.damage, speed: def.projSpeed || 10,
           color: def.color, splash: def.splash || 0,
           slow: def.stun || def.slow || 0,
           dot: !!def.dot, gravity: !!def.gravity, chain: def.chain || 0,

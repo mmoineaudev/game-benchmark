@@ -2,31 +2,30 @@ import * as THREE from 'three';
 import { SWORD, orbPowerMultiplier } from '../core/Constants.js';
 import { generateGlowTexture } from '../world/Textures.js';
 
-// First-person sword attached to the camera. Curved two-segment blade with a
-// fuller, crossguard and brass pommel. The ready pose points the blade
-// forward at the enemy; the attack is a 3-hit combo:
+// First-person DAGGER attached to the camera: a short, tapered double-edged
+// blade with a blood groove, small quillon crossguard, wrapped grip and brass
+// pommel. The ready pose holds it close, point aimed at the enemy; the
+// attack is a 3-step combo:
 //   WINDUP1 -> SLASH1 (rising diagonal "/") -> RECOVER1 -> [window]
 //   -> WINDUP2 -> SLASH2 (falling diagonal "\", crossing to an X)
 //   -> RECOVER2 -> [window] -> WINDUP3 -> THRUST3 (piercing stab forward)
 //   -> RECOVER3 -> COOLDOWN -> IDLE
 // Combo window: 0.34 s from each RECOVER start (0.14 s recover + 0.20 s grace).
 // Every strike PIVOTS AT THE POMBEL: the hand stays anchored (a small drift
-// at most) while the blade fans ±1.3 rad (~74°) around it, so the tip — not
-// the handle — sweeps the visible arc. The pivot sits BACK from the camera
-// (z ≈ -1.0, deeper than the rest pose) so the wide fan fits on screen, and
-// the blade leans forward (rot.x ≈ -0.35) so the tip stays LOW through the
-// arc — wide, flat slashes across the enemy instead of a windmill. Only the
-// thrust is translation-driven (a stab drives the whole sword forward). Each
-// strike leaves a visible movement trace: pooled additive sprites spawned at
-// the blade tip in camera space while the blade is moving, so the arc path
-// lingers after the sword has moved on (icy blue "/", gold "\", white-hot
+// at most) while the short blade fans ±1.15 rad (~66°) around it, so the tip
+// — not the handle — sweeps the visible arc. The blade leans forward
+// (rot.x ≈ -0.2) so the tip stays low through the arc. Only the thrust is
+// translation-driven (a stab drives the whole dagger forward). Each strike
+// leaves a visible movement trace: pooled additive sprites spawned at the
+// blade tip in camera space while the blade is moving, so the arc path
+// lingers after the dagger has moved on (icy blue "/", gold "\", white-hot
 // thrust).
 //
-// Progression: the sword grows +20% per 10 orbs held (capped at +200% = 3x at
-// 100 orbs), extends melee range, shifts base color each size bonus, and
+// Progression: the dagger grows +20% per 10 orbs held (capped at +200% = 3x
+// at 100 orbs), extends melee range, shifts base color each size bonus, and
 // intensifies the green growth light. Danger glow: red emissive + light when
 // skeletons are close. Trail + impact sparks + hit-stop provide feedback.
-const SWORD_COLORS = [
+const BLADE_COLORS = [
   0xc8ccd8, // step 0: steel (base)
   0xb08a5a, // step 1: bronze
   0x8a9ab0, // step 2: iron-blue
@@ -41,7 +40,7 @@ const SWORD_COLORS = [
 ];
 
 // Blade tip in group-local space (upper segment top).
-const TIP_LOCAL = new THREE.Vector3(0, 0.71, 0.03);
+const TIP_LOCAL = new THREE.Vector3(0, 0.51, 0.02);
 
 export class PlayerSword {
   constructor(camera) {
@@ -66,57 +65,54 @@ export class PlayerSword {
 
   _build() {
     const dark = new THREE.MeshStandardMaterial({
-      color: 0x4a3a28, roughness: 0.6, metalness: 0.6,
+      color: 0x3a2f24, roughness: 0.6, metalness: 0.6,
     });
     // Separate blade material so the danger glow (emissive) can animate
     this.bladeMat = new THREE.MeshStandardMaterial({
-      color: 0xc8ccd8, roughness: 0.3, metalness: 0.9,
+      color: 0xc8ccd8, roughness: 0.25, metalness: 0.95,
       emissive: 0xff2211, emissiveIntensity: 0,
     });
     this.steelMat = new THREE.MeshStandardMaterial({
-      color: 0xc8ccd8, roughness: 0.3, metalness: 0.9,
-    });
-    this.fullerMat = new THREE.MeshStandardMaterial({
-      color: 0x9a9ea8, roughness: 0.3, metalness: 0.9,
+      color: 0xc8ccd8, roughness: 0.25, metalness: 0.95,
     });
     this.brassMat = new THREE.MeshStandardMaterial({
       color: 0xd8b44a, roughness: 0.4, metalness: 0.8,
     });
-    this._mats = [this.bladeMat, this.steelMat, this.fullerMat, this.brassMat, dark];
+    this._mats = [this.bladeMat, this.steelMat, this.brassMat, dark];
 
-    // Blade: two segments for a curved silhouette (tip leans forward)
-    const lower = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.35, 0.1), this.steelMat);
-    lower.position.y = 0.30;
+    // Blade: two tapered segments — short, narrow and pointed (dagger)
+    const lower = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.26, 0.07), this.steelMat);
+    lower.position.y = 0.20;
     this.group.add(lower);
-    const upper = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.22, 0.08), this.bladeMat);
-    upper.position.y = 0.60;
-    upper.rotation.x = -0.12; // curve: tip tips forward
+    const upper = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.20, 0.05), this.bladeMat);
+    upper.position.y = 0.42;
+    upper.rotation.x = -0.1; // tip leans forward
     upper.castShadow = false;
     this.group.add(upper);
     this._upperBlade = upper;
 
-    // Fuller (inset line on the blade face)
-    const fuller = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.4, 0.005), this.fullerMat);
-    fuller.position.set(0, 0.35, 0.052);
-    this.group.add(fuller);
+    // Blood groove along the blade face (lower segment only)
+    const groove = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.26, 0.003), dark);
+    groove.position.set(0, 0.20, 0.036);
+    this.group.add(groove);
 
-    // Crossguard with swept tips
-    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.03, 0.05), dark);
-    guard.position.y = 0.12;
+    // Small quillon crossguard with swept tips
+    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.04, 0.04), dark);
+    guard.position.y = 0.06;
     this.group.add(guard);
     for (const sx of [-1, 1]) {
-      const tip = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.03, 0.06), dark);
-      tip.position.set(sx * 0.13, 0.12, 0);
-      tip.rotation.z = sx * 0.5;
+      const tip = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.02, 0.045), dark);
+      tip.position.set(sx * 0.095, 0.06, 0);
+      tip.rotation.z = sx * 0.35;
       this.group.add(tip);
     }
 
-    // Grip + pommel
-    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.18, 8), dark);
-    grip.position.y = 0.0;
+    // Wrapped grip + brass pommel (compact)
+    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.02, 0.16, 8), dark);
+    grip.position.y = -0.04;
     this.group.add(grip);
-    const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), this.brassMat);
-    pommel.position.y = -0.11;
+    const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 6), this.brassMat);
+    pommel.position.y = -0.16;
     this.group.add(pommel);
 
     // Danger glow sprite around the blade
@@ -130,18 +126,18 @@ export class PlayerSword {
       opacity: 0,
     });
     this.glowSprite = new THREE.Sprite(this.glowMat);
-    this.glowSprite.position.set(0, 0.45, 0);
-    this.glowSprite.scale.setScalar(0.35);
+    this.glowSprite.position.set(0, 0.3, 0);
+    this.glowSprite.scale.setScalar(0.28);
     this.group.add(this.glowSprite);
 
     // Danger light
     this.dangerLight = new THREE.PointLight(0xff3322, 0, 7, 1.6);
-    this.dangerLight.position.set(0, 0.45, 0.2);
+    this.dangerLight.position.set(0, 0.3, 0.15);
     this.group.add(this.dangerLight);
 
     // Growth light + green sprite (intensity follows size bonus)
     this.growthLight = new THREE.PointLight(0x44ff88, 0, 8, 1.6);
-    this.growthLight.position.set(0, 0.5, 0.05);
+    this.growthLight.position.set(0, 0.32, 0.05);
     this.group.add(this.growthLight);
     this.growthGlowMat = new THREE.SpriteMaterial({
       map: this._glowTex,
@@ -152,8 +148,8 @@ export class PlayerSword {
       opacity: 0,
     });
     this.growthGlow = new THREE.Sprite(this.growthGlowMat);
-    this.growthGlow.position.set(0, 0.45, 0);
-    this.growthGlow.scale.setScalar(0.3);
+    this.growthGlow.position.set(0, 0.3, 0);
+    this.growthGlow.scale.setScalar(0.26);
     this.group.add(this.growthGlow);
 
     this.group.traverse((m) => { if (m.isMesh) m.castShadow = false; });
@@ -280,11 +276,11 @@ export class PlayerSword {
   }
 
   // Ready pose: hand anchored bottom-right (well right of the crosshair),
-  // blade canted so the crossguard tips tilt AWAY from the screen center —
-  // even at maximum sword size the guard never covers the aim point.
+  // dagger held close, point aimed at the enemy — the short blade and small
+  // guard never cover the aim point, even at maximum size.
   _setRest() {
-    this.group.position.set(0.38, -0.24, -0.72);
-    this.group.rotation.set(-0.2, 0, 0.45);
+    this.group.position.set(0.30, -0.22, -0.70);
+    this.group.rotation.set(-0.15, 0, 0.35);
   }
 
   // Effective melee reach — grows with the sword size bonus
@@ -296,8 +292,9 @@ export class PlayerSword {
     return this._rangeScale;
   }
 
-  // Grows the sword +20% per 10 orbs held (capped at +200% = 3x at 100 orbs),
-  // extends melee range, shifts base color, intensifies the green growth light.
+  // Grows the dagger +20% per 10 orbs held (capped at +200% = 3x at 100
+  // orbs), extends melee range, shifts base color, intensifies the green
+  // growth light.
   setOrbCount(count) {
     // Same multiplier drives the enemy spawn rate (orbPowerMultiplier)
     this._rangeScale = orbPowerMultiplier(count);
@@ -306,11 +303,11 @@ export class PlayerSword {
     const growth = capped / 10; // 0..1
     this.growthLight.intensity = growth * 2.8;
     this.growthGlowMat.opacity = growth * 0.35;
-    this.growthGlow.scale.setScalar(0.3 + growth * 0.5);
+    this.growthGlow.scale.setScalar(0.26 + growth * 0.4);
     if (capped !== this._colorStep) {
       this._colorStep = capped;
-      this.bladeMat.color.setHex(SWORD_COLORS[capped]);
-      this.steelMat.color.setHex(SWORD_COLORS[capped]);
+      this.bladeMat.color.setHex(BLADE_COLORS[capped]);
+      this.steelMat.color.setHex(BLADE_COLORS[capped]);
     }
   }
 
@@ -325,7 +322,7 @@ export class PlayerSword {
 
     this.bladeMat.emissiveIntensity = this._glow * 1.5;
     this.glowMat.opacity = this._glow * 0.7;
-    this.glowSprite.scale.setScalar(0.35 + this._glow * 0.65);
+    this.glowSprite.scale.setScalar(0.28 + this._glow * 0.5);
     this.dangerLight.intensity = this._glow * 3.2;
   }
 
@@ -454,96 +451,94 @@ export class PlayerSword {
 
     switch (s) {
       case 'windup1': {
-        // Cock to the right: hand pulls BACK (z -0.72 -> -1.0, the deep
-        // swing pivot) while the blade cocks right. The pull-back is the
-        // telegraph for the wide slash to come.
+        // Cock right: hand pulls back slightly and the dagger cocks to the
+        // right — the telegraph for the rising slash.
         const k = easeOut(Math.min(1, t / C.WINDUP1));
-        p.x = lerp(0.38, 0.10, k);
-        p.y = lerp(-0.24, -0.30, k);
-        p.z = lerp(-0.72, -1.0, k);
-        r.x = lerp(-0.2, -0.4, k);
-        r.z = lerp(0.45, -1.3, k);
+        p.x = lerp(0.30, 0.16, k);
+        p.y = lerp(-0.22, -0.24, k);
+        p.z = lerp(-0.70, -0.80, k);
+        r.x = lerp(-0.15, -0.2, k);
+        r.z = lerp(0.35, -1.15, k);
         break;
       }
       case 'slash1': {
-        // Rising diagonal "/": the blade fans right -> left (±1.3 rad)
-        // around the deep, anchored hand. The forward lean (rot.x) keeps
-        // the tip LOW through the arc — a wide, flat slash.
+        // Rising diagonal "/": the short blade fans right -> left (±1.15 rad)
+        // around the anchored hand — the POMBEL stays put, the tip sweeps.
         const k = easeOut(Math.min(1, t / C.SLASH1));
-        p.x = lerp(0.10, -0.02, k);
-        p.y = lerp(-0.30, -0.22, k);
-        p.z = lerp(-1.0, -1.04, k);
-        r.x = lerp(-0.4, -0.35, k);
-        r.z = lerp(-1.3, 1.3, k);
+        p.x = lerp(0.16, -0.02, k);
+        p.y = lerp(-0.24, -0.18, k);
+        p.z = lerp(-0.80, -0.82, k);
+        r.x = lerp(-0.2, -0.15, k);
+        r.z = lerp(-1.15, 1.15, k);
         break;
       }
       case 'recover1': {
         const k = easeIn(Math.min(1, t / C.RECOVER1));
-        p.x = lerp(-0.02, 0.08, k);
-        p.y = lerp(-0.22, -0.22, k);
-        p.z = lerp(-1.04, -0.90, k);
-        r.x = lerp(-0.35, -0.2, k);
-        r.z = lerp(1.3, 0.35, k);
+        p.x = lerp(-0.02, 0.10, k);
+        p.y = lerp(-0.18, -0.18, k);
+        p.z = lerp(-0.82, -0.78, k);
+        r.x = lerp(-0.15, -0.15, k);
+        r.z = lerp(1.15, 0.3, k);
         break;
       }
       case 'windup2': {
-        // Cock to the left — blade pulls back-up on the other side
+        // Cock left — dagger pulls back on the other side
         const k = easeOut(Math.min(1, t / C.WINDUP2));
-        p.x = lerp(0.08, -0.06, k);
-        p.y = lerp(-0.22, -0.20, k);
-        p.z = lerp(-0.90, -1.0, k);
-        r.x = lerp(-0.2, -0.4, k);
-        r.z = lerp(0.35, 1.3, k);
+        p.x = lerp(0.10, -0.08, k);
+        p.y = lerp(-0.18, -0.16, k);
+        p.z = lerp(-0.78, -0.80, k);
+        r.x = lerp(-0.15, -0.2, k);
+        r.z = lerp(0.3, 1.15, k);
         break;
       }
       case 'slash2': {
         // Falling diagonal "\": the blade fans left -> right around the
-        // deep anchored hand, crossing slash 1 into an X.
+        // anchored hand, crossing slash 1 into an X.
         const k = easeOut(Math.min(1, t / C.SLASH2));
-        p.x = lerp(-0.06, 0.10, k);
-        p.y = lerp(-0.20, -0.31, k);
-        p.z = lerp(-1.0, -1.04, k);
-        r.x = lerp(-0.4, -0.35, k);
-        r.z = lerp(1.3, -1.3, k);
+        p.x = lerp(-0.08, 0.12, k);
+        p.y = lerp(-0.16, -0.26, k);
+        p.z = lerp(-0.80, -0.82, k);
+        r.x = lerp(-0.2, -0.15, k);
+        r.z = lerp(1.15, -1.15, k);
         break;
       }
       case 'recover2': {
         const k = easeIn(Math.min(1, t / C.RECOVER2));
-        p.x = lerp(0.10, 0.16, k);
-        p.y = lerp(-0.31, -0.21, k);
-        p.z = lerp(-1.04, -0.77, k);
-        r.x = lerp(-0.35, -0.15, k);
-        r.z = lerp(-1.3, 0.2, k);
+        p.x = lerp(0.12, 0.14, k);
+        p.y = lerp(-0.26, -0.20, k);
+        p.z = lerp(-0.82, -0.76, k);
+        r.x = lerp(-0.15, -0.15, k);
+        r.z = lerp(-1.15, 0.25, k);
         break;
       }
       case 'windup3': {
-        // Thrust cock: blade drawn back beside the head — visible pull-back
+        // Thrust cock: dagger drawn back beside the head — visible pull-back
         const k = easeOut(Math.min(1, t / C.WINDUP3));
-        p.x = lerp(0.16, 0.22, k);
-        p.y = lerp(-0.21, -0.1, k);
-        p.z = lerp(-0.77, -0.62, k);
+        p.x = lerp(0.14, 0.18, k);
+        p.y = lerp(-0.20, -0.12, k);
+        p.z = lerp(-0.76, -0.64, k);
         r.x = lerp(-0.15, -0.5, k);
-        r.z = lerp(0.2, 0.25, k);
+        r.z = lerp(0.25, 0.3, k);
         break;
       }
       case 'thrust3': {
-        // Piercing thrust: the hand drives forward, blade straight at the
+        // Piercing thrust: the hand drives the dagger forward, point at the
         // enemy — the one translation-driven move (a stab, not a swing).
         const k = easeOut(Math.min(1, t / C.THRUST3));
-        p.x = lerp(0.22, 0.06, k);
-        p.y = lerp(-0.1, -0.16, k);
-        p.z = lerp(-0.62, -1.0, k);
-        r.x = lerp(-0.5, -0.06, k);
-        r.z = lerp(0.25, 0.02, k);
+        p.x = lerp(0.18, 0.05, k);
+        p.y = lerp(-0.12, -0.16, k);
+        p.z = lerp(-0.64, -1.0, k);
+        r.x = lerp(-0.5, -0.1, k);
+        r.z = lerp(0.3, 0.03, k);
         break;
       }
       case 'recover3': {
         const k = easeIn(Math.min(1, t / C.RECOVER3));
-        p.x = lerp(0.06, 0.38, k);
-        p.y = lerp(-0.16, -0.24, k);
-        p.z = lerp(-1.0, -0.72, k);
-        r.x = lerp(-0.06, -0.2, k);
-        r.z = lerp(0.02, 0.45, k);
+        p.x = lerp(0.05, 0.30, k);
+        p.y = lerp(-0.16, -0.22, k);
+        p.z = lerp(-1.0, -0.70, k);
+        r.x = lerp(-0.1, -0.15, k);
+        r.z = lerp(0.03, 0.35, k);
         break;
       }
       case 'cooldown':

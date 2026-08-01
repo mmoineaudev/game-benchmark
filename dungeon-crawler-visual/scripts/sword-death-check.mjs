@@ -36,9 +36,9 @@ console.log('== Sword combo ==');
 const cam = new THREE.PerspectiveCamera(75, 16 / 9, 0.1, 50);
 const sword = new PlayerSword(cam);
 
-const TIP = new THREE.Vector3(0, 0.71, 0.03);
-const POMMEL = new THREE.Vector3(0, -0.11, 0);
-const GUARD = new THREE.Vector3(0, 0.12, 0);
+const TIP = new THREE.Vector3(0, 0.51, 0.02);
+const POMMEL = new THREE.Vector3(0, -0.16, 0);
+const GUARD = new THREE.Vector3(0, 0.06, 0);
 
 let frames = 0;
 function ndcOf(local) {
@@ -140,7 +140,8 @@ ok(Math.abs(thrustEndTip.x) < 0.15 && thrustEndTip.y > 0.4 && thrustEndTip.y < 0
 
 // PIVOT AT THE POMBEL: during each slash the pommel must stay anchored while
 // the tip sweeps a wide arc (this was the reported bug — the tip hung around
-// screen center while the pommel whipped around it).
+// screen center while the pommel whipped around it). Dagger thresholds: the
+// short blade fans a bit tighter than the old long sword.
 function nudge(p, q) { return Math.hypot(p.x - q.x, p.y - q.y); }
 for (const slash of ['slash1', 'slash2']) {
   const pom = pommelTrack[slash];
@@ -149,16 +150,16 @@ for (const slash of ['slash1', 'slash2']) {
   const tipXSpan = Math.max(...tip.map((t) => t.x)) - Math.min(...tip.map((t) => t.x));
   const tipYSpan = Math.max(...tip.map((t) => t.y)) - Math.min(...tip.map((t) => t.y));
   const tipTravel = Math.max(tipXSpan, tipYSpan);
-  ok(pommelTravel < 0.5, `${slash}: pommel anchored (drift ${pommelTravel.toFixed(2)} NDC < 0.5)`);
-  ok(tipTravel > 1.0, `${slash}: tip sweeps wide arc (travel ${tipTravel.toFixed(2)} NDC > 1.0)`);
-  ok(tipTravel > pommelTravel * 2.5,
+  ok(pommelTravel < 0.55, `${slash}: pommel anchored (drift ${pommelTravel.toFixed(2)} NDC < 0.55)`);
+  ok(tipTravel > 0.85, `${slash}: tip sweeps wide arc (travel ${tipTravel.toFixed(2)} NDC > 0.85)`);
+  ok(tipTravel > pommelTravel * 1.8,
     `${slash}: tip motion ${tipTravel.toFixed(2)}x dominates pommel ${pommelTravel.toFixed(2)} (pivot at pommel)`);
   ok(Math.max(...tip.map((t) => t.x)) > 0.4 && Math.min(...tip.map((t) => t.x)) < -0.4,
     `${slash}: tip crosses both screen halves (x range ${Math.min(...tip.map((t) => t.x)).toFixed(2)}..${Math.max(...tip.map((t) => t.x)).toFixed(2)})`);
   const tipMaxY = Math.max(...tip.map((t) => t.y));
   ok(tipMaxY < 0.6, `${slash}: tip stays low through the arc (max NDC y ${tipMaxY.toFixed(2)} < 0.6)`);
   const pivotDepth = pommelDepth[slash].reduce((a, b) => a + b, 0) / pommelDepth[slash].length;
-  ok(pivotDepth > 0.9, `${slash}: pivot sits back from the camera (avg depth ${pivotDepth.toFixed(2)} > 0.9)`);
+  ok(pivotDepth > 0.7, `${slash}: pivot close to the camera (avg depth ${pivotDepth.toFixed(2)} > 0.7)`);
 }
 
 // Max-size crosshair clearance: at 100 orbs (3x scale) the crossguard must
@@ -167,9 +168,9 @@ sword.setOrbCount(100);
 ok(Math.abs(sword.scale - 3) < 1e-9, `max size = 3x (got ${sword.scale})`);
 {
   const guardPts = [
-    ['guardCenter', new THREE.Vector3(0, 0.12, 0)],
-    ['guardTipL', new THREE.Vector3(-0.13, 0.12, 0)],
-    ['guardTipR', new THREE.Vector3(0.13, 0.12, 0)],
+    ['guardCenter', new THREE.Vector3(0, 0.06, 0)],
+    ['guardTipL', new THREE.Vector3(-0.095, 0.06, 0)],
+    ['guardTipR', new THREE.Vector3(0.095, 0.06, 0)],
   ];
   for (const [name, pt] of guardPts) {
     const ndc = ndcOf(pt);

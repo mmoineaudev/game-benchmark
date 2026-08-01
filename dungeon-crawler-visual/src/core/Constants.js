@@ -220,7 +220,8 @@ export const ARCHER = {
 export const RAT = {
   HP: 1, SPEED: 4.2, DMG: 1, RANGE: 0.9, COOLDOWN: 0.8,
   DROP: 0, SCORE: 0,
-  BODY: 0x5a4a3a, HEAD: 0x4a3a2a, EYE: 0xff2211,
+  // Fluorescent toxic-green so rat packs read clearly in the dark
+  BODY: 0x59ff66, HEAD: 0x3ce64a, EYE: 0xff2211,
   DEATH_HOLD: 2.0, DEATH_FADE: 0.3,
 };
 
@@ -285,7 +286,12 @@ export const ORB_WEAPON = {
   SPEED: 2 * PLAYER.SPEED * PLAYER.SPRINT_MULTIPLIER, // 12.4 u/s — 2× sprint
   LIFETIME: 2.5,          // seconds before fizzle (~31 units max range)
   DAMAGE: 1,
-  RADIUS: 0.35,           // projectile collision radius
+  RADIUS: 0.3,            // projectile collision radius (smaller orbs)
+  VOLLEY: 3,              // orbs fired per shot — 1 collected orb = 3 smaller orbs
+  BOUNCES: 1,             // the first VOLLEY-1 orbs bounce once off walls/floor/ceiling
+  SPREAD: 0.05,           // volley fan spread (rad) between orbs
+  EXPLODE_RADIUS: 1.5,    // last orb: AOE damage radius around the explosion
+  EXPLODE_DAMAGE: 1,      // last orb: AOE damage dealt (same as a direct hit)
 };
 
 export const MAGICIAN = {
@@ -301,6 +307,8 @@ export const MAGICIAN = {
 export const DROP = {
   RADIUS: 1.4,           // auto-collect distance for dropped orbs
   Y: 0.8,
+  HEALTH_CHANCE: 0.15,   // per kill: chance to also drop a health reset (full heal)
+  HEALTH_Y: 0.8,
 };
 
 // --- Extended spec: props --------------------------------------------------

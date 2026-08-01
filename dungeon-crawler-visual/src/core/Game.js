@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON, SWORD, PROPS, HIT_STOP, LIGHTING } from './Constants.js';
+import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON, SWORD, PROPS, HIT_STOP, LIGHTING, DROP } from './Constants.js';
 import { GameState } from './GameState.js';
 import { Leaderboard } from './Leaderboard.js';
 import { EventBus } from './EventBus.js';
@@ -237,11 +237,27 @@ export class Game {
     this.skeletons.init(this.dungeonData, this.state);
     this.skeletons.onKill = (x, z, orbs = 1) => {
       if (orbs > 0) this.orbs.spawnDrop(x, z, orbs);
+      // 15% chance the kill also drops a full health reset
+      if (Math.random() < DROP.HEALTH_CHANCE) this.orbs.spawnHealth(x, z);
       this.smoke.addTransient(x, 0.6, z, 10, 0.4);
     };
     this.skeletons.onPlayerDamaged = () => this._flashDamage();
     this.skeletons.onPlayerDeath = () => this._gameOver('dead');
     this.shooter.hitSkeleton = (skel) => this.skeletons.hitSkeleton(skel, ORB_WEAPON.DAMAGE);
+    // Explosive orb (last of the volley): AOE damage around the blast point.
+    // Only counts when the blast is low enough to reach ground-level enemies.
+    this.shooter.onExplode = (x, y, z) => {
+      if (!this.skeletons || y > 2.6) return;
+      const range = ORB_WEAPON.EXPLODE_RADIUS;
+      for (const s of this.skeletons.skeletons) {
+        if (s.skel.state === 'DEAD') continue;
+        const dx = s.x - x;
+        const dz = s.z - z;
+        if (dx * dx + dz * dz < range * range) {
+          this.skeletons.hitSkeleton(s.skel, ORB_WEAPON.EXPLODE_DAMAGE);
+        }
+      }
+    };
     this.shooter.onHitProp = (x, z) => {
       if (!this.props) return false;
       return this.props.hitBreakables(x, z);

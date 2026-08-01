@@ -29,10 +29,30 @@ export class Rat {
   }
 
   _build() {
-    const bodyMat = new THREE.MeshStandardMaterial({ color: RAT.BODY, roughness: 0.9, transparent: true });
-    const headMat = new THREE.MeshStandardMaterial({ color: RAT.HEAD, roughness: 0.9, transparent: true });
+    // Fluorescent toxic-green: emissive materials + a glow sprite so rat
+    // packs read clearly against the dark dungeon floor.
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color: RAT.BODY, emissive: 0x33ff55, emissiveIntensity: 1.5,
+      roughness: 0.6, transparent: true,
+    });
+    const headMat = new THREE.MeshStandardMaterial({
+      color: RAT.HEAD, emissive: 0x22dd44, emissiveIntensity: 1.3,
+      roughness: 0.6, transparent: true,
+    });
     const eyeMat = new THREE.MeshBasicMaterial({ color: RAT.EYE, transparent: true });
     this._mats = [bodyMat, headMat, eyeMat];
+
+    // Additive glow halo (pulses in update)
+    this._glowTex = generateGlowTexture();
+    this._glowMat = new THREE.SpriteMaterial({
+      map: this._glowTex, color: 0x66ff88,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+      transparent: true, opacity: 0.5,
+    });
+    this._mats.push(this._glowMat);
+    this._glow = new THREE.Sprite(this._glowMat);
+    this._glow.scale.setScalar(0.6);
+    this.group.add(this._glow);
 
     // Body: squashed sphere, low to the ground
     const body = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), bodyMat);
@@ -89,6 +109,8 @@ export class Rat {
     this.body.rotation.z = wobble;
     this.group.position.y = Math.abs(Math.sin(this.animTime * 10 + this.phase)) * 0.03;
     this.group.rotation.y = THREE.MathUtils.damp(this.group.rotation.y, this.facingYaw ?? 0, 10, dt);
+    // Fluorescent glow pulse
+    this._glowMat.opacity = 0.45 + Math.sin(this.animTime * 5 + this.phase) * 0.12;
   }
 
   // Touch attack (instant, no windup)
@@ -117,6 +139,7 @@ export class Rat {
       if (obj.isMesh && obj.geometry) obj.geometry.dispose();
     });
     for (const m of this._mats) m.dispose();
+    if (this._glowTex) this._glowTex.dispose();
     this.scene.remove(this.group);
   }
 }

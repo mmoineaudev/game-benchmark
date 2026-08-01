@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { DROP } from '../core/Constants.js';
+import { DROP, PLAYER } from '../core/Constants.js';
 
 // Shared resources created once at init — no per-pickup GPU allocations.
 const RING_POOL_SIZE = 8;
@@ -49,6 +49,18 @@ export class OrbSystem {
       blending: THREE.AdditiveBlending, depthWrite: false,
     });
 
+    // --- Shared health-reset pickup resources (red medical cross) ---
+    this._healthGeoA = new THREE.BoxGeometry(0.09, 0.3, 0.05);  // vertical bar
+    this._healthGeoB = new THREE.BoxGeometry(0.3, 0.09, 0.05);  // horizontal bar
+    this._healthMat = new THREE.MeshStandardMaterial({
+      color: 0xff3355, emissive: 0xff3355, emissiveIntensity: 1.4,
+      roughness: 0.3, metalness: 0.2,
+    });
+    this._healthGlowMat = new THREE.MeshBasicMaterial({
+      color: 0xff4466, transparent: true, opacity: 0.25,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+
     // No orbs are placed on the map — they only come from skeleton drops.
     this.state.totalOrbs = 0;
   }
@@ -73,16 +85,28 @@ export class OrbSystem {
     // Skeleton drops: bob + auto-collect on proximity
     for (let i = this.drops.length - 1; i >= 0; i--) {
       const drop = this.drops[i];
-      drop.mesh.position.y = drop.y + Math.sin(time * 2.5 + drop.phase) * 0.1;
-      drop.mesh.rotation.y += 0.03;
-      drop.glow.position.copy(drop.mesh.position);
+      if (drop.kind === 'health') {
+        drop.group.position.y = drop.y + Math.sin(time * 2.5 + drop.phase) * 0.12;
+        drop.group.rotation.y += 0.02;
+      } else {
+        drop.mesh.position.y = drop.y + Math.sin(time * 2.5 + drop.phase) * 0.1;
+        drop.mesh.rotation.y += 0.03;
+        drop.glow.position.copy(drop.mesh.position);
+      }
       const dx = p.x - drop.x;
       const dz = p.z - drop.z;
       if (dx * dx + dz * dz < DROP.RADIUS * DROP.RADIUS) {
-        this.state.collectedOrbs++;
-        this._spawnPickupRing(drop.x, drop.y, drop.z, time);
-        this.scene.remove(drop.mesh);
-        this.scene.remove(drop.glow);
+        if (drop.kind === 'health') {
+          // Health reset: full heal
+          this.state.health = PLAYER.MAX_HEALTH;
+          this._spawnPickupRing(drop.x, drop.y, drop.z, time);
+          this.scene.remove(drop.group);
+        } else {
+          this.state.collectedOrbs++;
+          this._spawnPickupRing(drop.x, drop.y, drop.z, time);
+          this.scene.remove(drop.mesh);
+          this.scene.remove(drop.glow);
+        }
         this.drops.splice(i, 1);
       }
     }
@@ -103,6 +127,25 @@ export class OrbSystem {
       this.scene.add(glow);
       this.drops.push({ mesh, glow, x: x + ox, z: z + oz, y, phase: Math.random() * Math.PI * 2 });
     }
+  }
+
+  // Spawn a health-reset pickup (red medical cross) at a kill position.
+  // Auto-collect on proximity -> full heal. Shared geometry/material.
+  spawnHealth(x, z) {
+    const y = DROP.HEALTH_Y;
+    const group = new THREE.Group();
+    const barA = new THREE.Mesh(this._healthGeoA, this._healthMat);
+    const barB = new THREE.Mesh(this._healthGeoB, this._healthMat);
+    const glow = new THREE.Mesh(this._dropGlowGeo, this._healthGlowMat);
+    group.add(barA, barB, glow);
+    const ox = (Math.random() - 0.5) * 0.8;
+    const oz = (Math.random() - 0.5) * 0.8;
+    group.position.set(x + ox, y, z + oz);
+    this.scene.add(group);
+    this.drops.push({
+      group, x: x + ox, z: z + oz, y,
+      phase: Math.random() * Math.PI * 2, kind: 'health',
+    });
   }
 
   // Reuse a pooled ring — no geometry/material creation at pickup time
@@ -134,6 +177,11 @@ export class OrbSystem {
     if (this._dropGlowGeo) this._dropGlowGeo.dispose();
     if (this._dropMat) this._dropMat.dispose();
     if (this._dropGlowMat) this._dropGlowMat.dispose();
+    // Dispose shared health-pickup resources once
+    if (this._healthGeoA) this._healthGeoA.dispose();
+    if (this._healthGeoB) this._healthGeoB.dispose();
+    if (this._healthMat) this._healthMat.dispose();
+    if (this._healthGlowMat) this._healthGlowMat.dispose();
     this._ringPool = [];
     this.drops = [];
     this.orbs = [];

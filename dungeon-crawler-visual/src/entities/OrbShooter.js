@@ -2,12 +2,23 @@ import * as THREE from 'three';
 import { ORB_WEAPON } from '../core/Constants.js';
 import { circleHitsBox } from '../core/Collision.js';
 
+// Orb economy: 1 collected orb = ONE SHOT, but each shot fires a VOLLEY of
+// 3 smaller orbs with a slight fan:
+//   - orbs 1..VOLLEY-1 are normal: they deal 1 damage on a direct hit and
+//     BOUNCE once off walls / floor / ceiling, then fizzle on the next
+//     surface contact — ricochets keep pressure in corridors.
+//   - the last orb is explosive: it detonates on its first contact (enemy,
+//     wall, floor, ceiling) and deals EXPLODE_DAMAGE to every enemy within
+//     EXPLODE_RADIUS (handled by Game via onExplode).
+// So one orb spent can land up to VOLLEY hits — ranged play is now
+// sustainable (2-3 damage per orb against 2 HP skeletons).
 export class OrbShooter {
   constructor(scene) {
     this.scene = scene;
     this.projectiles = []; // pooled, round-robin reuse
     this._next = 0;
     this._tex = null;
+    this.onExplode = null; // (x, y, z) -> Game applies AOE damage
   }
 
   init() {
@@ -25,7 +36,7 @@ export class OrbShooter {
     ctx.fillRect(0, 0, size, size);
     this._tex = new THREE.CanvasTexture(canvas);
 
-    const meshGeo = new THREE.SphereGeometry(0.22, 12, 12);
+    const meshGeo = new THREE.SphereGeometry(0.16, 10, 8); // smaller orbs
     const meshMat = new THREE.MeshStandardMaterial({
       color: 0x44aaff, emissive: 0x44aaff, emissiveIntensity: 2.5,
       roughness: 0.15, metalness: 0.4,
@@ -35,84 +46,198 @@ export class OrbShooter {
       depthWrite: false, transparent: true, opacity: 0.8,
     });
 
-    const POOL = 24;
+    // Sized for the sustained rate: 5.5 shots/s x 3 orbs x 2.5 s life ≈ 41
+    const POOL = 48;
     for (let i = 0; i < POOL; i++) {
       const mesh = new THREE.Mesh(meshGeo, meshMat);
       const glow = new THREE.Sprite(glowMat);
-      glow.scale.set(1.6, 1.6, 1);
+      glow.scale.set(1.2, 1.2, 1);
       mesh.visible = false;
       glow.visible = false;
       this.scene.add(mesh);
       this.scene.add(glow);
-      this.projectiles.push({ mesh, glow, dirX: 0, dirZ: 0, life: 0, active: false });
+      this.projectiles.push({
+        mesh, glow, dirX: 0, dirY: 0, dirZ: 0, life: 0,
+        active: false, bounces: 0, explode: false,
+      });
+    }
+
+    // Pooled explosion rings (additive) — no per-event allocation
+    this._boomGeo = new THREE.TorusGeometry(0.5, 0.06, 6, 20);
+    this._boomMat = new THREE.MeshBasicMaterial({
+      color: 0x66ddff, transparent: true, opacity: 0.7,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    this._booms = [];
+    for (let i = 0; i < 8; i++) {
+      const m = new THREE.Mesh(this._boomGeo, this._boomMat);
+      m.rotation.x = -Math.PI / 2;
+      m.visible = false;
+      this.scene.add(m);
+      this._booms.push({ mesh: m, life: 0, active: false });
     }
   }
 
-  // Fire along the camera look direction (yaw + pitch) so the crosshair is the aim.
+  // Fire a VOLLEY along the camera look direction (yaw + pitch) so the
+  // crosshair is the aim. Returns the array of projectile handles.
   fire(x, y, z, yaw, pitch = 0) {
-    const p = this.projectiles[this._next];
-    this._next = (this._next + 1) % this.projectiles.length;
-    p.active = true;
-    p.mesh.visible = true;
-    p.glow.visible = true;
-    p.mesh.position.set(x, y, z);
-    p.glow.position.set(x, y, z);
-    // Camera look vector (matches Game._updateCamera)
-    p.dirX = -Math.sin(yaw) * Math.cos(pitch);
-    p.dirY = Math.sin(pitch);
-    p.dirZ = -Math.cos(yaw) * Math.cos(pitch);
-    p.life = ORB_WEAPON.LIFETIME;
-    return p;
+    const baseX = -Math.sin(yaw) * Math.cos(pitch);
+    const baseY = Math.sin(pitch);
+    const baseZ = -Math.cos(yaw) * Math.cos(pitch);
+    const fired = [];
+    for (let i = 0; i < ORB_WEAPON.VOLLEY; i++) {
+      const p = this.projectiles[this._next];
+      this._next = (this._next + 1) % this.projectiles.length;
+      p.active = true;
+      p.mesh.visible = true;
+      p.glow.visible = true;
+      p.mesh.position.set(x, y, z);
+      p.glow.position.set(x, y, z);
+      // Slight fan so the volley doesn't stack on one point
+      const off = (i - (ORB_WEAPON.VOLLEY - 1) / 2) * ORB_WEAPON.SPREAD;
+      const cosOff = Math.cos(off);
+      const sinOff = Math.sin(off);
+      p.dirX = baseX * cosOff - baseZ * sinOff;
+      p.dirZ = baseX * sinOff + baseZ * cosOff;
+      p.dirY = baseY;
+      const len = Math.hypot(p.dirX, p.dirY, p.dirZ) || 1;
+      p.dirX /= len; p.dirY /= len; p.dirZ /= len;
+      p.life = ORB_WEAPON.LIFETIME;
+      p.bounces = 0;
+      // The LAST orb of the volley is the explosive one
+      p.explode = i === ORB_WEAPON.VOLLEY - 1;
+      fired.push(p);
+    }
+    return fired;
   }
 
   update(dt, collisionBoxes, skeletons) {
     const speed = ORB_WEAPON.SPEED;
     for (const p of this.projectiles) {
       if (!p.active) continue;
+      const prevX = p.mesh.position.x;
+      const prevZ = p.mesh.position.z;
       p.mesh.position.x += p.dirX * speed * dt;
       p.mesh.position.y += p.dirY * speed * dt;
       p.mesh.position.z += p.dirZ * speed * dt;
       p.glow.position.copy(p.mesh.position);
       p.life -= dt;
 
-      // Floor / ceiling fizzle (walls are checked in 2D below — full height)
-      if (p.mesh.position.y < 0.15 || p.mesh.position.y > 3.85) {
+      // Floor contact
+      if (p.mesh.position.y < 0.15) {
+        if (p.explode) { this._explode(p); continue; }
+        if (p.bounces < ORB_WEAPON.BOUNCES) {
+          p.mesh.position.y = 0.15;
+          p.dirY = Math.abs(p.dirY);
+          p.bounces++;
+          continue;
+        }
         this._deactivate(p);
         continue;
       }
 
-      // Wall hit
+      // Ceiling contact
+      if (p.mesh.position.y > 3.85) {
+        if (p.explode) { this._explode(p); continue; }
+        if (p.bounces < ORB_WEAPON.BOUNCES) {
+          p.mesh.position.y = 3.85;
+          p.dirY = -Math.abs(p.dirY);
+          p.bounces++;
+          continue;
+        }
+        this._deactivate(p);
+        continue;
+      }
+
+      // Wall contact (2D, full-height)
       if (circleHitsBox(collisionBoxes, p.mesh.position.x, p.mesh.position.z, ORB_WEAPON.RADIUS)) {
+        if (p.explode) { this._explode(p); continue; }
+        if (p.bounces < ORB_WEAPON.BOUNCES) {
+          const axis = this._wallHitAxis(collisionBoxes, p.mesh.position.x, p.mesh.position.z, prevX, prevZ);
+          // Revert to the pre-step position (outside the box), then head off
+          // in the reflected direction.
+          p.mesh.position.x = prevX;
+          p.mesh.position.z = prevZ;
+          if (axis === 'x') p.dirX = -p.dirX;
+          else p.dirZ = -p.dirZ;
+          p.bounces++;
+          p.glow.position.copy(p.mesh.position);
+          continue;
+        }
         this._deactivate(p);
         continue;
       }
 
       // Breakable prop hit (optional hook from Game)
       if (this.onHitProp?.(p.mesh.position.x, p.mesh.position.z)) {
+        if (p.explode) { this._explode(p); continue; }
         this._deactivate(p);
         continue;
       }
 
-      // Skeleton hit
+      // Enemy hit
       let hit = false;
       for (const s of skeletons) {
         if (s.skel.state === 'DEAD') continue;
         const dx = p.mesh.position.x - s.x;
         const dz = p.mesh.position.z - s.z;
-        // 2D proximity + height band (skeleton body ~0.2-2.2u) so aimed shots connect
+        // 2D proximity + height band (enemy body ~0.2-2.2u) so aimed shots connect
         if (dx * dx + dz * dz < 1.0 && p.mesh.position.y > 0.15 && p.mesh.position.y < 2.4) {
-          this.hitSkeleton?.(s.skel);
+          if (p.explode) {
+            this._explode(p);
+          } else {
+            this.hitSkeleton?.(s.skel);
+            this._deactivate(p);
+          }
           hit = true;
           break;
         }
       }
-      if (hit) {
-        this._deactivate(p);
-        continue;
-      }
+      if (hit) continue;
 
       if (p.life <= 0) this._deactivate(p);
     }
+
+    // Explosion rings
+    for (const b of this._booms) {
+      if (!b.active) continue;
+      b.life -= dt;
+      const t = 1 - Math.max(0, b.life / 0.3);
+      b.mesh.scale.setScalar(0.4 + t * 2.2);
+      b.mesh.material.opacity = 0.7 * (1 - t);
+      if (b.life <= 0) { b.active = false; b.mesh.visible = false; }
+    }
+  }
+
+  // Dominant axis ('x' | 'z') to reflect when the orb meets a wall box.
+  _wallHitAxis(boxes, x, z, prevX, prevZ) {
+    for (const box of boxes) {
+      const cx = Math.max(box.minX, Math.min(x, box.maxX));
+      const cz = Math.max(box.minZ, Math.min(z, box.maxZ));
+      const dx = x - cx;
+      const dz = z - cz;
+      if (dx * dx + dz * dz < ORB_WEAPON.RADIUS * ORB_WEAPON.RADIUS) {
+        if (Math.abs(dx) > 0.02 || Math.abs(dz) > 0.02) {
+          return Math.abs(dx) > Math.abs(dz) ? 'x' : 'z';
+        }
+        // Center inside the box (tunnelled): reflect along the dominant motion
+        return Math.abs(x - prevX) > Math.abs(z - prevZ) ? 'x' : 'z';
+      }
+    }
+    return 'z';
+  }
+
+  _explode(p) {
+    const { x, y, z } = p.mesh.position;
+    // AOE damage + visual ring, then the orb is gone
+    this.onExplode?.(x, y, z);
+    const b = this._booms.find((b) => !b.active) || this._booms[0];
+    b.active = true;
+    b.life = 0.3;
+    b.mesh.visible = true;
+    b.mesh.position.set(x, y + 0.1, z);
+    b.mesh.scale.setScalar(0.4);
+    this._deactivate(p);
   }
 
   _deactivate(p) {
@@ -130,6 +255,12 @@ export class OrbShooter {
       this.scene.remove(p.glow);
     }
     if (this._tex) this._tex.dispose();
+    if (this._boomGeo) {
+      this._boomGeo.dispose();
+      this._boomMat.dispose();
+      for (const b of this._booms) this.scene.remove(b.mesh);
+    }
     this.projectiles = [];
+    this._booms = [];
   }
 }

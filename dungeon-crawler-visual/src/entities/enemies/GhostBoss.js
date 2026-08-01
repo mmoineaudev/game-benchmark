@@ -9,12 +9,28 @@ import { generateGlowTexture } from '../../world/Textures.js';
 //    a summon request via onSummon).
 // HP is BOSS.HP_MULT x a base enemy. The AI is fully self-contained in
 // update(); movement + collision run here, combat contact via onChargeHit.
+// One boss per enemy type — all share the charge+summon AI but look and
+// size differently, so each reads as its own boss. On a boss level one
+// random variant spawns.
+const BOSS_VARIANTS = {
+  SKELETON:  { color: 0xcfd6e6, accent: 0x66e0ff, scale: 1.0, label: 'BONE LORD' },
+  ARMORED:   { color: 0x8aa8cc, accent: 0x66ccff, scale: 1.25, label: 'IRON GHOUL' },
+  ARCHER:    { color: 0xaad4a0, accent: 0x66ff88, scale: 0.9, label: 'SPECTRAL HUNTER' },
+  BRUTE:     { color: 0xcc8866, accent: 0xff8844, scale: 1.4, label: 'ASH TITAN' },
+  WRAITH:    { color: 0x9fd8ff, accent: 0x66e0ff, scale: 1.0, label: 'SPECTRAL LORD' },
+  RAT:       { color: 0xd8b07a, accent: 0xffaa66, scale: 0.75, label: 'VERMIN KING' },
+  MAGICIAN:  { color: 0xb08ae0, accent: 0xcc88ff, scale: 1.05, label: 'LICH ARCHMAGE' },
+};
+
 export class GhostBoss {
-  constructor(scene, baseHp) {
+  constructor(scene, baseHp, variant = 'WRAITH') {
     this.scene = scene;
     this.type = 'BOSS';
-    this.maxHp = Math.ceil(baseHp * BOSS.HP_MULT);
-    this.hp = this.maxHp;
+    this.variant = BOSS_VARIANTS[variant] ? variant : 'WRAITH';
+    const v = BOSS_VARIANTS[this.variant];
+    this.variantLabel = v.label;
+    this.hp = Math.ceil(baseHp * BOSS.HP_MULT);
+    this.maxHp = this.hp;
     this.state = 'CHASE'; // CHASE | CHARGING | DEAD
     this.animTime = Math.random() * 10;
     this.phase = Math.random() * Math.PI * 2;
@@ -25,24 +41,25 @@ export class GhostBoss {
     this._chargeDirZ = 0;
     this._chargeHitDone = false;
     this._removed = false;
+    this._scale = v.scale;
 
     this.group = new THREE.Group();
-    this._build();
+    this._build(v);
     scene.add(this.group);
   }
 
-  _build() {
+  _build(v) {
     this.bodyMat = new THREE.MeshBasicMaterial({
-      color: 0x9fd8ff, transparent: true, opacity: 0.4,
+      color: v.color, transparent: true, opacity: 0.4,
       blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
     });
     this.coreMat = new THREE.MeshBasicMaterial({
-      color: 0xe6f7ff, transparent: true, opacity: 0.9,
+      color: v.accent, transparent: true, opacity: 0.9,
       blending: THREE.AdditiveBlending, depthWrite: false,
     });
     this._mats = [this.bodyMat, this.coreMat];
 
-    // Large hooded apparition
+    // Large spectral apparition
     const body = new THREE.Mesh(new THREE.ConeGeometry(1.1, 3.0, 14, 1, true), this.bodyMat);
     body.position.y = 1.5;
     this.group.add(body);
@@ -54,7 +71,7 @@ export class GhostBoss {
     this.core.position.y = 1.7;
     this.group.add(this.core);
     // Eyes
-    this.eyeMat = new THREE.MeshBasicMaterial({ color: 0x66e0ff, transparent: true, opacity: 0.95 });
+    this.eyeMat = new THREE.MeshBasicMaterial({ color: v.accent, transparent: true, opacity: 0.95 });
     this._mats.push(this.eyeMat);
     for (const sx of [-1, 1]) {
       const eye = new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 6), this.eyeMat);
@@ -64,7 +81,7 @@ export class GhostBoss {
     // Spectral glow halo
     this._glowTex = generateGlowTexture();
     this.glowMat = new THREE.SpriteMaterial({
-      map: this._glowTex, color: 0x66e0ff, blending: THREE.AdditiveBlending,
+      map: this._glowTex, color: v.accent, blending: THREE.AdditiveBlending,
       depthWrite: false, transparent: true, opacity: 0.4,
     });
     this._mats.push(this.glowMat);
@@ -72,6 +89,8 @@ export class GhostBoss {
     this.glow.scale.setScalar(3.5);
     this.glow.position.y = 1.6;
     this.group.add(this.glow);
+
+    if (this._scale !== 1) this.group.scale.setScalar(this._scale);
   }
 
   setFacing(yaw) { this.facingYaw = yaw; }

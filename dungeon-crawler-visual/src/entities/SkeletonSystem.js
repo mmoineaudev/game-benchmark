@@ -6,10 +6,11 @@ import { Brute } from './enemies/Brute.js';
 import { Rat } from './enemies/Rat.js';
 import { Wraith } from './enemies/Wraith.js';
 import { GhostBoss } from './enemies/GhostBoss.js';
+import { Burning } from './enemies/Burning.js';
 import {
   SKELETON, PLAYER, MAGICIAN, ENEMY, ENEMY_SPAWN_WEIGHTS, ENEMY_TYPES,
-  ROOM_ENEMY_MODIFIERS, ARCHER, BRUTE, BOSS, WRAITH,
-  orbPowerMultiplier, enemyHpMultiplier,
+  ROOM_ENEMY_MODIFIERS, ARCHER, BRUTE, BOSS, WRAITH, BUFF, BURN,
+  orbPowerMultiplier, enemyHpMultiplier, excessOrbs,
 } from '../core/Constants.js';
 import { resolveCircleCollisions, circleHitsBox } from '../core/Collision.js';
 import { generateGlowTexture } from '../world/Textures.js';
@@ -31,8 +32,9 @@ export class SkeletonSystem {
     this.onPlayerDeath = null;
     this.speedMult = 1;
     this.fleeing = false; // BRIGHT buff: mobs run away instead of attacking
-    this.boss = null;     // GhostBoss on boss levels
+    this.boss = null;      // GhostBoss on boss levels
     this.onBossKill = null; // Game hook: boss died -> buff + heart + portal
+    this.onBurn = null;    // Game hook: burning enemy set the ground alight
   }
 
   _initProjectilePools() {
@@ -144,7 +146,8 @@ export class SkeletonSystem {
     // Spawn rate scales with the SAME multiplier as the sword size bonus:
     // +20% per 10 orbs held (capped at 3x). Banked ammo = more enemies =
     // more drops. Hard-capped at MAX_ALIVE so the live-bodies budget holds.
-    const spawnMult = orbPowerMultiplier(state.collectedOrbs);
+    const spawnMult = orbPowerMultiplier(state.collectedOrbs)
+      + excessOrbs(state.collectedOrbs) / BUFF.SPAWN_EXCESS_PER;
     let slots = Math.min(
       Math.round((ENEMY.BASE_SLOTS + (state.level - 1) * ENEMY.SLOTS_PER_LEVEL) * spawnMult),
       ENEMY.MAX_ALIVE,
@@ -221,24 +224,42 @@ export class SkeletonSystem {
         cellX: x, cellZ: z, nextThink: 0, type, elite: isElite, magician: type === 'MAGICIAN',
       });
     }
+
+    // Random mysterious burning enemy, at most one per level
+    if (candidates.length && Math.random() < BURN.CHANCE) {
+      const c = candidates[Math.floor(Math.random() * candidates.length)];
+      const burn = new Burning(this.scene);
+      const sx = c.x * cs + cs / 2;
+      const sz = c.z * cs + cs / 2;
+      burn.group.position.set(sx, 0, sz);
+      burn.onKill = () => this._onKill(burn);
+      burn.onDeathComplete = () => this._removeSkeleton(burn);
+      scaleHp(burn); // NG+ HP
+      this.skeletons.push({
+        skel: burn, x: sx, z: sz, cellX: c.x, cellZ: c.z,
+        nextThink: 0, type: 'BURN', elite: false, magician: false,
+      });
+    }
   }
 
   _isBossLevel(state) {
     return BOSS.INTERVAL > 0 && state.level % BOSS.INTERVAL === 0;
   }
 
-  // Spawn the ghost boss at the exit cell (the arena heart). No other enemies.
+  // Spawn ONE ghost boss (random enemy-type variant) at the exit cell.
   _spawnBoss(dungeonData, state, candidates) {
     const cs = dungeonData.cellSize;
     const exit = dungeonData.exitCell;
     const bx = exit.x * cs + cs / 2;
     const bz = exit.z * cs + cs / 2;
+    const variants = ['SKELETON', 'ARMORED', 'ARCHER', 'BRUTE', 'WRAITH', 'RAT', 'MAGICIAN'];
+    const variant = variants[Math.floor(Math.random() * variants.length)];
     const baseHp = 4; // base enemy HP; boss = 15x this
-    const boss = new GhostBoss(this.scene, baseHp);
+    const boss = new GhostBoss(this.scene, baseHp, variant);
     boss.group.position.set(bx, 0, bz);
     boss.onSummon = () => this._summonMinions(boss, candidates, dungeonData, state);
     boss.onChargeHit = () => this._damagePlayer(BOSS.CHARGE_DMG);
-    boss.onKill = () => this._onBossKill(boss);
+    boss.onKill = () => this._onBossKill();
     boss.onDeathComplete = () => this._removeSkeleton(boss);
     this.boss = boss;
     this.skeletons.push({
@@ -271,7 +292,7 @@ export class SkeletonSystem {
     }
   }
 
-  _onBossKill(boss) {
+  _onBossKill() {
     this.boss = null;
     this.onBossKill?.();
   }
@@ -354,6 +375,33 @@ export class SkeletonSystem {
         s.skel.update(dt, time, player, collisionBoxes, resolveCircleCollisions);
         s.x = s.skel.group.position.x;
         s.z = s.skel.group.position.z;
+        continue;
+      }
+
+      // --- Burning enemy: chases and sets the ground alight where it walks ---
+      if (s.type === 'BURN') {
+        const b = s.skel;
+        const bdx = player.x - s.x;
+        const bdz = player.z - s.z;
+        const bd = Math.hypot(bdx, bdz);
+        const bspd = b.speed * this.speedMult * dt;
+        if (bd > 1e-3) {
+          s.x += (bdx / bd) * bspd;
+          s.z += (bdz / bd) * bspd;
+          resolveCircleCollisions(collisionBoxes, s, 0.35);
+        }
+        b.group.position.set(s.x, 0, s.z);
+        b.setFacing(Math.atan2(bdx, bdz));
+        b.group.rotation.y = b.facingYaw;
+        // ground fire where it walks
+        b.burnAcc -= dt;
+        if (b.burnAcc <= 0) {
+          b.burnAcc = BURN.FIRE_INTERVAL;
+          if (bd > 0.15) this.onBurn?.(s.x, s.z);
+        }
+        // melee attack
+        if (bd < b.attackRange && b.attack()) this._damagePlayer(b.damage);
+        b.update(dt, time);
         continue;
       }
 
@@ -623,7 +671,7 @@ export class SkeletonSystem {
   }
 
   _onKill(skel) {
-    this.onKill?.(skel.group.position.x, skel.group.position.z, skel.dropOrbs || 1);
+    this.onKill?.(skel.group.position.x, skel.group.position.z, skel.dropOrbs || 1, skel);
   }
 
   _hasLOS(skel, player, collisionBoxes) {

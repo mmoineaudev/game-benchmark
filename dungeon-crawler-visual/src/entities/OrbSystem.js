@@ -72,6 +72,24 @@ export class OrbSystem {
       blending: THREE.AdditiveBlending, depthWrite: false,
     });
 
+    // --- Purple death-burst pool (enemies turn purple + pop into particles) ---
+    this._burstGeo = new THREE.SphereGeometry(0.12, 6, 6);
+    this._burstMat = new THREE.MeshBasicMaterial({
+      color: 0xb44fff, transparent: true, opacity: 0.85,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    this._bursts = [];
+    for (let i = 0; i < 60; i++) {
+      const m = new THREE.Mesh(this._burstGeo, this._burstMat);
+      m.visible = false;
+      this.scene.add(m);
+      this._bursts.push({
+        mesh: m, sx: 0, sy: 0, sz: 0, vx: 0, vy: 0, vz: 0,
+        start: 0, dur: 0.6, active: false,
+      });
+    }
+    this._burstIdx = 0;
+
     // No orbs are placed on the map — they only come from skeleton drops.
     this.state.totalOrbs = 0;
   }
@@ -91,6 +109,19 @@ export class OrbSystem {
       ring.mesh.scale.setScalar(0.3 + t * 2.5);
       ring.mesh.material.opacity = 0.8 * (1 - t);
       ring.mesh.rotation.x += 0.02;
+    }
+
+    // Purple death bursts: particles fly outward and shrink away
+    for (const b of this._bursts) {
+      if (!b.active) continue;
+      const e = time - b.start;
+      if (e >= b.dur) {
+        b.active = false;
+        b.mesh.visible = false;
+        continue;
+      }
+      b.mesh.position.set(b.sx + b.vx * e, b.sy + b.vy * e, b.sz + b.vz * e);
+      b.mesh.scale.setScalar(Math.max(0.05, 0.7 * (1 - e / b.dur)));
     }
 
     // Skeleton drops: bob + auto-collect on proximity
@@ -182,6 +213,24 @@ export class OrbSystem {
     });
   }
 
+  // Purple burst when an enemy dies: particles fly outward and shrink away
+  spawnPurpleBurst(x, z, time) {
+    for (let k = 0; k < 7; k++) {
+      const b = this._bursts[this._burstIdx];
+      this._burstIdx = (this._burstIdx + 1) % this._bursts.length;
+      const a = Math.random() * Math.PI * 2;
+      b.active = true;
+      b.mesh.visible = true;
+      b.mesh.scale.setScalar(0.7);
+      b.sx = x; b.sy = 0.4; b.sz = z;
+      b.vx = Math.cos(a) * (1.2 + Math.random() * 1.4);
+      b.vz = Math.sin(a) * (1.2 + Math.random() * 1.4);
+      b.vy = 0.8 + Math.random() * 1.2;
+      b.start = time;
+      b.dur = 0.6;
+    }
+  }
+
   // Reuse a pooled ring — no geometry/material creation at pickup time
   _spawnPickupRing(x, y, z, time) {
     const ring = this._ringPool[this._ringIdx];
@@ -220,6 +269,11 @@ export class OrbSystem {
     if (this._buffGeo) this._buffGeo.dispose();
     if (this._buffMat) this._buffMat.dispose();
     if (this._buffGlowMat) this._buffGlowMat.dispose();
+    // Dispose purple-death-burst resources once
+    if (this._burstGeo) this._burstGeo.dispose();
+    if (this._burstMat) this._burstMat.dispose();
+    for (const b of this._bursts) this.scene.remove(b.mesh);
+    this._bursts = [];
     this._ringPool = [];
     this.drops = [];
     this.orbs = [];

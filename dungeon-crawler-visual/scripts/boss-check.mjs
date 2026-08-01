@@ -23,8 +23,9 @@ globalThis.document = {
 };
 
 const { GhostBoss } = await import('../src/entities/enemies/GhostBoss.js');
+const { Burning } = await import('../src/entities/enemies/Burning.js');
 const {
-  BOSS, BIOMES, biomeForLevel,
+  BOSS, BIOMES, biomeForLevel, BURN,
 } = await import('../src/core/Constants.js');
 
 let failures = 0;
@@ -76,6 +77,26 @@ console.log('== GhostBoss ==');
 
   boss.dispose(); b2.dispose();
   ok(boss._removed && b2._removed, 'dispose marks both bosses removed');
+
+  // one boss per enemy type (variant)
+  const brute = new GhostBoss(scene, 4, 'BRUTE');
+  ok(brute.variant === 'BRUTE' && brute.variantLabel === 'ASH TITAN', 'boss variant + label (BRUTE)');
+  ok(brute._scale === 1.4, 'BRUTE boss is scaled up');
+  brute.dispose();
+}
+
+console.log('== Burning enemy ==');
+{
+  const scene = { add() {}, remove() {} };
+  const burn = new Burning(scene);
+  ok(burn.type === 'BURN' && burn.hp === BURN.HP, 'burning enemy: type + HP');
+  ok(burn.speed > 0 && burn.attackRange > 0, 'burning enemy has movement + reach');
+  let killed = 0;
+  burn.onKill = () => killed++;
+  burn.hit(999);
+  ok(burn.state === 'DEAD' && killed === 1, 'burning enemy dies + onKill fires');
+  burn.dispose();
+  ok(burn._removed, 'burning enemy disposed');
 }
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);

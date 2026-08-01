@@ -301,6 +301,8 @@ export const SWORD = {
     ARC2: Math.PI * 0.38,  // ±68° opposite diagonal slash
     ARC3: Math.PI * 0.09,  // ±16° piercing thrust (line, not a cone)
     RANGE3: 1.25,          // thrust lunge reach multiplier (range × 1.25)
+    ELECTRIC_CHANCE: 0.01, // 1% per landing strike: chain an electric blast
+    ELECTRIC_RANGE: 20,    // ...that kills every enemy within this distance
   },
 };
 
@@ -313,8 +315,10 @@ export const HIT_STOP = 0.06; // seconds of world-freeze on sword hit
 //   3 = EMPOWERED: dagger +50% longer, move speed +20%, attack speed +20%
 //   4 = VISION: see enemies through walls (highlight ignores depth)
 export const BUFF = {
-  DURATION: 15,
-  CHANCE: 0.06,            // drop chance per broken breakable (+20% from 5%)
+  DURATION: 30,
+  CHANCE: 0.06,            // base drop chance per broken breakable (+20% from 5%)
+  ORB_BUFF_CHANCE: 0.0005, // +0.05% buff drop per orb ABOVE 100
+  SPAWN_EXCESS_PER: 100,   // each 100 excess orbs = +100% spawn multiplier
   FIREBALL_COOLDOWN: 0.35, // seconds between free fireballs
   BRIGHT_AMBIENT: 2.5,     // ambient intensity multiplier while BRIGHT
   BRIGHT_FOG: 0.35,        // fog density multiplier while BRIGHT (less fog)
@@ -339,9 +343,16 @@ export const ORB_WEAPON = {
 
 // The sword's size-bonus multiplier — ALSO scales the enemy spawn rate, so
 // ammo banked = more enemies = more drops (risk/reward loop).
-// +20% per 10 orbs held, capped at +200% (3x at 100 orbs).
+// +20% per 10 orbs held, capped at +300% (4x at 150 orbs). Orbs ABOVE 100
+// additionally feed buff-drop rate and spawn rate via excessOrbs().
 export function orbPowerMultiplier(orbs) {
-  return 1 + Math.min(Math.floor(orbs / 10), 10) * 0.2;
+  return 1 + Math.min(Math.floor(orbs / 10), 15) * 0.2;
+}
+
+// Orbs in excess of 100 (the 'power' threshold) funnel into buff drops
+// and enemy spawn rate rather than sword size.
+export function excessOrbs(orbs) {
+  return Math.max(0, orbs - 100);
 }
 
 // New Game+ enemy HP: +10% per NG+ cycle (ngPlus = 0 on a fresh run).
@@ -356,7 +367,19 @@ export const MAGICIAN = {
   ORB_LIFETIME: 4,
   ORB_RADIUS: 0.3,
   ORB_DAMAGE: 1,
-  FIRE_INTERVAL: 2.2,    // min seconds between casts (attack cycle + cooldown)
+};
+
+// A mysterious red-and-black burning enemy. Random, at most once per level.
+// It sets the ground on fire where it walks (Game's fire-patch hook).
+export const BURN = {
+  CHANCE: 0.25,          // per-level chance to spawn one (non-boss levels)
+  HP: 3,
+  SPEED: 2.6,
+  DMG: 1,
+  RANGE: 1.3,
+  DROP: 2,
+  COOLDOWN: 1.4,
+  FIRE_INTERVAL: 0.6,    // seconds between ground-fire leaks while moving
 };
 
 export const DROP = {

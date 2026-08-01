@@ -236,6 +236,7 @@ export class OrbShooter {
 
       // Floor contact
       if (p.mesh.position.y < 0.15) {
+        if (!p.impactFired) { p.impactFired = true; this.onImpact?.(p.mesh.position.x, p.mesh.position.z); }
         if (p.explode) { this._explode(p); continue; }
         if (p.bounces < ORB_WEAPON.BOUNCES) {
           p.mesh.position.y = 0.15;
@@ -262,6 +263,7 @@ export class OrbShooter {
 
       // Wall contact (2D, full-height)
       if (circleHitsBox(collisionBoxes, p.mesh.position.x, p.mesh.position.z, ORB_WEAPON.RADIUS)) {
+        if (!p.impactFired) { p.impactFired = true; this.onImpact?.(p.mesh.position.x, p.mesh.position.z); }
         if (p.explode) { this._explode(p); continue; }
         if (p.bounces < ORB_WEAPON.BOUNCES) {
           const axis = this._wallHitAxis(collisionBoxes, p.mesh.position.x, p.mesh.position.z, prevX, prevZ);

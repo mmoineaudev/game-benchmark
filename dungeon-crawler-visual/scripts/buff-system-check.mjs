@@ -2,7 +2,7 @@
 // breakables. Tests the GameState buff timer lifecycle (pure logic).
 // Run: node scripts/buff-system-check.mjs
 import { GameState } from '../src/core/GameState.js';
-import { BUFF, enemyHpMultiplier } from '../src/core/Constants.js';
+import { BUFF, enemyHpMultiplier, orbPowerMultiplier, excessOrbs } from '../src/core/Constants.js';
 
 let failures = 0;
 const fail = (msg) => { failures++; console.log(`  FAIL: ${msg}`); };
@@ -21,15 +21,15 @@ console.log('== Buff system (GameState timer) ==');
   ok(s.buffActive, 'buffActive true after apply');
 }
 
-// --- Timer counts down and expires after 15s ---
+// --- Timer counts down and expires after BUFF.DURATION ---
 {
   const s = new GameState();
   s.applyBuff(1);
   let expired = false;
-  for (let i = 0; i < Math.ceil(14.9 / dt); i++) {
+  for (let i = 0; i < Math.ceil((BUFF.DURATION - 0.1) / dt); i++) {
     if (s.updateBuff(dt)) expired = true;
   }
-  ok(!expired && s.buffEffect === 1, 'buff still active at 14.9s');
+  ok(!expired && s.buffEffect === 1, `buff still active at ${BUFF.DURATION - 0.1}s`);
   let expiryFired = false;
   for (let i = 0; i < Math.ceil(0.3 / dt); i++) {
     if (s.updateBuff(dt)) expiryFired = true;
@@ -54,18 +54,24 @@ console.log('== Buff system (GameState timer) ==');
 
 // --- Constants sanity ---
 {
-  ok(BUFF.DURATION === 15 && BUFF.CHANCE === 0.06,
-    `constants: duration=${BUFF.DURATION}s, chance=${BUFF.CHANCE} (was 0.05, +20%)`);
+  ok(BUFF.DURATION === 30 && BUFF.CHANCE === 0.06,
+    `constants: duration=${BUFF.DURATION}s, chance=${BUFF.CHANCE} (was 5%, now 6%)`);
   ok(BUFF.EMPOWER_LENGTH === 1.5 && BUFF.EMPOWER_SPEED === 1.2 && BUFF.EMPOWER_ATTACK === 1.2,
     'empowered constants (length 1.5, move 1.2, attack 1.2)');
   ok(BUFF.BOSS_DURATION === 300, `boss buff lasts 5 min (${BUFF.BOSS_DURATION}s)`);
+  ok(orbPowerMultiplier && typeof orbPowerMultiplier === 'function', 'orbPowerMultiplier exported');
+  // Excess orbs (>100) feed buff-drop and spawn rate, not sword size
+  ok(excessOrbs(50) === 0 && excessOrbs(100) === 0 && excessOrbs(150) === 50 && excessOrbs(250) === 150,
+    'excess orbs: only the amount above 100 counts');
+  ok(orbPowerMultiplier(150) === 4 && orbPowerMultiplier(300) === 4,
+    'sword size caps at 150 orbs (4x), excess does not grow it');
 }
 
-// --- Buff 4 (VISION) + boss-duration applyBuff ---
+// --- Buff 4 (VISION) + boss-duration applyBuff + excess-orbs ---
 {
   const s = new GameState();
   s.applyBuff(4);
-  ok(s.buffEffect === 4 && Math.abs(s.buffTime - 15) < 1e-9, 'applyBuff(4) = VISION, 15s');
+  ok(s.buffEffect === 4 && Math.abs(s.buffTime - BUFF.DURATION) < 1e-9, 'applyBuff(4) = VISION, 30s');
   // boss buff: explicit long duration
   s.applyBuff(1, BUFF.BOSS_DURATION);
   ok(s.buffEffect === 1 && Math.abs(s.buffTime - 300) < 1e-9,

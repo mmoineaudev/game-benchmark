@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON, SWORD, PROPS, HIT_STOP, LIGHTING, DROP, BUFF } from './Constants.js';
+import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON, SWORD, PROPS, HIT_STOP, LIGHTING, DROP, BUFF, excessOrbs } from './Constants.js';
 import { GameState } from './GameState.js';
 import { Leaderboard } from './Leaderboard.js';
 import { EventBus } from './EventBus.js';
@@ -17,6 +17,7 @@ import { SmokeSystem } from '../systems/SmokeSystem.js';
 import { SkeletonSystem } from '../entities/SkeletonSystem.js';
 import { OrbShooter } from '../entities/OrbShooter.js';
 import { PlayerSword } from '../entities/PlayerSword.js';
+import { generateGlowTexture } from '../world/Textures.js';
 import { resolveCircleCollisions } from './Collision.js';
 
 export class Game {
@@ -77,6 +78,7 @@ export class Game {
     this._maxHealth = PLAYER.MAX_HEALTH; // grows by 1 per boss kill
     this._bossPortalOpen = true; // boss arenas gate the exit portal
     this._bossBarEl = null;
+    this._firePatches = [];    // pooled blue magic-fire patches (orb impacts)
   }
 
   init() {
@@ -219,9 +221,10 @@ export class Game {
     // Merge prop AABBs into the collision list BEFORE enemies spawn
     this._collisionBoxes.push(...(result.collisionBoxes || []));
     this.props.lavaHazard = ({ x, z }) => this._lavaDamage(x, z);
-    // Breakables: 6% chance to drop a temporary buff
+    // Breakables: buff drop chance = base + orbs-above-100 bonus
     this.props.onBreak = (x, z) => {
-      if (Math.random() < BUFF.CHANCE) this.orbs.spawnBuff(x, z);
+      const chance = BUFF.CHANCE + excessOrbs(this.state.collectedOrbs) * BUFF.ORB_BUFF_CHANCE;
+      if (Math.random() < chance) this.orbs.spawnBuff(x, z);
     };
   }
 
@@ -288,14 +291,23 @@ export class Game {
 
     this.skeletons = new SkeletonSystem(this.scene, this.state);
     this.skeletons.init(this.dungeonData, this.state);
-    this.skeletons.onKill = (x, z, orbs = 1) => {
+    this.skeletons.onKill = (x, z, orbs = 1, skel) => {
       if (orbs > 0) this.orbs.spawnDrop(x, z, orbs);
       // 15% chance the kill also drops a full health reset
       if (Math.random() < DROP.HEALTH_CHANCE) this.orbs.spawnHealth(x, z);
       this.smoke.addTransient(x, 0.6, z, 10, 0.4);
+      // Purple death: tint the fading corpse purple and pop into particles
+      if (skel && skel.group) {
+        skel.group.traverse((o) => {
+          if (o.material && o.material.color) o.material.color.set(0xb44fff);
+        });
+      }
+      this.orbs.spawnPurpleBurst(x, z, performance.now() * 0.001);
     };
     // Boss kill: 5-minute buff + a permanent extra heart, then the exit portal opens
     this.skeletons.onBossKill = () => this._onBossDefeated();
+    // Burning enemy sets the ground alight where it walks
+    this.skeletons.onBurn = (x, z) => this._spawnFirePatch(x, z);
     this.skeletons.onPlayerDamaged = () => this._flashDamage();
     this.skeletons.onPlayerDeath = () => this._gameOver('dead');
     this.shooter.hitSkeleton = (skel) => this.skeletons.hitSkeleton(skel, ORB_WEAPON.DAMAGE);
@@ -317,10 +329,94 @@ export class Game {
       if (!this.props) return false;
       return this.props.hitBreakables(x, z);
     };
+    // Orb impacts on walls/ground light a brief blue magic fire
+    this.shooter.onImpact = (x, z) => this._spawnFirePatch(x, z);
 
     // Boss arena: exit portal stays closed until the boss is dead
     this._bossPortalOpen = !this.skeletons.boss;
     this._setupExitPortal();
+    this._setupFirePatchPool();
+  }
+
+  // Pooled blue magic-fire patches: an orb impact lights ~6m for ~5s, then
+  // fades into a short smoke puff drifting toward the exit portal.
+  _setupFirePatchPool() {
+    this._disposeFirePatches();
+    const tex = generateGlowTexture();
+    this._fireGlowTex = tex;
+    this._firePatches = [];
+    for (let i = 0; i < 6; i++) {
+      const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: tex, color: 0x44ccff, blending: THREE.AdditiveBlending,
+        depthWrite: false, transparent: true, opacity: 0,
+      }));
+      glow.scale.setScalar(3);
+      const light = new THREE.PointLight(0x44aaff, 0, 6, 2);
+      light.position.y = 1.2;
+      const group = new THREE.Group();
+      group.add(glow, light);
+      group.visible = false;
+      this.scene.add(group);
+      this._firePatches.push({
+        group, glow, light, active: false, start: 0, ttl: 5, x: 0, z: 0,
+      });
+    }
+  }
+
+  _disposeFirePatches() {
+    for (const p of this._firePatches || []) {
+      this.scene.remove(p.group);
+      if (p.glow.material) p.glow.material.dispose();
+    }
+    this._firePatches = [];
+    if (this._fireGlowTex) { this._fireGlowTex.dispose(); this._fireGlowTex = null; }
+  }
+
+  _spawnFirePatch(x, z) {
+    if (!this._firePatches.length) return;
+    let p = this._firePatches.find((q) => !q.active);
+    if (!p) { p = this._firePatches.reduce((a, b) => (a.start <= b.start ? a : b)); }
+    p.active = true;
+    p.start = performance.now() * 0.001;
+    p.ttl = 5;
+    p.x = x; p.z = z;
+    p.group.visible = true;
+    p.group.position.set(x, 0.4, z);
+    p.glow.scale.setScalar(0.5);
+    p.glow.material.opacity = 0.6;
+    p.light.intensity = 2.5;
+  }
+
+  _updateFirePatches() {
+    if (!this._firePatches.length) return;
+    const now = performance.now() * 0.001;
+    for (const p of this._firePatches) {
+      if (!p.active) continue;
+      const elapsed = now - p.start;
+      if (elapsed >= p.ttl) {
+        this._spawnPatchSmoke(p.x, p.z);
+        p.active = false;
+        p.group.visible = false;
+        p.light.intensity = 0;
+        continue;
+      }
+      const t = elapsed / p.ttl;
+      const grow = Math.min(1, elapsed / 0.3); // quick grow-in
+      const fade = t > 0.88 ? (1 - (t - 0.88) / 0.12) : 1; // fade at the very end
+      p.glow.scale.setScalar(3 * grow);
+      p.glow.material.opacity = 0.6 * fade;
+      p.light.intensity = 2.5 * fade * (0.85 + 0.15 * Math.sin(now * 9 + p.x));
+    }
+  }
+
+  _spawnPatchSmoke(x, z) {
+    // Short smoke puff drifting toward the next-level portal
+    const exit = this.dungeonData.exitCell;
+    const cs = this.dungeonData.cellSize;
+    const ex = exit.x * cs + cs / 2;
+    const ez = exit.z * cs + cs / 2;
+    for (let i = 0; i < 3; i++) this.smoke.addTransient(x, 0.3, z, 6, 0.6);
+    // (adding direction would need a smoke velocity param; the puff is enough)
   }
 
   // The golden exit portal. Hidden in boss arenas until the boss falls.
@@ -418,6 +514,7 @@ export class Game {
     this.smoke.update(this._delta, this.state.player);
     this.runes.update(t);
     this.orbs.update(t, this.state.player);
+    this._updateFirePatches();
     if (this.props) this.props.update(this._delta, t, this.state.player);
     this._stepOnBreakables();
     this._handleShooting();
@@ -605,6 +702,28 @@ export class Game {
     this._updateHUD();
   }
 
+  // Rare (1%) electric chain on a landing strike: a blue blast that kills
+  // every enemy within ELECTRIC_RANGE of the player.
+  _electricChain(x, z) {
+    if (!this.skeletons) return;
+    const r2 = SWORD.ELECTRIC_RANGE * SWORD.ELECTRIC_RANGE;
+    let killed = 0;
+    for (const s of this.skeletons.skeletons) {
+      if (s.skel.state === 'DEAD') continue;
+      const dx = s.x - x;
+      const dz = s.z - z;
+      if (dx * dx + dz * dz <= r2) {
+        if (this.skeletons.hitSkeleton(s.skel, 99999)) killed++;
+      }
+    }
+    // blue explosion flash + screen shake + arrival message
+    this._spawnFirePatch(x, z);
+    this.state.hitStop = HIT_STOP * 2;
+    this._shakeTime = Math.max(this._shakeTime, 0.4);
+    if (killed > 0) this._showMessage(`ELECTRIC CHAIN — ${killed} foes vaporized!`, 'success');
+    this._updateHUD();
+  }
+
   _handleSwordAttack() {
     if (this._gameOverActive) return;
     if (!this.sword) return;
@@ -681,6 +800,11 @@ export class Game {
         this.sword.burstSparks(new THREE.Vector3(
           p0.x + fx * 1.5, 1.2, p0.z + fz * 1.5,
         ));
+        // 1% chance the landing strike chains an electric blast that kills
+        // every enemy within ~20m
+        if (Math.random() < SWORD.ELECTRIC_CHANCE) {
+          this._electricChain(p.x, p.z);
+        }
         this.events.emit('sword:hit', {
           step: this.sword.comboStep, enemiesHit, damage,
         });
@@ -839,7 +963,7 @@ export class Game {
     this._clearBuffEffects(); // no lingering buff side effects across runs
     const nextState = new GameState({
       level: newGamePlus ? Math.max(1, Math.floor(this.state.level / 2)) : 1,
-      collectedOrbs: newGamePlus ? this.state.collectedOrbs : 0,
+      collectedOrbs: newGamePlus ? Math.floor(this.state.collectedOrbs * 0.5) : 0,
       ngPlus: newGamePlus ? (this.state.ngPlus || 0) + 1 : 0,
     });
     this._regenerateDungeon({ nextState });
@@ -1029,6 +1153,8 @@ export class Game {
         fill.style.width = `${(pct * 100).toFixed(1)}%`;
         fill.style.backgroundColor = pct > 0.5 ? '#66cc66' : pct > 0.25 ? '#ffcc44' : '#ff5544';
       }
+      const label = this._bossBarEl.querySelector('.boss-bar-label');
+      if (label) label.textContent = b.variantLabel || 'SPECTRAL LORD';
     } else if (this._bossBarEl) {
       this._bossBarEl.style.display = 'none';
     }
@@ -1051,6 +1177,7 @@ export class Game {
     this.runes.dispose();
     this.orbs.dispose();
     this.lighting.dispose();
+    this._disposeFirePatches();
     if (this.props) this.props.dispose();
     if (this.sword) this.sword.dispose();
     if (this.headlight) {

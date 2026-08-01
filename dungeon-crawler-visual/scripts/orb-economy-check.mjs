@@ -203,8 +203,9 @@ console.log('== Shared power multiplier ==');
   const cam = new THREE.PerspectiveCamera(75, 16 / 9, 0.1, 50);
   const sword = new PlayerSword(cam);
   ok(orbPowerMultiplier(0) === 1 && orbPowerMultiplier(10) === 1.2
-    && orbPowerMultiplier(100) === 3 && orbPowerMultiplier(999) === 3,
-    `multiplier bounds (1 @0, 1.2 @10, 3 @100+, capped)`);
+    && orbPowerMultiplier(100) === 3 && orbPowerMultiplier(150) === 4
+    && orbPowerMultiplier(999) === 4,
+    `multiplier bounds (1 @0, 1.2 @10, 3 @100, 4 @150, capped at 4x)`);
   for (const n of [0, 10, 50, 100, 150]) {
     sword.setOrbCount(n);
     ok(Math.abs(sword.scale - orbPowerMultiplier(n)) < 1e-9,
@@ -289,6 +290,21 @@ console.log('== Spawn clearance ==');
   ok(props._nearEntrance(ex + 1.9, ez), '1.9u from spawn is protected');
   ok(!props._nearEntrance(ex + 2.5, ez), '2.5u from spawn is clear');
   ok(!props._nearEntrance(ex + 10, ez), 'far from spawn is clear');
+}
+
+// ===========================================================================
+// 4e) ORB IMPACT FIRE — wall/ground impacts fire onImpact (blue magic fire)
+// ===========================================================================
+console.log('== Orb impact fire ==');
+{
+  const { scene, shooter } = newShooter();
+  let impacts = 0;
+  shooter.onImpact = (x, z) => impacts++;
+  shooter.fire(0, 1, 0, -Math.PI / 2, 0); // +x into a wall
+  const wall = { minX: 1, maxX: 1.4, minZ: -10, maxZ: 10 };
+  for (let i = 0; i < 60 && impacts === 0; i++) shooter.update(dt, [wall], []);
+  ok(impacts === 1, `orb wall impact fires onImpact (${impacts})`);
+  shooter.dispose();
 }
 
 // ===========================================================================

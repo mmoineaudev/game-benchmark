@@ -1,5 +1,5 @@
-// Headless verification: orb economy rework (3-orb volley, 1 bounce, AOE
-// explosion), health-reset drops, and fluorescent rats.
+// Headless verification: orb economy rework (click-per-step 3-orb sequence,
+// 1 bounce, AOE explosion), health-reset drops, and fluorescent rats.
 // Run: node scripts/orb-economy-check.mjs
 import * as THREE from 'three';
 
@@ -35,138 +35,159 @@ function makeScene() {
     remove(o) { const i = this.children.indexOf(o); if (i >= 0) this.children.splice(i, 1); },
   };
 }
-const dt = 1 / 60;
-
-// ===========================================================================
-// 1) ORB SEQUENCE — 1 click = 3 staggered orbs, last one explosive
-// ===========================================================================
-console.log('== Orb sequence ==');
-{
+// Fresh shooter per sub-test: the sequence state is per-shooter, so sharing
+// one shooter across independent scenarios would leak the step counter.
+function newShooter() {
   const scene = makeScene();
   const shooter = new OrbShooter(scene);
   shooter.init();
-  const fired = shooter.fire(0, 1, 0, 0, 0); // facing -z
-  ok(fired.length === 3, `fire() returns ${fired.length} orbs (expected 3)`);
-  ok(fired[0].active && fired[1].scheduled && fired[2].scheduled,
-    'orb 1 fires immediately, orbs 2-3 are scheduled');
-  ok(!fired[0].explode && !fired[1].explode && fired[2].explode,
-    'orbs 1-2 normal, orb 3 explosive');
-  ok(fired.every((p) => Math.abs(p.dirZ) > 0.99), 'sequence orbs fly along the aim vector');
-  ok(Math.abs(fired[0].dirX - fired[2].dirX) > 0.03, `sequence has a fan spread (dirX ${fired[0].dirX.toFixed(3)}..${fired[2].dirX.toFixed(3)})`);
+  return { scene, shooter };
+}
+const dt = 1 / 60;
 
-  // Timing: orb 2 releases at ~SEQUENCE_GAP, orb 3 at ~2x SEQUENCE_GAP
-  let t1 = -1, t2 = -1;
-  for (let i = 0; i < 60; i++) {
-    shooter.update(dt, [], []);
-    if (t1 < 0 && fired[1].active) t1 = (i + 1) * dt;
-    if (t2 < 0 && fired[2].active) t2 = (i + 1) * dt;
-  }
-  ok(t1 > 0 && t1 < 0.25, `orb 2 releases at ~${ORB_WEAPON.SEQUENCE_GAP}s (got ${t1.toFixed(3)}s)`);
-  ok(t2 > 0.25 && t2 < 0.45, `orb 3 releases at ~${2 * ORB_WEAPON.SEQUENCE_GAP}s (got ${t2.toFixed(3)}s)`);
-  ok(fired[2].active && !fired[2].scheduled, 'orb 3 active after its slot');
+// ===========================================================================
+// 1) ORB SEQUENCE — 1 click = 1 step; sequence of 3 steps costs 1 orb
+// ===========================================================================
+console.log('== Orb sequence (1 click = 1 step) ==');
+{
+  const { scene, shooter } = newShooter();
+
+  const s1 = shooter.fire(0, 1, 0, 0, 0);
+  ok(s1.step === 1 && s1.startingNew, 'click 1: step 1 opens a new sequence');
+  ok(s1.projectile.active && !s1.projectile.explode, 'step 1 orb active, normal (bouncy)');
+
+  const s2 = shooter.fire(0, 1, 0, 0, 0);
+  ok(s2.step === 2 && !s2.startingNew, 'click 2: step 2 continues the sequence (free)');
+  ok(!s2.projectile.explode, 'step 2 orb normal (bouncy)');
+
+  const s3 = shooter.fire(0, 1, 0, 0, 0);
+  ok(s3.step === 3 && !s3.startingNew, 'click 3: step 3 completes the sequence');
+  ok(s3.projectile.explode, 'step 3 orb is the explosive one');
+
+  const s4 = shooter.fire(0, 1, 0, 0, 0);
+  ok(s4.step === 1 && s4.startingNew, 'click 4: sequence complete -> a new sequence starts');
+  ok(!s4.projectile.explode, 'new sequence starts with a normal orb');
+
+  // Window expiry: a pause longer than SEQUENCE_WINDOW resets the sequence
+  for (let i = 0; i < Math.ceil((ORB_WEAPON.SEQUENCE_WINDOW + 0.1) / dt); i++) shooter.update(dt, [], []);
+  ok(shooter.step === 0, 'sequence expired after the window');
+  const w = shooter.fire(0, 1, 0, 0, 0);
+  ok(w.startingNew && w.step === 1, 'post-window click opens a NEW sequence (re-charge)');
   shooter.dispose();
   ok(scene.children.length === 0, 'dispose cleans scene');
 }
 
 // ===========================================================================
-// 2) BOUNCE — normal orbs bounce once off floor/wall, fizzle on 2nd contact
+// 2) BOUNCE — normal orbs bounce once off floor/wall/ceiling, fizzle on 2nd
 // ===========================================================================
 console.log('== Orb bounce ==');
 {
-  const scene = makeScene();
-  const shooter = new OrbShooter(scene);
-  shooter.init();
-  const hits = [];
-  shooter.hitSkeleton = (s) => hits.push(s);
-
   // Floor bounce: fire downward, orb must bounce up once and stay active
-  const [down] = shooter.fire(0, 3.5, 0, 0, -0.8); // steep downward pitch
-  let bounced = false;
-  let survivedBounce = false;
-  for (let i = 0; i < 60 * 2 && down.active; i++) {
-    shooter.update(dt, [], []);
-    if (down.bounces === 1 && down.dirY > 0 && !bounced) {
-      bounced = true;
-      survivedBounce = down.active;
-      ok(down.mesh.position.y >= 0.14, `floor bounce restores y (${down.mesh.position.y.toFixed(2)})`);
-      ok(down.dirY > 0, `floor bounce flips dirY upward (${down.dirY.toFixed(2)})`);
+  {
+    const { scene, shooter } = newShooter();
+    const { projectile: down } = shooter.fire(0, 3.5, 0, 0, -0.8); // steep downward pitch
+    let bounced = false;
+    let survivedBounce = false;
+    for (let i = 0; i < 60 * 2 && down.active; i++) {
+      shooter.update(dt, [], []);
+      if (down.bounces === 1 && down.dirY > 0 && !bounced) {
+        bounced = true;
+        survivedBounce = down.active;
+        ok(down.mesh.position.y >= 0.14, `floor bounce restores y (${down.mesh.position.y.toFixed(2)})`);
+        ok(down.dirY > 0, `floor bounce flips dirY upward (${down.dirY.toFixed(2)})`);
+      }
     }
+    ok(bounced, 'orb bounced once off the floor');
+    ok(survivedBounce, 'orb survives the floor bounce');
+    shooter.dispose();
   }
-  ok(bounced, 'orb bounced once off the floor');
-  ok(survivedBounce, 'orb survives the floor bounce');
 
   // Ceiling bounce: fire upward, must bounce down once
-  const [up] = shooter.fire(0, 1, 0, 0, 0.9);
-  let upBounced = false;
-  for (let i = 0; i < 60 * 2 && up.active; i++) {
-    shooter.update(dt, [], []);
-    if (up.bounces === 1 && up.dirY < 0) upBounced = true;
-  }
-  ok(upBounced, 'orb bounced once off the ceiling');
-
-  // Wall double-bounce: corridor -> bounce once, then fizzle on 2nd contact.
-  // Use the CENTER orb of the volley (zero fan spread) so dirZ is exactly 0.
-  const corridor = [
-    { minX: -0.8, maxX: -0.4, minZ: -10, maxZ: 10 },
-    { minX: 0.4, maxX: 0.8, minZ: -10, maxZ: 10 },
-  ];
-  const wallVolley = shooter.fire(0, 1, 0, -Math.PI / 2, 0); // straight +x into the wall
-  const wall = wallVolley[1];
-  let wallBounced = false;
-  for (let i = 0; i < 60 * 4; i++) {
-    shooter.update(dt, corridor, []);
-    if (wall.scheduled) continue; // orb 2 of the sequence: wait for its slot
-    if (!wall.active) break;
-    if (wall.bounces === 1 && !wallBounced) {
-      wallBounced = true;
-      ok(Math.abs(wall.dirZ) < 0.001 && Math.abs(wall.dirX) > 0.9,
-        `wall bounce reflects the dominant axis (dirX=${wall.dirX.toFixed(2)}, dirZ=${wall.dirZ.toFixed(2)})`);
+  {
+    const { scene, shooter } = newShooter();
+    const { projectile: up } = shooter.fire(0, 1, 0, 0, 0.9);
+    let upBounced = false;
+    for (let i = 0; i < 60 * 2 && up.active; i++) {
+      shooter.update(dt, [], []);
+      if (up.bounces === 1 && up.dirY < 0) upBounced = true;
     }
+    ok(upBounced, 'orb bounced once off the ceiling');
+    shooter.dispose();
   }
-  ok(wallBounced, 'orb bounced once off a wall');
-  ok(!wall.active, 'orb fizzles on the second wall contact');
-  shooter.dispose();
+
+  // Wall double-bounce: corridor -> bounce once, then fizzle on 2nd contact
+  {
+    const { scene, shooter } = newShooter();
+    const corridor = [
+      { minX: -0.8, maxX: -0.4, minZ: -10, maxZ: 10 },
+      { minX: 0.4, maxX: 0.8, minZ: -10, maxZ: 10 },
+    ];
+    const { projectile: wall } = shooter.fire(0, 1, 0, -Math.PI / 2, 0); // straight +x into the wall
+    let wallBounced = false;
+    for (let i = 0; i < 60 * 4; i++) {
+      shooter.update(dt, corridor, []);
+      if (!wall.active) break;
+      if (wall.bounces === 1 && !wallBounced) {
+        wallBounced = true;
+        ok(Math.abs(wall.dirZ) < 0.001 && Math.abs(wall.dirX) > 0.9,
+          `wall bounce reflects the dominant axis (dirX=${wall.dirX.toFixed(2)}, dirZ=${wall.dirZ.toFixed(2)})`);
+      }
+    }
+    ok(wallBounced, 'orb bounced once off a wall');
+    ok(!wall.active, 'orb fizzles on the second wall contact');
+    shooter.dispose();
+  }
 }
 
 // ===========================================================================
-// 3) EXPLOSION — the last orb detonates on contact, AOE callback fires
+// 3) EXPLOSION — the 3rd click of a sequence detonates, AOE callback fires
 // ===========================================================================
 console.log('== Orb explosion ==');
 {
-  const scene = makeScene();
-  const shooter = new OrbShooter(scene);
-  shooter.init();
-  const blasts = [];
-  shooter.onExplode = (x, y, z) => blasts.push({ x, y, z });
-
-  // Explosive orb fired straight down: detonates on the floor (after its slot)
-  const volley = shooter.fire(0, 2, 0, 0, -0.9);
-  const bomb = volley[2];
-  ok(bomb.explode, 'last orb is the explosive one');
-  for (let i = 0; i < 60 * 2; i++) {
-    shooter.update(dt, [], []);
-    if (bomb.scheduled) continue; // wait for its sequence slot
-    if (!bomb.active) break;
+  // Steps 1-2 (bouncy) + step 3 (explosive) fired straight down
+  {
+    const { scene, shooter } = newShooter();
+    const blasts = [];
+    shooter.onExplode = (x, y, z) => blasts.push({ x, y, z });
+    shooter.fire(0, 2, 0, 0, -0.9);
+    shooter.fire(0, 2, 0, 0, -0.9);
+    const f3 = shooter.fire(0, 2, 0, 0, -0.9);
+    const bomb = f3.projectile;
+    ok(bomb.explode, '3rd step orb is the explosive one');
+    for (let i = 0; i < 60 * 2; i++) {
+      shooter.update(dt, [], []);
+      if (!bomb.active) break;
+    }
+    ok(!bomb.active, 'explosive orb deactivated after detonation');
+    ok(blasts.length === 1, `onExplode fired once (${blasts.length})`);
+    ok(blasts[0] && blasts[0].y < 0.3, `blast at floor level (y=${blasts[0]?.y.toFixed(2)})`);
+    const boomActive = shooter._booms.filter((b) => b.active).length;
+    ok(boomActive === 1, `explosion ring active (${boomActive})`);
+    shooter.dispose();
   }
-  ok(!bomb.active, 'explosive orb deactivated after detonation');
-  ok(blasts.length === 1, `onExplode fired once (${blasts.length})`);
-  ok(blasts[0] && blasts[0].y < 0.3, `blast at floor level (y=${blasts[0]?.y.toFixed(2)})`);
-  const boomActive = shooter._booms.filter((b) => b.active).length;
-  ok(boomActive === 1, `explosion ring active (${boomActive})`);
 
-  // Explosive orb against an enemy: detonates, direct victim inside radius
-  const volley2 = shooter.fire(0, 1.5, 0, 0, 0);
-  const bomb2 = volley2[2];
-  const enemy = { x: 0, z: -0.8, skel: { state: 'CHASE' } };
-  for (let i = 0; i < 60 * 2; i++) {
-    shooter.update(dt, [], [enemy]);
-    if (bomb2.scheduled) continue; // wait for its sequence slot
-    if (!bomb2.active) break;
+  // Explosive orb against an enemy: steps 1-2 direct hits, step 3 detonates
+  {
+    const { scene, shooter } = newShooter();
+    const blasts = [];
+    const hits = [];
+    shooter.onExplode = (x, y, z) => blasts.push({ x, y, z });
+    shooter.hitSkeleton = (s) => hits.push(s);
+    shooter.fire(0, 1.5, 0, 0, 0);
+    shooter.fire(0, 1.5, 0, 0, 0);
+    const e3 = shooter.fire(0, 1.5, 0, 0, 0);
+    const bomb2 = e3.projectile;
+    const enemy = { x: 0, z: -0.8, skel: { state: 'CHASE' } };
+    for (let i = 0; i < 60 * 2; i++) {
+      shooter.update(dt, [], [enemy]);
+      if (!bomb2.active) break;
+    }
+    ok(hits.length === 2, `steps 1-2 deal direct hits (${hits.length})`);
+    ok(blasts.length === 1, `enemy contact detonates the 3rd orb (${blasts.length} blasts)`);
+    ok(blasts[0] && Math.hypot(blasts[0].x - enemy.x, blasts[0].z - enemy.z) < ORB_WEAPON.EXPLODE_RADIUS,
+      'blast point within EXPLODE_RADIUS of the enemy');
+    shooter.dispose();
   }
-  ok(blasts.length === 2, `enemy contact detonates the orb (${blasts.length} blasts)`);
-  ok(Math.hypot(blasts[1].x - enemy.x, blasts[1].z - enemy.z) < ORB_WEAPON.EXPLODE_RADIUS,
-    'blast point within EXPLODE_RADIUS of the enemy');
-  shooter.dispose();
 }
 
 // ===========================================================================

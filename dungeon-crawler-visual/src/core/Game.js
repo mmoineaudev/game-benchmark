@@ -61,9 +61,10 @@ export class Game {
     this.props = null;
     this._noAmmoWarned = false;
     this._shakeTime = 0;
-    this._fireCooldown = 0;
+    this._stepCooldown = 0;
     this._swordHitApplied = false;
     this._rmbWasDown = false;
+    this._lmbWasDown = false;
   }
 
   init() {
@@ -431,19 +432,38 @@ export class Game {
 
   _handleShooting() {
     if (this._gameOverActive) return;
-    if (this._fireCooldown > 0) this._fireCooldown -= this._delta;
-    if (!this.input.isMouseDown(0) || !this.input.isPointerLocked()) return;
-    if (this._fireCooldown > 0) return;
-
-    if (this.state.collectedOrbs <= 0) {
-      if (!this._noAmmoWarned) {
-        this._showMessage('No orbs! Slay skeletons to gather orbs', 'goal');
-        this._noAmmoWarned = true;
-      }
+    const lmbDown = this.input.isMouseDown(0) && this.input.isPointerLocked();
+    if (!lmbDown) {
+      this._lmbWasDown = false;
       return;
     }
-    this._noAmmoWarned = false;
-    this.state.collectedOrbs--;
+
+    // One click = ONE STEP of the orb sequence. A fresh press fires a step
+    // immediately; holding the button keeps stepping at STEP_INTERVAL.
+    const fresh = !this._lmbWasDown;
+    this._lmbWasDown = true;
+    if (!fresh) {
+      if (this._stepCooldown > 0) {
+        this._stepCooldown -= this._delta;
+        return;
+      }
+    }
+    this._stepCooldown = ORB_WEAPON.STEP_INTERVAL;
+
+    // Only the FIRST step of a NEW sequence costs an orb — steps 2 and 3 of
+    // an open sequence are free (the sequence was paid for up front).
+    const startingNew = this.shooter.step === 0 || this.shooter.window <= 0;
+    if (startingNew) {
+      if (this.state.collectedOrbs <= 0) {
+        if (!this._noAmmoWarned) {
+          this._showMessage('No orbs! Slay skeletons to gather orbs', 'goal');
+          this._noAmmoWarned = true;
+        }
+        return;
+      }
+      this._noAmmoWarned = false;
+      this.state.collectedOrbs--;
+    }
     const p = this.state.player;
     this.shooter.fire(
       p.x,
@@ -452,7 +472,6 @@ export class Game {
       p.yaw,
       p.pitch,
     );
-    this._fireCooldown = ORB_WEAPON.SEQUENCE_LOCK; // one sequence (3 orbs) per orb spent
   }
 
   _handleSwordAttack() {

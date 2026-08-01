@@ -10,10 +10,13 @@ import { generateGlowTexture } from '../world/Textures.js';
 //   -> RECOVER2 -> [window] -> WINDUP3 -> THRUST3 (piercing stab forward)
 //   -> RECOVER3 -> COOLDOWN -> IDLE
 // Combo window: 0.34 s from each RECOVER start (0.14 s recover + 0.20 s grace).
-// Each strike leaves a visible movement trace: pooled additive sprites
-// spawned at the blade tip in camera space while the blade is moving, so the
-// arc path lingers after the sword has moved on (icy blue "/", gold "\",
-// white-hot thrust).
+// Every strike PIVOTS AT THE POMBEL: the hand stays anchored (a small drift
+// at most) while the blade fans around it, so the tip — not the handle —
+// sweeps the visible arc. Only the thrust is translation-driven (a stab
+// drives the whole sword forward). Each strike leaves a visible movement
+// trace: pooled additive sprites spawned at the blade tip in camera space
+// while the blade is moving, so the arc path lingers after the sword has
+// moved on (icy blue "/", gold "\", white-hot thrust).
 //
 // Progression: the sword grows +20% per 10 orbs held (capped at +200% = 3x at
 // 100 orbs), extends melee range, shifts base color each size bonus, and
@@ -272,11 +275,11 @@ export class PlayerSword {
     }
   }
 
-  // Ready pose: sword held in front, blade pointing forward at the enemy
-  // (tip projects to the upper-center of the screen, on the aim line).
+  // Ready pose: hand anchored bottom-right, blade pointing forward at the
+  // enemy (tip projects to the upper-center of the view, on the aim line).
   _setRest() {
-    this.group.position.set(0.28, -0.2, -0.72);
-    this.group.rotation.set(-0.28, 0, 0.34);
+    this.group.position.set(0.28, -0.22, -0.72);
+    this.group.rotation.set(-0.22, 0, 0.32);
   }
 
   // Effective melee reach — grows with the sword size bonus
@@ -369,27 +372,27 @@ export class PlayerSword {
     const C = SWORD.COMBO;
 
     // State transitions (explicit — pose math alone never flips the state)
-    if (this.state === 'windup1' && this.time >= C.WINDUP1) this._enter('slash1', C.WINDUP1);
-    else if (this.state === 'slash1' && this.time >= C.SLASH1) this._enter('recover1', C.SLASH1);
+    if (this.state === 'windup1' && this.time >= C.WINDUP1) this._enter('slash1');
+    else if (this.state === 'slash1' && this.time >= C.SLASH1) this._enter('recover1');
     else if (this.state === 'recover1') {
       if (this.time >= C.COMBO_WINDOW) {
-        this._enter('cooldown', 0);
+        this._enter('cooldown');
       } else if (this.time >= C.RECOVER1 && this._comboBuffered) {
         this._comboBuffered = false;
-        this._enter('windup2', C.RECOVER1);
+        this._enter('windup2');
       }
-    } else if (this.state === 'windup2' && this.time >= C.WINDUP2) this._enter('slash2', C.WINDUP2);
-    else if (this.state === 'slash2' && this.time >= C.SLASH2) this._enter('recover2', C.SLASH2);
+    } else if (this.state === 'windup2' && this.time >= C.WINDUP2) this._enter('slash2');
+    else if (this.state === 'slash2' && this.time >= C.SLASH2) this._enter('recover2');
     else if (this.state === 'recover2') {
       if (this.time >= C.COMBO_WINDOW) {
-        this._enter('cooldown', 0);
+        this._enter('cooldown');
       } else if (this.time >= C.RECOVER2 && this._comboBuffered) {
         this._comboBuffered = false;
-        this._enter('windup3', C.RECOVER2);
+        this._enter('windup3');
       }
-    } else if (this.state === 'windup3' && this.time >= C.WINDUP3) this._enter('thrust3', C.WINDUP3);
-    else if (this.state === 'thrust3' && this.time >= C.THRUST3) this._enter('recover3', C.THRUST3);
-    else if (this.state === 'recover3' && this.time >= C.RECOVER3) this._enter('cooldown', C.RECOVER3);
+    } else if (this.state === 'windup3' && this.time >= C.WINDUP3) this._enter('thrust3');
+    else if (this.state === 'thrust3' && this.time >= C.THRUST3) this._enter('recover3');
+    else if (this.state === 'recover3' && this.time >= C.RECOVER3) this._enter('cooldown');
     else if (this.state === 'cooldown' && this.time >= C.COOLDOWN) {
       this._setRest();
       this.state = 'idle';
@@ -416,9 +419,13 @@ export class PlayerSword {
     }
   }
 
-  _enter(state, resetFrom) {
+  // Enter a new state with a FRESH clock (time = 0). Every state's k=0
+  // keyframe equals the previous state's k=1 keyframe, so transitions are
+  // perfectly continuous — no pose jump, and the first rendered frame of a
+  // slash really is the start of the arc (hit window, trail burst).
+  _enter(state) {
     this.state = state;
-    this.time -= resetFrom;
+    this.time = 0;
     if (state === 'slash1') this.comboStep = 1;
     if (state === 'slash2') this.comboStep = 2;
     if (state === 'thrust3') this.comboStep = 3;
@@ -442,90 +449,94 @@ export class PlayerSword {
 
     switch (s) {
       case 'windup1': {
-        // Cock back to the bottom-right — start of the rising diagonal
+        // Cock to the right — blade pulls back-down beside the hand. The
+        // hand drifts only slightly; the fan rotation does the work.
         const k = easeOut(Math.min(1, t / C.WINDUP1));
-        p.x = lerp(0.28, 0.42, k);
-        p.y = lerp(-0.2, -0.26, k);
-        p.z = lerp(-0.72, -0.7, k);
-        r.x = lerp(-0.28, -0.1, k);
-        r.z = lerp(0.34, 0.55, k);
+        p.x = lerp(0.28, 0.12, k);
+        p.y = lerp(-0.22, -0.24, k);
+        p.z = lerp(-0.72, -0.82, k);
+        r.x = lerp(-0.22, -0.25, k);
+        r.z = lerp(0.32, -1.0, k);
         break;
       }
       case 'slash1': {
-        // Rising diagonal "/": bottom-right -> upper-left
+        // Rising diagonal "/": the blade fans right -> left around the
+        // anchored hand — the POMBEL stays put, the tip sweeps the arc.
         const k = easeOut(Math.min(1, t / C.SLASH1));
-        p.x = lerp(0.42, -0.34, k);
-        p.y = lerp(-0.26, 0.1, k);
-        p.z = lerp(-0.7, -0.86, k);
-        r.x = lerp(-0.1, -0.3, k);
-        r.z = lerp(0.55, -0.55, k);
+        p.x = lerp(0.12, -0.02, k);
+        p.y = lerp(-0.24, -0.17, k);
+        p.z = lerp(-0.82, -0.84, k);
+        r.x = lerp(-0.25, -0.1, k);
+        r.z = lerp(-1.0, 1.0, k);
         break;
       }
       case 'recover1': {
         const k = easeIn(Math.min(1, t / C.RECOVER1));
-        p.x = lerp(-0.34, 0.22, k);
-        p.y = lerp(0.1, -0.1, k);
-        p.z = lerp(-0.86, -0.76, k);
-        r.x = lerp(-0.3, -0.22, k);
-        r.z = lerp(-0.55, 0.18, k);
+        p.x = lerp(-0.02, 0.1, k);
+        p.y = lerp(-0.17, -0.17, k);
+        p.z = lerp(-0.84, -0.79, k);
+        r.x = lerp(-0.1, -0.15, k);
+        r.z = lerp(1.0, 0.3, k);
         break;
       }
       case 'windup2': {
-        // Cock back to the upper-left — start of the falling diagonal
+        // Cock to the left — blade pulls back-up on the other side
         const k = easeOut(Math.min(1, t / C.WINDUP2));
-        p.x = lerp(0.22, -0.26, k);
-        p.y = lerp(-0.1, -0.04, k);
-        p.z = lerp(-0.76, -0.8, k);
-        r.x = lerp(-0.22, -0.3, k);
-        r.z = lerp(0.18, -0.4, k);
+        p.x = lerp(0.1, -0.04, k);
+        p.y = lerp(-0.17, -0.15, k);
+        p.z = lerp(-0.79, -0.82, k);
+        r.x = lerp(-0.15, -0.25, k);
+        r.z = lerp(0.3, 1.0, k);
         break;
       }
       case 'slash2': {
-        // Falling diagonal "\": upper-left -> bottom-right (crosses slash 1)
+        // Falling diagonal "\": the blade fans left -> right around the
+        // anchored hand, crossing slash 1 into an X.
         const k = easeOut(Math.min(1, t / C.SLASH2));
-        p.x = lerp(-0.26, 0.4, k);
-        p.y = lerp(-0.04, -0.28, k);
-        p.z = lerp(-0.8, -0.84, k);
-        r.x = lerp(-0.3, -0.05, k);
-        r.z = lerp(-0.4, 0.52, k);
+        p.x = lerp(-0.04, 0.1, k);
+        p.y = lerp(-0.15, -0.28, k);
+        p.z = lerp(-0.82, -0.84, k);
+        r.x = lerp(-0.25, -0.05, k);
+        r.z = lerp(1.0, -1.0, k);
         break;
       }
       case 'recover2': {
         const k = easeIn(Math.min(1, t / C.RECOVER2));
-        p.x = lerp(0.4, 0.26, k);
-        p.y = lerp(-0.28, -0.18, k);
-        p.z = lerp(-0.84, -0.74, k);
-        r.x = lerp(-0.05, -0.24, k);
-        r.z = lerp(0.52, 0.24, k);
+        p.x = lerp(0.1, 0.16, k);
+        p.y = lerp(-0.28, -0.21, k);
+        p.z = lerp(-0.84, -0.77, k);
+        r.x = lerp(-0.05, -0.15, k);
+        r.z = lerp(-1.0, 0.2, k);
         break;
       }
       case 'windup3': {
         // Thrust cock: blade drawn back beside the head — visible pull-back
         const k = easeOut(Math.min(1, t / C.WINDUP3));
-        p.x = lerp(0.26, 0.34, k);
-        p.y = lerp(-0.18, -0.06, k);
-        p.z = lerp(-0.74, -0.58, k);
-        r.x = lerp(-0.24, -0.55, k);
-        r.z = lerp(0.24, 0.3, k);
+        p.x = lerp(0.16, 0.22, k);
+        p.y = lerp(-0.21, -0.1, k);
+        p.z = lerp(-0.77, -0.62, k);
+        r.x = lerp(-0.15, -0.5, k);
+        r.z = lerp(0.2, 0.25, k);
         break;
       }
       case 'thrust3': {
-        // Piercing thrust: the whole sword drives INTO the screen center
+        // Piercing thrust: the hand drives forward, blade straight at the
+        // enemy — the one translation-driven move (a stab, not a swing).
         const k = easeOut(Math.min(1, t / C.THRUST3));
-        p.x = lerp(0.34, 0.08, k);
-        p.y = lerp(-0.06, -0.18, k);
-        p.z = lerp(-0.58, -1.06, k);
-        r.x = lerp(-0.55, -0.08, k);
-        r.z = lerp(0.3, 0.04, k);
+        p.x = lerp(0.22, 0.06, k);
+        p.y = lerp(-0.1, -0.16, k);
+        p.z = lerp(-0.62, -1.0, k);
+        r.x = lerp(-0.5, -0.06, k);
+        r.z = lerp(0.25, 0.02, k);
         break;
       }
       case 'recover3': {
         const k = easeIn(Math.min(1, t / C.RECOVER3));
-        p.x = lerp(0.08, 0.28, k);
-        p.y = lerp(-0.18, -0.2, k);
-        p.z = lerp(-1.06, -0.72, k);
-        r.x = lerp(-0.08, -0.28, k);
-        r.z = lerp(0.04, 0.34, k);
+        p.x = lerp(0.06, 0.28, k);
+        p.y = lerp(-0.16, -0.22, k);
+        p.z = lerp(-1.0, -0.72, k);
+        r.x = lerp(-0.06, -0.22, k);
+        r.z = lerp(0.02, 0.32, k);
         break;
       }
       case 'cooldown':

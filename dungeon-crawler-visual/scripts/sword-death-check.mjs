@@ -70,6 +70,8 @@ const rangeByState = {};
 const trailActive = { slash1: 0, slash2: 0, thrust3: 0 };
 const stepByState = {};
 const thrustZ = [];
+const pommelTrack = { slash1: [], slash2: [] };
+const tipTrack = { slash1: [], slash2: [] };
 let prevState = sword.state;
 for (let i = 0; i < 60 * 4; i++) {
   if (sword.state !== prevState) { statesSeen.push(prevState); prevState = sword.state; }
@@ -78,6 +80,14 @@ for (let i = 0; i < 60 * 4; i++) {
     sword.bufferCombo();
   }
   if (sword.state === 'thrust3') thrustZ.push(ndcOf(TIP).z);
+  if (sword.state === 'slash1') {
+    pommelTrack.slash1.push(ndcOf(POMMEL));
+    tipTrack.slash1.push(ndcOf(TIP));
+  }
+  if (sword.state === 'slash2') {
+    pommelTrack.slash2.push(ndcOf(POMMEL));
+    tipTrack.slash2.push(ndcOf(TIP));
+  }
   sword.update(dt, Infinity);
   checkVisible(`state=${sword.state} t=${sword.time.toFixed(3)}`);
   frames++;
@@ -125,6 +135,25 @@ const thrustEndTip = (() => {
 })();
 ok(Math.abs(thrustEndTip.x) < 0.15 && thrustEndTip.y > 0.4 && thrustEndTip.y < 0.85,
   `thrust ends with tip near screen center (NDC ${thrustEndTip.x.toFixed(2)}, ${thrustEndTip.y.toFixed(2)})`);
+
+// PIVOT AT THE POMBEL: during each slash the pommel must stay anchored while
+// the tip sweeps a wide arc (this was the reported bug — the tip hung around
+// screen center while the pommel whipped around it).
+function nudge(p, q) { return Math.hypot(p.x - q.x, p.y - q.y); }
+for (const slash of ['slash1', 'slash2']) {
+  const pom = pommelTrack[slash];
+  const tip = tipTrack[slash];
+  const pommelTravel = nudge(pom[0], pom[pom.length - 1]);
+  const tipXSpan = Math.max(...tip.map((t) => t.x)) - Math.min(...tip.map((t) => t.x));
+  const tipYSpan = Math.max(...tip.map((t) => t.y)) - Math.min(...tip.map((t) => t.y));
+  const tipTravel = Math.max(tipXSpan, tipYSpan);
+  ok(pommelTravel < 0.5, `${slash}: pommel anchored (drift ${pommelTravel.toFixed(2)} NDC < 0.5)`);
+  ok(tipTravel > 1.0, `${slash}: tip sweeps wide arc (travel ${tipTravel.toFixed(2)} NDC > 1.0)`);
+  ok(tipTravel > pommelTravel * 2.5,
+    `${slash}: tip motion ${tipTravel.toFixed(2)}x dominates pommel ${pommelTravel.toFixed(2)} (pivot at pommel)`);
+  ok(Math.max(...tip.map((t) => t.x)) > 0.4 && Math.min(...tip.map((t) => t.x)) < -0.4,
+    `${slash}: tip crosses both screen halves (x range ${Math.min(...tip.map((t) => t.x)).toFixed(2)}..${Math.max(...tip.map((t) => t.x)).toFixed(2)})`);
+}
 console.log(`  ...${frames} frames checked, strikes=${Object.keys(arcByState).length}, trail peaks ${JSON.stringify(trailActive)}, thrust z ${thrustZ[0]?.toFixed(3) ?? '?'}->${thrustZ[thrustZ.length - 1]?.toFixed(3) ?? '?'}`);
 
 // ===========================================================================

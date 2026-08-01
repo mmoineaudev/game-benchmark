@@ -1,5 +1,23 @@
 # Entity 3D Representation Redesign — Plan
 
+**Status: ✅ IMPLEMENTED (all phases A–E committed and verified headlessly).**
+
+```
+33095b0 Phase A: shared entity foundation (Materials, Rig, Proportion, Looks, ContactShadow)
+02d53d9 Phase B: enemy realism pass (stylized dark-fantasy + realism layer)
+c58ca39 Phase C: first-person presence (gloved hand + forearm rig)
+8968f1c Phase D: props/structure/world coherence (shared materials + banner sway)
+0d9109e Phase E: entity budget gate + triangle-trim + commit plan doc
+```
+
+Verify anytime with the headless gate (no vision required):
+```
+for s in boss-check buff-system-check dungeon-check orb-economy-check \
+         sprint-accel-check sword-death-check entity-budget-check; do \
+  node scripts/$s.mjs || break; done
+npm run build
+```
+
 **Project:** `~/Documents/games-benchmarks/dungeon-crawler-visual`
 **Scope:** Full 3D coherence — enemies, player first-person weapon, projectiles, drops, props, breakables, structure, world objects.
 **Goals:** More realistic, more detailed, more coherent. AI-art direction = **stylized dark-fantasy with exaggerated, readable silhouettes** + **a layer of realism** (finer subdivision, edge loops, slope shading).

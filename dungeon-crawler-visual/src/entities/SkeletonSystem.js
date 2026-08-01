@@ -7,7 +7,7 @@ import { Rat } from './enemies/Rat.js';
 import { Wraith } from './enemies/Wraith.js';
 import {
   SKELETON, PLAYER, MAGICIAN, ENEMY, ENEMY_SPAWN_WEIGHTS, ENEMY_TYPES,
-  ROOM_ENEMY_MODIFIERS, ARCHER, BRUTE,
+  ROOM_ENEMY_MODIFIERS, ARCHER, BRUTE, orbPowerMultiplier,
 } from '../core/Constants.js';
 import { resolveCircleCollisions, circleHitsBox } from '../core/Collision.js';
 import { generateGlowTexture } from '../world/Textures.js';
@@ -118,15 +118,18 @@ export class SkeletonSystem {
       [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
     }
 
-    // Level scaling: +5% speed & attack every 3 levels
-    const tier = Math.floor((state.level - 1) / 3);
-    this.speedMult = 1 + 0.05 * tier;
-    const attackMult = 1 + 0.05 * tier;
+    // Level scaling: +5% move speed PER LEVEL; attack speed still +5% per
+    // 3 levels (attackMult — swing cadence, not movement).
+    this.speedMult = 1 + 0.05 * (state.level - 1);
+    const attackMult = 1 + 0.05 * Math.floor((state.level - 1) / 3);
 
-    // Spawn slots: base + level, capped; +2 in ARENA rooms
+    // Spawn rate scales with the SAME multiplier as the sword size bonus:
+    // +20% per 10 orbs held (capped at 3x). Banked ammo = more enemies =
+    // more drops. Hard-capped at MAX_ALIVE so the live-bodies budget holds.
+    const spawnMult = orbPowerMultiplier(state.collectedOrbs);
     let slots = Math.min(
-      ENEMY.BASE_SLOTS + (state.level - 1) * ENEMY.SLOTS_PER_LEVEL,
-      ENEMY.MAX_SLOTS,
+      Math.round((ENEMY.BASE_SLOTS + (state.level - 1) * ENEMY.SLOTS_PER_LEVEL) * spawnMult),
+      ENEMY.MAX_ALIVE,
     );
     const inArena = dungeonData.rooms.some((r) => r.type === 'ARENA');
     if (inArena) slots += ENEMY.ARENA_EXTRA_SLOTS;

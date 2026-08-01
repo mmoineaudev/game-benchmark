@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { SWORD } from '../core/Constants.js';
+import { SWORD, orbPowerMultiplier } from '../core/Constants.js';
 import { generateGlowTexture } from '../world/Textures.js';
 
 // First-person sword attached to the camera. Curved two-segment blade with a
@@ -279,11 +279,12 @@ export class PlayerSword {
     }
   }
 
-  // Ready pose: hand anchored bottom-right, blade pointing forward at the
-  // enemy (tip projects to the upper-center of the view, on the aim line).
+  // Ready pose: hand anchored bottom-right (well right of the crosshair),
+  // blade canted so the crossguard tips tilt AWAY from the screen center —
+  // even at maximum sword size the guard never covers the aim point.
   _setRest() {
-    this.group.position.set(0.26, -0.26, -0.75);
-    this.group.rotation.set(-0.3, 0, 0.28);
+    this.group.position.set(0.38, -0.24, -0.72);
+    this.group.rotation.set(-0.2, 0, 0.45);
   }
 
   // Effective melee reach — grows with the sword size bonus
@@ -298,10 +299,10 @@ export class PlayerSword {
   // Grows the sword +20% per 10 orbs held (capped at +200% = 3x at 100 orbs),
   // extends melee range, shifts base color, intensifies the green growth light.
   setOrbCount(count) {
-    const steps = Math.floor(count / 10);
-    const capped = Math.min(steps, 10);
-    this._rangeScale = 1 + capped * 0.2;
+    // Same multiplier drives the enemy spawn rate (orbPowerMultiplier)
+    this._rangeScale = orbPowerMultiplier(count);
     this.group.scale.setScalar(this._rangeScale);
+    const capped = Math.min(Math.floor(count / 10), 10);
     const growth = capped / 10; // 0..1
     this.growthLight.intensity = growth * 2.8;
     this.growthGlowMat.opacity = growth * 0.35;
@@ -453,15 +454,15 @@ export class PlayerSword {
 
     switch (s) {
       case 'windup1': {
-        // Cock to the right: hand pulls BACK (z -0.75 -> -1.0, the deep
+        // Cock to the right: hand pulls BACK (z -0.72 -> -1.0, the deep
         // swing pivot) while the blade cocks right. The pull-back is the
         // telegraph for the wide slash to come.
         const k = easeOut(Math.min(1, t / C.WINDUP1));
-        p.x = lerp(0.26, 0.10, k);
-        p.y = lerp(-0.26, -0.30, k);
-        p.z = lerp(-0.75, -1.0, k);
-        r.x = lerp(-0.3, -0.4, k);
-        r.z = lerp(0.28, -1.3, k);
+        p.x = lerp(0.38, 0.10, k);
+        p.y = lerp(-0.24, -0.30, k);
+        p.z = lerp(-0.72, -1.0, k);
+        r.x = lerp(-0.2, -0.4, k);
+        r.z = lerp(0.45, -1.3, k);
         break;
       }
       case 'slash1': {
@@ -538,11 +539,11 @@ export class PlayerSword {
       }
       case 'recover3': {
         const k = easeIn(Math.min(1, t / C.RECOVER3));
-        p.x = lerp(0.06, 0.26, k);
-        p.y = lerp(-0.16, -0.26, k);
-        p.z = lerp(-1.0, -0.75, k);
-        r.x = lerp(-0.06, -0.3, k);
-        r.z = lerp(0.02, 0.28, k);
+        p.x = lerp(0.06, 0.38, k);
+        p.y = lerp(-0.16, -0.24, k);
+        p.z = lerp(-1.0, -0.72, k);
+        r.x = lerp(-0.06, -0.2, k);
+        r.z = lerp(0.02, 0.45, k);
         break;
       }
       case 'cooldown':

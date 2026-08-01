@@ -160,6 +160,25 @@ for (const slash of ['slash1', 'slash2']) {
   const pivotDepth = pommelDepth[slash].reduce((a, b) => a + b, 0) / pommelDepth[slash].length;
   ok(pivotDepth > 0.9, `${slash}: pivot sits back from the camera (avg depth ${pivotDepth.toFixed(2)} > 0.9)`);
 }
+
+// Max-size crosshair clearance: at 100 orbs (3x scale) the crossguard must
+// stay clear of the aim point at NDC (0,0) — reported bug at max sword size.
+sword.setOrbCount(100);
+ok(Math.abs(sword.scale - 3) < 1e-9, `max size = 3x (got ${sword.scale})`);
+{
+  const guardPts = [
+    ['guardCenter', new THREE.Vector3(0, 0.12, 0)],
+    ['guardTipL', new THREE.Vector3(-0.13, 0.12, 0)],
+    ['guardTipR', new THREE.Vector3(0.13, 0.12, 0)],
+  ];
+  for (const [name, pt] of guardPts) {
+    const ndc = ndcOf(pt);
+    const d = Math.hypot(ndc.x, ndc.y);
+    ok(Math.abs(ndc.x) < 1 && Math.abs(ndc.y) < 1,
+      `max-size ${name} on screen (${ndc.x.toFixed(2)}, ${ndc.y.toFixed(2)})`);
+    ok(d > 0.12, `max-size ${name} clear of crosshair (NDC dist ${d.toFixed(3)} > 0.12)`);
+  }
+}
 console.log(`  ...${frames} frames checked, strikes=${Object.keys(arcByState).length}, trail peaks ${JSON.stringify(trailActive)}, thrust z ${thrustZ[0]?.toFixed(3) ?? '?'}->${thrustZ[thrustZ.length - 1]?.toFixed(3) ?? '?'}`);
 
 // ===========================================================================

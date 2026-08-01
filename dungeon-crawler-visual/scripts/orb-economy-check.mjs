@@ -22,7 +22,8 @@ const BASE = '../src';
 const { OrbShooter } = await import(`${BASE}/entities/OrbShooter.js`);
 const { OrbSystem } = await import(`${BASE}/entities/OrbSystem.js`);
 const { Rat } = await import(`${BASE}/entities/enemies/Rat.js`);
-const { ORB_WEAPON, DROP, PLAYER, RAT } = await import(`${BASE}/core/Constants.js`);
+const { PlayerSword } = await import(`${BASE}/entities/PlayerSword.js`);
+const { ORB_WEAPON, DROP, PLAYER, RAT, orbPowerMultiplier } = await import(`${BASE}/core/Constants.js`);
 
 let failures = 0;
 const fail = (msg) => { failures++; console.log(`  FAIL: ${msg}`); };
@@ -191,7 +192,25 @@ console.log('== Orb explosion ==');
 }
 
 // ===========================================================================
-// 4) HEALTH RESET DROP — red cross pickup, full heal on collect
+// 4) SHARED POWER MULTIPLIER — sword scale === enemy spawn-rate multiplier
+// ===========================================================================
+console.log('== Shared power multiplier ==');
+{
+  const cam = new THREE.PerspectiveCamera(75, 16 / 9, 0.1, 50);
+  const sword = new PlayerSword(cam);
+  ok(orbPowerMultiplier(0) === 1 && orbPowerMultiplier(10) === 1.2
+    && orbPowerMultiplier(100) === 3 && orbPowerMultiplier(999) === 3,
+    `multiplier bounds (1 @0, 1.2 @10, 3 @100+, capped)`);
+  for (const n of [0, 10, 50, 100, 150]) {
+    sword.setOrbCount(n);
+    ok(Math.abs(sword.scale - orbPowerMultiplier(n)) < 1e-9,
+      `sword scale === orbPowerMultiplier(${n}) (${sword.scale.toFixed(2)})`);
+  }
+  sword.dispose();
+}
+
+// ===========================================================================
+// 5) HEALTH RESET DROP — red cross pickup, full heal on collect
 // ===========================================================================
 console.log('== Health drop ==');
 {

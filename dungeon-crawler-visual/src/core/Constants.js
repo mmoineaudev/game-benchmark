@@ -295,6 +295,13 @@ export const ORB_WEAPON = {
   EXPLODE_DAMAGE: 1,      // last step: AOE damage dealt (same as a direct hit)
 };
 
+// The sword's size-bonus multiplier — ALSO scales the enemy spawn rate, so
+// ammo banked = more enemies = more drops (risk/reward loop).
+// +20% per 10 orbs held, capped at +200% (3x at 100 orbs).
+export function orbPowerMultiplier(orbs) {
+  return 1 + Math.min(Math.floor(orbs / 10), 10) * 0.2;
+}
+
 export const MAGICIAN = {
   CHANCE: 0.1,           // 1 skeleton out of 10
   CAST_RANGE: 9,         // fires from a distance instead of melee range

@@ -320,6 +320,11 @@ export function orbPowerMultiplier(orbs) {
   return 1 + Math.min(Math.floor(orbs / 10), 10) * 0.2;
 }
 
+// New Game+ enemy HP: +10% per NG+ cycle (ngPlus = 0 on a fresh run).
+export function enemyHpMultiplier(ngPlus) {
+  return 1 + 0.1 * (ngPlus || 0);
+}
+
 export const MAGICIAN = {
   CHANCE: 0.1,           // 1 skeleton out of 10
   CAST_RANGE: 9,         // fires from a distance instead of melee range

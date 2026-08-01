@@ -7,7 +7,7 @@ import { Rat } from './enemies/Rat.js';
 import { Wraith } from './enemies/Wraith.js';
 import {
   SKELETON, PLAYER, MAGICIAN, ENEMY, ENEMY_SPAWN_WEIGHTS, ENEMY_TYPES,
-  ROOM_ENEMY_MODIFIERS, ARCHER, BRUTE, orbPowerMultiplier,
+  ROOM_ENEMY_MODIFIERS, ARCHER, BRUTE, orbPowerMultiplier, enemyHpMultiplier,
 } from '../core/Constants.js';
 import { resolveCircleCollisions, circleHitsBox } from '../core/Collision.js';
 import { generateGlowTexture } from '../world/Textures.js';
@@ -124,6 +124,13 @@ export class SkeletonSystem {
     this.speedMult = 1 + 0.05 * (state.level - 1);
     const attackMult = 1 + 0.05 * Math.floor((state.level - 1) / 3);
 
+    // New Game+: +10% enemy HP per NG+ cycle
+    const hpMult = enemyHpMultiplier(state.ngPlus);
+    const scaleHp = (skel) => {
+      skel.hp = Math.ceil(skel.hp * hpMult);
+      skel.maxHp = skel.hp;
+    };
+
     // Spawn rate scales with the SAME multiplier as the sword size bonus:
     // +20% per 10 orbs held (capped at 3x). Banked ammo = more enemies =
     // more drops. Hard-capped at MAX_ALIVE so the live-bodies budget holds.
@@ -162,6 +169,7 @@ export class SkeletonSystem {
           rat.group.position.set(sx + ox, 0, sz + oz);
           rat.onKill = () => this._onKill(rat);
           rat.onDeathComplete = () => this._removeSkeleton(rat);
+          scaleHp(rat); // NG+ HP
           this.skeletons.push({
             skel: rat, x: sx + ox, z: sz + oz,
             cellX: x, cellZ: z, nextThink: 0, type: 'RAT', elite: false, magician: false,
@@ -197,6 +205,7 @@ export class SkeletonSystem {
       skel.onKill = () => this._onKill(skel);
       skel.facingYaw = Math.atan2(ex - sx, ez - sz);
       skel.group.rotation.y = skel.facingYaw;
+      scaleHp(skel); // NG+ HP
       this.skeletons.push({
         skel, x: sx, z: sz,
         cellX: x, cellZ: z, nextThink: 0, type, elite: isElite, magician: type === 'MAGICIAN',

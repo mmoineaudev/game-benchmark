@@ -78,7 +78,15 @@
       }
       #game-over h2 { color: #ff6644; margin-bottom: 10px; }
       #go-stats { color: #ffcc88; margin-bottom: 12px; font-size: 16px; }
-      #go-restart { margin-top: 16px; color: #88ccff; font-size: 13px; }
+      #go-actions { margin-top: 16px; display: flex; gap: 10px; justify-content: center; }
+      #go-actions button {
+        background: rgba(255,255,255,0.08); color: #eee; border: 1px solid #555;
+        padding: 8px 14px; border-radius: 6px; font-size: 13px; cursor: pointer;
+        font-family: monospace;
+      }
+      #go-actions button:hover { background: rgba(255,255,255,0.18); border-color: #aaa; }
+      #go-ngplus { color: #ffcc66; border-color: #a08030; }
+      #go-ngplus:hover { border-color: #ffcc66; }
       #prompt {
         position: absolute; bottom: 20%; left: 50%; transform: translateX(-50%);
         color: #888; font-size: 14px; text-align: center;
@@ -135,7 +143,10 @@
         <div id="go-stats"></div>
         <h3>🏆 Depth Leaderboard</h3>
         <ol id="go-leaderboard-list"></ol>
-        <div id="go-restart">Click anywhere to descend again</div>
+        <div id="go-actions">
+          <button id="go-restart">Restart — Level 1</button>
+          <button id="go-ngplus">New Game+ — keep orbs</button>
+        </div>
       </div>
       <div id="messages"></div>
       <div id="prompt">Click to explore</div>

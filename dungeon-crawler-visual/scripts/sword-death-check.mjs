@@ -184,11 +184,23 @@ ok(Math.abs(sword.scale - 3) < 1e-9, `max size = 3x (got ${sword.scale})`);
 // EMPOWERED buff: +50% dagger length stacks on the orb scale, and +20%
 // attack speed shortens the full combo cycle.
 {
+  // Damage scales with half the size-buff amount (base x1 at scale 1)
+  sword.setOrbCount(0); // reset from the max-size test above
+  ok(Math.abs(sword.damageMult - 1) < 1e-9, `damage x1 at base size (${sword.damageMult})`);
+  sword.setOrbCount(100); // scale 3 -> size buff +200% -> damage x2
+  ok(Math.abs(sword.damageMult - 2) < 1e-9, `damage buffed by half the size bonus (x${sword.damageMult})`);
+  const prevState = sword.state;
+  sword.state = 'slash1';
+  ok(Math.abs(sword.currentDamage - SWORD.COMBO.HIT1_DAMAGE * 2) < 1e-9,
+    `slash1 at 3x deals ${sword.currentDamage} (2 x ${SWORD.COMBO.HIT1_DAMAGE})`);
+  sword.state = prevState;
   sword.lengthMult = 1.5;
   sword.setOrbCount(100);
   ok(Math.abs(sword.scale - 4.5) < 1e-9, `EMPOWERED at 100 orbs: 3x -> 4.5x (got ${sword.scale})`);
   ok(Math.abs(sword.range - SWORD.RANGE * 4.5) < 1e-6, 'melee range scales with the length boost');
+  ok(Math.abs(sword.damageMult - 2.75) < 1e-9, `EMPOWERED damage x2.75 (got ${sword.damageMult})`);
   sword.lengthMult = 1;
+  sword.setOrbCount(0);
 
   function comboCycleFrames(swd) {
     swd.attack();

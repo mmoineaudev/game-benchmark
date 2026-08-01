@@ -46,7 +46,6 @@ export class Game {
     this._tabWasDown = false;
     this._gameOverActive = false;
     this._lastEntry = null;
-    this._onGameOverClick = null;
     this._timerEl = document.getElementById('timer');
     this._sprintBonusEl = document.getElementById('sprint-bonus');
     this._buffBadgeEl = document.getElementById('buff-badge');
@@ -55,6 +54,8 @@ export class Game {
     this._gameOverEl = document.getElementById('game-over');
     this._goStats = document.getElementById('go-stats');
     this._goList = document.getElementById('go-leaderboard-list');
+    this._goRestartBtn = document.getElementById('go-restart');
+    this._goNgPlusBtn = document.getElementById('go-ngplus');
     this._heartsEl = document.getElementById('hearts');
     this._damageFlashEl = document.getElementById('damage-flash');
     this.skeletons = null;
@@ -696,7 +697,7 @@ export class Game {
       const bestTxt = best
         ? `best Lv${best.level} ${Math.floor(best.time / 60)}:${(best.time % 60).toString().padStart(2, '0')} ◈${best.orbs}`
         : 'best —';
-      this._timerEl.textContent = `Lv ${this.state.level} · ${mins}:${secs} · total ${totalMins}:${totalSecs} · ${bestTxt}`;
+      this._timerEl.textContent = `Lv ${this.state.level}${this.state.ngPlus ? ` · NG+${this.state.ngPlus}` : ''} · ${mins}:${secs} · total ${totalMins}:${totalSecs} · ${bestTxt}`;
       this._timerEl.classList.toggle('low', remaining < 30);
     }
   }
@@ -711,7 +712,8 @@ export class Game {
       const t = this.state.runTime;
       const mm = Math.floor(t / 60);
       const ss = Math.floor(t % 60).toString().padStart(2, '0');
-      this._goStats.textContent = `Level reached: ${this.state.level} · Total time: ${mm}:${ss} · Orbs: ${this.state.collectedOrbs}${rank > 0 ? ` · Rank #${rank}` : ''}`;
+      const ng = this.state.ngPlus || 0;
+      this._goStats.textContent = `Level reached: ${this.state.level}${ng ? ` (NG+${ng})` : ''} · Total time: ${mm}:${ss} · Orbs: ${this.state.collectedOrbs}${rank > 0 ? ` · Rank #${rank}` : ''}`;
     }
     if (this._gameOverEl) {
       const title = this._gameOverEl.querySelector('h2');
@@ -719,22 +721,36 @@ export class Game {
     }
     this._renderLeaderboard(this._goList);
     if (this._gameOverEl) this._gameOverEl.classList.remove('hidden');
-    this._onGameOverClick = () => this._restartRun();
-    document.addEventListener('click', this._onGameOverClick, { once: true });
+    // Two ways forward: a fresh run from level 1, or New Game+ at half the
+    // level — keeping the sword buff (orbs) — with tougher mobs.
+    const ngLevel = Math.max(1, Math.floor(this.state.level / 2));
+    if (this._goNgPlusBtn) {
+      const ng = (this.state.ngPlus || 0) + 1;
+      this._goNgPlusBtn.textContent = `New Game+ — Level ${ngLevel} (keep ${this.state.collectedOrbs} orbs · mobs +${10 * ng}% HP)`;
+    }
+    this._goRestartBtn.onclick = () => this._startNewRun(false);
+    this._goNgPlusBtn.onclick = () => this._startNewRun(true);
   }
 
-  _restartRun() {
-    if (this._onGameOverClick) {
-      document.removeEventListener('click', this._onGameOverClick);
-      this._onGameOverClick = null;
-    }
+  // Start a new run after death: fresh (level 1, no carry, ngPlus 0) or
+  // New Game+ (half level, orbs kept, ngPlus +1).
+  _startNewRun(newGamePlus = false) {
     this._gameOverActive = false;
     if (this._gameOverEl) this._gameOverEl.classList.add('hidden');
-    this._regenerateDungeon({ newRun: true });
+    this._clearBuffEffects(); // no lingering buff side effects across runs
+    const nextState = new GameState({
+      level: newGamePlus ? Math.max(1, Math.floor(this.state.level / 2)) : 1,
+      collectedOrbs: newGamePlus ? this.state.collectedOrbs : 0,
+      ngPlus: newGamePlus ? (this.state.ngPlus || 0) + 1 : 0,
+    });
+    this._regenerateDungeon({ nextState });
     this._isRunning = true;
     this._lastTime = performance.now();
     this._animate(); // RAF chain died on game over — restart it
-    this._showMessage('A new descent begins', 'goal');
+    this._showMessage(
+      newGamePlus ? `New Game+ ${nextState.ngPlus} — the depths grow stronger` : 'A new descent begins',
+      'goal',
+    );
   }
 
   _renderLeaderboard(listEl) {
@@ -792,7 +808,7 @@ export class Game {
     return 'northeast';
   }
 
-  _regenerateDungeon({ newRun = false } = {}) {
+  _regenerateDungeon({ newRun = false, nextState = null } = {}) {
     this._isRunning = false;
     this.orbs.dispose();
     this.runes.dispose();
@@ -809,13 +825,15 @@ export class Game {
     }
     this._disposeScene();
 
-    this.state = newRun
-      ? new GameState()
-      : new GameState({
-        runTime: this.state.runTime,
-        level: this.state.level + 1,
-        collectedOrbs: this.state.collectedOrbs,
-      });
+    this.state = nextState
+      || (newRun
+        ? new GameState()
+        : new GameState({
+          runTime: this.state.runTime,
+          level: this.state.level + 1,
+          collectedOrbs: this.state.collectedOrbs,
+          ngPlus: this.state.ngPlus || 0,
+        }));
     this._prevOrbCount = 0;
     this._prevInExit = false;
     this._noAmmoWarned = false;
@@ -905,10 +923,6 @@ export class Game {
 
   dispose() {
     this._isRunning = false;
-    if (this._onGameOverClick) {
-      document.removeEventListener('click', this._onGameOverClick);
-      this._onGameOverClick = null;
-    }
     window.removeEventListener('resize', this._onResize);
     this.input.dispose();
     this.post.dispose();

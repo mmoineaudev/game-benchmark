@@ -349,10 +349,17 @@ export class PlayerSword {
     return SWORD.COMBO.ARC1;
   }
 
+  // Sword damage scales with the size bonus: +50% of the size-buff amount.
+  // At 3x size (buff +200%) damage is doubled; at 4.5x (EMPOWERED) ×2.75.
+  get damageMult() {
+    return 1 + (this._rangeScale - 1) * 0.5;
+  }
+
   get currentDamage() {
-    if (this.state === 'slash2') return SWORD.COMBO.HIT2_DAMAGE;
-    if (this.state === 'thrust3') return SWORD.COMBO.HIT3_DAMAGE;
-    return SWORD.COMBO.HIT1_DAMAGE;
+    const base = this.state === 'slash2' ? SWORD.COMBO.HIT2_DAMAGE
+      : this.state === 'thrust3' ? SWORD.COMBO.HIT3_DAMAGE
+        : SWORD.COMBO.HIT1_DAMAGE;
+    return base * this.damageMult;
   }
 
   // The piercing thrust lunges further than the slashes.

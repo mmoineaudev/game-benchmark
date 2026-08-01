@@ -2,7 +2,7 @@
 // breakables. Tests the GameState buff timer lifecycle (pure logic).
 // Run: node scripts/buff-system-check.mjs
 import { GameState } from '../src/core/GameState.js';
-import { BUFF } from '../src/core/Constants.js';
+import { BUFF, enemyHpMultiplier } from '../src/core/Constants.js';
 
 let failures = 0;
 const fail = (msg) => { failures++; console.log(`  FAIL: ${msg}`); };
@@ -58,6 +58,31 @@ console.log('== Buff system (GameState timer) ==');
     `constants: duration=${BUFF.DURATION}s, chance=${BUFF.CHANCE}`);
   ok(BUFF.EMPOWER_LENGTH === 1.5 && BUFF.EMPOWER_SPEED === 1.2 && BUFF.EMPOWER_ATTACK === 1.2,
     'empowered constants (length 1.5, move 1.2, attack 1.2)');
+}
+
+// ===========================================================================
+// NEW GAME+ — half-level restart with orbs kept, +10% enemy HP per cycle
+// ===========================================================================
+console.log('== New Game+ ==');
+{
+  const fresh = new GameState();
+  ok(fresh.ngPlus === 0, 'fresh run starts at ngPlus 0');
+
+  // NG+ from a level 7 death: floor(7/2) = 3, ngPlus 1, orbs carried
+  const ng1 = new GameState({ level: Math.max(1, Math.floor(7 / 2)), collectedOrbs: 42, ngPlus: 1 });
+  ok(ng1.level === 3 && ng1.collectedOrbs === 42 && ng1.ngPlus === 1,
+    'NG+1 starts at level 3 with orbs carried');
+
+  // Second NG+ cycle: +10% HP each
+  ok(enemyHpMultiplier(0) === 1, 'no NG+ -> 100% enemy HP');
+  ok(Math.abs(enemyHpMultiplier(1) - 1.1) < 1e-9, 'NG+1 -> 110% enemy HP');
+  ok(Math.abs(enemyHpMultiplier(2) - 1.2) < 1e-9, 'NG+2 -> 120% enemy HP');
+  ok(Math.abs(enemyHpMultiplier(5) - 1.5) < 1e-9, 'NG+5 -> 150% enemy HP');
+
+  // Fresh restart resets everything
+  const fresh2 = new GameState({ level: 1, collectedOrbs: 0, ngPlus: 0 });
+  ok(fresh2.ngPlus === 0 && fresh2.collectedOrbs === 0 && fresh2.level === 1,
+    'fresh restart: level 1, no orbs, ngPlus 0');
 }
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);

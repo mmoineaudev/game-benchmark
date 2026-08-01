@@ -1,9 +1,10 @@
 import { PLAYER, BUFF } from './Constants.js';
 
 export class GameState {
-  constructor({ runTime = 0, level = 1, collectedOrbs = 0 } = {}) {
+  constructor({ runTime = 0, level = 1, collectedOrbs = 0, ngPlus = 0 } = {}) {
     this.player = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 };
     this.collectedOrbs = collectedOrbs; // cumulative ammo/score (persists across levels)
+    this.ngPlus = ngPlus;   // New Game+ cycle: enemies have +10% HP per cycle
     this.totalOrbs = 0;   // pickups present on the current level
     this.health = PLAYER.MAX_HEALTH;
     this.invulnTimer = 0;

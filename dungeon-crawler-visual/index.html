@@ -4,135 +4,221 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Dungeon Crawler — Visual Showcase</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Cormorant:ital,wght@0,500;1,500&display=swap" rel="stylesheet" />
     <style>
+      :root {
+        --ds-gold: #c9b078;
+        --ds-gold-dim: #8a7947;
+        --ds-panel: rgba(12,10,8,0.82);
+        --ds-border: #3a3226;
+        --ds-font: 'Cinzel', Georgia, serif;
+        --ds-font-body: 'Cormorant', Georgia, serif;
+        --ds-hp: #9c1518;
+        --ds-hp-hi: #e0383c;
+        --ds-stam: #7fa423;
+        --ds-stam-hi: #a9cf4a;
+      }
       * { margin: 0; padding: 0; box-sizing: border-box; }
-      html, body { overflow: hidden; background: #0a0a15; width: 100%; height: 100%; }
+      html, body { overflow: hidden; background: #07060a; width: 100%; height: 100%; }
       #app { width: 100%; height: 100%; }
       #hud {
         position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-        pointer-events: none; font-family: monospace; color: #ccc; z-index: 10;
+        pointer-events: none; color: #ccc; z-index: 10;
+        font-family: var(--ds-font-body);
       }
       #crosshair {
         position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-        width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.5);
+        width: 4px; height: 4px; border-radius: 50%;
+        background: rgba(255,255,255,0.35); box-shadow: 0 0 4px rgba(255,255,255,0.2);
       }
-      #orb-count {
-        position: absolute; top: 16px; left: 16px;
-        background: rgba(0,0,0,0.5); padding: 6px 12px; border-radius: 4px;
-        font-size: 14px;
+
+      /* ---- Top-LEFT: HP + Stamina bars (Dark Souls) ---- */
+      #vp-stats {
+        position: absolute; left: 24px; top: 28px; width: 300px; height: 96px;
+        background: linear-gradient(180deg, rgba(16,13,10,0.0), rgba(16,13,10,0.82) 45%);
+        padding: 14px 16px 10px;
       }
-      #biome-label {
-        position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
-        background: rgba(0,0,0,0.5); padding: 6px 14px; border-radius: 4px;
-        font-size: 13px; letter-spacing: 1px; color: #ccc;
-        border-bottom: 2px solid #444;
+      .ds-bar {
+        position: relative; height: 26px; border: 1px solid var(--ds-border);
+        background: #170b09; overflow: hidden;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 1px 3px rgba(0,0,0,0.6);
       }
-      #combo-pips {
-        position: absolute; top: 58%; left: 50%; transform: translateX(-50%);
-        font-size: 18px; letter-spacing: 6px; color: rgba(255,255,255,0.15);
+      .ds-bar.stamina { height: 20px; margin-bottom: 6px; background: #101404; }
+      .ds-fill {
+        position: absolute; inset: 0; width: 100%; height: 100%;
+        transform-origin: left center;
       }
-      #combo-pips .lit { color: #ffcc44; text-shadow: 0 0 8px rgba(255,200,60,0.8); }
-      #hearts {
-        position: absolute; top: 48px; left: 16px;
-        background: rgba(0,0,0,0.5); padding: 6px 12px; border-radius: 4px;
-        font-size: 16px; color: #ff5566; letter-spacing: 2px;
+      .ds-fill.hp {
+        background: linear-gradient(180deg, var(--ds-hp-hi), var(--ds-hp) 55%, #7d0d10);
+        border-right: 1px solid rgba(255,255,255,0.25);
       }
-      #damage-flash {
-        position: fixed; inset: 0; pointer-events: none; z-index: 5;
-        background: radial-gradient(ellipse, transparent 40%, rgba(180,20,20,0.5) 100%);
-        opacity: 0;
+      .ds-fill.stamina {
+        background: linear-gradient(180deg, var(--ds-stam-hi), var(--ds-stam) 55%, #5c761a);
       }
-      #damage-flash.flash { animation: dmgFlash 0.4s ease-out; }
-      @keyframes dmgFlash { 0% { opacity: 0; } 15% { opacity: 0.9; } 100% { opacity: 0; } }
-      #timer {
-        position: absolute; top: 16px; right: 16px;
-        background: rgba(0,0,0,0.5); padding: 6px 12px; border-radius: 4px;
-        font-size: 14px; text-align: right;
+      .ds-text {
+        position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+        font-family: var(--ds-font); font-size: 12px; color: #fff;
+        text-shadow: 0 1px 2px #000, 0 0 4px #000;
+        letter-spacing: 1px;
       }
-      #timer.low { color: #ff6644; animation: blink 0.6s steps(2) infinite; }
+
+      /* ---- Top-RIGHT: Souls + timer ---- */
+      #vp-souls {
+        position: absolute; right: 24px; top: 28px; text-align: right; width: 300px;
+        background: linear-gradient(180deg, rgba(16,13,10,0.0), rgba(16,13,10,0.82) 45%);
+        padding: 10px 16px;
+      }
+      .souls { font-family: var(--ds-font); line-height: 1; }
+      .souls .lbl { display: block; color: #6b6150; font-size: 12px; letter-spacing: 3px; }
+      #orb-count { color: var(--ds-gold); font-size: 22px; text-shadow: 0 1px 3px #000, 0 0 12px rgba(201,176,120,0.35); }
+      #orb-scale { color: #9a8a5c; font-size: 12px; letter-spacing: 1px; margin-top: 2px; }
+      #timer { margin-top: 8px; font-size: 12px; color: #8d8472; letter-spacing: 1px; }
+      #timer.low { color: #e05650; animation: blink 0.6s steps(2) infinite; }
       @keyframes blink { 50% { opacity: 0.4; } }
+
+      /* ---- Top-CENTER: biome title ---- */
+      #biome-label {
+        position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+        font-family: var(--ds-font); font-size: 16px; letter-spacing: 5px;
+        color: var(--ds-gold); text-shadow: 0 1px 3px #000, 0 0 10px rgba(201,176,120,0.25);
+        padding-bottom: 4px; border-bottom: 1px solid var(--ds-gold-dim);
+      }
+
+      /* ---- Bottom-RIGHT: weapon slot + combo charges ---- */
+      #weapon-slot {
+        position: absolute; right: 40px; bottom: 30px; display: flex; align-items: center; gap: 10px;
+      }
+      .slot {
+        width: 58px; height: 58px; border: 2px solid var(--ds-gold-dim);
+        background: linear-gradient(180deg, #1c1812, #0f0c07);
+        box-shadow: inset 0 0 0 1px #000, 0 2px 6px rgba(0,0,0,0.6);
+        position: relative;
+      }
+      .slot-info { display: flex; flex-direction: column; color: #cfc6ae; }
+      .slot-name { font-family: var(--ds-font); font-size: 12px; letter-spacing: 1px; color: #e6dcc2; }
+      .slot-count { font-family: var(--ds-font-body); font-size: 14px; color: #9a8a5c; }
+      .icon-dagger::after {
+        content: ''; position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%) rotate(45deg);
+        width: 8px; height: 34px;
+        background: linear-gradient(180deg, #dfe6ee, #9aa5b5 80%);
+        box-shadow: 0 0 6px rgba(210,225,245,0.35);
+      }
+      .icon-dagger::before {
+        content: ''; position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%) rotate(45deg);
+        width: 22px; height: 8px; background: #6a4a26; border-radius: 2px;
+        box-shadow: 0 0 4px rgba(0,0,0,0.6);
+      }
+      #combo-pips { font-size: 11px; letter-spacing: 3px; color: rgba(255,255,255,0.12); margin-top: 3px; min-height: 12px; }
+      #combo-pips .lit { color: var(--ds-gold); text-shadow: 0 0 6px rgba(201,176,120,0.7); }
+
+      /* ---- center overlays ---- */
       #sprint-bonus {
-        position: absolute; top: 48px; right: 16px;
-        background: rgba(0,0,0,0.5); padding: 4px 10px; border-radius: 4px;
-        font-size: 12px; color: #66e0ff; letter-spacing: 1px;
+        position: absolute; top: 128px; right: 24px; text-align: right;
+        font-size: 12px; color: var(--ds-stam-hi); letter-spacing: 1px; text-shadow: 0 1px 2px #000;
       }
       #buff-badge {
-        position: absolute; top: 52px; left: 50%; transform: translateX(-50%);
-        background: rgba(0,0,0,0.65); padding: 4px 12px; border-radius: 4px;
-        font-size: 13px; letter-spacing: 1px; color: #ffe066;
+        position: absolute; top: 44px; left: 50%; transform: translateX(-50%);
+        font-family: var(--ds-font); font-size: 13px; letter-spacing: 2px;
+        background: var(--ds-panel); border: 1px solid var(--ds-border);
+        padding: 5px 14px; color: var(--ds-gold);
       }
       #boss-bar {
-        position: absolute; top: 96px; left: 50%; transform: translateX(-50%);
-        width: 46vw; max-width: 560px; height: 18px; display: none;
-        background: rgba(0,0,0,0.7); border: 1px solid #88ccff; border-radius: 5px;
+        position: absolute; top: 92px; left: 50%; transform: translateX(-50%);
+        width: 46vw; max-width: 560px; height: 22px; display: none;
+        background: var(--ds-panel); border: 1px solid var(--ds-gold-dim);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
         overflow: hidden;
       }
       #boss-bar .boss-bar-fill {
-        height: 100%; width: 100%; background: #66cc66;
+        height: 100%; width: 100%;
+        background: linear-gradient(180deg, #66cc66, #3f8f3f);
         transition: width 0.15s ease-out, background-color 0.3s;
       }
       #boss-bar .boss-bar-label {
-        position: absolute; inset: 0; text-align: center; line-height: 18px;
-        font-size: 11px; color: #eef; letter-spacing: 1px; text-shadow: 0 1px 2px #000;
+        position: absolute; inset: 0; text-align: center; line-height: 22px;
+        font-family: var(--ds-font); font-size: 12px; color: #f0ead8;
+        letter-spacing: 3px; text-shadow: 0 1px 2px #000;
       }
+
+      /* ---- panels / lists ---- */
       #leaderboard-panel {
         position: absolute; top: 50%; right: 24px; transform: translateY(-50%);
-        background: rgba(0,0,0,0.75); padding: 16px 20px; border-radius: 8px;
-        font-size: 14px; min-width: 220px; pointer-events: none;
+        background: var(--ds-panel); border: 1px solid var(--ds-border);
+        padding: 16px 22px; min-width: 240px; pointer-events: none;
       }
       #leaderboard-panel.hidden, #game-over.hidden { display: none; }
-      #leaderboard-panel h3, #game-over h3 { color: #ffcc44; margin-bottom: 8px; font-size: 15px; }
-      #leaderboard-list li, #go-leaderboard-list li { margin: 3px 0; color: #ccc; }
-      #leaderboard-list li.me, #go-leaderboard-list li.me { color: #44ffaa; font-weight: bold; }
-      #leaderboard-hint { margin-top: 10px; color: #555; font-size: 11px; }
+      #leaderboard-panel h3, #game-over h3 {
+        color: var(--ds-gold); margin-bottom: 8px; font-size: 14px;
+        font-family: var(--ds-font); letter-spacing: 2px; font-weight: 600;
+      }
+      #leaderboard-list, #go-leaderboard-list { list-style: none; }
+      #leaderboard-list li, #go-leaderboard-list li { margin: 3px 0; color: #b8ae96; font-size: 13px; }
+      #leaderboard-list li.me, #go-leaderboard-list li.me { color: #d8cf9a; font-weight: bold; }
+      #leaderboard-hint { margin-top: 10px; color: #5c5340; font-size: 11px; }
+
       #game-over {
         position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-        background: rgba(0,0,0,0.85); padding: 28px 36px; border-radius: 10px;
-        text-align: center; font-size: 15px; min-width: 340px;
+        background: var(--ds-panel); border: 1px solid var(--ds-border);
+        padding: 30px 40px; text-align: center; min-width: 380px;
+        box-shadow: 0 0 40px rgba(0,0,0,0.7);
       }
-      #game-over h2 { color: #ff6644; margin-bottom: 10px; }
-      #go-stats { color: #ffcc88; margin-bottom: 12px; font-size: 16px; }
-      #go-actions { margin-top: 16px; display: flex; gap: 10px; justify-content: center; }
+      #game-over h2 {
+        color: #b0382e; margin-bottom: 12px; font-family: var(--ds-font);
+        font-size: 24px; font-weight: 600; letter-spacing: 1px; text-shadow: 0 2px 6px #000;
+      }
+      #go-stats { color: var(--ds-gold); margin-bottom: 14px; font-size: 15px; font-family: var(--ds-font-body); }
+      #go-actions { margin-top: 18px; display: flex; gap: 12px; justify-content: center; }
       #go-actions button {
-        background: rgba(255,255,255,0.08); color: #eee; border: 1px solid #555;
-        padding: 8px 14px; border-radius: 6px; font-size: 13px; cursor: pointer;
-        font-family: monospace;
+        background: linear-gradient(180deg, #241d12, #150f08);
+        color: #d9cfa8; border: 1px solid var(--ds-gold-dim);
+        padding: 8px 16px; font-size: 12px; cursor: pointer;
+        font-family: var(--ds-font); letter-spacing: 1px;
       }
-      #go-actions button:hover { background: rgba(255,255,255,0.18); border-color: #aaa; }
-      #go-ngplus { color: #ffcc66; border-color: #a08030; }
-      #go-ngplus:hover { border-color: #ffcc66; }
+      #go-actions button:hover { background: linear-gradient(180deg, #33291a, #1d150b); border-color: var(--ds-gold); color: #fff; }
+      #go-ngplus { border-color: #7a6a3c !important; }
+
       #prompt {
-        position: absolute; bottom: 20%; left: 50%; transform: translateX(-50%);
-        color: #888; font-size: 14px; text-align: center;
+        position: absolute; bottom: 22%; left: 50%; transform: translateX(-50%);
+        color: #a8987a; font-size: 14px; letter-spacing: 2px; text-align: center;
+        font-family: var(--ds-font); text-shadow: 0 1px 3px #000;
       }
       #interact-prompt {
         position: absolute; bottom: 25%; left: 50%; transform: translateX(-50%);
-        color: #ffaa44; font-size: 13px; display: none;
+        color: #caa94e; font-size: 13px; display: none; letter-spacing: 1px;
       }
       #exit-prompt {
         position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-        color: #ffaa00; font-size: 16px; display: none;
-        background: rgba(0,0,0,0.6); padding: 8px 16px; border-radius: 4px;
+        color: #caa94e; font-size: 15px; display: none;
+        background: var(--ds-panel); border: 1px solid var(--ds-border);
+        padding: 10px 18px; font-family: var(--ds-font); letter-spacing: 1px;
       }
       #messages {
         position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
         display: flex; flex-direction: column; align-items: center; gap: 8px;
       }
       .msg {
-        background: rgba(0,0,0,0.7); color: #ffcc88; font-size: 13px;
-        padding: 8px 18px; border-radius: 6px;
+        background: var(--ds-panel); border: 1px solid var(--ds-border);
+        color: #e0c98f; font-size: 13px; padding: 8px 18px;
+        font-family: var(--ds-font-body); letter-spacing: 1px;
         animation: msgIn 0.3s ease-out, msgOut 0.5s ease-in forwards;
-        animation-delay: 0s, 3.5s;
-        white-space: nowrap;
+        animation-delay: 0s, 3.5s; white-space: nowrap;
       }
-      .msg.goal { color: #88ccff; }
-      .msg.success { color: #88ff88; }
+      .msg.goal { color: #9cc4e8; }
+      .msg.success { color: #a7d88a; }
       @keyframes msgIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
       @keyframes msgOut { to { opacity: 0; transform: translateY(-10px); } }
       #hint {
-        position: absolute; bottom: 10px; right: 10px;
-        color: #444; font-size: 11px;
+        position: absolute; bottom: 10px; right: 14px;
+        color: #4a4230; font-size: 11px; letter-spacing: 1px;
       }
+      #damage-flash {
+        position: fixed; inset: 0; pointer-events: none; z-index: 5;
+        background: radial-gradient(ellipse, transparent 40%, rgba(140,12,16,0.5) 100%);
+        opacity: 0;
+      }
+      #damage-flash.flash { animation: dmgFlash 0.4s ease-out; }
+      @keyframes dmgFlash { 0% { opacity: 0; } 15% { opacity: 0.9; } 100% { opacity: 0; } }
     </style>
   </head>
   <body>
@@ -140,23 +226,47 @@
     <div id="damage-flash"></div>
     <div id="hud">
       <div id="crosshair"></div>
+
+      <!-- Top-left: HP (red) + Stamina (green) bars -->
+      <div id="vp-stats">
+        <div class="ds-bar stamina"><div class="ds-fill stamina" id="stamina-fill"></div></div>
+        <div class="ds-bar hp">
+          <div class="ds-fill hp" id="hp-fill"></div>
+          <span class="ds-text" id="hp-text">3 / 3</span>
+        </div>
+      </div>
+
+      <!-- Top-right: Souls + status -->
+      <div id="vp-souls">
+        <div class="souls"><span class="lbl">SOULS</span><span id="orb-count">0</span></div>
+        <div id="orb-scale"></div>
+        <div id="timer">Lv 1</div>
+      </div>
+
+      <!-- Top-center: biome title -->
       <div id="biome-label">STONE DUNGEON</div>
-      <div id="orb-count">Orbs: 0</div>
-      <div id="hearts">♥♥♥</div>
-      <div id="combo-pips"><span class="pip">▮</span><span class="pip">▮</span><span class="pip">▮</span></div>
-      <div id="timer">Lv 1 · 3:00 · total 0:00 · best —</div>
+
+      <!-- Bottom-right: weapon slot + combo charges -->
+      <div id="weapon-slot">
+        <div class="slot icon-dagger"></div>
+        <div class="slot-info">
+          <span class="slot-name">Dagger</span>
+          <div id="combo-pips"><span class="pip">▮</span><span class="pip">▮</span><span class="pip">▮</span></div>
+        </div>
+      </div>
+
       <div id="sprint-bonus"></div>
       <div id="buff-badge"></div>
       <div id="boss-bar"><div class="boss-bar-fill"></div><div class="boss-bar-label">SPECTRAL LORD</div></div>
       <div id="leaderboard-panel" class="hidden">
-        <h3>🏆 Depth Leaderboard</h3>
+        <h3>DEPTH LEDGER</h3>
         <ol id="leaderboard-list"></ol>
         <div id="leaderboard-hint">[Tab] close</div>
       </div>
       <div id="game-over" class="hidden">
         <h2>The darkness consumes you</h2>
         <div id="go-stats"></div>
-        <h3>🏆 Depth Leaderboard</h3>
+        <h3>DEPTH LEDGER</h3>
         <ol id="go-leaderboard-list"></ol>
         <div id="go-actions">
           <button id="go-restart">Restart — Level 1 [N]</button>
@@ -166,7 +276,7 @@
       <div id="messages"></div>
       <div id="prompt">Click to explore</div>
       <div id="exit-prompt">The depths beckon further... [E] to descend</div>
-      <div id="hint">WASD move · Shift sprint · LMB orb · RMB sword combo · E descend · Tab leaderboard · P bloom</div>
+      <div id="hint">WASD move · Shift sprint · LMB orb · RMB dagger · E descend · Tab ledger · P bloom</div>
     </div>
     <script type="module" src="/src/main.js"></script>
   </body>

@@ -31,6 +31,7 @@ export class Game {
     this._eKeyWasDown = false;
     this._promptEl = document.getElementById('prompt');
     this._orbCountEl = document.getElementById('orb-count');
+    this._orbScaleEl = document.getElementById('orb-scale');
     this._biomeLabelEl = document.getElementById('biome-label');
     this._comboPipsEl = document.getElementById('combo-pips');
     this._exitEl = document.getElementById('exit-prompt');
@@ -58,7 +59,9 @@ export class Game {
     this._goRestartBtn = document.getElementById('go-restart');
     this._goNgPlusBtn = document.getElementById('go-ngplus');
     this._goKeyHandler = null; // Y/N keyboard choice on the death screen
-    this._heartsEl = document.getElementById('hearts');
+    this._heartsEl = document.getElementById('hp-fill');
+    this._hpTextEl = document.getElementById('hp-text');
+    this._staminaFillEl = document.getElementById('stamina-fill');
     this._bossBarEl = document.getElementById('boss-bar');
     this._damageFlashEl = document.getElementById('damage-flash');
     this.skeletons = null;
@@ -1103,9 +1106,13 @@ export class Game {
 
   _updateHUD() {
     if (this._orbCountEl) {
-      const scale = this.sword ? this.sword.scale : 1;
-      const suffix = scale > 1.01 ? ` · ×${scale.toFixed(1)}` : '';
-      this._orbCountEl.textContent = `Orbs: ${this.state.collectedOrbs}${suffix}`;
+      // Dark Souls "Souls" counter: just the number, scale as a sub-line
+      this._orbCountEl.textContent = String(this.state.collectedOrbs);
+      if (this._orbScaleEl) {
+        const scale = this.sword ? this.sword.scale : 1;
+        const pct = Math.round((scale - 1) * 100);
+        this._orbScaleEl.textContent = scale > 1.01 ? `+${pct}% power` : '';
+      }
     }
     if (this.sword) this.sword.setOrbCount(this.state.collectedOrbs);
     if (this._biomeLabelEl) {
@@ -1137,10 +1144,14 @@ export class Game {
         : '';
       this._buffBadgeEl.style.color = e ? colors[e] : '';
     }
+    // Dark Souls HP bar (red fill) + HP number; stamina bar stays full
     if (this._heartsEl) {
       const h = Math.max(0, this.state.health);
-      this._heartsEl.textContent = '♥'.repeat(h) + '♡'.repeat(Math.max(0, this._maxHealth - h));
+      const pct = Math.max(0, this._maxHealth > 0 ? h / this._maxHealth : 0);
+      this._heartsEl.style.width = `${(pct * 100).toFixed(1)}%`;
+      if (this._hpTextEl) this._hpTextEl.textContent = `${h} / ${this._maxHealth}`;
     }
+    if (this._staminaFillEl) this._staminaFillEl.style.width = '100%';
     if (this._exitEl) {
       // Boss arenas hide the "press E" prompt until the portal opens
       this._exitEl.style.display = (this.state.inExitRoom && this._bossPortalOpen) ? 'block' : 'none';

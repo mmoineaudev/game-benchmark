@@ -3,7 +3,7 @@ import ParticleSystem from './ParticleSystem.js';
 import ModelFactory from './ModelFactory.js';
 
 export default class CollisionSystem {
-  constructor() { this._vfx = null; }
+  constructor() { this._vfx = null; this.fx = null; }
   reset() {}
   update(dt, state, projectiles, enemies, towers, particles) {
     for (let i = projectiles.objs.length - 1; i >= 0; i--) {
@@ -48,21 +48,44 @@ export default class CollisionSystem {
     enemy.hp -= dmg;
     // Hit flash
     ModelFactory.flashEnemy(enemy.mesh);
+
+    // ── Tower-colored visual effects ────────────────────────────────
+    const color = projectile.color || '#ffffff';
+    if (this.fx) {
+      this.fx.hitSpark(enemy.mesh.position, color);
+      if (projectile.splash) this.fx.splash(enemy.mesh.position, color, projectile.splash);
+      if (projectile.gravity) this.fx.gravityPulse(enemy.mesh.position, color, projectile.splash);
+      if (projectile.slow) this.fx.slowFlash(enemy.mesh.position);
+      if (projectile.dot) this.fx.splash(enemy.mesh.position, '#ff8800', 0.5);
+      if (projectile.corrode) this.fx.splash(enemy.mesh.position, '#4ade80', 0.4);
+      if (projectile.chain) {
+        // chained arcs to nearest nearby enemies
+        let from = enemy;
+        for (let c = 0; c < projectile.chain; c++) {
+          let best = null, bd = 4.5;
+          for (const e of enemies.enemies) {
+            if (e.dead || e === from) continue;
+            const d = e.mesh.position.distanceTo(from.mesh.position);
+            if (d < bd) { best = e; bd = d; }
+          }
+          if (!best) break;
+          this.fx.arc(from.mesh.position, best.mesh.position, color);
+          from = best;
+        }
+      }
+    }
+
     if (projectile.splash) {
       const center = enemy.mesh.position;
       enemies.enemies.forEach(e => { if (!e.dead && e !== enemy) {
         if (e.mesh.position.distanceTo(center) <= projectile.splash) { e.hp -= dmg * 0.65; ModelFactory.flashEnemy(e.mesh); }
       }});
-      particles.explosion(center, 18, projectile.splash);
     }
     if (projectile.slow) enemy.slowUntil = performance.now() + 4000 * projectile.slow;
     if (projectile.corrode && enemy.tags.armor) {
       enemy.tags.armor = Math.max(0, enemy.tags.armor - projectile.corrode);
       enemy._armorReduced = true;
     }
-    if (projectile.dot) particles.explosion(enemy.mesh.position, 6, 0.3);
-    if (projectile.gravity) particles.explosion(enemy.mesh.position, 8, projectile.splash);
-    particles.spark(enemy.mesh.position);
     if (enemy.hp <= 0) enemies.kill(enemy, state);
   }
 }

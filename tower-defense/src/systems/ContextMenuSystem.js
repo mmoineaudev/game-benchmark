@@ -7,6 +7,7 @@ export default class ContextMenuSystem {
     if (!el) return;
     el.innerHTML = '';
     const wrap = document.createElement('div');
+    wrap.className = 'cm-wrap';
     items.forEach(it => {
       const row = document.createElement('button');
       row.className = 'cm-row';
@@ -14,11 +15,12 @@ export default class ContextMenuSystem {
       row.addEventListener('click', () => { it.action(); this.hide(); });
       wrap.appendChild(row);
     });
-    el.style.left = `${anchor.x}px`;
-    el.style.top = `${anchor.y}px`;
+    wrap.style.left = `${Math.max(4, anchor.x)}px`;
+    wrap.style.top = `${Math.max(4, anchor.y)}px`;
+    el.appendChild(wrap);
     el.classList.remove('hidden');
     setTimeout(() => {
-      const close = (e) => { if (!el.contains(e.target)) { this.hide(); document.removeEventListener('mousedown', close); } };
+      const close = (e) => { if (!wrap.contains(e.target)) { this.hide(); document.removeEventListener('mousedown', close); } };
       document.addEventListener('mousedown', close);
     }, 0);
   }

@@ -136,72 +136,114 @@ function _pedestal(color) {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TOWERS — detailed composite models
+// Single-target towers have a `_turret` group (rotates toward the focused
+// enemy). Area-effect towers (splash / aura / gravity) have no turret and
+// keep their orientation-free idle animation.
 // ═══════════════════════════════════════════════════════════════════════════
 const _buildTower = {};
 
-// 0 ─ Pulse Emitter ─ dish + antenna array ──────────────────────────────────
+function _makeTurret(g) {
+  const tg = new THREE.Group();
+  tg.name = '_turret';
+  g.add(tg);
+  return tg;
+}
+
+/** Horizontal barrel pointing local +Z (towers aim via turret.rotation.y). */
+function _barrel(color, opts = {}) {
+  const {
+    len = 0.3, r = 0.05, y = 0.5, z = 0.15, x = 0,
+    tip = false, tipColor = null, mat = null,
+  } = opts;
+  const m = new THREE.Mesh(
+    new THREE.CylinderGeometry(r, r * 1.2, len, 8),
+    mat || _towerMat(color)
+  );
+  m.rotation.x = Math.PI / 2;           // cylinder Y axis -> +Z
+  m.position.set(x, y, z + len / 2);
+  const out = [m];
+  if (tip) {
+    const t = new THREE.Mesh(new THREE.SphereGeometry(r * 1.6, 8, 8), _glowMat(tipColor || color, 0.9));
+    t.position.set(x, y, z + len + 0.03);
+    t.name = '_muzzle';
+    out.push(t);
+  }
+  return out;
+}
+
+// 0 ─ Pulse Emitter ─ dish + directional pulse barrel ──────────────────────
 _buildTower[0] = (color) => {
   const g = new THREE.Group(); g.name = '_tower';
   g.add(_pedestal(color));
+  const turret = _makeTurret(g);
   // dish ring
   const d = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.1, 0.18, 20), _towerMat(color));
-  d.position.y = 0.44; g.add(d);
-  // inner ring
+  d.position.y = 0.44; turret.add(d);
   const ir = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.03, 8, 20), _glowMat(color, 0.4));
-  ir.rotation.x = -Math.PI/2; ir.position.y = 0.52; g.add(ir);
-  // antenna
-  const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.03, 0.22, 6), _towerMat(color));
-  ant.position.y = 0.55; g.add(ant);
-  // emitter tip
+  ir.rotation.x = -Math.PI/2; ir.position.y = 0.52; turret.add(ir);
+  // forward pulse barrel + muzzle
+  _barrel(color, { len: 0.3, r: 0.07, y: 0.52, z: 0.12, tip: true }).forEach(m => turret.add(m));
+  // emitter tip (glow core)
   const tip = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 10), _glowMat(color, 0.85));
-  tip.position.y = 0.68; tip.name = '_glowCore'; g.add(tip);
+  tip.position.y = 0.68; tip.name = '_glowCore'; turret.add(tip);
   return g;
 };
 
-// 1 ─ Arc Spool ─ energy coil ───────────────────────────────────────────────
+// 1 ─ Arc Spool ─ energy coil with arc node ─────────────────────────────────
 _buildTower[1] = (color) => {
   const g = new THREE.Group(); g.name = '_tower';
   g.add(_pedestal(color));
+  const turret = _makeTurret(g);
   // core cylinder
   const core = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.2, 10), _towerMat(color));
-  core.position.y = 0.44; g.add(core);
+  core.position.y = 0.44; turret.add(core);
   // coil rings (stacked toruses)
   for (let i = 0; i < 3; i++) {
     const ring = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.04, 8, 20), _towerMat(color));
     ring.position.y = 0.36 + i * 0.08;
     ring.name = '_ring';
-    g.add(ring);
+    turret.add(ring);
   }
   // energy orb top
   const orb = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 10), _glowMat(color, 0.75));
-  orb.position.y = 0.56; orb.name = '_glowCore'; g.add(orb);
+  orb.position.y = 0.56; orb.name = '_glowCore'; turret.add(orb);
+  // directional arc node
+  const node = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.2, 6), _glowMat(color, 0.8));
+  node.rotation.x = Math.PI / 2; node.position.set(0, 0.56, 0.22); node.name = '_muzzle';
+  turret.add(node);
   return g;
 };
 
-// 2 ─ Rail Sentry ─ tall precision turret ────────────────────────────────────
+// 2 ─ Rail Sentry ─ tall precision turret with horizontal rail ──────────────
 _buildTower[2] = (color) => {
   const g = new THREE.Group(); g.name = '_tower';
-  // heavy base
+  // heavy base (static)
   const base = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.28, 0.2, 10), _towerMat(color));
   base.position.y = 0.12; g.add(base);
+  const turret = _makeTurret(g);
   // pillar
   const p = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.15, 0.55, 10), _towerMat(color));
-  p.position.y = 0.42; g.add(p);
+  p.position.y = 0.42; turret.add(p);
   // rail casing
   const casing = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.22, 0.4), _towerMat(color));
-  casing.position.y = 0.7; g.add(casing);
-  // twin rails
+  casing.position.y = 0.7; turret.add(casing);
+  // twin vertical rails (decorative)
   for (let sx = -1; sx <= 1; sx += 2) {
     const rail = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.28, 0.06), _towerMat(color));
-    rail.position.set(sx * 0.08, 0.82, 0); g.add(rail);
+    rail.position.set(sx * 0.08, 0.82, 0); turret.add(rail);
   }
+  // horizontal rail barrel + muzzle
+  const rail = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.5), _towerMat(color));
+  rail.position.set(0, 0.72, 0.3); turret.add(rail);
+  const mz = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 8), _glowMat(color, 0.95));
+  mz.position.set(0, 0.72, 0.56); mz.name = '_muzzle'; turret.add(mz);
   // glow focus
   const tip = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 8), _glowMat(color, 0.9));
-  tip.position.y = 0.94; tip.name = '_glowCore'; g.add(tip);
+  tip.position.y = 0.94; tip.name = '_glowCore'; turret.add(tip);
   return g;
 };
 
-// 3 ─ Plasma Mortar ─ heavy artillery ────────────────────────────────────────
+// 3 ─ Plasma Mortar ─ heavy artillery (AoE — no turret) ─────────────────────
 _buildTower[3] = (color) => {
   const g = new THREE.Group(); g.name = '_tower';
   // wide armored base
@@ -222,88 +264,103 @@ _buildTower[3] = (color) => {
   return g;
 };
 
-// 4 ─ Frost Core ─ crystalline shard ─────────────────────────────────────────
+// 4 ─ Frost Core ─ crystalline shard with frost emitter ─────────────────────
 _buildTower[4] = (color) => {
   const g = new THREE.Group(); g.name = '_tower';
   g.add(_pedestal(color));
+  const turret = _makeTurret(g);
   // main crystal (elongated octahedron)
   const c = new THREE.Mesh(new THREE.OctahedronGeometry(0.18, 0), _towerMat(color));
   c.scale.set(1, 1.4, 1); c.position.y = 0.48; c.name = '_crystal';
-  g.add(c);
+  turret.add(c);
   // smaller orbiting shards
   for (let i = 0; i < 3; i++) {
     const a = (i/3)*Math.PI*2;
     const shard = new THREE.Mesh(new THREE.OctahedronGeometry(0.06, 0), _towerMat(color));
     shard.position.set(Math.cos(a)*0.22, 0.46, Math.sin(a)*0.22);
-    shard.name = '_shard'; g.add(shard);
+    shard.name = '_shard'; turret.add(shard);
   }
   // frost aura
   const aura = new THREE.Mesh(new THREE.SphereGeometry(0.25, 12, 12), _glowMat(color, 0.25));
-  aura.position.y = 0.48; aura.name = '_glowCore'; g.add(aura);
+  aura.position.y = 0.48; aura.name = '_glowCore'; turret.add(aura);
+  // directional frost emitter
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.22, 6), _glowMat(color, 0.8));
+  cone.rotation.x = Math.PI / 2; cone.position.set(0, 0.4, 0.26); cone.name = '_muzzle';
+  turret.add(cone);
   return g;
 };
 
-// 5 ─ Beam Harvester ─ energy collector ──────────────────────────────────────
+// 5 ─ Beam Harvester ─ directional collector dish ───────────────────────────
 _buildTower[5] = (color) => {
   const g = new THREE.Group(); g.name = '_tower';
   g.add(_pedestal(color));
-  // collector dish
+  const turret = _makeTurret(g);
+  // collector dish — now points forward (+Z)
   const dish = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.24, 12), _towerMat(color));
-  dish.position.y = 0.46; dish.rotation.x = -Math.PI/6; dish.name = '_dish'; g.add(dish);
+  dish.rotation.x = Math.PI / 2; dish.position.y = 0.5; dish.name = '_dish'; turret.add(dish);
   // support struts
   for (let i = 0; i < 4; i++) {
     const a = (i/4)*Math.PI*2;
     const strut = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.1, 0.02), _towerMat(color));
     strut.position.set(Math.cos(a)*0.14, 0.5, Math.sin(a)*0.14);
-    g.add(strut);
+    turret.add(strut);
   }
-  // focus crystal
+  // focus crystal at dish focal point
   const focus = new THREE.Mesh(new THREE.OctahedronGeometry(0.08, 0), _glowMat(color, 0.85));
-  focus.position.y = 0.58; focus.name = '_glowCore'; g.add(focus);
+  focus.position.set(0, 0.5, 0.28); focus.name = '_glowCore'; turret.add(focus);
   return g;
 };
 
-// 6 ─ Tesla Coil ─ high-voltage tower ────────────────────────────────────────
+// 6 ─ Tesla Coil ─ high-voltage tower with discharge node ───────────────────
 _buildTower[6] = (color) => {
   const g = new THREE.Group(); g.name = '_tower';
   const base = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 0.15, 10), _towerMat(color));
   base.position.y = 0.08; g.add(base);
+  const turret = _makeTurret(g);
   const body = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.16, 0.5, 10), _towerMat(color));
-  body.position.y = 0.36; g.add(body);
+  body.position.y = 0.36; turret.add(body);
   // coil winding (helix approximation with stacked rings)
   for (let i = 0; i < 5; i++) {
     const ring = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.025, 6, 20), _glowMat(color, 0.45));
-    ring.position.y = 0.15 + i * 0.1; ring.name = '_ring'; g.add(ring);
+    ring.position.y = 0.15 + i * 0.1; ring.name = '_ring'; turret.add(ring);
   }
   const topRing = new THREE.Mesh(new THREE.TorusGeometry(0.23, 0.04, 8, 24), _towerMat(color));
-  topRing.position.y = 0.63; g.add(topRing);
+  topRing.position.y = 0.63; turret.add(topRing);
   const spark = new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 10), _glowMat(color, 0.9));
-  spark.position.y = 0.63; spark.name = '_glowCore'; g.add(spark);
+  spark.position.y = 0.63; spark.name = '_glowCore'; turret.add(spark);
+  // directional discharge node
+  const node = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.24, 6), _glowMat(color, 0.8));
+  node.rotation.x = Math.PI / 2; node.position.set(0, 0.55, 0.28); node.name = '_muzzle';
+  turret.add(node);
   return g;
 };
 
-// 7 ─ Railgun Array ─ twin cannon ────────────────────────────────────────────
+// 7 ─ Railgun Array ─ twin horizontal cannons ───────────────────────────────
 _buildTower[7] = (color) => {
   const g = new THREE.Group(); g.name = '_tower';
   const base = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.26, 0.18, 10), _towerMat(color));
   base.position.y = 0.1; g.add(base);
+  const turret = _makeTurret(g);
   // turret ring
   const tr = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.04, 8, 20), _towerMat(color));
-  tr.rotation.x = -Math.PI/2; tr.position.y = 0.2; g.add(tr);
-  // twin barrels
+  tr.rotation.x = -Math.PI/2; tr.position.y = 0.2; turret.add(tr);
+  // twin horizontal barrels
   for (let sx = -1; sx <= 1; sx += 2) {
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.5, 10), _towerMat(color));
-    barrel.position.set(sx * 0.15, 0.48, 0); g.add(barrel);
-    // muzzle brake
-    const brake = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.06, 0.04, 8), _towerMat(color));
-    brake.position.set(sx * 0.15, 0.74, 0); g.add(brake);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.55, 10), _towerMat(color));
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.set(sx * 0.16, 0.42, 0.28); turret.add(barrel);
+    const brake = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.07, 0.05, 8), _towerMat(color));
+    brake.rotation.x = Math.PI / 2;
+    brake.position.set(sx * 0.16, 0.42, 0.55); turret.add(brake);
   }
-  const gl = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), _glowMat(color, 0.85));
-  gl.position.y = 0.78; gl.name = '_glowCore'; g.add(gl);
+  const gl = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 8), _glowMat(color, 0.85));
+  gl.position.set(0, 0.62, 0.1); gl.name = '_glowCore'; turret.add(gl);
+  const mz = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), _glowMat(color, 0.95));
+  mz.position.set(0, 0.42, 0.62); mz.name = '_muzzle'; turret.add(mz);
   return g;
 };
 
-// 8 ─ Ion Storm ─ energy vortex ──────────────────────────────────────────────
+// 8 ─ Ion Storm ─ energy vortex (AoE — no turret) ───────────────────────────
 _buildTower[8] = (color) => {
   const g = new THREE.Group(); g.name = '_tower';
   g.add(_pedestal(color));
@@ -319,7 +376,7 @@ _buildTower[8] = (color) => {
   return g;
 };
 
-// 9 ─ Singularity ─ gravitational lens ──────────────────────────────────────
+// 9 ─ Singularity ─ gravitational lens (AoE — no turret) ────────────────────
 _buildTower[9] = (color) => {
   const g = new THREE.Group(); g.name = '_tower';
   const base = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.22, 0.28, 10),
@@ -341,49 +398,66 @@ _buildTower[9] = (color) => {
   return g;
 };
 
-// 10 ─ Scatter Gun ─ triple barrel ──────────────────────────────────────────
+// 10 ─ Scatter Gun ─ triple fan barrels ────────────────────────────────────
 _buildTower[10] = (color) => {
   const g = new THREE.Group(); g.name = '_tower';
   g.add(_pedestal(color));
+  const turret = _makeTurret(g);
   const base = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 0.12, 8), _towerMat(color));
-  base.position.y = 0.32; g.add(base);
+  base.position.y = 0.32; turret.add(base);
+  // fan of three horizontal barrels (spread around +Z)
   for (let i = -1; i <= 1; i++) {
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.06, 0.35, 6), _towerMat(color));
-    barrel.position.set(i * 0.12, 0.55, 0);
-    barrel.rotation.z = i * 0.25;
-    g.add(barrel);
+    const b = new THREE.Group();
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 0.34, 6), _towerMat(color));
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.set(0, 0.5, 0.2);
+    b.add(barrel);
+    const bmz = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 6), _glowMat(color, 0.8));
+    bmz.position.set(0, 0.5, 0.4);
+    b.add(bmz);
+    b.rotation.y = i * 0.28;
+    turret.add(b);
   }
   const gl = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 6), _glowMat(color, 0.8));
-  gl.position.y = 0.72; gl.name = '_glowCore'; g.add(gl);
+  gl.position.y = 0.66; gl.name = '_glowCore'; turret.add(gl);
   return g;
 };
 
-// 11 ─ Void Lance ─ sleek piercing rail ─────────────────────────────────────
+// 11 ─ Void Lance ─ sleek horizontal piercing rail ──────────────────────────
 _buildTower[11] = (color) => {
   const g = new THREE.Group(); g.name = '_tower';
   const base = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.2, 0.25, 8), _towerMat(color));
   base.position.y = 0.15; g.add(base);
-  const lance = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.08, 0.55, 8), _towerMat(color));
-  lance.position.y = 0.48; g.add(lance);
+  const turret = _makeTurret(g);
+  const lance = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.08, 0.6, 8), _towerMat(color));
+  lance.rotation.x = Math.PI / 2;
+  lance.position.set(0, 0.45, 0.3); turret.add(lance);
   const tip = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.18, 6), _towerMat(color));
-  tip.position.y = 0.78; g.add(tip);
+  tip.rotation.x = Math.PI / 2;
+  tip.position.set(0, 0.45, 0.62); turret.add(tip);
   const gl = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 8), _glowMat(color, 0.85));
-  gl.position.y = 0.9; gl.name = '_glowCore'; g.add(gl);
+  gl.position.set(0, 0.62, 0.08); gl.name = '_glowCore'; turret.add(gl);
+  const mz = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 8), _glowMat(color, 0.95));
+  mz.position.set(0, 0.45, 0.72); mz.name = '_muzzle'; turret.add(mz);
   return g;
 };
 
-// 12 ─ Corrosive Spire ─ green crystal obelisk ──────────────────────────────
+// 12 ─ Corrosive Spire ─ green crystal obelisk with spout ───────────────────
 _buildTower[12] = (color) => {
   const g = new THREE.Group(); g.name = '_tower';
   g.add(_pedestal(color));
+  const turret = _makeTurret(g);
   const spire = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.45, 6), _towerMat(color));
-  spire.position.y = 0.48; g.add(spire);
+  spire.position.y = 0.48; turret.add(spire);
   const orb = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 8), _glowMat(color, 0.7));
-  orb.position.y = 0.7; orb.name = '_glowCore'; g.add(orb);
+  orb.position.y = 0.7; orb.name = '_glowCore'; turret.add(orb);
+  const spout = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.18, 6), _glowMat(color, 0.85));
+  spout.rotation.x = Math.PI / 2; spout.position.set(0, 0.55, 0.24); spout.name = '_muzzle';
+  turret.add(spout);
   return g;
 };
 
-// 13 ─ Chrono Prism ─ floating crystal with orbiting rings ──────────────────
+// 13 ─ Chrono Prism ─ floating crystal with orbiting rings (aura — no turret) ──
 _buildTower[13] = (color) => {
   const g = new THREE.Group(); g.name = '_tower';
   g.add(_pedestal(color));
@@ -398,19 +472,24 @@ _buildTower[13] = (color) => {
   return g;
 };
 
-// 14 ─ Doom Cannon ─ massive heavy artillery ────────────────────────────────
+// 14 ─ Doom Cannon ─ massive horizontal heavy artillery ─────────────────────
 _buildTower[14] = (color) => {
   const g = new THREE.Group(); g.name = '_tower';
   const base = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.32, 0.22, 10), _towerMat(color));
   base.position.y = 0.13; g.add(base);
+  const turret = _makeTurret(g);
   const body = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.24, 0.4, 10), _towerMat(color));
-  body.position.y = 0.4; g.add(body);
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.14, 0.4, 10), _towerMat(color));
-  barrel.position.y = 0.72; g.add(barrel);
-  const brake = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.12, 0.06, 8), _towerMat(color));
-  brake.position.y = 0.94; g.add(brake);
-  const gl = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 10), _glowMat(color, 0.8));
-  gl.position.y = 1.0; gl.name = '_glowCore'; g.add(gl);
+  body.position.y = 0.4; turret.add(body);
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.15, 0.5, 10), _towerMat(color));
+  barrel.rotation.x = Math.PI / 2;
+  barrel.position.set(0, 0.55, 0.28); turret.add(barrel);
+  const brake = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.13, 0.07, 8), _towerMat(color));
+  brake.rotation.x = Math.PI / 2;
+  brake.position.set(0, 0.55, 0.55); turret.add(brake);
+  const gl = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 10), _glowMat(color, 0.8));
+  gl.position.set(0, 0.7, 0.05); gl.name = '_glowCore'; turret.add(gl);
+  const mz = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 10), _glowMat(color, 0.95));
+  mz.position.set(0, 0.55, 0.62); mz.name = '_muzzle'; turret.add(mz);
   return g;
 };
 
@@ -578,16 +657,22 @@ export default class ModelFactory {
     if (glow && glow.material && glow.material.opacity !== undefined) {
       glow.material.opacity = 0.35 + Math.sin(time * 2.5 + defIdx) * 0.25 + 0.40;
     }
-    // Rotate all rings
-    group.children.forEach(c => {
-      if (c.name === '_ring') c.rotation.y += 0.02;
-    });
+    // Pulse muzzle nodes (directional barrel tips)
+    const muzzles = group.getObjectsByProperty('name', '_muzzle');
+    for (const m of muzzles) {
+      if (m.material && m.material.opacity !== undefined) {
+        m.material.opacity = 0.55 + Math.sin(time * 6 + defIdx * 1.7) * 0.35;
+      }
+    }
+    // Rotate all rings (recursive — rings may live inside the turret group)
+    const rings = group.getObjectsByProperty('name', '_ring');
+    for (const c of rings) c.rotation.y += 0.02;
     const dish = group.getObjectByName('_dish');
     if (dish) dish.position.y = 0.46 + Math.sin(time * 3) * 0.03;
     const crystal = group.getObjectByName('_crystal');
     if (crystal) crystal.rotation.y += 0.03;
-    // Orbiting shards for frost core
-    const shards = group.children.filter(c => c.name === '_shard');
+    // Orbiting shards for frost core (recursive)
+    const shards = group.getObjectsByProperty('name', '_shard');
     if (shards.length > 0) {
       const orbitSpeed = 1.2;
       shards.forEach((s, i) => {

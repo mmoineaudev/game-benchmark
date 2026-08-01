@@ -19,8 +19,16 @@ export default class TowerManager {
   }
   place(state, tileIdx, qx, qy, defIdx, pathSet) {
     if (!pathSet || pathSet.has(tileIdx)) return false;
-    if (state.grid[tileIdx] !== 'empty') return false;
+    const existing = state.grid[tileIdx];
+    if (existing !== 'empty' && !existing.startsWith('tower:')) return false;
     const def = TOWER_DEFS[defIdx];
+
+    // Build over an existing tower: sell it first (refund at sell ratio)
+    if (existing.startsWith('tower:')) {
+      const i = this.towers.findIndex(t => t.idx === tileIdx);
+      if (i < 0) return false;
+      this.sell(state, tileIdx);
+    }
     if (state.money < def.cost) return false;
     state.money -= def.cost;
     state.stats.towersBuilt += 1;
@@ -35,6 +43,7 @@ export default class TowerManager {
       mesh: group, pos: pos.clone(),
       range: def.range, damage: def.damage, rate: def.rate,
       qx, qy, idx: tileIdx, cooldown: 0,
+      turret: group.getObjectByName('_turret') || group,
       _recoilY: 0,            // current recoil offset
       _targetAngle: 0,        // desired Y-rotation toward target
       _currentAngle: 0,       // smoothed Y-rotation
@@ -113,12 +122,18 @@ export default class TowerManager {
     for (const t of this.towers) {
       ModelFactory.animateTower(t.mesh, t.defIdx, this._time);
 
-      // Rotation toward target (smooth)
-      let diff = t._targetAngle - t._currentAngle;
-      while (diff > Math.PI) diff -= Math.PI * 2;
-      while (diff < -Math.PI) diff += Math.PI * 2;
-      t._currentAngle += diff * Math.min(1, 8 * dt);
-      t.mesh.rotation.y = t._currentAngle;
+      // Rotation toward target (smooth) — only for single-target towers.
+      // Area-effect towers (splash / aura / gravity) stay orientation-free.
+      const def = TOWER_DEFS[t.defIdx];
+      const isAoe = !!(def.splash || def.auraSlow || def.gravity);
+      if (!isAoe) {
+        const turret = t.turret || t.mesh;
+        let diff = t._targetAngle - t._currentAngle;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        t._currentAngle += diff * Math.min(1, 8 * dt);
+        turret.rotation.y = t._currentAngle;
+      }
 
       // Recoil spring-back
       t._recoilY += (0 - t._recoilY) * 6 * dt;

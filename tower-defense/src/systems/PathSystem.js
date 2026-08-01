@@ -405,8 +405,8 @@ export default class PathSystem {
     return new THREE.Vector3(qx * TILE_SIZE + TILE_SIZE/2, 0, qy * TILE_SIZE + TILE_SIZE/2);
   }
   tileFromWorld(x, z) {
-    const qx = Math.floor((x + TILE_SIZE/2) / TILE_SIZE);
-    const qy = Math.floor((z + TILE_SIZE/2) / TILE_SIZE);
+    const qx = Math.floor(x / TILE_SIZE);
+    const qy = Math.floor(z / TILE_SIZE);
     if (qx < 0 || qx >= GRID_COLS || qy < 0 || qy >= GRID_ROWS) return null;
     return { qx, qy, idx: this._idx(qx, qy), world: this.worldFromTile(qx, qy) };
   }

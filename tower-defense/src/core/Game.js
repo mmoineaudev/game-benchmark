@@ -49,6 +49,7 @@ export default class Game {
     this._renderSystem = new RenderSystem();
     this._renderSystem.init();
     this._visualFX = new VisualFX(this._renderSystem.camera);
+    this._visualFX.bind(this._renderSystem.scene);
     this._postProcessing = new PostProcessingSystem(this._renderSystem.renderer, this._renderSystem.scene, this._renderSystem.camera);
     this._audio = new AudioSystem();
     this._pathSystem = new PathSystem(this._renderSystem.scene);
@@ -57,6 +58,7 @@ export default class Game {
     this._enemies = new EnemyManager(this._renderSystem.scene, this._audio, gs);
     this._projectiles = new ProjectileSystem(this._renderSystem.scene, this._audio);
     this._collisions = new CollisionSystem();
+    this._collisions.fx = this._visualFX;
     this._particles = new ParticleSystem(this._renderSystem.scene);
     this._context = new ContextMenuSystem();
     this._hud = new HUD(gs);
@@ -192,6 +194,7 @@ export default class Game {
     this._postProcessing.update(dt);
   }
   _towerFire(dt, state) {
+    const fx = this._visualFX;
     this._towers.towers.forEach(t => {
       const def = TOWER_DEFS[t.defIdx];
 
@@ -203,11 +206,11 @@ export default class Game {
             e.slowUntil = Math.max(e.slowUntil, performance.now() + 400);
           }
         }
+        // faint periodic aura pulse
+        if (Math.random() < dt * 0.6) fx.auraPulse(t.pos.clone().setY(0.05), def.color, t.range);
         return;
       }
 
-      t.cooldown -= dt;
-      if (t.cooldown > 0) return;
       // Find target: prioritize enemy with highest pathIndex (furthest along path)
       let target = null;
       let bestIdx = -1;
@@ -218,21 +221,38 @@ export default class Game {
           bestIdx = e.pathIndex;
         }
       }
+      // Aim continuously at the focused enemy (single-target towers only)
+      if (target) this._towers.aimAt(t, target.mesh.position);
+
+      t.cooldown -= dt;
+      if (t.cooldown > 0) return;
       if (!target) return;
       t.cooldown = t.rate;
 
-      // Aim + recoil
-      this._towers.aimAt(t, target.mesh.position);
+      // Recoil + tower flash
       this._towers.recoil(t);
-      // Flash the tower light
       this._towers.flashTower(t, 1.5);
 
+      // ── Per-tower firing visuals ────────────────────────────────────
+      const muzzlePos = new THREE.Vector3(t.pos.x, 0.6, t.pos.z);
       if (def.beam) {
-        this._projectiles.spawnBeam(t.pos, target.mesh.position);
+        fx.beam(t.pos, target.mesh.position, def.color, 0.14, 0.16);
+        fx.muzzle(muzzlePos, def.color, 0.45);
         target.hp -= t.damage;
         ModelFactory.flashEnemy(target.mesh);
         if (target.hp <= 0) this._enemies.kill(target, state);
       } else {
+        if (def.arc) fx.arc(t.pos.clone().setY(0.55), target.mesh.position, def.color);
+        if (def.id === 2 || def.id === 7 || def.id === 11) {
+          fx.tracer(muzzlePos, target.mesh.position, def.color);
+          fx.muzzle(muzzlePos, def.color, 0.5);
+        } else if (def.id === 14) {
+          fx.shockwave(muzzlePos, def.color, 1.2);
+        } else if (def.splash) {
+          fx.muzzle(muzzlePos, def.color, 0.55);
+        } else {
+          fx.muzzle(muzzlePos, def.color, 0.4);
+        }
         const dir = target.mesh.position.clone().sub(t.pos).normalize();
         this._projectiles.spawn({
           pos: t.pos.clone(), dir, damage: t.damage, speed: def.projSpeed || 10,

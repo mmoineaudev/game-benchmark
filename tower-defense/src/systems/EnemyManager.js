@@ -183,7 +183,7 @@ export default class EnemyManager {
     enemy.dead = true;
     state.stats.enemiesKilled += 1;
     const def = ENEMY_DEFS[enemy.defIdx];
-    const reward = Math.floor(enemy.reward * (1 + (state.wave - 1) * BUDGET.killWaveScale) * 3 / 5);
+    const reward = Math.floor(enemy.reward * (1 + (state.wave - 1) * BUDGET.killWaveScale) * 3 / 10);
     state.money += reward;
     state.stats.moneyEarned += reward;
     EventBus.emit('enemy:despawned', { id: enemy.id });

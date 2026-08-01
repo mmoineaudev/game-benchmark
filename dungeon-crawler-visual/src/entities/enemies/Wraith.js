@@ -3,7 +3,9 @@ import { WRAITH, ELITE } from '../../core/Constants.js';
 import { generateGlowTexture } from '../../world/Textures.js';
 
 // Wraith — phasing threat. Translucent hooded figure that flies straight at
-// the player THROUGH walls (no collision, no pathing). Cannot be kited behind
+// the player THROUGH walls (no collision, no pathing). A real cloak
+// silhouette now (lathe-flared hem + pointed hood + faint hooded head) with
+// the hem oscillating for a "floating" realism. Cannot be kited behind
 // corners; the counter is killing it fast. Elite (1-in-10): Banshee.
 export class Wraith {
   constructor(scene, opts = {}) {
@@ -39,17 +41,36 @@ export class Wraith {
     this.eyeMat = new THREE.MeshBasicMaterial({
       color: WRAITH.EYE, transparent: true, opacity: 0.9,
     });
-    this._mats = [this.bodyMat, this.eyeMat];
+    // Slightly darker inner body for depth under the brittle cloak.
+    const innerMat = new THREE.MeshBasicMaterial({
+      color: 0x000000, transparent: true, opacity: 0.18,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    this._mats = [this.bodyMat, this.eyeMat, innerMat];
 
-    // Hooded cone body
-    const body = new THREE.Mesh(new THREE.ConeGeometry(0.45, 1.1, 10, 1, true), this.bodyMat);
-    body.position.y = 0.55;
+    // Cloak body: lathe silhouette (flared hem, narrow waist, pointed hood).
+    const cloakPts = [];
+    const profile = [
+      [0.06, 0.0], [0.16, 0.10], [0.30, 0.30], [0.42, 0.55],
+      [0.40, 0.75], [0.28, 0.85], [0.16, 0.92], [0.05, 1.06],
+    ];
+    for (const [r, y] of profile) cloakPts.push(new THREE.Vector2(r, y));
+    const cloakGeo = new THREE.LatheGeometry(cloakPts, 10);
+    const body = new THREE.Mesh(cloakGeo, this.bodyMat);
+    body.position.y = 0.2;
     this.group.add(body);
+    this._cloak = body;
 
-    // Two bright eyes
+    // Hooded head core (dark sphere peeking from the hood) + inner depth.
+    const inner = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 6), innerMat);
+    inner.position.set(0, 1.06, 0);
+    this.group.add(inner);
+
+    // Two bright eyes peering from under the hood.
     for (const sx of [-1, 1]) {
       const eye = new THREE.Mesh(new THREE.SphereGeometry(0.03, 6, 6), this.eyeMat);
-      eye.position.set(sx * 0.1, 0.85, 0.3);
+      eye.position.set(sx * 0.07, 1.0, 0.22);
       this.group.add(eye);
     }
 
@@ -101,6 +122,12 @@ export class Wraith {
     this.group.position.y = Math.sin(time * WRAITH.BOB_FREQ + this.phase) * WRAITH.BOB_AMP;
     // Eyes flicker
     this.eyeMat.opacity = 0.7 + Math.sin(time * 6 + this.phase) * 0.25;
+    // Cloak hem undulates (three horizontal scale-plies on the lathe body).
+    if (this._cloak) {
+      const sway = Math.sin(time * 3 + this.phase) * 0.04;
+      this._cloak.scale.x = 1 + sway;
+      this._cloak.scale.z = 1 - sway;
+    }
   }
 
   // Touch attack (instant)
@@ -115,7 +142,7 @@ export class Wraith {
     this.hp -= damage;
     if (this.hp <= 0) {
       this.state = 'DEAD';
-      this.animTime = 0; // death timer starts now
+      this.animTime = 0;
       this.onKill?.();
       return true;
     }

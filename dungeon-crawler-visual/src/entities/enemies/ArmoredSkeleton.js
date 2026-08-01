@@ -1,10 +1,13 @@
 import * as THREE from 'three';
 import { ARMORED, ELITE } from '../../core/Constants.js';
 import { Skeleton } from '../Skeleton.js';
+import { makeMetal, makeCloth } from '../../core/Materials.js';
+import { Proportion } from '../Proportion.js';
 
-// Armored Skeleton — tank. Reuses the Skeleton rig with a chestplate, kite
-// shield on the left arm, open helm, and a heavy axe in the right hand.
-// Slower, tankier, hits harder. Elite (1-in-10): Warlord.
+// Armored Skeleton — tank. Reuses the Skeleton rig with a form-fitted
+// chestplate, proper kite shield, open great-helm, and a bearded heavy axe
+// in the right hand. Slower, tankier, hits harder. Elite (1-in-10): Warlord
+// (gold trim on the plate).
 export class ArmoredSkeleton extends Skeleton {
   constructor(scene, opts = {}) {
     const elite = !!opts.elite;
@@ -24,49 +27,69 @@ export class ArmoredSkeleton extends Skeleton {
     this.attackRange = ARMORED.RANGE;
     this.dropOrbs = elite ? ELITE.ARMORED.DROP : ARMORED.DROP;
 
-    // Override attack cycle timing for this variant
     this._windup = ARMORED.WINDUP / this.attackMult;
     this._swing = ARMORED.SWING / this.attackMult;
     this._recover = ARMORED.RECOVER / this.attackMult;
     this._cooldown = ARMORED.COOLDOWN / this.attackMult;
 
+    // Slightly broader torso via the shared proportion ladder (not blind scale).
+    this.bones.ribcage.scale.setScalar(Proportion.VARIANTS.ARMORED.torsoW);
+
     this._addArmor();
   }
 
   _addArmor() {
-    const plateMat = new THREE.MeshStandardMaterial({
-      color: this.elite ? ELITE.ARMORED.TRIM : ARMORED.PLATE,
-      roughness: 0.5, metalness: 0.8, transparent: true,
-    });
-    this._armorMats = [plateMat];
+    const plateMat = makeMetal(this.elite ? 0x6a6a78 : ARMORED.PLATE, { seed: 21, rough: 0.45, metal: 0.85 });
+    const trimMat = this.elite ? makeMetal(ELITE.ARMORED.TRIM, { seed: 22, rough: 0.3, metal: 0.95 }) : null;
+    this._armorMats = [plateMat, ...(trimMat ? [trimMat] : [])];
 
-    // Chestplate over the ribcage
-    const chest = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.3, 0.22), plateMat);
-    chest.position.set(0, 0.1, 0);
-    chest.castShadow = true;
-    this.bones.ribcage.add(chest);
-    this.parts.push(chest);
+    // Form-fitted chestplate: a rounded "peascod" front over the ribcage.
+    const chest = this._mesh(new THREE.CylinderGeometry(0.20, 0.17, 0.34, 10), plateMat, 0, 0.10, 0, this.bones.ribcage);
+    chest.rotation.x = -0.1;
+    // Center ridge running down the plate
+    const ridge = this._mesh(new THREE.BoxGeometry(0.015, 0.32, 0.10), plateMat, 0, 0.10, 0.17, this.bones.ribcage);
+    // Pauldrons on both shoulders
+    for (const side of [-1, 1]) {
+      const pauldron = this._mesh(new THREE.SphereGeometry(0.09, 8, 6), plateMat, side * 0.28, -0.0, 0, this.bones.ribcage);
+      pauldron.scale.set(1, 0.6, 1.1);
+    }
+    // Gold trim on elite (a thin band across the chest)
+    if (trimMat) {
+      this._mesh(new THREE.BoxGeometry(0.34, 0.03, 0.02), trimMat, 0, 0.30, 0.16, this.bones.ribcage);
+    }
 
-    // Kite shield on the left arm
-    const shield = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.4, 0.06), plateMat);
-    shield.position.set(0, -0.15, 0);
+    // Proper kite shield on the left arm: rounded top + tapered cone tip.
+    const shield = new THREE.Group();
+    const shieldBody = new THREE.Mesh(new THREE.SphereGeometry(0.20, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2), plateMat);
+    shieldBody.scale.set(0.9, 1, 0.28);
+    shieldBody.position.y = 0.06;
+    shield.add(shieldBody);
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.10, 0.22, 8), plateMat);
+    tip.position.y = -0.20;
+    tip.rotation.x = Math.PI; // tip points down
+    shield.add(tip);
+    const boss = this._mesh(new THREE.SphereGeometry(0.05, 8, 6), trimMat || plateMat, 0, 0.0, 0.06, shield);
+    shield.position.set(0, -0.12, 0);
     shield.castShadow = true;
     this.bones.armL.add(shield);
-    this.parts.push(shield);
+    this.parts.push(shieldBody, tip);
 
-    // Open-faced helm
-    const helm = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.19, 0.2, 10), plateMat);
-    helm.position.set(0, 0.32, 0);
+    // Open-faced great-helm: tapered cylinder + brow plate + cheek guards.
+    const helm = new THREE.Mesh(new THREE.CylinderGeometry(0.155, 0.18, 0.20, 10), plateMat);
+    helm.position.set(0, 0.31, -0.01);
     helm.castShadow = true;
     this.bones.head.add(helm);
     this.parts.push(helm);
+    const brow = this._mesh(new THREE.BoxGeometry(0.16, 0.02, 0.06), plateMat, 0, 0.40, 0.04, this.bones.head);
+    brow.rotation.x = 0.15;
+    for (const sx of [-1, 1]) {
+      this._mesh(new THREE.BoxGeometry(0.035, 0.12, 0.06), plateMat, sx * 0.135, 0.30, 0.03, this.bones.head);
+    }
 
-    // Heavy axe replaces the sword (remove sword meshes from right forearm)
     this._replaceRightHandWeapon();
   }
 
   _replaceRightHandWeapon() {
-    // Remove the existing sword meshes attached to the right forearm
     const arm = this.bones.forearmR;
     const toRemove = [];
     for (const child of arm.children) {
@@ -77,16 +100,16 @@ export class ArmoredSkeleton extends Skeleton {
       const idx = this.parts.indexOf(m);
       if (idx !== -1) this.parts.splice(idx, 1);
     }
-    // Axe: handle + blade
+    // Bearded axe: handle + curved blade (two stacked boxes suggest the beard).
     const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.4, 8), this.darkMat);
     handle.position.set(0, -0.15, 0.1);
     arm.add(handle);
     this.parts.push(handle);
-    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.28, 0.12), this.bladeMat);
-    blade.position.set(0, -0.15, 0.22);
-    blade.castShadow = true;
-    arm.add(blade);
-    this.parts.push(blade);
+    const head = this._mesh(new THREE.BoxGeometry(0.05, 0.28, 0.12), this.bladeMat, 0, -0.15, 0.22, arm);
+    head.rotation.z = -0.12;
+    // bearded lower hook
+    const beard = this._mesh(new THREE.BoxGeometry(0.045, 0.12, 0.10), this.bladeMat, 0, -0.30, 0.24, arm);
+    beard.rotation.z = 0.35;
   }
 
   _animAttack(dt) {
@@ -97,7 +120,6 @@ export class ArmoredSkeleton extends Skeleton {
     const total = windup + this._swing + this._recover;
 
     if (t < windup) {
-      // Telegraph: axe raised high, shield forward
       const p = t / windup;
       b.armR.rotation.x = THREE.MathUtils.damp(b.armR.rotation.x, -2.5, 8, dt);
       b.forearmR.rotation.x = THREE.MathUtils.damp(b.forearmR.rotation.x, -0.5, 8, dt);

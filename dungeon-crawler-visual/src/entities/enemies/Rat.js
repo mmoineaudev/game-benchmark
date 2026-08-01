@@ -1,9 +1,14 @@
 import * as THREE from 'three';
 import { RAT } from '../../core/Constants.js';
 import { generateGlowTexture } from '../../world/Textures.js';
+import { makeGlow } from '../../core/Materials.js';
+import { Proportion } from '../Proportion.js';
 
-// Rat — fast chaff. Spawns in packs of 4-6 (1 spawn slot per pack), HP 1,
-// contact damage. No elite. Drops nothing — economy pressure.
+// Rat — fast chaff, spawned in packs of 4-6. A proper quadruped now: low
+// elongated body + 4 scuttling legs (alternate phase = a real run), ears,
+// and a segmented tapering tail that whips. HP 1, contact damage, no elite,
+// drops nothing (economy pressure).
+// Keeps the toxic-green emissive + glow so packs read clearly in the dark.
 export class Rat {
   constructor(scene, opts = {}) {
     this.scene = scene;
@@ -29,8 +34,6 @@ export class Rat {
   }
 
   _build() {
-    // Fluorescent toxic-green: emissive materials + a glow sprite so rat
-    // packs read clearly against the dark dungeon floor.
     const bodyMat = new THREE.MeshStandardMaterial({
       color: RAT.BODY, emissive: 0x33ff55, emissiveIntensity: 1.5,
       roughness: 0.6, transparent: true,
@@ -39,8 +42,12 @@ export class Rat {
       color: RAT.HEAD, emissive: 0x22dd44, emissiveIntensity: 1.3,
       roughness: 0.6, transparent: true,
     });
-    const eyeMat = new THREE.MeshBasicMaterial({ color: RAT.EYE, transparent: true });
-    this._mats = [bodyMat, headMat, eyeMat];
+    const earMat = new THREE.MeshStandardMaterial({
+      color: RAT.HEAD, emissive: 0x22dd44, emissiveIntensity: 1.1,
+      roughness: 0.6, transparent: true,
+    });
+    const eyeMat = makeGlow(RAT.EYE, { transparent: true });
+    this._mats = [bodyMat, headMat, earMat, eyeMat];
 
     // Additive glow halo (pulses in update)
     this._glowTex = generateGlowTexture();
@@ -54,7 +61,7 @@ export class Rat {
     this._glow.scale.setScalar(0.6);
     this.group.add(this._glow);
 
-    // Body: squashed sphere, low to the ground
+    // Low stretched body (capsule-ish silhouette from a scaled sphere).
     const body = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), bodyMat);
     body.scale.set(1, 0.7, 1.6);
     body.position.y = 0.1;
@@ -62,30 +69,60 @@ export class Rat {
     this.group.add(body);
     this.body = body;
 
-    // Head
+    // Head (bobs on a short neck — driven in update for scuttle life)
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), headMat);
     head.scale.set(0.9, 0.8, 1);
-    head.position.set(0, 0.1, 0.13);
+    head.position.set(0, 0.11, 0.13);
     head.castShadow = true;
     this.group.add(head);
+    this._head = head;
+
+    // Ears (2 small discs)
+    for (const sx of [-1, 1]) {
+      const ear = new THREE.Mesh(new THREE.SphereGeometry(0.028, 6, 4), earMat);
+      ear.scale.set(1, 0.7, 0.3);
+      ear.position.set(sx * 0.05, 0.17, 0.10);
+      this.group.add(ear);
+    }
 
     // Eyes (2 tiny red spheres)
     for (const sx of [-1, 1]) {
       const eye = new THREE.Mesh(new THREE.SphereGeometry(0.012, 4, 4), eyeMat);
-      eye.position.set(sx * 0.035, 0.12, 0.19);
+      eye.position.set(sx * 0.035, 0.13, 0.19);
       this.group.add(eye);
     }
 
-    // Tail
-    const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.005, 0.25, 5), headMat);
-    tail.position.set(0, 0.06, -0.14);
-    tail.rotation.x = 0.6;
-    this.group.add(tail);
+    // 4 legs (thin, splayed, scuttle via leg groups defined on the body)
+    this._legs = [];
+    const legMat = headMat;
+    for (const [side, front] of [[-1, 0], [1, 0], [-1, 1], [1, 1]]) {
+      const pivot = new THREE.Group();
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.006, 0.10, 4), legMat);
+      leg.position.y = -0.05;
+      pivot.add(leg);
+      pivot.position.set(side * 0.08, 0.10, front ? 0.13 : -0.11);
+      pivot.rotation.x = 0.2;
+      this.group.add(pivot);
+      this._legs.push(pivot);
+    }
+
+    // Tapered segmented tail (whips in update) — 3 short cylinders.
+    this._tail = [];
+    const tailMat = headMat;
+    let tx = 0, ty = 0.06, tz = -0.13;
+    for (let i = 0; i < 3; i++) {
+      const seg = new THREE.Mesh(new THREE.CylinderGeometry(0.01 - i * 0.0025, 0.008 - i * 0.002, 0.10, 4), tailMat);
+      seg.position.set(tx, ty, tz);
+      seg.rotation.x = 0.6 + i * 0.3;
+      this.group.add(seg);
+      this._tail.push(seg);
+      tz -= 0.09; ty -= 0.01;
+    }
   }
 
   setFacing(yaw) { this.facingYaw = yaw; }
 
-  // Scuttle animation
+  // Scuttle animation: alternate leg phases (a real run), head bob, tail whip.
   update(dt) {
     if (this._removed) return;
     if (this.attackCooldown > 0) this.attackCooldown -= dt;
@@ -105,12 +142,24 @@ export class Rat {
       return;
     }
 
-    const wobble = Math.sin(this.animTime * 10 + this.phase) * 0.4;
-    this.body.rotation.z = wobble;
-    this.group.position.y = Math.abs(Math.sin(this.animTime * 10 + this.phase)) * 0.03;
+    const t = this.animTime;
+    const scuttle = Math.sin(t * 16 + this.phase);
+    // Legs alternate front/rear on each side (diagonal gait).
+    this._legs.forEach((leg, i) => {
+      const front = (i === 0 || i === 1) ? 1 : -1; // front-ish vs rear-ish
+      const side = (i % 2 === 0) ? 1 : -1;
+      leg.rotation.x = 0.2 + front * (scuttle * 0.35) * (side > 0 ? 1 : -1);
+    });
+    // Body roll + head nod.
+    this.body.rotation.z = scuttle * 0.15;
+    this._head.position.y = 0.11 + Math.abs(Math.sin(t * 16 + this.phase)) * 0.02;
+    // Tail whips (phase lag per segment).
+    this._tail.forEach((seg, i) => {
+      seg.rotation.x = 0.6 + i * 0.3 + Math.sin(t * 18 + this.phase + i * 1.2) * 0.35;
+    });
+    this.group.position.y = Math.abs(Math.sin(t * 10 + this.phase)) * 0.03;
     this.group.rotation.y = THREE.MathUtils.damp(this.group.rotation.y, this.facingYaw ?? 0, 10, dt);
-    // Fluorescent glow pulse
-    this._glowMat.opacity = 0.45 + Math.sin(this.animTime * 5 + this.phase) * 0.12;
+    this._glowMat.opacity = 0.45 + Math.sin(t * 5 + this.phase) * 0.12;
   }
 
   // Touch attack (instant, no windup)
@@ -125,7 +174,7 @@ export class Rat {
     this.hp -= damage;
     if (this.hp <= 0) {
       this.state = 'DEAD';
-      this.animTime = 0; // death timer starts now
+      this.animTime = 0;
       this.onKill?.();
       return true;
     }

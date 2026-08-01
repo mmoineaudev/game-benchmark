@@ -28,8 +28,8 @@ export const Proportion = {
     MAGICIAN: { total: 1.05, torsoW: 1.0, limbMult: 1.0, limbs: true },
     ARMORED:  { total: 1.1,  torsoW: 1.12, limbMult: 1.15, limbs: true },
     ARCHER:   { total: 1.02, torsoW: 0.95, limbMult: 0.95, limbs: true },
-    BRUTE:    { total: 1.35, torsoW: 1.5,  limbMult: 1.35, limbs: true },
-    OGRE:     { total: 1.55, torsoW: 1.7,  limbMult: 1.45, limbs: true },
+    BRUTE:    { total: 1.35, torsoW: 1.5,  limbMult: 1.35, limbs: true, heightScale: 1.04 },
+    OGRE:     { total: 1.55, torsoW: 1.7,  limbMult: 1.45, limbs: true, heightScale: 1.08 },
   },
 
   // Bounding-box budget (x/z half-extent at the widest point) used by the

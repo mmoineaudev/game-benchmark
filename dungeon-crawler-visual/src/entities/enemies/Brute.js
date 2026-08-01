@@ -1,11 +1,14 @@
 import * as THREE from 'three';
 import { BRUTE, ELITE } from '../../core/Constants.js';
 import { Skeleton } from '../Skeleton.js';
+import { makeCloth, makeHide } from '../../core/Materials.js';
+import { Proportion } from '../Proportion.js';
 
-// Brute — heavy, telegraphed, high risk. Enlarged skeleton with a torn tunic
-// and a massive club. Slam damage 3 (one-shots a full-health player). The
-// 1.2 s club-raise windup with orange flash is the core counterplay.
-// Elite (1-in-10): Ogre.
+// Brute — heavy, telegraphed, high risk. Enlarged ENVIRONMENTALLY (proportion
+// ladder, not blind group.scale) so it dwarfs the player without ever
+// clipping the 4u wall height. Torn tunic, massive club. Slam damage 3
+// (one-shots a full-health player). The 1.2 s club-raise windup with orange
+// flash is the core counterplay. Elite (1-in-10): Ogre (yet bigger).
 export class Brute extends Skeleton {
   constructor(scene, opts = {}) {
     const elite = !!opts.elite;
@@ -30,24 +33,42 @@ export class Brute extends Skeleton {
     this._recover = BRUTE.RECOVER / this.attackMult;
     this._cooldown = BRUTE.COOLDOWN / this.attackMult;
 
-    this.group.scale.setScalar(elite ? ELITE.BRUTE.SCALE : 1.6);
+    // Proportion ladder: expand the torso/limb WIDTH (never vertical scale),
+    // so the brute is WIDE and THICK — and critically stays under the 4u wall
+    // height instead of a stretched tower that clips the ceiling.
+    const prop = Proportion.VARIANTS[elite ? 'OGRE' : 'BRUTE'];
+    this.bones.ribcage.scale.set(prop.torsoW, 1.0, prop.torsoW);
+    // A modest spine-height bump makes the brute read TALLER than a normal
+    // skeleton (width + controlled height, NOT a blind tower): stays under the
+    // 4u wall. Base humanoid is ~3.60u; Brute ~3.75, Ogre ~3.90.
+    const heightScale = elite ? Proportion.VARIANTS.OGRE.heightScale : Proportion.VARIANTS.BRUTE.heightScale;
+    this.bones.spine.scale.y = heightScale;
+    // Bulk up the limb girth via shared limb width (cylinder radius stays from
+    // the base rig; we widen the pelvis + clavicle span visually).
+    this.bones.pelvis.scale.set(prop.limbMult, 1, prop.limbMult);
+    this._proportion = prop;
+
     this._addTunicAndClub();
   }
 
   _addTunicAndClub() {
-    const tunicMat = new THREE.MeshStandardMaterial({
-      color: BRUTE.TUNIC, roughness: 0.9, transparent: true,
-    });
+    const tunicMat = makeCloth(BRUTE.TUNIC, { seed: 53, rough: 0.9, metal: 0 });
     this._armorMats = [tunicMat];
 
-    // Torn tunic around the pelvis/spine
-    const tunic = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.36, 0.5, 8, 1, true), tunicMat);
-    tunic.position.set(0, 0.1, 0);
+    // Layered tunic: an under-tunic + a torn over-layer (reads as worn cloth).
+    const tunic = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.42, 0.5, 8, 1, true), tunicMat);
+    tunic.position.set(0, 0.12, 0);
     tunic.castShadow = true;
     this.bones.pelvis.add(tunic);
     this.parts.push(tunic);
+    // Torn over-layer: a shorter, flared segment offset slightly.
+    const torn = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.4, 0.26, 8, 1, true), tunicMat);
+    torn.position.set(0, 0.34, -0.02);
+    torn.rotation.x = 0.08;
+    this.bones.pelvis.add(torn);
+    this.parts.push(torn);
 
-    // Massive club replaces the sword
+    // Massive club replaces the sword.
     this._replaceRightHandWeapon();
   }
 
@@ -90,16 +111,13 @@ export class Brute extends Skeleton {
     const total = windup + this._swing + this._recover;
 
     if (t < windup) {
-      // Telegraph: club raised overhead, orange flash ramps up
       const p = t / windup;
       b.armR.rotation.x = THREE.MathUtils.damp(b.armR.rotation.x, -2.6, 8, dt);
       b.forearmR.rotation.x = THREE.MathUtils.damp(b.forearmR.rotation.x, -0.3, 8, dt);
       b.ribcage.rotation.x = THREE.MathUtils.damp(b.ribcage.rotation.x, 0.3, 8, dt);
       this.clubHeadMat.emissiveIntensity = p * 2.2;
-      // Tension shake
       b.armR.rotation.z = Math.sin(t * 40) * 0.03 * p;
     } else if (t < swingEnd) {
-      // Slam
       const p = (t - windup) / this._swing;
       const eased = 1 - Math.pow(1 - p, 2);
       b.armR.rotation.x = THREE.MathUtils.damp(b.armR.rotation.x, 1.1, 24, dt);

@@ -13,13 +13,13 @@ import { generateGlowTexture } from '../../world/Textures.js';
 // size differently, so each reads as its own boss. On a boss level one
 // random variant spawns.
 const BOSS_VARIANTS = {
-  SKELETON:  { color: 0xcfd6e6, accent: 0x66e0ff, scale: 1.0, label: 'BONE LORD' },
-  ARMORED:   { color: 0x8aa8cc, accent: 0x66ccff, scale: 1.25, label: 'IRON GHOUL' },
-  ARCHER:    { color: 0xaad4a0, accent: 0x66ff88, scale: 0.9, label: 'SPECTRAL HUNTER' },
-  BRUTE:     { color: 0xcc8866, accent: 0xff8844, scale: 1.4, label: 'ASH TITAN' },
-  WRAITH:    { color: 0x9fd8ff, accent: 0x66e0ff, scale: 1.0, label: 'SPECTRAL LORD' },
-  RAT:       { color: 0xd8b07a, accent: 0xffaa66, scale: 0.75, label: 'VERMIN KING' },
-  MAGICIAN:  { color: 0xb08ae0, accent: 0xcc88ff, scale: 1.05, label: 'LICH ARCHMAGE' },
+  SKELETON:  { color: 0xcfd6e6, accent: 0x66e0ff, scale: 1.0, label: 'BONE LORD', deco: 'HORNS' },
+  ARMORED:   { color: 0x8aa8cc, accent: 0x66ccff, scale: 1.25, label: 'IRON GHOUL', deco: 'CROWN' },
+  ARCHER:    { color: 0xaad4a0, accent: 0x66ff88, scale: 0.9, label: 'SPECTRAL HUNTER', deco: 'HOOD' },
+  BRUTE:     { color: 0xcc8866, accent: 0xff8844, scale: 1.4, label: 'ASH TITAN', deco: 'BROAD' },
+  WRAITH:    { color: 0x9fd8ff, accent: 0x66e0ff, scale: 1.0, label: 'SPECTRAL LORD', deco: 'HOOD2' },
+  RAT:       { color: 0xd8b07a, accent: 0xffaa66, scale: 0.75, label: 'VERMIN KING', deco: 'FANGS' },
+  MAGICIAN:  { color: 0xb08ae0, accent: 0xcc88ff, scale: 1.05, label: 'LICH ARCHMAGE', deco: 'CROWN2' },
 };
 
 export class GhostBoss {
@@ -91,6 +91,67 @@ export class GhostBoss {
     this.group.add(this.glow);
 
     if (this._scale !== 1) this.group.scale.setScalar(this._scale);
+
+    // Per-variant silhouette decoration so each boss reads as its own entity.
+    this._addDeco(v);
+  }
+
+  // One distinct head/crown accent per boss variant (all reuse the bodyMat so
+  // they stay spectrally coherent and fade together on death).
+  _addDeco(v) {
+    const d = v.deco;
+    const mk = (geo, x, y, z, sx = 1, sy = 1, sz = 1) => {
+      const m = new THREE.Mesh(geo, this.bodyMat);
+      m.position.set(x, y, z);
+      m.scale.set(sx, sy, sz);
+      this.group.add(m);
+      return m;
+    };
+    if (d === 'HORNS') {
+      // Bone Lord: antler horns radiating from the head
+      for (const side of [-1, 1]) {
+        const horn = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.5, 6), this.bodyMat);
+        horn.position.set(side * 0.24, 3.0, 0.0);
+        horn.rotation.z = side * -0.6;
+        this.group.add(horn);
+      }
+    } else if (d === 'CROWN') {
+      // Iron Ghoul: a jagged spectral crown
+      for (let i = 0; i < 5; i++) {
+        mk(new THREE.ConeGeometry(0.045, 0.22, 5), (i - 2) * 0.09, 3.05, 0);
+      }
+    } else if (d === 'HOOD') {
+      // Spectral Hunter: high pointed hood cone
+      mk(new THREE.ConeGeometry(0.34, 0.9, 8), 0, 2.9, -0.1);
+    } else if (d === 'BROAD') {
+      // Ash Titan: broad shoulder discs
+      for (const side of [-1, 1]) {
+        const s = new THREE.Mesh(new THREE.SphereGeometry(0.45, 8, 6), this.bodyMat);
+        s.scale.set(1, 0.6, 1.4);
+        s.position.set(side * 0.55, 2.2, 0);
+        this.group.add(s);
+      }
+    } else if (d === 'HOOD2') {
+      // Spectral Lord: pointed shroud over the head
+      mk(new THREE.ConeGeometry(0.3, 0.8, 8), 0, 2.95, -0.05);
+      this.core.position.y = 1.9; // raise core toward the shroud
+    } else if (d === 'FANGS') {
+      // Vermin King: jutting fangs under a broad snout
+      for (const side of [-1, 1]) {
+        const f = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.3, 5), this.bodyMat);
+        f.position.set(side * 0.1, 2.5, 0.35);
+        f.rotation.x = 0.6;
+        this.group.add(f);
+      }
+    } else if (d === 'CROWN2') {
+      // Lich Archmage: twin spires (crossed crown)
+      for (const side of [-1, 1]) {
+        const s = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.35, 5), this.bodyMat);
+        s.position.set(side * 0.12, 3.0, -0.04);
+        s.rotation.z = side * 0.3;
+        this.group.add(s);
+      }
+    }
   }
 
   setFacing(yaw) { this.facingYaw = yaw; }

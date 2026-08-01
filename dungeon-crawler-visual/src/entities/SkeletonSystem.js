@@ -180,6 +180,7 @@ export class SkeletonSystem {
           const ox = (Math.random() - 0.5) * 2;
           const oz = (Math.random() - 0.5) * 2;
           rat.group.position.set(sx + ox, 0, sz + oz);
+          this._ground(rat.group);
           rat.onKill = () => this._onKill(rat);
           rat.onDeathComplete = () => this._removeSkeleton(rat);
           scaleHp(rat); // NG+ HP
@@ -213,6 +214,7 @@ export class SkeletonSystem {
         }
       }
       skel.group.position.set(sx, 0, sz);
+      this._ground(skel.group);
       skel.onAttackHit = () => this._onAttackHit(skel, type);
       skel.onDeathComplete = () => this._removeSkeleton(skel);
       skel.onKill = () => this._onKill(skel);
@@ -232,6 +234,7 @@ export class SkeletonSystem {
       const sx = c.x * cs + cs / 2;
       const sz = c.z * cs + cs / 2;
       burn.group.position.set(sx, 0, sz);
+      this._ground(burn.group);
       burn.onKill = () => this._onKill(burn);
       burn.onDeathComplete = () => this._removeSkeleton(burn);
       scaleHp(burn); // NG+ HP
@@ -246,6 +249,15 @@ export class SkeletonSystem {
     return BOSS.INTERVAL > 0 && state.level % BOSS.INTERVAL === 0;
   }
 
+  // Plant an enemy model on the ground: set the group's Y so its lowest
+  // vertex rests exactly on the floor (y=0). Fixes models whose feet were
+  // built below the origin (they appeared to hover with legs sunk in).
+  _ground(group) {
+    group.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(group);
+    if (Number.isFinite(box.min.y)) group.position.y = -box.min.y;
+  }
+
   // Spawn ONE ghost boss (random enemy-type variant) at the exit cell.
   _spawnBoss(dungeonData, state, candidates) {
     const cs = dungeonData.cellSize;
@@ -257,6 +269,7 @@ export class SkeletonSystem {
     const baseHp = 4; // base enemy HP; boss = 15x this
     const boss = new GhostBoss(this.scene, baseHp, variant);
     boss.group.position.set(bx, 0, bz);
+    this._ground(boss.group);
     boss.onSummon = () => this._summonMinions(boss, candidates, dungeonData, state);
     boss.onChargeHit = () => this._damagePlayer(BOSS.CHARGE_DMG);
     boss.onKill = () => this._onBossKill();
@@ -282,6 +295,7 @@ export class SkeletonSystem {
       const sx = c.x * cs + cs / 2;
       const sz = c.z * cs + cs / 2;
       w.group.position.set(sx, 0, sz);
+      this._ground(w.group);
       w.magician = true; // these wraiths SHOOT projectiles
       w.onKill = () => this._onKill(w);
       w.onDeathComplete = () => this._removeSkeleton(w);
@@ -390,7 +404,8 @@ export class SkeletonSystem {
           s.z += (bdz / bd) * bspd;
           resolveCircleCollisions(collisionBoxes, s, 0.35);
         }
-        b.group.position.set(s.x, 0, s.z);
+        b.group.position.x = s.x;
+        b.group.position.z = s.z;
         b.setFacing(Math.atan2(bdx, bdz));
         b.group.rotation.y = b.facingYaw;
         // ground fire where it walks
@@ -412,7 +427,8 @@ export class SkeletonSystem {
           s.x -= (dx / dist) * speed;
           s.z -= (dz / dist) * speed;
           resolveCircleCollisions(collisionBoxes, s, 0.35);
-          skel.group.position.set(s.x, 0, s.z);
+          skel.group.position.x = s.x;
+          skel.group.position.z = s.z;
           skel.setFacing(Math.atan2(-dx, -dz));
           skel.group.rotation.y = THREE.MathUtils.damp(
             skel.group.rotation.y, skel.facingYaw, 8, dt,
@@ -456,7 +472,8 @@ export class SkeletonSystem {
         }
         if (moveX !== 0 || moveZ !== 0) {
           resolveCircleCollisions(collisionBoxes, s, 0.35);
-          skel.group.position.set(s.x, 0, s.z);
+          skel.group.position.x = s.x;
+          skel.group.position.z = s.z;
           skel.setFacing(Math.atan2(moveX, moveZ));
           skel.group.rotation.y = THREE.MathUtils.damp(skel.group.rotation.y, skel.facingYaw, 8, dt);
         }
@@ -470,7 +487,8 @@ export class SkeletonSystem {
           const speed = skel.speed * this.speedMult * dt;
           s.x += (dx / dist) * speed;
           s.z += (dz / dist) * speed;
-          skel.group.position.set(s.x, 0, s.z);
+          skel.group.position.x = s.x;
+          skel.group.position.z = s.z;
           skel.setFacing(Math.atan2(dx, dz));
         }
         if (dist <= skel.attackRange && skel.attack() && this.state.invulnTimer <= 0) {
@@ -493,7 +511,8 @@ export class SkeletonSystem {
           const speed = skel.speed * this.speedMult * dt;
           s.x += moveX * speed;
           s.z += moveZ * speed;
-          skel.group.position.set(s.x, 0, s.z);
+          skel.group.position.x = s.x;
+          skel.group.position.z = s.z;
           skel.setFacing(Math.atan2(moveX, moveZ));
         }
         if (dist <= skel.attackRange && skel.attack() && this.state.invulnTimer <= 0) {
@@ -505,8 +524,10 @@ export class SkeletonSystem {
 
       // --- Melee skeleton-family (Skeleton, Magician?, Armored, Brute) ---
       const atkRange = skel.attackRange ?? SKELETON.ATTACK_RANGE;
-      if (skel.state === 'CHASE' && dist <= atkRange
-        && skel.attackCooldown <= 0 && this._hasLOS(skel, player, collisionBoxes)) {
+      // No LOS gate on the swing: at point-blank near a wall the 2D LOS ray
+      // grazes the wall and blocks the attack, so skeletons couldn't hurt the
+      // player right next to them. In range + cooldown ready = attack.
+      if (skel.state === 'CHASE' && dist <= atkRange && skel.attackCooldown <= 0) {
         skel.state = 'ATTACK';
         skel.animTime = 0;
         skel.attackHitDone = false;
@@ -537,7 +558,8 @@ export class SkeletonSystem {
           s.x += moveX * speed;
           s.z += moveZ * speed;
           resolveCircleCollisions(collisionBoxes, s, 0.35);
-          skel.group.position.set(s.x, 0, s.z);
+          skel.group.position.x = s.x;
+          skel.group.position.z = s.z;
           skel.setFacing(Math.atan2(moveX, moveZ));
           skel.group.rotation.y = THREE.MathUtils.damp(
             skel.group.rotation.y, skel.facingYaw, 8, dt,

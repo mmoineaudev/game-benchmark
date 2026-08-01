@@ -30,58 +30,25 @@ export default class ProjectileSystem {
   spawn({ pos, dir, damage, speed, color, splash, slow, dot, gravity, parallel, chain }) {
     const col = new THREE.Color(color || '#ffffff');
     const group = new THREE.Group();
-    // bright core
-    const core = new THREE.Mesh(new THREE.SphereGeometry(0.16, 6, 6), new THREE.MeshBasicMaterial({ color: col }));
-    // colored glow halo — big enough to read from the top-down camera
+    // slim bright core
+    const core = new THREE.Mesh(new THREE.SphereGeometry(0.1, 6, 6), new THREE.MeshBasicMaterial({ color: col }));
+    // compact glow halo — visible from the top-down camera without being bulky
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({
       map: _glowTex,
       color: col,
       transparent: true,
-      opacity: 1,
+      opacity: 0.9,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       depthTest: false, // never hidden behind ground clutter
     }));
-    glow.scale.setScalar(1.35);
-    // hot white center for extra brightness
-    const hot = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: _glowTex,
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.95,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      depthTest: false,
-    }));
-    hot.scale.setScalar(0.7);
-    group.add(core, glow, hot);
+    glow.scale.setScalar(0.6);
+    group.add(core, glow);
     group.position.copy(pos);
 
-    // ── shot trace: flat additive streak trailing the projectile ─────────
-    const w = 0.35;
-    const tGeo = new THREE.BufferGeometry();
-    tGeo.setAttribute('position', new THREE.Float32BufferAttribute([
-      -w, 0, -1,  w, 0, -1,  -w, 0, 0,
-      w, 0, -1,   w, 0, 0,   -w, 0, 0,
-    ], 3));
-    // brighten the trace color toward white so it reads as a hot tracer
-    const trailCol = col.clone().lerp(new THREE.Color(0xffffff), 0.35);
-    const tMat = new THREE.MeshBasicMaterial({
-      color: trailCol,
-      transparent: true,
-      opacity: 0.75,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-    const trail = new THREE.Mesh(tGeo, tMat);
-    trail.position.copy(pos);
-    trail.rotation.y = Math.atan2(dir.x, dir.z);
-
-    if (this.scene) { this.scene.add(group); this.scene.add(trail); }
+    if (this.scene) this.scene.add(group);
     const p = {
-      mesh: group, trail, _trailPos: pos.clone(),
-      dir: dir.clone(), damage, speed: speed || 10, life: 4,
+      mesh: group, dir: dir.clone(), damage, speed: speed || 10, life: 4,
       splash: splash || 0, slow: slow || 0, dot: !!dot, gravity: !!gravity,
       chain: chain || 0, color: color || '#ffffff',
     };
@@ -108,9 +75,6 @@ export default class ProjectileSystem {
           if (ch.geometry) ch.geometry.dispose();
           if (ch.material) ch.material.dispose();
         });
-        this.scene.remove(p.trail);
-        p.trail.geometry.dispose();
-        p.trail.material.dispose();
       }
       this.objs.splice(i, 1);
     }
@@ -119,18 +83,12 @@ export default class ProjectileSystem {
   update(dt, enemies, state) {
     for (let i = this.objs.length - 1; i >= 0; i--) {
       const p = this.objs[i];
-      p._trailPos.copy(p.mesh.position);
       p.mesh.position.addScaledVector(p.dir, p.speed * dt);
 
-      // pulse the glow halos
-      const pulse = 0.85 + Math.sin(performance.now() * 0.02) * 0.15;
-      if (p.mesh.children[1] && p.mesh.children[1].material) p.mesh.children[1].material.opacity = pulse;
-      if (p.mesh.children[2] && p.mesh.children[2].material) p.mesh.children[2].material.opacity = 0.75 + Math.sin(performance.now() * 0.03) * 0.2;
-
-      // shot trace follows the projectile, stretched along its direction
-      p.trail.position.copy(p.mesh.position);
-      p.trail.rotation.y = Math.atan2(p.dir.x, p.dir.z);
-      p.trail.scale.set(1, 1, 2.2 + p.speed * 0.02);
+      // pulse the glow halo
+      if (p.mesh.children[1] && p.mesh.children[1].material) {
+        p.mesh.children[1].material.opacity = 0.75 + Math.sin(performance.now() * 0.02) * 0.15;
+      }
 
       p.life -= dt;
       // Kill projectiles that flew off the map (missed target died mid-flight)

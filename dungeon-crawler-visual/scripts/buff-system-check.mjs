@@ -86,6 +86,54 @@ console.log('== Buff system (GameState timer) ==');
 }
 
 // ===========================================================================
+// HIDDEN RULE — an active buff carries across a LEVEL ADVANCE with x5 time
+// (validates the pure state logic; Game._regenerateDungeon wires the carry
+// by capturing buffEffect/buffTime before the state is replaced, then sets
+// the new state's buffEffect and buffTime = carried.time * 5, and re-applies
+// the side effects so the sword/fireball aren't left stuck).
+// ===========================================================================
+console.log('== Buff carry across level advance (x5) ==');
+{
+  // Simulate a level advance: capture the active buff, build a fresh state,
+  // and carry it with x5 remaining time.
+  const old = new GameState();
+  old.applyBuff(2, BUFF.DURATION);
+  for (let i = 0; i < Math.ceil(10 / dt); i++) old.updateBuff(dt); // 10s elapsed
+  const remaining = old.buffTime; // ~20s
+  ok(Math.abs(remaining - (BUFF.DURATION - 10)) < 0.05, `remaining before advance ~${remaining.toFixed(1)}s`);
+
+  // The level-advance path: a brand new state (the old one's buff data is wiped)
+  const fresh = new GameState({ level: 2 });
+  // ...and Game._regenerateDungeon carries the buff over:
+  if (old.buffActive) {
+    fresh.buffEffect = old.buffEffect;
+    fresh.buffTime = old.buffTime * 5;
+  }
+  ok(fresh.buffEffect === 2 && Math.abs(fresh.buffTime - remaining * 5) < 0.25,
+    `carried buff: effect=2, time ${fresh.buffTime.toFixed(1)}s = ${remaining.toFixed(1)}s x5`);
+  ok(fresh.buffActive, 'carried buff still active');
+  // HUD would show it because buffEffect/buffTime are set on the live state.
+}
+// An inactive (expired) buff must NOT carry — it clears/rests instead.
+{
+  const old = new GameState();
+  for (let i = 0; i < Math.ceil((BUFF.DURATION + 0.2) / dt); i++) old.updateBuff(dt);
+  ok(!old.buffActive, 'expired buff: buffActive false');
+  const fresh = new GameState({ level: 2 });
+  const carried = old.buffActive ? { effect: old.buffEffect, time: old.buffTime } : null;
+  ok(carried === null && fresh.buffEffect === 0 && fresh.buffTime === 0,
+    'no carry when no active buff -> fresh state has no buff');
+}
+// A newly discovered buff resets to default time (overrides any carried value).
+{
+  const fresh = new GameState({ level: 2 });
+  fresh.buffEffect = 2; fresh.buffTime = 40; // e.g. a big carried timer
+  fresh.applyBuff(1); // discovering a new buff
+  ok(fresh.buffEffect === 1 && Math.abs(fresh.buffTime - BUFF.DURATION) < 1e-9,
+    'new buff discovered resets to default duration');
+}
+
+// ===========================================================================
 // NEW GAME+ — half-level restart with orbs kept, +10% enemy HP per cycle
 // ===========================================================================
 console.log('== New Game+ ==');

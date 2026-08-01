@@ -832,6 +832,14 @@ export class Game {
     this._clearBuffEffects(); // replacing any active buff
     const effect = 1 + Math.floor(Math.random() * 4);
     this.state.applyBuff(effect, duration);
+    this._applyBuffEffects(effect);
+    this._updateHUD();
+  }
+
+  // Apply the side effects of a buff EFFECT (the visual/gameplay switch).
+  // Separated from the roll+duration so a carried-over buff can be re-applied
+  // verbatim after a level change.
+  _applyBuffEffects(effect) {
     switch (effect) {
       case 1: // BRIGHT: level lights up, mobs flee
         this.lighting.brightness = BUFF.BRIGHT_AMBIENT;
@@ -854,7 +862,6 @@ export class Game {
         this.post.xray = true;
         break;
     }
-    this._updateHUD();
   }
 
   // Remove every buff side effect (called on expiry or replacement).
@@ -1079,6 +1086,14 @@ export class Game {
     }
     this._disposeScene();
 
+    // HIDDEN RULE: an active buff carries across a level advance (not a fresh
+    // run) with x5 of its remaining time. Capture it BEFORE the state is
+    // replaced (the new GameState would otherwise wipe it to 0).
+    const isLevelAdvance = !newRun && !nextState;
+    const carriedBuff = isLevelAdvance && this.state.buffActive
+      ? { effect: this.state.buffEffect, time: this.state.buffTime }
+      : null;
+
     this.state = nextState
       || (newRun
         ? new GameState()
@@ -1088,6 +1103,18 @@ export class Game {
           collectedOrbs: this.state.collectedOrbs,
           ngPlus: this.state.ngPlus || 0,
         }));
+
+    // Carry the buff over (x5 remaining) so the HUD and level systems see it.
+    // The buff's SIDE EFFECTS are applied AFTER _initCombat() below rebuilds
+    // the skeletons/lighting (setting them here would touch the disposed
+    // systems). With no carried buff we likewise clear any stuck visuals at
+    // that point — this is what fixes the gone-fireball bug.
+    if (carriedBuff) {
+      this.state.buffEffect = carriedBuff.effect;
+      this.state.buffTime = carriedBuff.time * 5;
+    }
+    this._carriedBuff = carriedBuff;
+
     this._prevOrbCount = 0;
     this._prevInExit = false;
     this._noAmmoWarned = false;
@@ -1115,6 +1142,17 @@ export class Game {
     this._showMessage('Slay them for orbs — shoot or swing', 'goal');
     if (this.state.level > 1) this._showMessage(`Level ${this.state.level} — descend!`, 'goal');
     this._emitLevelStart();
+    // Apply the carried buff's side effects now that skeletons/lighting are
+    // rebuilt; with no carried buff, clear any stuck visuals (fixes the
+    // gone-fireball bug where a fireball stayed on screen + sword stayed hidden
+    // while state.buffEffect was 0).
+    if (this._carriedBuff) {
+      this._applyBuffEffects(this._carriedBuff.effect);
+      this._updateHUD();
+    } else {
+      this._clearBuffEffects();
+    }
+    this._carriedBuff = null;
     this._isRunning = true;
     this._lastTime = performance.now();
   }

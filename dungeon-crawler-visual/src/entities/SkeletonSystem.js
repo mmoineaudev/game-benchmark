@@ -183,7 +183,7 @@ export class SkeletonSystem {
         for (let r = 0; r < packSize; r++) {
           const ox = (Math.random() - 0.5) * 2;
           const oz = (Math.random() - 0.5) * 2;
-          spawnPlan.push({ kind: 'RAT', x: sx + ox, z: sz + oz, cellX: x, cellZ: z, attackMult });
+          spawnPlan.push({ kind: 'RAT', x: sx + ox, z: sz + oz, cellX: x, cellZ: z, attackMult, hpMult });
           ratCount++;
         }
         continue;

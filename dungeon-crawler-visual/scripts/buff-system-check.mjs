@@ -68,11 +68,11 @@ console.log('== Buff system (GameState timer) ==');
     'sword size caps at 150 orbs (4x), excess does not grow it');
 }
 
-// --- Buff 4 (VISION) + boss-duration applyBuff + excess-orbs ---
+// --- Buff 4 (GODSPEED) + boss-duration applyBuff + excess-orbs ---
 {
   const s = new GameState();
   s.applyBuff(4);
-  ok(s.buffEffect === 4 && Math.abs(s.buffTime - BUFF.DURATION) < 1e-9, 'applyBuff(4) = VISION, 30s');
+  ok(s.buffEffect === 4 && Math.abs(s.buffTime - BUFF.DURATION) < 1e-9, 'applyBuff(4) = GODSPEED, 30s');
   // Buffer buff stays fully capped at MAX_DURATION (1:30 = 90s)
   s.applyBuff(1, BUFF.BOSS_DURATION);
   ok(s.buffEffect === 1 && Math.abs(s.buffTime - 90) < 1e-9,
@@ -156,19 +156,19 @@ console.log('== No duplicate buff + carry cap ==');
 
   // duplicate-prevention: pick from all effects except the active one
   const pickOther = (activeEffect) => {
-    const candidates = [1, 2, 3, 4].filter((e) => e !== activeEffect);
+    const candidates = [1, 2, 3, 4, 5].filter((e) => e !== activeEffect);
     return candidates[Math.floor(Math.random() * candidates.length)];
   };
-  for (const activeEffect of [1, 2, 3, 4]) {
+  for (const activeEffect of [1, 2, 3, 4, 5]) {
     const picked = new Set();
     for (let i = 0; i < 200; i++) picked.add(pickOther(activeEffect));
     ok(!picked.has(activeEffect), `picking with active=${activeEffect} never returns ${activeEffect}`);
-    ok(picked.size >= 3, `all 3 other effects reachable (active=${activeEffect}, got ${[...picked].sort().join(',')})`);
+    ok(picked.size >= 4, `all 4 other effects reachable (active=${activeEffect}, got ${[...picked].sort().join(',')})`);
   }
 }
 
 // ===========================================================================
-// NEW GAME+ — half-level restart with orbs kept, +10% enemy HP per cycle
+// NEW GAME+ — half-level restart with orbs kept, +100% enemy HP per cycle
 // ===========================================================================
 console.log('== New Game+ ==');
 {
@@ -180,11 +180,11 @@ console.log('== New Game+ ==');
   ok(ng1.level === 3 && ng1.collectedOrbs === 42 && ng1.ngPlus === 1,
     'NG+1 starts at level 3 with orbs carried');
 
-  // Second NG+ cycle: +10% HP each
+  // Second NG+ cycle: +100% HP each
   ok(enemyHpMultiplier(0) === 1, 'no NG+ -> 100% enemy HP');
-  ok(Math.abs(enemyHpMultiplier(1) - 1.1) < 1e-9, 'NG+1 -> 110% enemy HP');
-  ok(Math.abs(enemyHpMultiplier(2) - 1.2) < 1e-9, 'NG+2 -> 120% enemy HP');
-  ok(Math.abs(enemyHpMultiplier(5) - 1.5) < 1e-9, 'NG+5 -> 150% enemy HP');
+  ok(Math.abs(enemyHpMultiplier(1) - 2) < 1e-9, 'NG+1 -> 200% enemy HP');
+  ok(Math.abs(enemyHpMultiplier(2) - 3) < 1e-9, 'NG+2 -> 300% enemy HP');
+  ok(Math.abs(enemyHpMultiplier(5) - 6) < 1e-9, 'NG+5 -> 600% enemy HP');
 
   // Fresh restart resets everything
   const fresh2 = new GameState({ level: 1, collectedOrbs: 0, ngPlus: 0 });

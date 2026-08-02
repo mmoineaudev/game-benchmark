@@ -17,6 +17,7 @@ import { SmokeSystem } from '../systems/SmokeSystem.js';
 import { SkeletonSystem } from '../entities/SkeletonSystem.js';
 import { OrbShooter } from '../entities/OrbShooter.js';
 import { PlayerSword } from '../entities/PlayerSword.js';
+import { Hunter } from '../entities/Hunter.js';
 import { generateGlowTexture } from '../world/Textures.js';
 import { resolveCircleCollisions } from './Collision.js';
 
@@ -97,6 +98,7 @@ export class Game {
     this._bossPortalOpen = true; // boss arenas gate the exit portal
     this._bossBarEl = null;
     this._firePatches = [];    // pooled blue magic-fire patches (orb impacts)
+    this.hunter = null;        // HUNTER buff: spectral boss companion
   }
 
   init() {
@@ -555,6 +557,7 @@ export class Game {
     }
     this._updateBuff(this._delta);
     if (this.skeletons) this.skeletons.update(this._delta, t, this.state.player, this._collisionBoxes);
+    this._updateHunter();
     if (this.shooter) this.shooter.update(this._delta, this._collisionBoxes, this.skeletons.skeletons || []);
     if (this.state.invulnTimer > 0) this.state.invulnTimer -= this._delta;
     this._updateRegen(this._delta);
@@ -745,8 +748,10 @@ export class Game {
   }
 
   // Boss defeated: 5-minute buff + a permanent extra heart, and the exit
-  // portal (closed during the fight) opens.
+  // portal (closed during the fight) opens. Every boss kill also permanently
+  // buffs all mobs: +10% movement AND attack speed.
   _onBossDefeated() {
+    this.state.bossKills = (this.state.bossKills || 0) + 1;
     this._applyBuff(BUFF.BOSS_DURATION, { cap: false }); // 5-minute buff
     this._maxHealth += 1;
     this.state.maxHealth = this._maxHealth;
@@ -894,12 +899,12 @@ export class Game {
     this._clearBuffEffects(); // replacing any active buff
     const active = this.state.buffEffect || 0;
     let effect;
-    if (active >= 1 && active <= 4) {
-      // pick from the 3 effects OTHER than the active one
-      const candidates = [1, 2, 3, 4].filter((e) => e !== active);
+    if (active >= 1 && active <= 5) {
+      // pick from the 4 effects OTHER than the active one
+      const candidates = [1, 2, 3, 4, 5].filter((e) => e !== active);
       effect = candidates[Math.floor(Math.random() * candidates.length)];
     } else {
-      effect = 1 + Math.floor(Math.random() * 4);
+      effect = 1 + Math.floor(Math.random() * 5);
     }
     this.state.applyBuff(effect, duration, { cap: opts.cap !== false });
     this._applyBuffEffects(effect);
@@ -928,8 +933,12 @@ export class Game {
         this.sword.attackSpeedMult = BUFF.EMPOWER_ATTACK;
         this._moveSpeedMult = BUFF.EMPOWER_SPEED;
         break;
-      case 4: // VISION: enemies glow through walls
-        this.post.xray = true;
+      case 4: // GODSPEED: +50% attack speed AND +50% move speed
+        this.sword.attackSpeedMult = BUFF.GODSPEED_ATTACK;
+        this._moveSpeedMult = BUFF.GODSPEED_SPEED;
+        break;
+      case 5: // HUNTER: a spectral boss companion follows and attacks mobs
+        this._spawnHunter();
         break;
     }
   }
@@ -943,7 +952,7 @@ export class Game {
     this.sword.lengthMult = 1;
     this.sword.attackSpeedMult = 1;
     this._moveSpeedMult = 1;
-    if (this.post) this.post.xray = false;
+    if (this.hunter) this._removeHunter();
   }
 
   _updateBuff(dt) {
@@ -951,6 +960,30 @@ export class Game {
       this._clearBuffEffects();
       this._updateHUD();
     }
+  }
+
+  // HUNTER buff: summon the spectral boss companion near the player.
+  _spawnHunter() {
+    this._removeHunter(); // never two
+    this.hunter = new Hunter(this.scene);
+    const p = this.state.player;
+    this.hunter.group.position.set(p.x + 1.5, 0.6, p.z + 1.5);
+  }
+
+  _removeHunter() {
+    if (this.hunter) {
+      this.hunter.dispose();
+      this.hunter = null;
+    }
+  }
+
+  // HUNTER buff: each frame, the companion follows the player and lashes mobs.
+  _updateHunter() {
+    if (!this.hunter || !this.skeletons) return;
+    const p = this.state.player;
+    this.hunter.update(this._delta, performance.now() * 0.001, p, this.skeletons.skeletons, (skel, dmg) => {
+      this.skeletons.hitSkeleton(skel, dmg);
+    });
   }
 
   _nearestSkeletonDist() {
@@ -1075,6 +1108,7 @@ export class Game {
       level: newGamePlus ? Math.max(1, Math.floor(this.state.level / 2)) : 1,
       collectedOrbs: newGamePlus ? Math.floor(this.state.collectedOrbs * 0.9) : 0,
       ngPlus: newGamePlus ? (this.state.ngPlus || 0) + 1 : 0,
+      bossKills: newGamePlus ? (this.state.bossKills || 0) : 0,
     });
     const msg = newGamePlus
       ? `New Game+ ${nextState.ngPlus} — the depths grow stronger`
@@ -1167,13 +1201,14 @@ export class Game {
         'BRIGHT — the level lights up, enemies flee from you',
         'FIREBALL — right-click hurls an explosive fireball',
         'EMPOWERED — longer reach, faster movement & attacks',
-        'VISION — enemies glow through walls (x-ray)',
+        'GODSPEED — +50% attack speed and +50% move speed',
+        'HUNTER — a spectral boss companion follows and attacks mobs',
       ];
       this._loadingBuffEl.textContent = DESCRIPTIONS[e] || DESCRIPTIONS[0];
       this._loadingBuffEl.classList.toggle('none', !e);
       if (this._loadingBuffEl.querySelector?.('.strong')) this._loadingBuffEl.innerHTML = '';
       if (e) {
-        this._loadingBuffEl.innerHTML = `<span class="strong">${['', 'BRIGHT', 'FIREBALL', 'EMPOWERED', 'VISION'][e]}</span> — ${DESCRIPTIONS[e].split(' — ')[1]}`;
+        this._loadingBuffEl.innerHTML = `<span class="strong">${['', 'BRIGHT', 'FIREBALL', 'EMPOWERED', 'GODSPEED', 'HUNTER'][e]}</span> — ${DESCRIPTIONS[e].split(' — ')[1]}`;
       }
     }
     // Statistics
@@ -1247,6 +1282,7 @@ export class Game {
   // Clean every level-owned system and the scene graph so memory from the
   // previous dungeon is fully released before the new one is built.
   _teardownLevel() {
+    this._removeHunter(); // HUNTER buff companion is a scene child
     this.orbs?.dispose();
     this.runes?.dispose();
     this.particles?.dispose();
@@ -1293,6 +1329,7 @@ export class Game {
           level: this.state.level + 1,
           collectedOrbs: this.state.collectedOrbs,
           ngPlus: this.state.ngPlus || 0,
+          bossKills: this.state.bossKills || 0,
         }));
 
     // Carry the buff over (x5 remaining) so the HUD and level systems see it.
@@ -1429,8 +1466,8 @@ export class Game {
         : '';
     }
     if (this._buffBadgeEl) {
-      const labels = ['', 'BRIGHT', 'FIREBALL', 'EMPOWERED', 'VISION'];
-      const colors = ['', '#ffe066', '#ff8844', '#66ff88', '#88ddff'];
+      const labels = ['', 'BRIGHT', 'FIREBALL', 'EMPOWERED', 'GODSPEED', 'HUNTER'];
+      const colors = ['', '#ffe066', '#ff8844', '#66ff88', '#88ddff', '#66ccff'];
       const e = this.state.buffEffect;
       const t = this.state.buffTime;
       const m = t >= 60 ? Math.floor(t / 60) : 0;
@@ -1482,16 +1519,23 @@ export class Game {
     const s = this.state;
     const sw = this.sword;
     const orbMult = orbDamageMultiplier(s.collectedOrbs);
+    const spawnMult = Math.pow(1.1, s.level - 1) * orbPowerMultiplier(s.collectedOrbs)
+      + (s.collectedOrbs > 100 ? (s.collectedOrbs - 100) / BUFF.SPAWN_EXCESS_PER : 0);
+    const mobSpeedMult = (1 + 0.05 * (s.level - 1)) * (1 + 0.1 * (s.bossKills || 0));
+    const atkSpeed = sw && sw.attackSpeedMult !== 1
+      ? `×${sw.attackSpeedMult.toFixed(2)}`
+      : '×1.00';
     const rows = [
       ['DMG ×', `×${(sw ? sw.damageMult : 1).toFixed(2)}`],
       ['Orb DMG', `${Math.round(ORB_WEAPON.DAMAGE * orbMult)}`],
       ['Orb AOE', `${Math.round(ORB_WEAPON.EXPLODE_DAMAGE * orbMult)}`],
       ['Reach', `${(sw ? sw.range : SWORD.RANGE).toFixed(2)}u`],
       ['Sword size', `×${(sw ? sw.scale : 1).toFixed(2)}`],
-      ['Atk speed', `${this._moveSpeedMult !== 1 || (sw && sw.attackSpeedMult !== 1) ? '×1.2' : '×1.00'}`],
+      ['Atk speed', atkSpeed],
       ['Move speed', this.state.sprintSpeedMult > 1.001 ? `×${this.state.sprintSpeedMult.toFixed(2)}` : '×1.00'],
       ['Enemy HP', `×${enemyHpMultiplier(s.ngPlus).toFixed(2)}`],
-      ['Spawns', `×${orbPowerMultiplier(s.collectedOrbs).toFixed(2)}`],
+      ['Mob speed', `×${mobSpeedMult.toFixed(2)}`],
+      ['Spawns', `×${spawnMult.toFixed(2)}`],
       ['Regen', '+1/5s @20s'],
     ];
     this._statsEl.innerHTML = rows
@@ -1508,6 +1552,7 @@ export class Game {
     window.removeEventListener('resize', this._onResize);
     this.input.dispose();
     this.post.dispose();
+    this._removeHunter();
     this.particles.dispose();
     this.smoke.dispose();
     this.runes.dispose();

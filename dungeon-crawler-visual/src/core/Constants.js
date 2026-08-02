@@ -319,7 +319,8 @@ export const HIT_STOP = 0.06; // seconds of world-freeze on sword hit
 //   1 = BRIGHT: level lights up (ambient up, fog down), mobs flee the player
 //   2 = FIREBALL: dagger replaced by a free explosive fireball on right click
 //   3 = EMPOWERED: dagger +50% longer, move speed +20%, attack speed +20%
-//   4 = VISION: see enemies through walls (highlight ignores depth)
+//   4 = GODSPEED: +50% attack speed AND +50% move speed
+//   5 = HUNTER: a spectral boss companion follows the player and attacks mobs
 export const BUFF = {
   DURATION: 30,
   CHANCE: 0.06,            // base drop chance per broken breakable (+20% from 5%)
@@ -331,8 +332,22 @@ export const BUFF = {
   EMPOWER_LENGTH: 1.5,     // dagger length multiplier
   EMPOWER_SPEED: 1.2,      // move speed multiplier
   EMPOWER_ATTACK: 1.2,     // dagger attack speed multiplier (faster cycle)
+  GODSPEED_SPEED: 1.5,     // GODSPEED: +50% move speed
+  GODSPEED_ATTACK: 1.5,    // GODSPEED: +50% attack speed
   BOSS_DURATION: 300,      // boss-kill buff nominal 5 minutes
   MAX_DURATION: 90,        // hard cap on any buff duration (1:30)
+};
+
+// Spectral hunter companion summoned by the HUNTER buff: follows the player
+// and lashes out at nearby mobs.
+export const HUNTER = {
+  HP: 9999,            // invulnerable companion
+  SPEED: 6.5,          // follow speed (faster than the player)
+  FOLLOW_DIST: 2.5,    // hovers ~this far from the player
+  ATTACK_RANGE: 7,     // hits mobs within this distance
+  ATTACK_DAMAGE: 2,    // damage per lash
+  ATTACK_INTERVAL: 1.0,// seconds between lashes
+  SCALE: 1.3,
 };
 
 export const ORB_WEAPON = {
@@ -370,9 +385,9 @@ export function excessOrbs(orbs) {
   return Math.max(0, orbs - 100);
 }
 
-// New Game+ enemy HP: +10% per NG+ cycle (ngPlus = 0 on a fresh run).
+// New Game+ enemy HP: +100% per NG+ cycle (ngPlus = 0 on a fresh run).
 export function enemyHpMultiplier(ngPlus) {
-  return 1 + 0.1 * (ngPlus || 0);
+  return 1 + (ngPlus || 0);
 }
 
 export const MAGICIAN = {

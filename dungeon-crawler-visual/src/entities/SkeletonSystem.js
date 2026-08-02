@@ -136,16 +136,19 @@ export class SkeletonSystem {
 
     // Level scaling: +5% move speed PER LEVEL; attack speed still +5% per
     // 3 levels (attackMult — swing cadence, not movement).
-    this.speedMult = 1 + 0.05 * (state.level - 1);
-    const attackMult = 1 + 0.05 * Math.floor((state.level - 1) / 3);
+    // Every boss kill adds +10% to BOTH movement and attack speed (permanent).
+    const bossMult = 1 + 0.1 * (state.bossKills || 0);
+    this.speedMult = (1 + 0.05 * (state.level - 1)) * bossMult;
+    const attackMult = (1 + 0.05 * Math.floor((state.level - 1) / 3)) * bossMult;
 
-    // New Game+: +10% enemy HP per NG+ cycle
+    // New Game+: +100% enemy HP per NG+ cycle
     const hpMult = enemyHpMultiplier(state.ngPlus);
 
-    // Spawn rate scales with the SAME multiplier as the sword size bonus:
-    // +20% per 10 orbs held (capped at 3x). Banked ammo = more enemies =
-    // more drops. Hard-capped at MAX_ALIVE so the live-bodies budget holds.
-    const spawnMult = orbPowerMultiplier(state.collectedOrbs)
+    // Spawn rate: +10% per level, then scaled by the sword/orb power bonus.
+    // Banked ammo = more enemies = more drops (risk/reward loop). Hard-capped
+    // at MAX_ALIVE so the live-bodies budget holds.
+    const levelSpawnMult = Math.pow(1.1, state.level - 1);
+    const spawnMult = levelSpawnMult * orbPowerMultiplier(state.collectedOrbs)
       + excessOrbs(state.collectedOrbs) / BUFF.SPAWN_EXCESS_PER;
     let slots = Math.min(
       Math.round((ENEMY.BASE_SLOTS + (state.level - 1) * ENEMY.SLOTS_PER_LEVEL) * spawnMult),

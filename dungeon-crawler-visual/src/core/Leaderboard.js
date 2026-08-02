@@ -28,4 +28,9 @@ export class Leaderboard {
   best() {
     return this.load()[0] || null;
   }
+
+  // Wipe the leaderboard (rankings are stored in localStorage).
+  clear() {
+    try { localStorage.removeItem(STORAGE_KEY); } catch { /* storage blocked */ }
+  }
 }

@@ -65,6 +65,7 @@ export class Game {
     this._titleMaxHold = 8;      // safety: force-lift after this many seconds, never trap the player
     this._sprintBonusEl = document.getElementById('sprint-bonus');
     this._buffBadgeEl = document.getElementById('buff-badge');
+    this._safeSpawnEl = document.getElementById('safe-spawn');
     this._lbPanel = document.getElementById('leaderboard-panel');
     this._lbList = document.getElementById('leaderboard-list');
     this._gameOverEl = document.getElementById('game-over');
@@ -550,16 +551,20 @@ export class Game {
     this._updateFirePatches();
     if (this.props) this.props.update(this._delta, t, this.state.player);
     this._stepOnBreakables();
-    // No combat while the title screen holds the scene (input is locked away).
-    if (!this._titleActive) {
+    // No combat while the title screen holds the scene (input is locked away)
+    // or during the safe-spawn countdown (the player is rooted).
+    if (!this._titleActive && this.state.safeSpawn <= 0) {
       this._handleShooting();
       this._handleSwordAttack();
     }
-    this._updateBuff(this._delta);
+    // Buff timers don't tick during safe spawn — the buff effectively starts
+    // when the player can actually play.
+    if (this.state.safeSpawn <= 0) this._updateBuff(this._delta);
     if (this.skeletons) this.skeletons.update(this._delta, t, this.state.player, this._collisionBoxes);
     this._updateHunter();
     if (this.shooter) this.shooter.update(this._delta, this._collisionBoxes, this.skeletons.skeletons || []);
     if (this.state.invulnTimer > 0) this.state.invulnTimer -= this._delta;
+    if (this.state.safeSpawn > 0) this.state.safeSpawn -= this._delta;
     this._updateRegen(this._delta);
     if (this._shakeTime > 0) this._shakeTime -= this._delta;
 
@@ -585,13 +590,15 @@ export class Game {
   _updateInput() {
     const dt = this._delta;
     const p = this.state.player;
+    const safe = this.state.safeSpawn > 0;
     this._sprinting = this.input.isPressed('ShiftLeft') || this.input.isPressed('ShiftRight');
 
     // Sprint acceleration: holding Shift + moving for 5s grants +5% sprint
     // speed per tier, cumulative; resets the moment sprinting stops.
-    const moving = this.input.isPressed('KeyW') || this.input.isPressed('KeyS')
-      || this.input.isPressed('KeyA') || this.input.isPressed('KeyD');
-    this.state.updateSprint(dt, this._sprinting, moving);
+    // (Paused during the safe-spawn countdown — the player can't move.)
+    const moving = !safe && (this.input.isPressed('KeyW') || this.input.isPressed('KeyS')
+      || this.input.isPressed('KeyA') || this.input.isPressed('KeyD'));
+    this.state.updateSprint(dt, this._sprinting && !safe, moving);
     const sprintMult = this._sprinting
       ? PLAYER.SPRINT_MULTIPLIER * this.state.sprintSpeedMult
       : 1;
@@ -607,10 +614,13 @@ export class Game {
 
     // Accumulate the requested movement direction for this frame.
     let mx = 0, mz = 0;
-    if (this.input.isPressed('KeyW')) { mx += forward.x; mz += forward.z; }
-    if (this.input.isPressed('KeyS')) { mx -= forward.x; mz -= forward.z; }
-    if (this.input.isPressed('KeyA')) { mx -= right.x; mz -= right.z; }
-    if (this.input.isPressed('KeyD')) { mx += right.x; mz += right.z; }
+    // Safe spawn: the player is rooted in place (camera look still works).
+    if (!safe) {
+      if (this.input.isPressed('KeyW')) { mx += forward.x; mz += forward.z; }
+      if (this.input.isPressed('KeyS')) { mx -= forward.x; mz -= forward.z; }
+      if (this.input.isPressed('KeyA')) { mx -= right.x; mz -= right.z; }
+      if (this.input.isPressed('KeyD')) { mx += right.x; mz += right.z; }
+    }
     const mlen = Math.hypot(mx, mz);
     if (mlen > 0.0001) {
       // Sub-step the movement so a large dt (e.g. level-loading hitch) can
@@ -977,13 +987,14 @@ export class Game {
     }
   }
 
-  // HUNTER buff: each frame, the companion follows the player and lashes mobs.
+  // HUNTER buff: each frame, the companion follows the player, targets mobs
+  // on sight, and throws energy beams at them.
   _updateHunter() {
     if (!this.hunter || !this.skeletons) return;
     const p = this.state.player;
     this.hunter.update(this._delta, performance.now() * 0.001, p, this.skeletons.skeletons, (skel, dmg) => {
       this.skeletons.hitSkeleton(skel, dmg);
-    });
+    }, this._collisionBoxes, this.state.collectedOrbs);
   }
 
   _nearestSkeletonDist() {
@@ -1052,12 +1063,13 @@ export class Game {
     this._gameOverActive = true;
     this._isRunning = false;
     if (document.pointerLockElement) document.exitPointerLock();
-    const rank = this.leaderboard.add(this.state.level, this.state.runTime, this.state.collectedOrbs);
+    const rank = this.leaderboard.add(this.state.level, this.state.runTime, this.state.collectedOrbs, this.state.ngPlus);
     // Mark THIS run (not the top entry) so the red highlight tracks our score.
     this._lastEntry = {
       level: this.state.level,
       time: Math.round(this.state.runTime),
       orbs: this.state.collectedOrbs,
+      ngPlus: this.state.ngPlus || 0,
     };
     if (this._goStats) {
       const t = this.state.runTime;
@@ -1124,8 +1136,10 @@ export class Game {
     listEl.innerHTML = entries.length
       ? entries.map((e, i) => {
         const me = this._lastEntry && e.level === this._lastEntry.level
-          && e.time === this._lastEntry.time && e.orbs === this._lastEntry.orbs;
-        return `<li class="${me ? 'me' : ''}">#${i + 1} · Lv ${e.level} · ${Math.floor(e.time / 60)}:${(e.time % 60).toString().padStart(2, '0')} · Souls ${e.orbs}</li>`;
+          && e.time === this._lastEntry.time && e.orbs === this._lastEntry.orbs
+          && (e.ngPlus || 0) === (this._lastEntry.ngPlus || 0);
+        const ng = e.ngPlus ? ` · NG+${e.ngPlus}` : '';
+        return `<li class="${me ? 'me' : ''}">#${i + 1} · Lv ${e.level}${ng} · ${Math.floor(e.time / 60)}:${(e.time % 60).toString().padStart(2, '0')} · Souls ${e.orbs}</li>`;
       }).join('')
       : '<li>No runs yet — descend!</li>';
   }
@@ -1217,13 +1231,19 @@ export class Game {
       const sw = this.sword;
       if (s) {
         const orbMult = orbDamageMultiplier(s.collectedOrbs);
+        // Mirror the REAL spawn multiplier from SkeletonSystem: +10%/level x
+        // orb power, plus excess-orb scaling (was capped at x4 before).
+        const spawnMult = Math.pow(1.1, s.level - 1) * orbPowerMultiplier(s.collectedOrbs)
+          + (s.collectedOrbs > 100 ? (s.collectedOrbs - 100) / BUFF.SPAWN_EXCESS_PER : 0);
+        const mobSpeedMult = (1 + 0.05 * (s.level - 1)) * (1 + 0.1 * (s.bossKills || 0));
         const rows = [
           [`Souls`, `${s.collectedOrbs}`],
           [`DMG ×`, `${(sw ? sw.damageMult : 1).toFixed(2)}`],
           [`Orb DMG`, `${Math.round(ORB_WEAPON.DAMAGE * orbMult)}`],
           [`Reach`, `${(sw ? sw.range : SWORD.RANGE).toFixed(1)}u`],
           [`Enemy HP`, `×${enemyHpMultiplier(s.ngPlus).toFixed(1)}`],
-          [`Spawns`, `×${orbPowerMultiplier(s.collectedOrbs).toFixed(1)}`],
+          [`Mob speed`, `×${mobSpeedMult.toFixed(1)}`],
+          [`Spawns`, `×${spawnMult.toFixed(1)}`],
           [`Regen`, `+1/5s @20s`],
         ];
         this._loadingStatsEl.innerHTML = rows
@@ -1249,6 +1269,11 @@ export class Game {
     // Restart the clock cleanly the moment the title lifts so the level timer
     // doesn't count the (laggy) title-screen frames.
     this._lastTime = performance.now();
+    // Level-start protection: the player is briefly immobile and invincible
+    // (with a countdown) so mobs can't hit them during the first frames after
+    // the title lifts — this absorbs any residual level-start latency.
+    this.state.safeSpawn = PLAYER.SAFE_SPAWN;
+    this.state.invulnTimer = PLAYER.SAFE_SPAWN;
   }
 
   // While the title is up, reveal it once the AVERAGE fps over a rolling
@@ -1479,6 +1504,16 @@ export class Game {
       // Hide the badge entirely when no buff is active (an empty box peeked
       // out between the level title and the timer).
       this._buffBadgeEl.style.display = e ? 'block' : 'none';
+    }
+    // Safe-spawn countdown: big number while active, hidden otherwise.
+    if (this._safeSpawnEl) {
+      const t = this.state.safeSpawn;
+      if (t > 0) {
+        this._safeSpawnEl.textContent = Math.ceil(t);
+        this._safeSpawnEl.classList.remove('hidden');
+      } else {
+        this._safeSpawnEl.classList.add('hidden');
+      }
     }
     // Dark Souls HP bar (red fill) + HP number; stamina bar stays full
     if (this._heartsEl) {

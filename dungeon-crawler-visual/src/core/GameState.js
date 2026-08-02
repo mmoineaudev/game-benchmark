@@ -10,6 +10,8 @@ export class GameState {
     this.health = PLAYER.MAX_HEALTH;
     this.maxHealth = PLAYER.MAX_HEALTH; // permanent max (grows with boss hearts)
     this.invulnTimer = 0;
+    this.safeSpawn = 0;   // level-start protection: player immobile + invincible
+                          // while >0 (counts down), mobs don't track until 0
     this.visitedCells = new Set();
     this.dungeonSeed = Date.now();
     this.effectsEnabled = true;

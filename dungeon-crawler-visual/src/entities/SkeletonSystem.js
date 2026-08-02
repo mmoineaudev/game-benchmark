@@ -38,6 +38,9 @@ export class SkeletonSystem {
     this._spawnQueue = []; // deferred spawn jobs: one mob revealed per tick
     this._spawnTimer = 0;  // accumulator for the SPAWN_INTERVAL reveal cadence
     this.frozen = false;   // title-screen gate: spawn drains, mobs stay put
+    this._burnPending = false; // BURN awaits: appears once ALL enemies are dead
+    this._burnSpawned = false;
+    this.data = null;      // dungeon data (set in init) for burn spawn placement
   }
 
   _initProjectilePools() {
@@ -205,16 +208,11 @@ export class SkeletonSystem {
       });
     }
 
-    // Random mysterious burning enemy, at most one per level
-    if (candidates.length && Math.random() < BURN.CHANCE) {
-      const c = candidates[Math.floor(Math.random() * candidates.length)];
-      spawnPlan.push({
-        kind: 'BURN', x: c.x * cs + cs / 2, z: c.z * cs + cs / 2,
-        cellX: c.x, cellZ: c.z, hpMult,
-      });
-    }
-
     this._spawnQueue = spawnPlan;
+    // The BURN enemy no longer spawns at level start: it awaits until ALL
+    // other enemies are dead (see update() -> _maybeSpawnBurn). Reset the
+    // flag here so a fresh level can summon it again.
+    this._burnPending = !this._isBossLevel(state) && !inArena && spawnPlan.length > 0;
     // Reveal the first mob immediately so the level isn't empty on frame 1.
     if (this._spawnQueue.length) this._revealNextSpawn();
   }
@@ -427,17 +425,24 @@ export class SkeletonSystem {
     // Frozen (title screen up): drain spawns so they exist, but keep all mobs
     // immobile until the title lifts (level-start stability trick).
     if (this.frozen) return;
+    // Safe spawn: mobs stay put and idle (no tracking/attacking) until the
+    // player's spawn protection countdown reaches 0.
+    const tracking = !(this.state && this.state.safeSpawn > 0);
     for (const s of this.skeletons) {
       const skel = s.skel;
       if (skel.state === 'DEAD') {
         skel.update(dt, time);
         continue;
       }
+      // Safe spawn: mobs idle in place (no tracking/attacking). Bosses also
+      // wait — their charge/summon AI is gated the same way.
+      if (!tracking) {
+        skel.update(dt, time);
+        continue;
+      }
       const dx = player.x - s.x;
       const dz = player.z - s.z;
       const dist = Math.hypot(dx, dz);
-
-      // --- Ghost boss: self-contained AI (charge + summon) ---
       if (s.type === 'BOSS') {
         s.skel.update(dt, time, player, collisionBoxes, resolveCircleCollisions);
         s.x = s.skel.group.position.x;
@@ -453,9 +458,17 @@ export class SkeletonSystem {
         const bd = Math.hypot(bdx, bdz);
         const bspd = b.speed * this.speedMult * dt;
         if (bd > 1e-3) {
-          s.x += (bdx / bd) * bspd;
-          s.z += (bdz / bd) * bspd;
-          resolveCircleCollisions(collisionBoxes, s, 0.35);
+          // Sub-step so the burn can't tunnel through walls at high speed.
+          const ux = bdx / bd, uz = bdz / bd;
+          const maxStep = 0.08;
+          let remaining = bspd;
+          while (remaining > 1e-6) {
+            const step = Math.min(maxStep, remaining);
+            s.x += ux * step;
+            s.z += uz * step;
+            resolveCircleCollisions(collisionBoxes, s, 0.35);
+            remaining -= step;
+          }
         }
         b.group.position.x = s.x;
         b.group.position.z = s.z;
@@ -477,9 +490,19 @@ export class SkeletonSystem {
       if (this.fleeing) {
         const speed = (skel.speed ?? SKELETON.CHASE_SPEED) * this.speedMult * dt;
         if (dist > 0.01) {
-          s.x -= (dx / dist) * speed;
-          s.z -= (dz / dist) * speed;
-          resolveCircleCollisions(collisionBoxes, s, 0.35);
+          const ux = -dx / dist, uz = -dz / dist;
+          // Sub-step so a high flee speed (BRIGHT + level + boss-kill speed)
+          // can never tunnel a mob through a wall: each sliver is smaller than
+          // the wall thickness, and collisions resolve after every sliver.
+          const maxStep = 0.08;
+          let remaining = speed;
+          while (remaining > 1e-6) {
+            const step = Math.min(maxStep, remaining);
+            s.x += ux * step;
+            s.z += uz * step;
+            resolveCircleCollisions(collisionBoxes, s, 0.35);
+            remaining -= step;
+          }
           skel.group.position.x = s.x;
           skel.group.position.z = s.z;
           skel.setFacing(Math.atan2(-dx, -dz));
@@ -507,20 +530,17 @@ export class SkeletonSystem {
         if (dist < ARCHER.RETREAT_DIST) {
           moveX = -dx / dist; moveZ = -dz / dist;
           const speed = ARCHER.RETREAT_SPEED * this.speedMult * dt;
-          s.x += moveX * speed;
-          s.z += moveZ * speed;
+          this._substepMove(s, moveX, moveZ, speed, collisionBoxes);
         } else if (dist > ARCHER.PREF_DIST && this._hasLOS(skel, player, collisionBoxes)) {
           moveX = dx / dist; moveZ = dz / dist;
           const speed = ARCHER.SPEED * this.speedMult * dt;
-          s.x += moveX * speed;
-          s.z += moveZ * speed;
+          this._substepMove(s, moveX, moveZ, speed, collisionBoxes);
         } else if (!this._hasLOS(skel, player, collisionBoxes)) {
           const dir = this._greedyStep(s, player, collisionBoxes);
           if (dir) {
             moveX = dir.x; moveZ = dir.z;
             const speed = ARCHER.SPEED * this.speedMult * dt;
-            s.x += moveX * speed;
-            s.z += moveZ * speed;
+            this._substepMove(s, moveX, moveZ, speed, collisionBoxes);
           }
         }
         if (moveX !== 0 || moveZ !== 0) {
@@ -538,8 +558,18 @@ export class SkeletonSystem {
       if (s.type === 'WRAITH') {
         if (dist > 0.5) {
           const speed = skel.speed * this.speedMult * dt;
-          s.x += (dx / dist) * speed;
-          s.z += (dz / dist) * speed;
+          // Sub-step so high chase speed (level + boss-kill scaling) can't
+          // tunnel a mob through a wall; collisions resolve per sliver.
+          const ux = dx / dist, uz = dz / dist;
+          const maxStep = 0.08;
+          let remaining = speed;
+          while (remaining > 1e-6) {
+            const step = Math.min(maxStep, remaining);
+            s.x += ux * step;
+            s.z += uz * step;
+            resolveCircleCollisions(collisionBoxes, s, 0.35);
+            remaining -= step;
+          }
           skel.group.position.x = s.x;
           skel.group.position.z = s.z;
           skel.setFacing(Math.atan2(dx, dz));
@@ -562,8 +592,17 @@ export class SkeletonSystem {
         }
         if (moveX !== 0 || moveZ !== 0) {
           const speed = skel.speed * this.speedMult * dt;
-          s.x += moveX * speed;
-          s.z += moveZ * speed;
+          // Sub-step so fast rats (level + boss-kill scaling) can't tunnel
+          // through walls; collisions resolve per sliver.
+          const maxStep = 0.08;
+          let remaining = speed;
+          while (remaining > 1e-6) {
+            const step = Math.min(maxStep, remaining);
+            s.x += moveX * step;
+            s.z += moveZ * step;
+            resolveCircleCollisions(collisionBoxes, s, 0.35);
+            remaining -= step;
+          }
           skel.group.position.x = s.x;
           skel.group.position.z = s.z;
           skel.setFacing(Math.atan2(moveX, moveZ));
@@ -608,9 +647,17 @@ export class SkeletonSystem {
 
         if (moveX !== 0 || moveZ !== 0) {
           const speed = skel.speed * this.speedMult * dt;
-          s.x += moveX * speed;
-          s.z += moveZ * speed;
-          resolveCircleCollisions(collisionBoxes, s, 0.35);
+          // Sub-step so high chase speed (level + boss-kill scaling) can't
+          // tunnel a mob through a wall; collisions resolve per sliver.
+          const maxStep = 0.08;
+          let remaining = speed;
+          while (remaining > 1e-6) {
+            const step = Math.min(maxStep, remaining);
+            s.x += moveX * step;
+            s.z += moveZ * step;
+            resolveCircleCollisions(collisionBoxes, s, 0.35);
+            remaining -= step;
+          }
           skel.group.position.x = s.x;
           skel.group.position.z = s.z;
           skel.setFacing(Math.atan2(moveX, moveZ));
@@ -622,6 +669,9 @@ export class SkeletonSystem {
 
       skel.update(dt, time);
     }
+
+    // The BURN enemy rises once every other mob is dead (boss-tier final foe)
+    this._maybeSpawnBurn(player);
 
     // Magician red orbs + archer arrows
     this._updateProjectiles(dt, collisionBoxes, player);
@@ -776,6 +826,53 @@ export class SkeletonSystem {
     this.onKill?.(skel.group.position.x, skel.group.position.z, skel.dropOrbs || 1, skel);
   }
 
+  // The BURN enemy waits until the ENTIRE level is cleared, then rises as a
+  // final challenge with boss-tier HP. Called from update() every frame.
+  _maybeSpawnBurn(player) {
+    if (!this._burnPending || this._burnSpawned) return;
+    if (this._spawnQueue.length) return; // mobs still draining in
+    // Any OTHER living enemy (not the burn itself, not the boss) blocks it.
+    for (const s of this.skeletons) {
+      if (s.type === 'BURN' || s.type === 'BOSS') continue;
+      if (s.skel.state !== 'DEAD') return;
+    }
+    if (!this.data) return;
+    this._burnPending = false;
+    this._burnSpawned = true;
+
+    // Pick a spawn cell: far from the player, on a walkable room cell.
+    const cs = this.data.cellSize;
+    const gs = this.data.gridSize;
+    const grid = this.data.grid;
+    const pcx = Math.floor(player.x / cs);
+    const pcz = Math.floor(player.z / cs);
+    let best = null, bestD = -1;
+    for (let z = 0; z < gs; z++) {
+      for (let x = 0; x < gs; x++) {
+        if (grid[z][x] === 'empty') continue;
+        const d2 = (x - pcx) ** 2 + (z - pcz) ** 2;
+        if (d2 > bestD) { bestD = d2; best = { x, z }; }
+      }
+    }
+    if (!best) return;
+    const wx = best.x * cs + cs / 2;
+    const wz = best.z * cs + cs / 2;
+
+    const burn = new Burning(this.scene);
+    burn.group.position.set(wx, 0, wz);
+    this._ground(burn.group);
+    burn.onKill = () => this._onKill(burn);
+    burn.onDeathComplete = () => this._removeSkeleton(burn);
+    // Boss-tier HP: BURN.BOSS_HP_MULT x base, then NG+ scaling on top.
+    burn.hp = Math.ceil(BURN.HP * BURN.BOSS_HP_MULT * enemyHpMultiplier(this.state.ngPlus));
+    burn.maxHp = burn.hp;
+    this.skeletons.push({
+      skel: burn, x: wx, z: wz,
+      cellX: best.x, cellZ: best.z, nextThink: 0, type: 'BURN', elite: false, magician: false,
+    });
+    this.onBurnSpawned?.();
+  }
+
   _hasLOS(skel, player, collisionBoxes) {
     const x0 = skel.group.position.x;
     const z0 = skel.group.position.z;
@@ -793,10 +890,24 @@ export class SkeletonSystem {
     return true;
   }
 
+  // Move a mob in a direction in sub-steps, resolving collisions after each
+  // sliver so a high speed (level + boss-kill scaling, BRIGHT flee) can never
+  // tunnel it through a wall.
+  _substepMove(s, moveX, moveZ, speed, collisionBoxes) {
+    const maxStep = 0.08; // well under corridor/wall thickness
+    let remaining = speed;
+    while (remaining > 1e-6) {
+      const step = Math.min(maxStep, remaining);
+      s.x += moveX * step;
+      s.z += moveZ * step;
+      resolveCircleCollisions(collisionBoxes, s, 0.35);
+      remaining -= step;
+    }
+  }
+
   _greedyStep(s, player, collisionBoxes) {
     if (performance.now() < s.nextThink) return null;
     s.nextThink = performance.now() + 300;
-
     const cs = this.data.cellSize;
     const gs = this.data.gridSize;
     const grid = this.data.grid;

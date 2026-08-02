@@ -13,6 +13,8 @@ export const PLAYER = {
   SPRINT_MULTIPLIER: 1.55,
   MAX_HEALTH: 3,
   INVULN_TIME: 0.8,
+  SAFE_SPAWN: 5,        // seconds of spawn protection: immobile, invincible,
+                        // countdown shown, mobs only track once it hits 0
   MOUSE_SENSITIVITY: 0.002,
   PITCH_CLAMP: Math.PI / 2 - 0.1, // ±85°
   SPRINT_ACCEL_WINDOW: 5,  // seconds of continuous sprinting per acceleration tier
@@ -152,7 +154,7 @@ export const BIOMES = {
 // Boss levels: every BOSS.INTERVAL-th level is a single-boss arena.
 export const BOSS = {
   INTERVAL: 7,          // levels 7, 14, 21, ... are boss levels
-  HP_MULT: 15,          // boss HP = 15x a base enemy's HP
+  HP_MULT: 30,          // boss HP = 30x a base enemy's HP (2x the old 15x)
   CHARGE_SPEED: 14,     // dash speed during the charge
   CHARGE_TIME: 0.9,     // seconds the charge lasts
   CHARGE_COOLDOWN: 3.2, // seconds between charges
@@ -347,6 +349,7 @@ export const HUNTER = {
   ATTACK_RANGE: 7,     // hits mobs within this distance
   ATTACK_DAMAGE: 2,    // damage per lash
   ATTACK_INTERVAL: 1.0,// seconds between lashes
+  BEAM_TIME: 0.35,     // seconds the energy beam flash lasts
   SCALE: 1.3,
 };
 
@@ -399,17 +402,20 @@ export const MAGICIAN = {
   ORB_DAMAGE: 1,
 };
 
-// A mysterious red-and-black burning enemy. Random, at most once per level.
-// It sets the ground on fire where it walks (Game's fire-patch hook).
+// A mysterious red-and-black burning enemy. Does NOT spawn at level start —
+// it appears only once ALL other enemies on the level are dead, as a final
+// challenge. It has boss-tier HP (BOSS.HP_MULT x its base HP) and sets the
+// ground on fire where it walks (Game's fire-patch hook). At most once per level.
 export const BURN = {
-  CHANCE: 0.25,          // per-level chance to spawn one (non-boss levels)
+  CHANCE: 1,            // always awaits after the level is cleared (once)
   HP: 3,
+  BOSS_HP_MULT: 30,     // boss-tier HP: 30x base = 90 HP (same as BOSS.HP_MULT)
   SPEED: 2.6,
   DMG: 1,
   RANGE: 1.3,
   DROP: 2,
   COOLDOWN: 1.4,
-  FIRE_INTERVAL: 0.6,    // seconds between ground-fire leaks while moving
+  FIRE_INTERVAL: 0.6,   // seconds between ground-fire leaks while moving
 };
 
 export const DROP = {

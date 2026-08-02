@@ -37,21 +37,21 @@ for (const lvl of [7, 14, 21]) ok(biomeForLevel(lvl) === 'SPECTRAL_COURT', `leve
 ok(biomeForLevel(1) === 'STONE', 'level 1 is stone (not boss)');
 ok(biomeForLevel(6) !== 'SPECTRAL_COURT' && biomeForLevel(8) !== 'SPECTRAL_COURT', 'levels 6/8 are not boss');
 ok(BIOMES.SPECTRAL_COURT && BIOMES.SPECTRAL_COURT.label === 'SPECTRAL COURT', 'spectral biome defined');
-ok(BOSS.INTERVAL === 7 && BOSS.HP_MULT === 15 && BOSS.MAX_MINIONS === 6, 'boss constants');
+ok(BOSS.INTERVAL === 7 && BOSS.HP_MULT === 30 && BOSS.MAX_MINIONS === 6, 'boss constants');
 
 console.log('== GhostBoss ==');
 {
   const scene = { add() {}, remove() {} };
   const boss = new GhostBoss(scene, 4);
-  ok(boss.maxHp === 60, `boss HP = 15x base (4 -> ${boss.maxHp})`);
-  ok(boss.hp === 60 && boss.state !== 'DEAD', 'boss alive at full HP');
+  ok(boss.maxHp === 120, `boss HP = 30x base (4 -> ${boss.maxHp})`);
+  ok(boss.hp === 120 && boss.state !== 'DEAD', 'boss alive at full HP');
 
   // damage path -> onKill on death
   let killed = 0;
   boss.onKill = () => killed++;
-  boss.hit(59);
-  ok(boss.hp === 1 && killed === 0, 'boss survives 59 dmg (hp 1)');
-  ok(boss.hit(1) === true && killed === 1, 'boss dies at 60 dmg, onKill fires');
+  boss.hit(119);
+  ok(boss.hp === 1 && killed === 0, 'boss survives 119 dmg (hp 1)');
+  ok(boss.hit(1) === true && killed === 1, 'boss dies at 120 dmg, onKill fires');
   ok(boss.state === 'DEAD', 'boss state = DEAD');
 
   // charge AI: within range, charge cooldown elapses -> CHARGING, then CHASE

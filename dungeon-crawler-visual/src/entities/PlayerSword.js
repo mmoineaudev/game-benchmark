@@ -382,7 +382,7 @@ export class PlayerSword {
   // guard never cover the aim point, even at maximum size.
   _setRest() {
     // Sword held clearly to the RIGHT of the crosshair (positive x = screen right)
-    this.group.position.set(0.52, -0.22, -0.70);
+    this.group.position.set(0.68, -0.22, -0.70);
     this.group.rotation.set(-0.15, 0, 0.35);
   }
 
@@ -576,7 +576,7 @@ export class PlayerSword {
       case 'windup1': {
         // Cock right: blade forward, rolled right (rz) — tip out to the right.
         const k = easeOut(Math.min(1, t / C.WINDUP1));
-        p.x = lerp(0.52, 0.05, k);
+        p.x = lerp(0.68, 0.05, k);
         p.y = lerp(-0.22, -0.10, k);
         p.z = lerp(-0.70, -0.80, k);
         r.x = lerp(-0.15, -1.35, k);
@@ -667,7 +667,7 @@ export class PlayerSword {
       }
       case 'recover3': {
         const k = easeIn(Math.min(1, t / C.RECOVER3));
-        p.x = lerp(0.0, 0.52, k);
+        p.x = lerp(0.0, 0.68, k);
         p.y = lerp(-0.05, -0.22, k);
         p.z = lerp(-0.95, -0.70, k);
         r.x = lerp(-1.57, -0.15, k);

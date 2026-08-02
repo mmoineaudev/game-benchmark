@@ -73,15 +73,22 @@ console.log('== Buff system (GameState timer) ==');
   const s = new GameState();
   s.applyBuff(4);
   ok(s.buffEffect === 4 && Math.abs(s.buffTime - BUFF.DURATION) < 1e-9, 'applyBuff(4) = VISION, 30s');
-  // boss buff: nominal 5 min, but HARD-CAPPED at MAX_DURATION (1:30 = 90s)
+  // Buffer buff stays fully capped at MAX_DURATION (1:30 = 90s)
   s.applyBuff(1, BUFF.BOSS_DURATION);
   ok(s.buffEffect === 1 && Math.abs(s.buffTime - 90) < 1e-9,
-    `boss buff capped at 90s (MAX_DURATION) — actual ${s.buffTime}s`);
-  // any request above MAX_DURATION is clamped
+    `breakable/random buff capped at 90s (MAX_DURATION) — actual ${s.buffTime}s`);
+  // any request above MAX_DURATION is clamped by default
   s.applyBuff(2, 9999);
   ok(s.buffTime <= 90, `duration hard-capped at 90s (got ${s.buffTime})`);
   s.applyBuff(3, 60);
   ok(Math.abs(s.buffTime - 60) < 1e-9, 'sub-cap duration preserved (60s)');
+}
+// --- Boss-kill buff is the EXCEPTION: stays 5 minutes (cap:false) ---
+{
+  const s = new GameState();
+  s.applyBuff(1, BUFF.BOSS_DURATION, { cap: false });
+  ok(s.buffEffect === 1 && Math.abs(s.buffTime - 300) < 1e-9,
+    `boss-kill buff keeps full 300s (5 min) when cap off — actual ${s.buffTime}s`);
 }
 
 // ===========================================================================

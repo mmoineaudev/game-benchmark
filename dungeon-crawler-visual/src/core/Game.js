@@ -710,7 +710,7 @@ export class Game {
   // Boss defeated: 5-minute buff + a permanent extra heart, and the exit
   // portal (closed during the fight) opens.
   _onBossDefeated() {
-    this._applyBuff(BUFF.BOSS_DURATION); // 5-minute buff
+    this._applyBuff(BUFF.BOSS_DURATION, { cap: false }); // 5-minute buff
     this._maxHealth += 1;
     this.state.maxHealth = this._maxHealth;
     this.state.health = Math.min(this._maxHealth, this.state.health + 1);
@@ -840,8 +840,10 @@ export class Game {
   // Never rolls the SAME effect twice in a row: if a buff is already active,
   // the new roll excludes that effect so every pickup gives a visibly
   // different (and labeled) buff instead of silently re-applying the same one.
-  // Max duration is capped at BUFF.MAX_DURATION (1:30).
-  _applyBuff(duration = BUFF.DURATION) {
+  // Breakable buffs are capped at BUFF.MAX_DURATION (1:30); opts.cap=false
+  // (boss-kill) keeps the full BUFF.BOSS_DURATION (5 min).
+  _applyBuff(duration = BUFF.DURATION, opts = {}) {
+    opts = opts || {};
     this._clearBuffEffects(); // replacing any active buff
     const active = this.state.buffEffect || 0;
     let effect;
@@ -852,8 +854,7 @@ export class Game {
     } else {
       effect = 1 + Math.floor(Math.random() * 4);
     }
-    const capped = Math.min(duration, BUFF.MAX_DURATION);
-    this.state.applyBuff(effect, capped);
+    this.state.applyBuff(effect, duration, { cap: opts.cap !== false });
     this._applyBuffEffects(effect);
     this._updateHUD();
   }

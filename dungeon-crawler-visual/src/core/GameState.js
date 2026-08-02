@@ -35,11 +35,11 @@ export class GameState {
   }
 
   // Apply a buff (1..4) — replaces any active buff. Boss-kill buffs use
-  // BUFF.BOSS_DURATION (5 min nominal); breakable buffs use BUFF.DURATION.
-  // Every application is hard-capped at BUFF.MAX_DURATION (1:30).
-  applyBuff(effect, duration = BUFF.DURATION) {
+  // BUFF.BOSS_DURATION (5 min) and are NOT capped; breakable buffs use
+  // BUFF.DURATION and are hard-capped at BUFF.MAX_DURATION (1:30).
+  applyBuff(effect, duration = BUFF.DURATION, { cap = true } = {}) {
     this.buffEffect = effect;
-    this.buffTime = Math.min(duration, BUFF.MAX_DURATION);
+    this.buffTime = cap ? Math.min(duration, BUFF.MAX_DURATION) : duration;
   }
 
   // Tick the buff timer; returns true on the frame the buff expires.

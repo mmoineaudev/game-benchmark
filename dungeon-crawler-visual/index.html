@@ -54,7 +54,7 @@
       }
       .ds-text {
         position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
-        font-family: var(--ds-font); font-size: 12px; color: #fff;
+        font-family: var(--ds-font); font-size: 18px; color: #fff;
         text-shadow: 0 1px 2px #000, 0 0 4px #000;
         letter-spacing: 1px;
       }
@@ -66,17 +66,17 @@
         padding: 10px 16px;
       }
       .souls { font-family: var(--ds-font); line-height: 1; }
-      .souls .lbl { display: block; color: #6b6150; font-size: 12px; letter-spacing: 3px; }
-      #orb-count { color: var(--ds-gold); font-size: 22px; text-shadow: 0 1px 3px #000, 0 0 12px rgba(201,176,120,0.35); }
-      #orb-scale { color: #9a8a5c; font-size: 12px; letter-spacing: 1px; margin-top: 2px; }
-      #timer { margin-top: 8px; font-size: 12px; color: #8d8472; letter-spacing: 1px; }
+      .souls .lbl { display: block; color: #6b6150; font-size: 18px; letter-spacing: 3px; }
+      #orb-count { color: var(--ds-gold); font-size: 33px; text-shadow: 0 1px 3px #000, 0 0 12px rgba(201,176,120,0.35); }
+      #orb-scale { color: #9a8a5c; font-size: 18px; letter-spacing: 1px; margin-top: 2px; }
+      #timer { margin-top: 8px; font-size: 18px; color: #8d8472; letter-spacing: 1px; }
       #timer.low { color: #e05650; animation: blink 0.6s steps(2) infinite; }
       @keyframes blink { 50% { opacity: 0.4; } }
 
       /* ---- Top-CENTER: biome title ---- */
       #biome-label {
         position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
-        font-family: var(--ds-font); font-size: 16px; letter-spacing: 5px;
+        font-family: var(--ds-font); font-size: 24px; letter-spacing: 5px;
         color: var(--ds-gold); text-shadow: 0 1px 3px #000, 0 0 10px rgba(201,176,120,0.25);
         padding-bottom: 4px; border-bottom: 1px solid var(--ds-gold-dim);
       }
@@ -92,8 +92,8 @@
         position: relative;
       }
       .slot-info { display: flex; flex-direction: column; color: #cfc6ae; }
-      .slot-name { font-family: var(--ds-font); font-size: 12px; letter-spacing: 1px; color: #e6dcc2; }
-      .slot-count { font-family: var(--ds-font-body); font-size: 14px; color: #9a8a5c; }
+      .slot-name { font-family: var(--ds-font); font-size: 18px; letter-spacing: 1px; color: #e6dcc2; }
+      .slot-count { font-family: var(--ds-font-body); font-size: 21px; color: #9a8a5c; }
       .icon-dagger::after {
         content: ''; position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%) rotate(45deg);
         width: 8px; height: 34px;
@@ -105,24 +105,24 @@
         width: 22px; height: 8px; background: #6a4a26; border-radius: 2px;
         box-shadow: 0 0 4px rgba(0,0,0,0.6);
       }
-      #combo-pips { font-size: 11px; letter-spacing: 3px; color: rgba(255,255,255,0.12); margin-top: 3px; min-height: 12px; }
+      #combo-pips { font-size: 17px; letter-spacing: 3px; color: rgba(255,255,255,0.12); margin-top: 3px; min-height: 18px; }
       #combo-pips .lit { color: var(--ds-gold); text-shadow: 0 0 6px rgba(201,176,120,0.7); }
 
       /* ---- center overlays ---- */
       #sprint-bonus {
         position: absolute; top: 128px; right: 24px; text-align: right;
-        font-size: 12px; color: var(--ds-stam-hi); letter-spacing: 1px; text-shadow: 0 1px 2px #000;
+        font-size: 18px; color: var(--ds-stam-hi); letter-spacing: 1px; text-shadow: 0 1px 2px #000;
       }
       #buff-badge {
         position: absolute; top: 44px; left: 50%; transform: translateX(-50%);
-        font-family: var(--ds-font); font-size: 13px; letter-spacing: 2px;
+        font-family: var(--ds-font); font-size: 20px; letter-spacing: 2px;
         background: var(--ds-panel); border: 1px solid var(--ds-border);
         padding: 5px 14px; color: var(--ds-gold);
       }
       /* Live tuning readout: every combat/movement coefficient surfaced */
       #stats-panel {
         position: absolute; left: 24px; bottom: 24px;
-        font-family: var(--ds-font-body); font-size: 11px; line-height: 1.5;
+        font-family: var(--ds-font-body); font-size: 17px; line-height: 1.5;
         color: #8d8472; background: var(--ds-panel);
         border: 1px solid var(--ds-border); border-left: 2px solid var(--ds-gold-dim);
         padding: 8px 12px; letter-spacing: 0.5px; text-shadow: 0 1px 2px #000;
@@ -145,7 +145,7 @@
       }
       #boss-bar .boss-bar-label {
         position: absolute; inset: 0; text-align: center; line-height: 22px;
-        font-family: var(--ds-font); font-size: 12px; color: #f0ead8;
+        font-family: var(--ds-font); font-size: 18px; color: #f0ead8;
         letter-spacing: 3px; text-shadow: 0 1px 2px #000;
       }
 

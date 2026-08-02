@@ -55,8 +55,13 @@ export class Game {
     this._loadingBuffEl = document.getElementById('loading-buff');
     this._loadingStatsEl = document.getElementById('loading-stats');
     this._titleActive = false;   // title screen holds the scene while fps stabilizes
-    this._titleFpsTime = 0;      // consecutive seconds at/above 30fps while title is up
     this._titleMinFps = 30;
+    this._titleDts = [];         // rolling window of recent frame deltas (for avg-fps)
+    this._titleSumDt = 0;        // sum of deltas in the window
+    this._titleSamples = 0;      // frames in the window
+    this._titleStartedAt = 0;    // timestamp when the current title appeared
+    this._titleWindow = 3.0;     // average fps measured over this many seconds
+    this._titleMaxHold = 8;      // safety: force-lift after this many seconds, never trap the player
     this._sprintBonusEl = document.getElementById('sprint-bonus');
     this._buffBadgeEl = document.getElementById('buff-badge');
     this._lbPanel = document.getElementById('leaderboard-panel');
@@ -1194,7 +1199,10 @@ export class Game {
     }
     this._loadingEl.classList.remove('hidden');
     this._titleActive = true;
-    this._titleFpsTime = 0;
+    this._titleDts.length = 0;
+    this._titleSumDt = 0;
+    this._titleSamples = 0;
+    this._titleStartedAt = performance.now();
     // Mobs spawn (queue drains) but stay frozen until the title lifts.
     if (this.skeletons) this.skeletons.frozen = true;
   }
@@ -1208,13 +1216,27 @@ export class Game {
     this._lastTime = performance.now();
   }
 
-  // While the title is up, count consecutive good-fps time; drop the title once
-  // >=30fps has held for ~3s. Called from _animate each frame.
+  // While the title is up, reveal it once the AVERAGE fps over a rolling
+  // ~3s window is >=30fps (tolerant of the odd dropped frame), or as a safety
+  // net after _titleMaxHold seconds so the player is never trapped behind it.
+  // Called from _animate each frame.
   _updateTitleFps(dt) {
     if (!this._titleActive) return;
-    const good = dt <= (1 / this._titleMinFps);
-    this._titleFpsTime = good ? this._titleFpsTime + dt : 0;
-    if (this._titleFpsTime >= 3) this._hideLoading();
+
+    // Rolling window of the last ~_titleWindow seconds of frame deltas.
+    this._titleDts.push(dt);
+    this._titleSumDt += dt;
+    this._titleSamples++;
+    while (this._titleSumDt > this._titleWindow && this._titleDts.length > 1) {
+      this._titleSumDt -= this._titleDts.shift();
+      this._titleSamples--;
+    }
+
+    const avgDt = this._titleSumDt / this._titleSamples;
+    const avgFps = 1000 / (avgDt * 1000); // = 1 / avgDt
+    const stable = avgFps >= this._titleMinFps;
+    const held = performance.now() - this._titleStartedAt >= (this._titleMaxHold * 1000);
+    if (stable || held) this._hideLoading();
   }
 
   // Clean every level-owned system and the scene graph so memory from the

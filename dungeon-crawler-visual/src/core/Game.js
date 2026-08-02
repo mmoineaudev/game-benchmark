@@ -1147,13 +1147,13 @@ export class Game {
 
   // Show the title screen (level name + active buff + stats) over the scene.
   // The scene and mob spawns keep running underneath; the title only fades once
-  // >=30fps has been sustained for 3 consecutive seconds (see _updateTitleFps).
-  _showTitle() {
+  // the level's mobs are fully spawned AND ~30fps has held (see _updateTitleFps).
+  _showTitle(level = this.state ? this.state.level : 1) {
     if (!this._loadingEl) return;
-    // Level name
+    // Level name (explicit level so it's never the stale previous value)
     if (this._loadingLevelEl) {
       const ng = (this.state && this.state.ngPlus) ? ` · NG+${this.state.ngPlus}` : '';
-      this._loadingLevelEl.textContent = `LEVEL ${this.state ? this.state.level : 1}${ng}`;
+      this._loadingLevelEl.textContent = `LEVEL ${level}${ng}`;
     }
     if (this._loadingBiomeEl) {
       const pal = this.biomes.current?.palette;
@@ -1235,8 +1235,13 @@ export class Game {
     const avgDt = this._titleSumDt / this._titleSamples;
     const avgFps = 1000 / (avgDt * 1000); // = 1 / avgDt
     const stable = avgFps >= this._titleMinFps;
+    // Don't lift while mobs are still spawning (their reveal hitches are the
+    // source of the post-title lag). Wait until the spawn queue drains.
+    const spawnsDone = !this.skeletons || !this.skeletons._spawnQueue || this.skeletons._spawnQueue.length === 0;
+    const ready = stable && spawnsDone;
+    // Max-hold is a hard safety net: never trap the player behind the title.
     const held = performance.now() - this._titleStartedAt >= (this._titleMaxHold * 1000);
-    if (stable || held) this._hideLoading();
+    if (ready || held) this._hideLoading();
   }
 
   // Clean every level-owned system and the scene graph so memory from the
@@ -1265,7 +1270,8 @@ export class Game {
   async _regenerateDungeon({ newRun = false, nextState = null, startMessage = null } = {}) {
     this._isRunning = false; // stop the timer + update loop during the load
     const target = nextState ? nextState.level : (newRun ? 1 : this.state.level + 1);
-    if (this._loadingEl) this._loadingEl.classList.remove('hidden'); // cover the scene while we rebuild
+    // Cover the scene with the CORRECT new level name right away (never stale).
+    this._showTitle(target);
 
     // ---- STEP 1: clean memory first ----
     this._teardownLevel();
@@ -1405,7 +1411,9 @@ export class Game {
     if (this.sword) this.sword.setOrbCount(this.state.collectedOrbs);
     if (this._biomeLabelEl) {
       const pal = this.biomes.current?.palette;
-      this._biomeLabelEl.textContent = pal?.label || 'STONE DUNGEON';
+      const ng = this.state.ngPlus ? ` · NG+${this.state.ngPlus}` : '';
+      // Level title includes the level number.
+      this._biomeLabelEl.textContent = `LEVEL ${this.state.level}${ng} — ${pal?.label || 'STONE DUNGEON'}`;
       this._biomeLabelEl.style.borderBottomColor = pal ? `#${pal.fog.toString(16).padStart(6, '0')}` : '#444';
     }
     if (this._comboPipsEl) {
@@ -1431,6 +1439,9 @@ export class Game {
         ? `${labels[e]} ${t >= 60 ? `${m}:${ss}` : `${Math.ceil(t)}s`}`
         : '';
       this._buffBadgeEl.style.color = e ? colors[e] : '';
+      // Hide the badge entirely when no buff is active (an empty box peeked
+      // out between the level title and the timer).
+      this._buffBadgeEl.style.display = e ? 'block' : 'none';
     }
     // Dark Souls HP bar (red fill) + HP number; stamina bar stays full
     if (this._heartsEl) {

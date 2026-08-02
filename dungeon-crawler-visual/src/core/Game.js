@@ -49,6 +49,9 @@ export class Game {
     this._gameOverActive = false;
     this._lastEntry = null;
     this._timerEl = document.getElementById('timer');
+    this._loadingEl = document.getElementById('loading');
+    this._loadingTitleEl = document.getElementById('loading-title');
+    this._loadingSubEl = document.getElementById('loading-sub');
     this._sprintBonusEl = document.getElementById('sprint-bonus');
     this._buffBadgeEl = document.getElementById('buff-badge');
     this._lbPanel = document.getElementById('leaderboard-panel');
@@ -988,13 +991,9 @@ export class Game {
     if (this._timerEl) {
       const mins = Math.floor(remaining / 60);
       const secs = Math.floor(remaining % 60).toString().padStart(2, '0');
-      const totalMins = Math.floor(this.state.runTime / 60);
-      const totalSecs = Math.floor(this.state.runTime % 60).toString().padStart(2, '0');
-      const best = this.leaderboard.best();
-      const bestTxt = best
-        ? `best Lv${best.level} ${Math.floor(best.time / 60)}:${(best.time % 60).toString().padStart(2, '0')} ◈${best.orbs}`
-        : 'best —';
-      this._timerEl.textContent = `Lv ${this.state.level}${this.state.ngPlus ? ` · NG+${this.state.ngPlus}` : ''} · ${mins}:${secs} · total ${totalMins}:${totalSecs} · ${bestTxt}`;
+      const ng = this.state.ngPlus ? ` · NG+${this.state.ngPlus}` : '';
+      // Central countdown: big, at-a-glance. Level name is shown above it.
+      this._timerEl.textContent = `${mins}:${secs}${ng}`;
       this._timerEl.classList.toggle('low', remaining < 30);
     }
   }
@@ -1055,14 +1054,12 @@ export class Game {
       collectedOrbs: newGamePlus ? Math.floor(this.state.collectedOrbs * 0.9) : 0,
       ngPlus: newGamePlus ? (this.state.ngPlus || 0) + 1 : 0,
     });
-    this._regenerateDungeon({ nextState });
-    this._isRunning = true;
-    this._lastTime = performance.now();
-    this._animate(); // RAF chain died on game over — restart it
-    this._showMessage(
-      newGamePlus ? `New Game+ ${nextState.ngPlus} — the depths grow stronger` : 'A new descent begins',
-      'goal',
-    );
+    const msg = newGamePlus
+      ? `New Game+ ${nextState.ngPlus} — the depths grow stronger`
+      : 'A new descent begins';
+    // The async loader tears down memory, rebuilds the level phase by phase,
+    // and restarts the RAF chain + timer itself.
+    this._regenerateDungeon({ nextState, startMessage: msg });
   }
 
   _renderLeaderboard(listEl) {
@@ -1120,14 +1117,32 @@ export class Game {
     return 'northeast';
   }
 
-  _regenerateDungeon({ newRun = false, nextState = null } = {}) {
-    this._isRunning = false;
-    this.orbs.dispose();
-    this.runes.dispose();
-    this.particles.dispose();
-    this.lighting.dispose();
+  // Yield to the browser for one animation frame so the loading overlay can
+  // paint and the GC can reclaim memory between level-build phases.
+  _nextFrame() {
+    return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+  }
+
+  _showLoading(title, sub) {
+    if (!this._loadingEl) return;
+    if (this._loadingTitleEl) this._loadingTitleEl.textContent = title || 'LOADING';
+    if (this._loadingSubEl) this._loadingSubEl.textContent = sub || 'Descending…';
+    this._loadingEl.classList.remove('hidden');
+  }
+
+  _hideLoading() {
+    if (this._loadingEl) this._loadingEl.classList.add('hidden');
+  }
+
+  // Clean every level-owned system and the scene graph so memory from the
+  // previous dungeon is fully released before the new one is built.
+  _teardownLevel() {
+    this.orbs?.dispose();
+    this.runes?.dispose();
+    this.particles?.dispose();
+    this.lighting?.dispose();
     if (this.props) this.props.dispose();
-    this.smoke.dispose();
+    this.smoke?.dispose();
     if (this.skeletons) this.skeletons.dispose();
     if (this.shooter) this.shooter.dispose();
     for (const p of (this._waterPuddles || [])) {
@@ -1136,6 +1151,20 @@ export class Game {
       this.scene.remove(p.mesh);
     }
     this._disposeScene();
+  }
+
+  // Sequential level loader: (1) free memory, (2) build the level phase by
+  // phase (yielding a frame between each so the browser stays responsive and
+  // garbage collection can run), (3) display the finished level, and only
+  // then (4) start the run timer and game loop.
+  async _regenerateDungeon({ newRun = false, nextState = null, startMessage = null } = {}) {
+    this._isRunning = false; // stop the timer + update loop during the load
+    const target = nextState ? nextState.level : (newRun ? 1 : this.state.level + 1);
+    this._showLoading('LEVEL LOAD', `Level ${target}`);
+
+    // ---- STEP 1: clean memory first ----
+    this._teardownLevel();
+    await this._nextFrame();
 
     // HIDDEN RULE: an active buff carries across a level advance (not a fresh
     // run) with x5 of its remaining time. Capture it BEFORE the state is
@@ -1181,30 +1210,54 @@ export class Game {
     if (biomeChanged) {
       this.events.emit('biome:change', { biome: this.state.biome, biomeIndex: this.state.biomeIndex });
     }
+
+    // ---- STEP 2: build the level phase by phase ----
     this._generateDungeon();
+    await this._nextFrame();
+
     this._buildWorld();
+    await this._nextFrame();
+
     this.lighting = new LightingSystem(this.scene, this.biomes.current.palette);
     this.lighting.init(this.dungeonData);
+    await this._nextFrame();
+
     this._initProps();
+    await this._nextFrame();
+
     this.smoke = new SmokeSystem(this.scene);
     this.smoke.init();
     this._rebindSmokeEmitters();
+    await this._nextFrame();
+
     this.particles = new ParticleSystem(this.scene);
     this.particles.init();
+    await this._nextFrame();
+
     this.runes = new RuneSystem(this.scene, this.dungeonData);
     this.runes.init();
+    await this._nextFrame();
+
     this.orbs = new OrbSystem(this.scene, this.dungeonData, this.state);
     this.orbs.init();
     // Re-wire the buff-collected hook: _initOrbs() only runs at startup, and
     // this fresh OrbSystem has no hook by default — without this, buff pickups
     // would be collectible but trigger nothing after the first level.
     this.orbs.onBuffCollected = () => this._applyBuff();
+    await this._nextFrame();
+
     this._initCombat();
     this._placeWaterPuddles();
     this._setupPlayerStart();
+    await this._nextFrame();
+
+    // ---- STEP 3: display the finished level ----
+    this._hideLoading();
     this._showMessage('Slay them for orbs — shoot or swing', 'goal');
     if (this.state.level > 1) this._showMessage(`Level ${this.state.level} — descend!`, 'goal');
+    if (startMessage) this._showMessage(startMessage, 'goal');
     this._emitLevelStart();
+
     // Apply the carried buff's side effects now that skeletons/lighting are
     // rebuilt; with no carried buff, clear any stuck visuals (fixes the
     // gone-fireball bug where a fireball stayed on screen + sword stayed hidden
@@ -1216,8 +1269,11 @@ export class Game {
       this._clearBuffEffects();
     }
     this._carriedBuff = null;
+
+    // ---- STEP 4: start the run timer + game loop ----
     this._isRunning = true;
     this._lastTime = performance.now();
+    this._animate();
   }
 
   _animateWater(t) {

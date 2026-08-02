@@ -54,32 +54,52 @@
       }
       .ds-text {
         position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
-        font-family: var(--ds-font); font-size: 18px; color: #fff;
+        font-family: var(--ds-font); font-size: 22px; color: #fff;
         text-shadow: 0 1px 2px #000, 0 0 4px #000;
         letter-spacing: 1px;
       }
 
-      /* ---- Top-RIGHT: Souls + timer ---- */
+      /* ---- Top-RIGHT: Souls + status ---- */
       #vp-souls {
         position: absolute; right: 24px; top: 28px; text-align: right; width: 300px;
         background: linear-gradient(180deg, rgba(16,13,10,0.0), rgba(16,13,10,0.82) 45%);
         padding: 10px 16px;
       }
       .souls { font-family: var(--ds-font); line-height: 1; }
-      .souls .lbl { display: block; color: #6b6150; font-size: 18px; letter-spacing: 3px; }
-      #orb-count { color: var(--ds-gold); font-size: 33px; text-shadow: 0 1px 3px #000, 0 0 12px rgba(201,176,120,0.35); }
-      #orb-scale { color: #9a8a5c; font-size: 18px; letter-spacing: 1px; margin-top: 2px; }
-      #timer { margin-top: 8px; font-size: 18px; color: #8d8472; letter-spacing: 1px; }
-      #timer.low { color: #e05650; animation: blink 0.6s steps(2) infinite; }
+      .souls .lbl { display: block; color: #6b6150; font-size: 22px; letter-spacing: 3px; }
+      #orb-count { color: var(--ds-gold); font-size: 40px; text-shadow: 0 1px 3px #000, 0 0 12px rgba(201,176,120,0.35); }
+      #orb-scale { color: #9a8a5c; font-size: 22px; letter-spacing: 1px; margin-top: 2px; }
       @keyframes blink { 50% { opacity: 0.4; } }
 
-      /* ---- Top-CENTER: biome title ---- */
-      #biome-label {
+      /* ---- Top-CENTER: biome title + level timer ---- */
+      #biome-head {
         position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
-        font-family: var(--ds-font); font-size: 24px; letter-spacing: 5px;
+        text-align: center; pointer-events: none;
+      }
+      #biome-label {
+        font-family: var(--ds-font); font-size: 29px; letter-spacing: 5px;
         color: var(--ds-gold); text-shadow: 0 1px 3px #000, 0 0 10px rgba(201,176,120,0.25);
         padding-bottom: 4px; border-bottom: 1px solid var(--ds-gold-dim);
       }
+      /* Level timer — central, under the level name, big */
+      #timer {
+        margin-top: 6px; font-family: var(--ds-font); font-size: 34px; font-weight: 600;
+        color: #f2e6c0; text-shadow: 0 1px 3px #000, 0 0 14px rgba(201,176,120,0.35);
+        letter-spacing: 3px; line-height: 1;
+      }
+      #timer.low { color: #e05650; animation: blink 0.6s steps(2) infinite; }
+
+      /* ---- Loading overlay for the level-load sequence ---- */
+      #loading {
+        position: fixed; inset: 0; z-index: 50; display: flex;
+        flex-direction: column; align-items: center; justify-content: center;
+        background: radial-gradient(ellipse, #0b0a12 0%, #05040a 70%);
+        font-family: var(--ds-font); color: var(--ds-gold);
+        transition: opacity 0.25s ease-out;
+      }
+      #loading.hidden { opacity: 0; pointer-events: none; }
+      #loading .ld-title { font-size: 34px; letter-spacing: 6px; text-shadow: 0 0 16px rgba(201,176,120,0.3); }
+      #loading .ld-sub { margin-top: 14px; font-family: var(--ds-font-body); font-size: 18px; color: #8d8472; letter-spacing: 3px; animation: blink 1s steps(2) infinite; }
 
       /* ---- Bottom-RIGHT: weapon slot + combo charges ---- */
       #weapon-slot {
@@ -92,8 +112,8 @@
         position: relative;
       }
       .slot-info { display: flex; flex-direction: column; color: #cfc6ae; }
-      .slot-name { font-family: var(--ds-font); font-size: 18px; letter-spacing: 1px; color: #e6dcc2; }
-      .slot-count { font-family: var(--ds-font-body); font-size: 21px; color: #9a8a5c; }
+      .slot-name { font-family: var(--ds-font); font-size: 22px; letter-spacing: 1px; color: #e6dcc2; }
+      .slot-count { font-family: var(--ds-font-body); font-size: 25px; color: #9a8a5c; }
       .icon-dagger::after {
         content: ''; position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%) rotate(45deg);
         width: 8px; height: 34px;
@@ -105,28 +125,28 @@
         width: 22px; height: 8px; background: #6a4a26; border-radius: 2px;
         box-shadow: 0 0 4px rgba(0,0,0,0.6);
       }
-      #combo-pips { font-size: 17px; letter-spacing: 3px; color: rgba(255,255,255,0.12); margin-top: 3px; min-height: 18px; }
+      #combo-pips { font-size: 20px; letter-spacing: 3px; color: rgba(255,255,255,0.12); margin-top: 3px; min-height: 22px; }
       #combo-pips .lit { color: var(--ds-gold); text-shadow: 0 0 6px rgba(201,176,120,0.7); }
 
       /* ---- center overlays ---- */
       #sprint-bonus {
         position: absolute; top: 128px; right: 24px; text-align: right;
-        font-size: 18px; color: var(--ds-stam-hi); letter-spacing: 1px; text-shadow: 0 1px 2px #000;
+        font-size: 22px; color: var(--ds-stam-hi); letter-spacing: 1px; text-shadow: 0 1px 2px #000;
       }
       #buff-badge {
         position: absolute; top: 44px; left: 50%; transform: translateX(-50%);
-        font-family: var(--ds-font); font-size: 20px; letter-spacing: 2px;
+        font-family: var(--ds-font); font-size: 24px; letter-spacing: 2px;
         background: var(--ds-panel); border: 1px solid var(--ds-border);
-        padding: 5px 14px; color: var(--ds-gold);
+        padding: 6px 16px; color: var(--ds-gold);
       }
       /* Live tuning readout: every combat/movement coefficient surfaced */
       #stats-panel {
         position: absolute; left: 24px; bottom: 24px;
-        font-family: var(--ds-font-body); font-size: 17px; line-height: 1.5;
+        font-family: var(--ds-font-body); font-size: 20px; line-height: 1.5;
         color: #8d8472; background: var(--ds-panel);
         border: 1px solid var(--ds-border); border-left: 2px solid var(--ds-gold-dim);
-        padding: 8px 12px; letter-spacing: 0.5px; text-shadow: 0 1px 2px #000;
-        min-width: 190px; pointer-events: none;
+        padding: 10px 14px; letter-spacing: 0.5px; text-shadow: 0 1px 2px #000;
+        min-width: 220px; pointer-events: none;
       }
       #stats-panel .stat-row { display: flex; justify-content: space-between; gap: 16px; }
       #stats-panel .stat-row b { color: var(--ds-gold); font-weight: 600; }
@@ -145,7 +165,7 @@
       }
       #boss-bar .boss-bar-label {
         position: absolute; inset: 0; text-align: center; line-height: 22px;
-        font-family: var(--ds-font); font-size: 18px; color: #f0ead8;
+        font-family: var(--ds-font); font-size: 22px; color: #f0ead8;
         letter-spacing: 3px; text-shadow: 0 1px 2px #000;
       }
 
@@ -157,13 +177,13 @@
       }
       #leaderboard-panel.hidden, #game-over.hidden { display: none; }
       #leaderboard-panel h3, #game-over h3 {
-        color: var(--ds-gold); margin-bottom: 8px; font-size: 14px;
+        color: var(--ds-gold); margin-bottom: 8px; font-size: 17px;
         font-family: var(--ds-font); letter-spacing: 2px; font-weight: 600;
       }
       #leaderboard-list, #go-leaderboard-list { list-style: none; }
-      #leaderboard-list li, #go-leaderboard-list li { margin: 3px 0; color: #b8ae96; font-size: 13px; }
+      #leaderboard-list li, #go-leaderboard-list li { margin: 3px 0; color: #b8ae96; font-size: 16px; }
       #leaderboard-list li.me, #go-leaderboard-list li.me { color: #d8cf9a; font-weight: bold; }
-      #leaderboard-hint { margin-top: 10px; color: #5c5340; font-size: 11px; }
+      #leaderboard-hint { margin-top: 10px; color: #5c5340; font-size: 13px; }
 
       #game-over {
         position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
@@ -173,9 +193,9 @@
       }
       #game-over h2 {
         color: #b0382e; margin-bottom: 12px; font-family: var(--ds-font);
-        font-size: 24px; font-weight: 600; letter-spacing: 1px; text-shadow: 0 2px 6px #000;
+        font-size: 29px; font-weight: 600; letter-spacing: 1px; text-shadow: 0 2px 6px #000;
       }
-      #go-stats { color: var(--ds-gold); margin-bottom: 14px; font-size: 15px; font-family: var(--ds-font-body); }
+      #go-stats { color: var(--ds-gold); margin-bottom: 14px; font-size: 18px; font-family: var(--ds-font-body); }
       #go-actions { margin-top: 18px; display: flex; gap: 12px; justify-content: center; }
       #go-actions button {
         background: linear-gradient(180deg, #241d12, #150f08);
@@ -207,7 +227,7 @@
       }
       .msg {
         background: var(--ds-panel); border: 1px solid var(--ds-border);
-        color: #e0c98f; font-size: 13px; padding: 8px 18px;
+        color: #e0c98f; font-size: 16px; padding: 10px 22px;
         font-family: var(--ds-font-body); letter-spacing: 1px;
         animation: msgIn 0.3s ease-out, msgOut 0.5s ease-in forwards;
         animation-delay: 0s, 3.5s; white-space: nowrap;
@@ -232,6 +252,10 @@
   <body>
     <div id="app"></div>
     <div id="damage-flash"></div>
+    <div id="loading">
+      <div class="ld-title" id="loading-title">LOADING</div>
+      <div class="ld-sub" id="loading-sub">Descending…</div>
+    </div>
     <div id="hud">
       <div id="crosshair"></div>
 
@@ -247,11 +271,13 @@
       <div id="vp-souls">
         <div class="souls"><span class="lbl">SOULS</span><span id="orb-count">0</span></div>
         <div id="orb-scale"></div>
-        <div id="timer">Lv 1</div>
       </div>
 
-      <!-- Top-center: biome title -->
-      <div id="biome-label">STONE DUNGEON</div>
+      <!-- Top-center: biome title + level timer (timer under level name, big) -->
+      <div id="biome-head">
+        <div id="biome-label">STONE DUNGEON</div>
+        <div id="timer">Lv 1 · 3:00 · total 0:00</div>
+      </div>
 
       <!-- Bottom-right: weapon slot + combo charges -->
       <div id="weapon-slot">

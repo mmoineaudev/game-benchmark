@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { WORLD, PROPS, LIGHT_SOURCES } from '../core/Constants.js';
 import { generateGlowTexture } from './Textures.js';
-import { makeWood, makeStone, makeMetal, makeBone, makeHide } from '../core/Materials.js';
+import { makeWood, makeStone, makeMetal, makeBone } from '../core/Materials.js';
 
 // Props & decorations: breakables, interactives, structural collision props,
 // and InstancedMesh decoratives. Placed per room type + biome rules (spec §6).
@@ -198,24 +198,19 @@ export class PropSystem {
     add('CRATE', room.type === 'CHAMBER' || room.type === 'HALL' ? 2 : 1);
     add('CHAIN', ['HALL', 'VAULT', 'ARMORY'].includes(room.type) ? 2 : 0);
 
-    // Biome-specific
+    // Biome-specific (no hanging decorations — only chains hang from the ceiling)
     if (biome === 'HAUNTED_CRYPT' || biome === 'FUNGAL_CAVERN') {
       add('SKULL_PILE', room.type === 'CRYPT' || room.type === 'LIBRARY' ? 3 : 1);
-      add('ROOT', 1);
-      if (room.type === 'CRYPT') add('WEB', 2);
       if (room.type === 'CRYPT' || room.type === 'ARENA') add('BLOOD', 2);
     }
     if (biome === 'FUNGAL_CAVERN' || biome === 'VOLCANIC_DEPTHS' || biome === 'FROZEN_HALLS') {
-      add('STALACTITE', 2);
+      add('RUBBLE', 1);
     }
     if (biome === 'FROZEN_HALLS') add('ICE_CRYSTAL', 2);
     if (biome === 'FUNGAL_CAVERN') add('GLOWING_MUSHROOM', 3);
     if (biome === 'VOLCANIC_DEPTHS') add('LAVA_POOL', 2);
     if (room.type === 'LIBRARY' || room.type === 'CRYPT' || room.type === 'HALL') {
       add('CANDLE', room.type === 'LIBRARY' ? 4 : 2);
-    }
-    if (['HALL', 'VAULT', 'ARENA'].includes(room.type) && biome !== 'FUNGAL_CAVERN') {
-      add('CHANDELIER', 1);
     }
     if (biome === 'STONE') add('RUBBLE', 2);
 
@@ -236,15 +231,11 @@ export class PropSystem {
       case 'CRATE': return this._spawnCrate(x, z, placed);
       case 'CHAIN': return this._spawnChain(x, z);
       case 'SKULL_PILE': return this._spawnSkullPile(x, z);
-      case 'ROOT': return this._spawnRoot(x, z);
-      case 'WEB': return this._spawnWeb(x, z);
       case 'BLOOD': return this._spawnBlood(x, z);
-      case 'STALACTITE': return this._spawnStalactite(x, z);
       case 'ICE_CRYSTAL': return this._spawnIceCrystal(x, z);
       case 'GLOWING_MUSHROOM': return this._spawnMushroom(x, z);
       case 'LAVA_POOL': return this._spawnLava(x, z);
       case 'CANDLE': return this._spawnCandle(x, z);
-      case 'CHANDELIER': return this._spawnChandelier(x, z);
       case 'RUBBLE': return this._spawnRubble(x, z);
       default: return false;
     }
@@ -301,7 +292,10 @@ export class PropSystem {
 
   _spawnChain(x, z) {
     const mat = makeMetal(0x4a4a52, { seed: 89, rough: 0.4, metal: 0.8 });
-    const chainLen = 3.2;
+    // Variable chain length: hangs from the ceiling down toward the player's
+    // head height (never below it). Max length reaches ~player eye height.
+    const maxLen = WORLD.WALL_HEIGHT - 0.2 - WORLD.PLAYER_EYE_HEIGHT;
+    const chainLen = 3 + Math.random() * Math.max(1, maxLen - 3);
     // Hang the chain from the ceiling, with a torch fixture at its bottom end.
     const group = new THREE.Group();
     const chain = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, chainLen, 6), mat);
@@ -327,7 +321,7 @@ export class PropSystem {
     light.position.y = -chainLen - 0.2;
     group.add(light);
 
-    group.position.set(x, WORLD.WALL_HEIGHT + 0.1, z);
+    group.position.set(x, WORLD.WALL_HEIGHT + 0.2, z);
     this._add(group);
     this._mats.push(mat, flameMat);
     this._chainLights = this._chainLights || [];
@@ -354,50 +348,6 @@ export class PropSystem {
     return true;
   }
 
-  _spawnRoot(x, z) {
-    const mat = makeHide(0x2a3a2a, { seed: 103, rough: 0.95, metal: 0 });
-    for (let i = 0; i < 3; i++) {
-      const r = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.02, 1.2, 5), mat);
-      r.position.set(x + (Math.random() - 0.5), WORLD.WALL_HEIGHT - 0.6 + (Math.random() - 0.5), z + (Math.random() - 0.5));
-      r.rotation.set(Math.random() * 0.3, Math.random() * Math.PI, 0.1 + Math.random() * 0.3);
-      this._add(r);
-    }
-    this._mats.push(mat);
-    return true;
-  }
-
-  _spawnWeb(x, z) {
-    const size = 64;
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext('2d');
-    ctx.strokeStyle = 'rgba(220,220,230,0.6)';
-    ctx.lineWidth = 1;
-    for (let i = 0; i < 8; i++) {
-      const a = (i / 8) * Math.PI * 2;
-      ctx.beginPath();
-      ctx.moveTo(size / 2, size / 2);
-      ctx.lineTo(size / 2 + Math.cos(a) * size / 2, size / 2 + Math.sin(a) * size / 2);
-      ctx.stroke();
-    }
-    for (let r = 0.2; r <= 0.5; r += 0.1) {
-      ctx.beginPath();
-      ctx.arc(size / 2, size / 2, size * r, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    const tex = new THREE.CanvasTexture(canvas);
-    this._textures.push(tex);
-    const mat = new THREE.MeshBasicMaterial({
-      map: tex, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false,
-    });
-    const web = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.8), mat);
-    web.position.set(x, 2.6, z);
-    web.rotation.y = Math.random() * Math.PI;
-    this._add(web);
-    return true;
-  }
-
   _spawnBlood(x, z) {
     const size = 64;
     const canvas = document.createElement('canvas');
@@ -421,18 +371,6 @@ export class PropSystem {
     blood.rotation.x = -Math.PI / 2;
     blood.position.set(x, 0.015, z);
     this._add(blood);
-    return true;
-  }
-
-  _spawnStalactite(x, z) {
-    const tints = { FUNGAL_CAVERN: 0x3a4a3e, VOLCANIC_DEPTHS: 0x4a3a30, FROZEN_HALLS: 0x8ac0d8 };
-    const mat = makeStone(tints[this.biome] || 0x4a4a5a, { seed: 107, rough: 0.85, metal: 0.05 });
-    const h = 0.6 + Math.random() * 0.6;
-    const s = new THREE.Mesh(new THREE.ConeGeometry(0.15 + Math.random() * 0.15, h, 6), mat);
-    s.position.set(x, WORLD.WALL_HEIGHT - h / 2, z);
-    s.rotation.z = Math.PI;
-    this._add(s);
-    this._mats.push(mat);
     return true;
   }
 
@@ -563,31 +501,6 @@ export class PropSystem {
     light.position.set(x, 0.25, z);
     this._add(light);
     this._mats.push(bodyMat, flameMat);
-    return true;
-  }
-
-  _spawnChandelier(x, z) {
-    const iron = new THREE.MeshStandardMaterial({ color: 0x3a3a42, roughness: 0.4, metalness: 0.8 });
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.04, 6, 16), iron);
-    ring.position.set(x, 3.2, z);
-    this._add(ring);
-    for (let i = 0; i < 3; i++) {
-      const a = (i / 3) * Math.PI * 2;
-      const candle = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.15, 6), iron);
-      candle.position.set(x + Math.cos(a) * 0.45, 3.05, z + Math.sin(a) * 0.45);
-      this._add(candle);
-      const flame = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.08, 6),
-        new THREE.MeshBasicMaterial({ color: 0xff9944 }));
-      flame.position.set(x + Math.cos(a) * 0.45, 3.0, z + Math.sin(a) * 0.45);
-      this._add(flame);
-      const light = new THREE.PointLight(
-        LIGHT_SOURCES.CHANDELIER.color, LIGHT_SOURCES.CHANDELIER.intensity,
-        LIGHT_SOURCES.CHANDELIER.distance, LIGHT_SOURCES.CHANDELIER.decay,
-      );
-      light.position.set(x + Math.cos(a) * 0.45, 3.1, z + Math.sin(a) * 0.45);
-      this._add(light);
-    }
-    this._mats.push(iron);
     return true;
   }
 

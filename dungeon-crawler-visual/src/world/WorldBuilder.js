@@ -43,7 +43,6 @@ export class WorldBuilder {
     this._buildFloors();
     this._buildWalls();
     this._buildCeilings();
-    this._addCeilingBeams();
     this._addFloorDebris();
     return { collisionBoxes: this._collisionBoxes };
   }
@@ -153,41 +152,6 @@ export class WorldBuilder {
     this.scene.add(inst);
   }
 
-  _addCeilingBeams() {
-    const cs = this.data.cellSize;
-    const wh = WORLD.WALL_HEIGHT;
-    const beamMat = new THREE.MeshStandardMaterial({
-      color: 0x3a2a1a,
-      roughness: 0.8,
-      metalness: 0.0,
-    });
-
-    for (let cz = 0; cz < this.data.gridSize; cz++) {
-      for (let cx = 0; cx < this.data.gridSize; cx++) {
-        if (this.data.grid[cz][cx] === 'empty') continue;
-        const { x, z } = this._cellToWorld(cx, cz);
-
-        // Cross beam every 3 cells
-        if (cx % 3 === 0) {
-          const geo = new THREE.BoxGeometry(0.2, 0.25, cs);
-          const beam = new THREE.Mesh(geo, beamMat);
-          beam.position.set(x - cs / 2, wh - 0.12, z);
-          beam.castShadow = true;
-          this.scene.add(beam);
-        }
-        if (cz % 3 === 0) {
-          const geo = new THREE.BoxGeometry(cs, 0.25, 0.2);
-          const beam = new THREE.Mesh(geo, beamMat);
-          beam.position.set(x, wh - 0.12, z - cs / 2);
-          beam.castShadow = true;
-          this.scene.add(beam);
-        }
-      }
-    }
-
-    this._beamMaterial = beamMat;
-  }
-
   _addFloorDebris() {
     const cs = this.data.cellSize;
     // Collect all pebble transforms first, then draw ONE InstancedMesh.
@@ -199,7 +163,7 @@ export class WorldBuilder {
         if (this.data.grid[cz][cx] === 'empty') continue;
         const wx = cx * cs;
         const wz = cz * cs;
-        const count = 3 + Math.floor(Math.random() * 6); // 3-8 pebbles per cell
+        const count = Math.max(1, Math.floor((3 + Math.floor(Math.random() * 6)) * 0.2)); // ~80% fewer pebbles
         for (let i = 0; i < count; i++) {
           placements.push({
             x: wx + Math.random() * cs,
@@ -247,6 +211,5 @@ export class WorldBuilder {
     this.floorMaterial.dispose();
     if (this.ceilingMaterial.map) this.ceilingMaterial.map.dispose();
     this.ceilingMaterial.dispose();
-    if (this._beamMaterial) this._beamMaterial.dispose();
   }
 }

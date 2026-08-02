@@ -1003,13 +1003,18 @@ export class Game {
     this._isRunning = false;
     if (document.pointerLockElement) document.exitPointerLock();
     const rank = this.leaderboard.add(this.state.level, this.state.runTime, this.state.collectedOrbs);
-    this._lastEntry = this.leaderboard.load()[0];
+    // Mark THIS run (not the top entry) so the red highlight tracks our score.
+    this._lastEntry = {
+      level: this.state.level,
+      time: Math.round(this.state.runTime),
+      orbs: this.state.collectedOrbs,
+    };
     if (this._goStats) {
       const t = this.state.runTime;
       const mm = Math.floor(t / 60);
       const ss = Math.floor(t % 60).toString().padStart(2, '0');
       const ng = this.state.ngPlus || 0;
-      this._goStats.textContent = `Level reached: ${this.state.level}${ng ? ` (NG+${ng})` : ''} · Total time: ${mm}:${ss} · Orbs: ${this.state.collectedOrbs}${rank > 0 ? ` · Rank #${rank}` : ''}`;
+      this._goStats.textContent = `Level reached: ${this.state.level}${ng ? ` (NG+${ng})` : ''} · Total time: ${mm}:${ss} · Souls: ${this.state.collectedOrbs}${rank > 0 ? ` · Rank #${rank}` : ''}`;
     }
     if (this._gameOverEl) {
       const title = this._gameOverEl.querySelector('h2');
@@ -1022,7 +1027,7 @@ export class Game {
     const ngLevel = Math.max(1, Math.floor(this.state.level / 2));
     if (this._goNgPlusBtn) {
       const ng = (this.state.ngPlus || 0) + 1;
-      this._goNgPlusBtn.textContent = `New Game+ [Y] — Level ${ngLevel} (keep ${this.state.collectedOrbs} orbs · mobs +${10 * ng}% HP)`;
+      this._goNgPlusBtn.textContent = `New Game+ [Y] — Level ${ngLevel} (keep ${this.state.collectedOrbs} Souls · mobs +${10 * ng}% HP)`;
     }
     if (this._goRestartBtn) this._goRestartBtn.onclick = () => this._startNewRun(false);
     if (this._goNgPlusBtn) this._goNgPlusBtn.onclick = () => this._startNewRun(true);
@@ -1069,7 +1074,7 @@ export class Game {
       ? entries.map((e, i) => {
         const me = this._lastEntry && e.level === this._lastEntry.level
           && e.time === this._lastEntry.time && e.orbs === this._lastEntry.orbs;
-        return `<li class="${me ? 'me' : ''}">#${i + 1} · Lv ${e.level} · ${Math.floor(e.time / 60)}:${(e.time % 60).toString().padStart(2, '0')} · ◈ ${e.orbs}</li>`;
+        return `<li class="${me ? 'me' : ''}">#${i + 1} · Lv ${e.level} · ${Math.floor(e.time / 60)}:${(e.time % 60).toString().padStart(2, '0')} · Souls ${e.orbs}</li>`;
       }).join('')
       : '<li>No runs yet — descend!</li>';
   }

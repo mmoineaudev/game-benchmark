@@ -115,6 +115,7 @@ export class Game {
     this._lastTime = performance.now();
     this._regenClock = 0; // time since last player hit (for passive regen)
     this._regenTickAcc = 0; // seconds accumulated inside the regen window
+    this._hideLoading();
     this._animate();
   }
 

@@ -378,7 +378,7 @@ export class SkeletonSystem {
     if (type === 'MAGICIAN') this._fireEnemyOrb(skel);
     else if (type === 'ARCHER') this._fireArrow(skel);
     else if (type === 'BRUTE') this._bruteSlam(skel);
-    else this._tryDamagePlayer(skel);
+    else this._damagePlayer(SKELETON.ATTACK_DAMAGE);
   }
 
   _bruteSlam(skel) {

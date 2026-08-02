@@ -57,19 +57,28 @@ export class WorldBuilder {
 
   _buildFloors() {
     const cs = this.data.cellSize;
+    // Collect every walkable cell into ONE InstancedMesh (one draw call instead
+    // of one mesh per cell — the single biggest level-loading win).
+    const cells = [];
     for (let cz = 0; cz < this.data.gridSize; cz++) {
       for (let cx = 0; cx < this.data.gridSize; cx++) {
         if (this.data.grid[cz][cx] === 'empty') continue;
-        const { x, z } = this._cellToWorld(cx, cz);
-        const geo = new THREE.PlaneGeometry(cs, cs);
-        const mesh = new THREE.Mesh(geo, this.floorMaterial);
-        mesh.rotation.x = -Math.PI / 2;
-        mesh.position.set(x, 0, z);
-        mesh.receiveShadow = true;
-        mesh.userData = { isFloor: true };
-        this.scene.add(mesh);
+        cells.push(this._cellToWorld(cx, cz));
       }
     }
+    const geo = new THREE.PlaneGeometry(cs, cs);
+    const mat = this.floorMaterial;
+    const inst = new THREE.InstancedMesh(geo, mat, cells.length);
+    const m = new THREE.Matrix4();
+    for (let i = 0; i < cells.length; i++) {
+      m.makeRotationX(-Math.PI / 2);
+      m.setPosition(cells[i].x, 0, cells[i].z);
+      inst.setMatrixAt(i, m);
+    }
+    inst.instanceMatrix.needsUpdate = true;
+    inst.receiveShadow = true;
+    this._floorInst = inst;
+    this.scene.add(inst);
   }
 
   _buildWalls() {
@@ -123,19 +132,25 @@ export class WorldBuilder {
   _buildCeilings() {
     const cs = this.data.cellSize;
     const wh = WORLD.WALL_HEIGHT;
-
+    // One InstancedMesh for all ceiling per-cell planes (was one mesh per cell).
+    const cells = [];
     for (let cz = 0; cz < this.data.gridSize; cz++) {
       for (let cx = 0; cx < this.data.gridSize; cx++) {
         if (this.data.grid[cz][cx] === 'empty') continue;
-        const { x, z } = this._cellToWorld(cx, cz);
-        const geo = new THREE.PlaneGeometry(cs, cs);
-        const mesh = new THREE.Mesh(geo, this.ceilingMaterial);
-        mesh.rotation.x = Math.PI / 2;
-        mesh.position.set(x, wh, z);
-        mesh.userData = { isCeiling: true };
-        this.scene.add(mesh);
+        cells.push(this._cellToWorld(cx, cz));
       }
     }
+    const geo = new THREE.PlaneGeometry(cs, cs);
+    const inst = new THREE.InstancedMesh(geo, this.ceilingMaterial, cells.length);
+    const m = new THREE.Matrix4();
+    for (let i = 0; i < cells.length; i++) {
+      m.makeRotationX(Math.PI / 2);
+      m.setPosition(cells[i].x, wh, cells[i].z);
+      inst.setMatrixAt(i, m);
+    }
+    inst.instanceMatrix.needsUpdate = true;
+    this._ceilingInst = inst;
+    this.scene.add(inst);
   }
 
   _addCeilingBeams() {
@@ -175,34 +190,54 @@ export class WorldBuilder {
 
   _addFloorDebris() {
     const cs = this.data.cellSize;
+    // Collect all pebble transforms first, then draw ONE InstancedMesh.
+    // Previously every pebble was its own Mesh + shadow caster — ~1500 draw
+    // calls per 16x16 dungeon at level load. Now it's a single draw call.
+    const placements = []; // {x, z, s, rx, ry}
+    for (let cz = 0; cz < this.data.gridSize; cz++) {
+      for (let cx = 0; cx < this.data.gridSize; cx++) {
+        if (this.data.grid[cz][cx] === 'empty') continue;
+        const wx = cx * cs;
+        const wz = cz * cs;
+        const count = 3 + Math.floor(Math.random() * 6); // 3-8 pebbles per cell
+        for (let i = 0; i < count; i++) {
+          placements.push({
+            x: wx + Math.random() * cs,
+            z: wz + Math.random() * cs,
+            s: 0.5 + Math.random() * 0.8,
+            rx: Math.random() * Math.PI,
+            ry: Math.random() * Math.PI,
+          });
+        }
+      }
+    }
+
     const debrisGeo = new THREE.SphereGeometry(0.08, 4, 3);
     const debrisMat = new THREE.MeshStandardMaterial({
       color: 0x3a3a40,
       roughness: 0.9,
       metalness: 0.1,
     });
-
-    for (let cz = 0; cz < this.data.gridSize; cz++) {
-      for (let cx = 0; cx < this.data.gridSize; cx++) {
-        if (this.data.grid[cz][cx] === 'empty') continue;
-        const wx = cx * cs;
-        const wz = cz * cs;
-
-        // 3-8 pebbles per cell, near edges
-        const count = 3 + Math.floor(Math.random() * 6);
-        for (let i = 0; i < count; i++) {
-          const x = wx + Math.random() * cs;
-          const z = wz + Math.random() * cs;
-          const debris = new THREE.Mesh(debrisGeo, debrisMat);
-          debris.position.set(x, 0.03, z);
-          debris.scale.setScalar(0.5 + Math.random() * 0.8);
-          debris.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
-          debris.receiveShadow = true;
-          debris.castShadow = true;
-          this.scene.add(debris);
-        }
-      }
+    const inst = new THREE.InstancedMesh(debrisGeo, debrisMat, placements.length);
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const e = new THREE.Euler();
+    const s = new THREE.Vector3();
+    const p = new THREE.Vector3();
+    for (let i = 0; i < placements.length; i++) {
+      const d = placements[i];
+      e.set(d.rx, d.ry, 0);
+      q.setFromEuler(e);
+      s.setScalar(d.s);
+      p.set(d.x, 0.03, d.z);
+      m.compose(p, q, s);
+      inst.setMatrixAt(i, m);
     }
+    inst.instanceMatrix.needsUpdate = true;
+    inst.receiveShadow = true;
+    inst.castShadow = true;
+    this._debrisInst = inst;
+    this.scene.add(inst);
   }
 
   dispose() {

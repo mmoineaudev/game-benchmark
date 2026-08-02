@@ -197,9 +197,9 @@ export class Game {
   _initPostProcessing() {
     this.post = new PostProcessing(this.renderer, this.scene, this.camera);
     this.post.init();
-    // Post-processing starts OFF by default (lighter, clearer view). The
-    // player can toggle it on (the key handler flips state + this.post).
-    this.state.effectsEnabled = this.post.enabled; // false initially
+    // Post-processing is ON by default (reduced to ~5% intensity). The key
+    // handler can still toggle it off.
+    this.state.effectsEnabled = this.post.enabled; // true initially
   }
 
   _initInput() {
@@ -582,13 +582,30 @@ export class Game {
     const forward = new THREE.Vector3(-Math.sin(p.yaw), 0, -Math.cos(p.yaw));
     const right = new THREE.Vector3(Math.cos(p.yaw), 0, -Math.sin(p.yaw));
 
-    if (this.input.isPressed('KeyW')) { p.x += forward.x * speed; p.z += forward.z * speed; }
-    if (this.input.isPressed('KeyS')) { p.x -= forward.x * speed; p.z -= forward.z * speed; }
-    if (this.input.isPressed('KeyA')) { p.x -= right.x * speed; p.z -= right.z * speed; }
-    if (this.input.isPressed('KeyD')) { p.x += right.x * speed; p.z += right.z * speed; }
-
-    // Collision resolution
-    this._resolveCollisions(p);
+    // Accumulate the requested movement direction for this frame.
+    let mx = 0, mz = 0;
+    if (this.input.isPressed('KeyW')) { mx += forward.x; mz += forward.z; }
+    if (this.input.isPressed('KeyS')) { mx -= forward.x; mz -= forward.z; }
+    if (this.input.isPressed('KeyA')) { mx -= right.x; mz -= right.z; }
+    if (this.input.isPressed('KeyD')) { mx += right.x; mz += right.z; }
+    const mlen = Math.hypot(mx, mz);
+    if (mlen > 0.0001) {
+      // Sub-step the movement so a large dt (e.g. level-loading hitch) can
+      // never tunnel the player through a wall: each partial step is kept
+      // smaller than the wall thickness and collisions are resolved after every
+      // sliver, so a circle can't end up pushed fully past an AABB.
+      const dist = speed * mlen;
+      const ux = mx / mlen, uz = mz / mlen;
+      const maxStep = 0.08; // well under corridor/wall thickness
+      let remaining = dist;
+      while (remaining > 1e-6) {
+        const step = Math.min(maxStep, remaining);
+        p.x += ux * step;
+        p.z += uz * step;
+        this._resolveCollisions(p);
+        remaining -= step;
+      }
+    }
 
     const exit = this.dungeonData.exitCell;
     const cs = this.dungeonData.cellSize;
@@ -788,14 +805,24 @@ export class Game {
       const damage = this.sword.currentDamage;
       let enemiesHit = 0;
 
-      // Breakable props in the arc
+      // Breakable props in the arc — swept over the FULL swing reach, not one
+      // at a time, so one swing can shatter everything the blade sweeps past.
       if (this.props) {
         for (const b of this.props.breakables) {
           const dx = b.x - p.x;
           const dz = b.z - p.z;
-          if (Math.hypot(dx, dz) <= range + 0.5) this.props.hitBreakables(b.x, b.z);
+          const dist = Math.hypot(dx, dz);
+          if (dist > range + 0.9) continue;
+          // Slightly looser cone for props so the swing's wide motion connects
+          const dot = dist > 0.001 ? (dx / dist) * fx + (dz / dist) * fz : 1;
+          if (dot < maxDot - 0.12) continue;
+          this.props.hitBreakables(b.x, b.z);
         }
       }
+
+      // Mobs' projectiles (magician orbs + archer arrows) are breakable: a
+      // swing in range clips them out of the air before they can hit.
+      if (this.skeletons) this.skeletons.breakProjectiles(p, fx, fz, range, Math.cos(this.sword.currentArc));
 
       for (const s of this.skeletons.skeletons) {
         if (s.skel.state === 'DEAD') continue;
@@ -1168,6 +1195,10 @@ export class Game {
     this.runes.init();
     this.orbs = new OrbSystem(this.scene, this.dungeonData, this.state);
     this.orbs.init();
+    // Re-wire the buff-collected hook: _initOrbs() only runs at startup, and
+    // this fresh OrbSystem has no hook by default — without this, buff pickups
+    // would be collectible but trigger nothing after the first level.
+    this.orbs.onBuffCollected = () => this._applyBuff();
     this._initCombat();
     this._placeWaterPuddles();
     this._setupPlayerStart();

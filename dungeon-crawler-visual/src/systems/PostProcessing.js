@@ -81,7 +81,7 @@ export class PostProcessing {
     this.renderer = renderer;
     this.scene = scene;
     this.camera = camera;
-    this.enabled = false; // post-processing OFF by default (lighter + clearer)
+    this.enabled = true; // post-processing ON by default (reduced to 5% intensity)
     this.composer = null;
     this._enemyGroups = [];
     this._enemyMeshes = new Set();
@@ -101,20 +101,20 @@ export class PostProcessing {
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
 
-    // Bloom — restrained: no persistent ghosting, just a soft glow on light
-    // sources. (Strength 1.9 + afterimage ghosting made it look like smoke.)
-    this.bloomPass = new UnrealBloomPass(size, 1.1, 0.5, 0.5);
+    // Bloom — reduced to ~5% of its previous 1.1 strength: a barely-there glow
+    // on light sources, no ghosting.
+    this.bloomPass = new UnrealBloomPass(size, 0.055, 0.5, 0.5);
     this.composer.addPass(this.bloomPass);
 
-    // Punchier colors (saturation 1.35x)
+    // Punchier colors — 5% of previous 0.35 saturation
     this.saturationPass = new ShaderPass(HueSaturationShader);
-    this.saturationPass.uniforms['saturation'].value = 0.35;
+    this.saturationPass.uniforms['saturation'].value = 0.0175;
     this.composer.addPass(this.saturationPass);
 
-    // Moderate dungeon vignette
+    // Very faint dungeon vignette — 5% of previous 0.7 darkness
     this.vignettePass = new ShaderPass(VignetteShader);
-    this.vignettePass.uniforms['offset'].value = 0.9;
-    this.vignettePass.uniforms['darkness'].value = 0.7;
+    this.vignettePass.uniforms['offset'].value = 0.995;
+    this.vignettePass.uniforms['darkness'].value = 0.035;
     this.composer.addPass(this.vignettePass);
 
     // Enemy highlight (final pass — added last so it pops on top)
@@ -219,10 +219,14 @@ export class PostProcessing {
       this._renderEnemyGlow();
       // Slow pulse (~2s period) so the highlight reads as alive, not static
       this.enemyGlowPass.uniforms.uPulse.value = 0.75 + 0.25 * Math.sin(performance.now() * 0.003);
-      // Distance fade: glow strongly when far, fade out as enemies approach
+      // Distance fade: glow strongly when far, fade out as enemies approach.
+      // Reduced to ~5% of its old strength — this was the effect that looked
+      // overwhelming during intense fights. VISION (xray) stays somewhat brighter
+      // so "see through walls" remains readable, but still subtle.
       const d = this.enemyDist || 30;
       const far = THREE.MathUtils.clamp((d - 1.2) / 4.5, 0.15, 1.0);
-      const intensity = (this.xray ? 1.5 : 1.0) * far + (this.xray ? 0.7 : 0.1);
+      const base = (this.xray ? 1.6 : 1.0) * far + (this.xray ? 0.6 : 0.1);
+      const intensity = Math.min(1, base * (this.xray ? 0.25 : 0.05));
       this.enemyGlowPass.uniforms.uIntensity.value = intensity;
       this.composer.render();
     } else {

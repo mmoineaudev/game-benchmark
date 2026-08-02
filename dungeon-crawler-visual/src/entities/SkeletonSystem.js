@@ -682,6 +682,33 @@ export class SkeletonSystem {
     a.mesh.visible = false;
   }
 
+  // Sword swing clips mob projectiles out of the air. Any active magician
+  // orb or archer arrow within the reach cone of the player's blade is broken
+  // (deactivated). px/pz = player pos, fx/fz = forward direction,
+  // range = blade reach, coneCos = cos of the swing's half-angle.
+  breakProjectiles(px, pz, fx, fz, range, coneCos) {
+    const hit = (arr, cx, cz) => {
+      const dx = cx - px;
+      const dz = cz - pz;
+      const dist = Math.hypot(dx, dz);
+      if (dist > range + 0.4) return false;
+      const dot = dist > 0.001 ? (dx / dist) * fx + (dz / dist) * fz : 1;
+      return dot >= coneCos - 0.1;
+    };
+    for (const orb of this.enemyOrbs) {
+      if (!orb.active) continue;
+      if (hit(orb.mesh.position.x, orb.mesh.position.z)) {
+        this._deactivateOrb(orb);
+      }
+    }
+    for (const a of this.arrows) {
+      if (!a.active) continue;
+      if (hit(a.mesh.position.x, a.mesh.position.z)) {
+        this._deactivateArrow(a);
+      }
+    }
+  }
+
   _damagePlayer(amount = 1) {
     if (this.state.invulnTimer > 0 || this.state.health <= 0) return;
     this.state.health -= amount;

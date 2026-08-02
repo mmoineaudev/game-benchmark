@@ -65,7 +65,6 @@ export class PlayerSword {
     this._orbSmokeFactor = 0; // 0..1, ~ shared with orb count (capped at 500)
     this._smokeAcc = 0;
     this._build();
-    this._buildFlame();
     this._buildTrails();
     this._buildSparks();
     this._buildSmoke();
@@ -187,108 +186,6 @@ export class PlayerSword {
     this.group.traverse((m) => { if (m.isMesh) { m.castShadow = false; m.layers.set(2); } });
   }
 
-  // Flame sheath wrapping the blade. A ring of additive glow sprites running
-  // along the blade (grip -> tip) that flicker like fire. The flame COLOR is
-  // driven each frame by a blend of:
-  //   - power (sword buff / orb growth): shifts toward the blade's current
-  //     palette color
-  //   - danger (enemies close): shifts hotter (toward bright red / white)
-  // so the fire reads as "charged by your power" and "alert near enemies".
-  _buildFlame() {
-    this._flameMats = [];
-    this._flames = [];
-    // Single shared additive flame material (color animated per-frame), with
-    // per-sprite scale/position flicker from its own phase seed. Intense and
-    // nearly opaque so the fire reads as dense flame, not a faint haze.
-    this._flameBaseMat = new THREE.SpriteMaterial({
-      map: this._glowTex,
-      color: 0xff6622,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      transparent: true,
-      opacity: 0.9,
-    });
-    this._mats.push(this._flameBaseMat);
-    // Denser sheath: 16 sprites packed along the blade.
-    for (let i = 0; i < 16; i++) {
-      // distribute along the blade length + slight sideways jitter
-      const along = -0.04 + (i / 15) * 0.72;
-      const mat = new THREE.SpriteMaterial({
-        map: this._glowTex,
-        color: 0xff6622,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        transparent: true,
-        opacity: 0.85,
-      });
-      this._mats.push(mat);
-      const sp = new THREE.Sprite(mat);
-      const jx = (Math.random() - 0.5) * 0.05;
-      const jz = (Math.random() - 0.5) * 0.05;
-      sp.position.set(jx, along, jz);
-      sp.scale.setScalar(0.24 + Math.random() * 0.13);
-      this.group.add(sp);
-      this._flameMats.push(mat);
-      this._flames.push({
-        sprite: sp, seed: Math.random() * 40, baseScale: sp.scale.x,
-        baseOx: jx, baseOy: along, baseOz: jz,
-      });
-    }
-    // Tall plume licking well above the blade tip (extends the flame height).
-    for (let i = 0; i < 5; i++) {
-      const mat = new THREE.SpriteMaterial({
-        map: this._glowTex,
-        color: 0xff6622,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        transparent: true,
-        opacity: 0.7,
-      });
-      this._mats.push(mat);
-      const sp = new THREE.Sprite(mat);
-      const along = 0.62 + i * 0.16;
-      sp.position.set((Math.random() - 0.5) * 0.03, along, (Math.random() - 0.5) * 0.03);
-      sp.scale.setScalar(0.3 + i * 0.05);
-      this.group.add(sp);
-      this._flameMats.push(mat);
-      this._flames.push({
-        sprite: sp, seed: Math.random() * 40, baseScale: sp.scale.x,
-        baseOx: sp.position.x, baseOy: along, baseOz: sp.position.z,
-      });
-    }
-  }
-
-  // Animate the flame flicker and blend its color toward the active target.
-  _updateFlame(dt, time) {
-    // target: default hot orange (0xff6622)
-    const target = new THREE.Color(0xff6622);
-    // power axis: blend toward the blade palette color (sword buff / orbs)
-    const powerK = this._orbSmokeFactor; // 0..1 (orbs held, capped 500)
-    const buff = new THREE.Color(BLADE_COLORS[this._colorStep] || 0xff6622);
-    target.lerp(buff, 0.35 * powerK);
-    // danger axis: enemies close -> hotter (toward red-white)
-    const hot = new THREE.Color(0xff2200);
-    target.lerp(hot, 0.7 * this._glow);
-    target.lerp(new THREE.Color(0xffdd99), 0.5 * this._glow * this._glow);
-
-    // apply to every flame mat (damped toward target for smooth hue shifts)
-    this._flameTarget = this._flameTarget || new THREE.Color(0xff6622);
-    this._flameTarget.lerp(target, 1 - Math.exp(-dt * 6));
-    for (const mat of this._flameMats) mat.color.copy(this._flameTarget);
-
-    // flicker each flame sprite (stays intense & dense — opacity never drops
-    // below ~0.65 so the fire is always clearly visible)
-    for (const f of this._flames) {
-      const t = time * 12 + f.seed;
-      const lick = Math.sin(t) * 0.5 + Math.sin(t * 2.7 + f.seed) * 0.3;
-      f.sprite.scale.setScalar(f.baseScale * (1 + lick * 0.4));
-      f.sprite.material.opacity = 0.78 + lick * 0.2;
-      // subtle upward drift + breathing of the flame ring
-      f.sprite.position.x = f.baseOx + Math.sin(time * 3 + f.seed) * 0.01;
-      f.sprite.position.y = f.baseOy + Math.sin(time * 4 + f.seed) * 0.015;
-    }
-  }
-
   // Movement strike traces: pooled additive sprites, one pool per strike so
   // each slash/thrust gets its own color. Sprites are CAMERA children (not
   // group children) — they linger in space while the sword moves on, tracing
@@ -309,7 +206,7 @@ export class PlayerSword {
         opacity: 0,
       });
       this._mats.push(pool.mat);
-      for (let i = 0; i < 8; i++) {
+      for (let i = 0; i < 4; i++) {  // halved from 8 — strike-trace particles cut 50%
         const s = new THREE.Sprite(pool.mat);
         s.visible = false;
         this.camera.add(s);
@@ -365,7 +262,7 @@ export class PlayerSword {
     this.sparkMat = new THREE.MeshBasicMaterial({ color: 0xffcc88 });
     this._mats.push(this.sparkMat);
     this._sparks = [];
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 4; i++) {  // halved from 8 — impact-spark particles cut 50%
       const m = new THREE.Mesh(this.sparkGeo, this.sparkMat);
       m.visible = false;
       this.camera.add(m);
@@ -415,7 +312,7 @@ export class PlayerSword {
   _buildSmoke() {
     this._smokeSprites = [];
     this._smokeIdx = 0;
-    for (let i = 0; i < 28; i++) {
+    for (let i = 0; i < 14; i++) {  // halved from 28 — sword-smoke particles cut 50%
       const mat = new THREE.SpriteMaterial({
         map: this._glowTex, color: 0x08090b,
         blending: THREE.NormalBlending, depthWrite: false,
@@ -460,7 +357,7 @@ export class PlayerSword {
   updateSmoke(dt) {
     // Always emit a baseline (independent of orb count) so the black smoke
     // wrap is always visible.
-    this._smokeAcc += dt * (2.0 + this._orbSmokeFactor * 2.0);
+    this._smokeAcc += dt * (1.0 + this._orbSmokeFactor * 1.0);  // emission halved
     while (this._smokeAcc >= 1) {
       this._emitSmoke();
       this._smokeAcc -= 1;
@@ -577,8 +474,6 @@ export class PlayerSword {
   update(dt, nearestSkelDist = Infinity) {
     if (this.cool > 0) this.cool -= dt;
     this.setDanger(nearestSkelDist, dt);
-    this._flameTime = (this._flameTime || 0) + dt;
-    this._updateFlame(dt, this._flameTime);
     this._updateTrails(dt);
     this._updateSparks(dt);
     if (this._flashTimer > 0) {

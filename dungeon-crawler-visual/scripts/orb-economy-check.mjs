@@ -105,11 +105,11 @@ console.log('== Orb bounce ==');
   }
 
   // Ceiling bounce: fire upward from high up, must bounce down once.
-  // (Ceiling is now 40u tall after the 10x raise — start near it so the orb
-  // reaches the ceiling within the test window.)
+  // (Ceiling is 20u tall after the wall halving — start just below it so the
+  // orb reaches the ceiling within the test window.)
   {
     const { scene, shooter } = newShooter();
-    const { projectile: up } = shooter.fire(0, 30, 0, 0, 0.9);
+    const { projectile: up } = shooter.fire(0, 15, 0, 0, 0.9);
     let upBounced = false;
     for (let i = 0; i < 60 * 2 && up.active; i++) {
       shooter.update(dt, [], []);

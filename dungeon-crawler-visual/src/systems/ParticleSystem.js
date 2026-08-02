@@ -4,7 +4,7 @@ import { LIGHTING } from '../core/Constants.js';
 export class ParticleSystem {
   constructor(scene) {
     this.scene = scene;
-    this.count = 600;
+    this.count = 300;      // halved from 600 — ambient particles cut 50%
     this.particles = null;
     this.positions = null;
   }

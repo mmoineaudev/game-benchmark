@@ -59,7 +59,7 @@ export class LightingSystem {
   _placeAllTorches(dungeonData) {
     const cs = dungeonData.cellSize;
     const gs = dungeonData.gridSize;
-    const spacing = 8;
+    const spacing = 16;   // doubled from 8 — torches cut 50% for level-start perf
     const torchY = 2.5;
     // Fungal cavern: torches only in VAULT rooms (mushrooms light the rest)
     const fungalVaultOnly = this.biomePalette?.torchColor === 0x44ff88;

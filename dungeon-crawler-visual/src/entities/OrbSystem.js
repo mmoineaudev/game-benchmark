@@ -79,7 +79,7 @@ export class OrbSystem {
       blending: THREE.AdditiveBlending, depthWrite: false,
     });
     this._bursts = [];
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 30; i++) {  // halved from 60 — death-burst particles cut 50%
       const m = new THREE.Mesh(this._burstGeo, this._burstMat);
       m.visible = false;
       this.scene.add(m);

@@ -35,6 +35,8 @@ export class SkeletonSystem {
     this.boss = null;      // GhostBoss on boss levels
     this.onBossKill = null; // Game hook: boss died -> buff + heart + portal
     this.onBurn = null;    // Game hook: burning enemy set the ground alight
+    this._spawnQueue = []; // deferred spawn jobs: one mob revealed per tick
+    this._spawnTimer = 0;  // accumulator for the SPAWN_INTERVAL reveal cadence
   }
 
   _initProjectilePools() {
@@ -138,10 +140,6 @@ export class SkeletonSystem {
 
     // New Game+: +10% enemy HP per NG+ cycle
     const hpMult = enemyHpMultiplier(state.ngPlus);
-    const scaleHp = (skel) => {
-      skel.hp = Math.ceil(skel.hp * hpMult);
-      skel.maxHp = skel.hp;
-    };
 
     // Spawn rate scales with the SAME multiplier as the sword size bonus:
     // +20% per 10 orbs held (capped at 3x). Banked ammo = more enemies =
@@ -158,6 +156,12 @@ export class SkeletonSystem {
     const cs = dungeonData.cellSize;
     const ex = state.entranceCell.x * cs + cs / 2;
     const ez = state.entranceCell.z * cs + cs / 2;
+
+    // Build a spawn PLAN (cheap data) instead of constructing every enemy
+    // synchronously. update() reveals one mob per SPAWN_INTERVAL, spreading
+    // the heavy mesh construction across the first seconds of the level so
+    // level start no longer blocks on one big synchronous build.
+    const spawnPlan = [];
 
     let ratCount = 0;
     for (let i = 0; i < Math.min(slots, candidates.length); i++) {
@@ -176,18 +180,9 @@ export class SkeletonSystem {
           ENEMY.MAX_ALIVE - this.skeletons.length,
         );
         for (let r = 0; r < packSize; r++) {
-          const rat = new Rat(this.scene, { attackMult });
           const ox = (Math.random() - 0.5) * 2;
           const oz = (Math.random() - 0.5) * 2;
-          rat.group.position.set(sx + ox, 0, sz + oz);
-          this._ground(rat.group);
-          rat.onKill = () => this._onKill(rat);
-          rat.onDeathComplete = () => this._removeSkeleton(rat);
-          scaleHp(rat); // NG+ HP
-          this.skeletons.push({
-            skel: rat, x: sx + ox, z: sz + oz,
-            cellX: x, cellZ: z, nextThink: 0, type: 'RAT', elite: false, magician: false,
-          });
+          spawnPlan.push({ kind: 'RAT', x: sx + ox, z: sz + oz, cellX: x, cellZ: z, attackMult });
           ratCount++;
         }
         continue;
@@ -197,51 +192,101 @@ export class SkeletonSystem {
       const elite = ['ARMORED', 'ARCHER', 'BRUTE', 'WRAITH'].includes(type)
         && Math.random() < ENEMY.ELITE_CHANCE;
       // ARENA guarantees an elite on its first spawn roll
-      const arenaElite = inArena && this.skeletons.length === 0
+      const arenaElite = inArena && spawnPlan.length === 0
         && ['ARMORED', 'ARCHER', 'BRUTE', 'WRAITH'].includes(type);
-      const isElite = elite || arenaElite;
-
-      let skel;
-      switch (type) {
-        case 'ARMORED': skel = new ArmoredSkeleton(this.scene, { attackMult, elite: isElite }); break;
-        case 'ARCHER': skel = new ArcherSkeleton(this.scene, { attackMult, elite: isElite }); break;
-        case 'BRUTE': skel = new Brute(this.scene, { attackMult, elite: isElite }); break;
-        case 'WRAITH': skel = new Wraith(this.scene, { attackMult, elite: isElite }); break;
-        default: {
-          const magician = type === 'MAGICIAN';
-          skel = new Skeleton(this.scene, { isMagician: magician, active: true, attackMult });
-          skel.magician = magician;
-        }
-      }
-      skel.group.position.set(sx, 0, sz);
-      this._ground(skel.group);
-      skel.onAttackHit = () => this._onAttackHit(skel, type);
-      skel.onDeathComplete = () => this._removeSkeleton(skel);
-      skel.onKill = () => this._onKill(skel);
-      skel.facingYaw = Math.atan2(ex - sx, ez - sz);
-      skel.group.rotation.y = skel.facingYaw;
-      scaleHp(skel); // NG+ HP
-      this.skeletons.push({
-        skel, x: sx, z: sz,
-        cellX: x, cellZ: z, nextThink: 0, type, elite: isElite, magician: type === 'MAGICIAN',
+      spawnPlan.push({
+        kind: type, x: sx, z: sz, cellX: x, cellZ: z,
+        elite: elite || arenaElite, magician: type === 'MAGICIAN',
+        attackMult, hpMult, ex, ez,
       });
     }
 
     // Random mysterious burning enemy, at most one per level
     if (candidates.length && Math.random() < BURN.CHANCE) {
       const c = candidates[Math.floor(Math.random() * candidates.length)];
+      spawnPlan.push({
+        kind: 'BURN', x: c.x * cs + cs / 2, z: c.z * cs + cs / 2,
+        cellX: c.x, cellZ: c.z, hpMult,
+      });
+    }
+
+    this._spawnQueue = spawnPlan;
+    // Reveal the first mob immediately so the level isn't empty on frame 1.
+    if (this._spawnQueue.length) this._revealNextSpawn();
+  }
+
+  // Construct ONE planned mob now and add it to the live roster. Called from
+  // update() at SPAWN_INTERVAL cadence to spread out level-start construction.
+  _revealNextSpawn() {
+    const job = this._spawnQueue.shift();
+    if (!job) return;
+    const { attackMult, hpMult } = job;
+    const scaleHp = (skel) => {
+      skel.hp = Math.ceil(skel.hp * hpMult);
+      skel.maxHp = skel.hp;
+    };
+
+    if (job.kind === 'RAT') {
+      const rat = new Rat(this.scene, { attackMult });
+      rat.group.position.set(job.x, 0, job.z);
+      this._ground(rat.group);
+      rat.onKill = () => this._onKill(rat);
+      rat.onDeathComplete = () => this._removeSkeleton(rat);
+      scaleHp(rat); // NG+ HP
+      this.skeletons.push({
+        skel: rat, x: job.x, z: job.z,
+        cellX: job.cellX, cellZ: job.cellZ, nextThink: 0, type: 'RAT', elite: false, magician: false,
+      });
+      return;
+    }
+
+    if (job.kind === 'BURN') {
       const burn = new Burning(this.scene);
-      const sx = c.x * cs + cs / 2;
-      const sz = c.z * cs + cs / 2;
-      burn.group.position.set(sx, 0, sz);
+      burn.group.position.set(job.x, 0, job.z);
       this._ground(burn.group);
       burn.onKill = () => this._onKill(burn);
       burn.onDeathComplete = () => this._removeSkeleton(burn);
       scaleHp(burn); // NG+ HP
       this.skeletons.push({
-        skel: burn, x: sx, z: sz, cellX: c.x, cellZ: c.z,
-        nextThink: 0, type: 'BURN', elite: false, magician: false,
+        skel: burn, x: job.x, z: job.z,
+        cellX: job.cellX, cellZ: job.cellZ, nextThink: 0, type: 'BURN', elite: false, magician: false,
       });
+      return;
+    }
+
+    const type = job.kind;
+    let skel;
+    switch (type) {
+      case 'ARMORED': skel = new ArmoredSkeleton(this.scene, { attackMult, elite: job.elite }); break;
+      case 'ARCHER': skel = new ArcherSkeleton(this.scene, { attackMult, elite: job.elite }); break;
+      case 'BRUTE': skel = new Brute(this.scene, { attackMult, elite: job.elite }); break;
+      case 'WRAITH': skel = new Wraith(this.scene, { attackMult, elite: job.elite }); break;
+      default: {
+        const magician = type === 'MAGICIAN';
+        skel = new Skeleton(this.scene, { isMagician: magician, active: true, attackMult });
+        skel.magician = magician;
+      }
+    }
+    skel.group.position.set(job.x, 0, job.z);
+    this._ground(skel.group);
+    skel.onAttackHit = () => this._onAttackHit(skel, type);
+    skel.onDeathComplete = () => this._removeSkeleton(skel);
+    skel.onKill = () => this._onKill(skel);
+    skel.facingYaw = Math.atan2(job.ex - job.x, job.ez - job.z);
+    skel.group.rotation.y = skel.facingYaw;
+    scaleHp(skel); // NG+ HP
+    this.skeletons.push({
+      skel, x: job.x, z: job.z,
+      cellX: job.cellX, cellZ: job.cellZ, nextThink: 0, type, elite: job.elite, magician: type === 'MAGICIAN',
+    });
+  }
+
+  _revealQueue(dt) {
+    if (!this._spawnQueue || !this._spawnQueue.length) return;
+    this._spawnTimer += dt;
+    while (this._spawnTimer >= ENEMY.SPAWN_INTERVAL && this._spawnQueue.length) {
+      this._spawnTimer -= ENEMY.SPAWN_INTERVAL;
+      this._revealNextSpawn();
     }
   }
 
@@ -374,6 +419,7 @@ export class SkeletonSystem {
   }
 
   update(dt, time, player, collisionBoxes) {
+    this._revealQueue(dt);
     for (const s of this.skeletons) {
       const skel = s.skel;
       if (skel.state === 'DEAD') {
@@ -793,6 +839,8 @@ export class SkeletonSystem {
   }
 
   dispose() {
+    this._spawnQueue = [];
+    this._spawnTimer = 0;
     for (const s of [...this.skeletons]) {
       s.skel.dispose();
     }

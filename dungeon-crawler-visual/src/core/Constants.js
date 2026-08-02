@@ -4,7 +4,7 @@ export const WORLD = {
   GRID_MAX: 16,
   CELL_SIZE: 6,
   CORRIDOR_WIDTH: 1,
-  WALL_HEIGHT: 40,       // ceiling height — raised 10x for a vast, spacious dungeon
+  WALL_HEIGHT: 20,       // ceiling height — halved from 40 (most of the tall wall was never visible)
   PLAYER_EYE_HEIGHT: 1.7,
 };
 
@@ -187,8 +187,8 @@ export const RENDERER = {
 };
 
 export const SMOKE = {
-  POOL_SIZE: 180,
-  RATE: 1.2,            // puffs/sec per emitter
+  POOL_SIZE: 90,        // halved from 180 — particle effects cut 50%
+  RATE: 0.6,            // puffs/sec per emitter (halved from 1.2)
   RISE_SPEED: 0.5,
   TURBULENCE: 0.6,
   LIFETIME: 3.2,
@@ -224,6 +224,7 @@ export const ENEMY = {
   MAX_SLOTS: 10,
   ARENA_EXTRA_SLOTS: 2,
   MAX_ALIVE: 16,      // total living bodies (rats counted individually)
+  SPAWN_INTERVAL: 0.5, // seconds between individual mob reveals at level start
   RAT_PACK_MIN: 2,    // was 4 — rat packs halved (harder enemy, cut 50%)
   RAT_PACK_MAX: 3,    // was 6
   RAT_CAP: 6,         // was 12

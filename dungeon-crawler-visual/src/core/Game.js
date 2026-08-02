@@ -50,8 +50,13 @@ export class Game {
     this._lastEntry = null;
     this._timerEl = document.getElementById('timer');
     this._loadingEl = document.getElementById('loading');
-    this._loadingTitleEl = document.getElementById('loading-title');
-    this._loadingSubEl = document.getElementById('loading-sub');
+    this._loadingBiomeEl = document.getElementById('loading-biome');
+    this._loadingLevelEl = document.getElementById('loading-level');
+    this._loadingBuffEl = document.getElementById('loading-buff');
+    this._loadingStatsEl = document.getElementById('loading-stats');
+    this._titleActive = false;   // title screen holds the scene while fps stabilizes
+    this._titleFpsTime = 0;      // consecutive seconds at/above 30fps while title is up
+    this._titleMinFps = 30;
     this._sprintBonusEl = document.getElementById('sprint-bonus');
     this._buffBadgeEl = document.getElementById('buff-badge');
     this._lbPanel = document.getElementById('leaderboard-panel');
@@ -115,7 +120,7 @@ export class Game {
     this._lastTime = performance.now();
     this._regenClock = 0; // time since last player hit (for passive regen)
     this._regenTickAcc = 0; // seconds accumulated inside the regen window
-    this._hideLoading();
+    this._showTitle();
     this._animate();
   }
 
@@ -522,6 +527,9 @@ export class Game {
     this._lastTime = now;
     const t = now * 0.001;
 
+    // Title screen holds the scene until ==30fps sustained for ~3s.
+    this._updateTitleFps(this._delta);
+
     this._updateInput();
     this._updateCamera();
     this._handleToggles();
@@ -535,8 +543,11 @@ export class Game {
     this._updateFirePatches();
     if (this.props) this.props.update(this._delta, t, this.state.player);
     this._stepOnBreakables();
-    this._handleShooting();
-    this._handleSwordAttack();
+    // No combat while the title screen holds the scene (input is locked away).
+    if (!this._titleActive) {
+      this._handleShooting();
+      this._handleSwordAttack();
+    }
     this._updateBuff(this._delta);
     if (this.skeletons) this.skeletons.update(this._delta, t, this.state.player, this._collisionBoxes);
     if (this.shooter) this.shooter.update(this._delta, this._collisionBoxes, this.skeletons.skeletons || []);
@@ -981,7 +992,7 @@ export class Game {
   }
 
   _updateRunTimer() {
-    if (this._gameOverActive) return;
+    if (this._gameOverActive || this._titleActive) return; // no timer while title holds the scene
     this.state.levelTime += this._delta;
     this.state.runTime += this._delta;
     const remaining = Math.max(0, TIMED_RUN.LEVEL_TIME_LIMIT - this.state.levelTime);
@@ -1129,15 +1140,81 @@ export class Game {
     return new Promise((resolve) => requestAnimationFrame(() => resolve()));
   }
 
-  _showLoading(title, sub) {
+  // Show the title screen (level name + active buff + stats) over the scene.
+  // The scene and mob spawns keep running underneath; the title only fades once
+  // >=30fps has been sustained for 3 consecutive seconds (see _updateTitleFps).
+  _showTitle() {
     if (!this._loadingEl) return;
-    if (this._loadingTitleEl) this._loadingTitleEl.textContent = title || 'LOADING';
-    if (this._loadingSubEl) this._loadingSubEl.textContent = sub || 'Descending…';
+    // Level name
+    if (this._loadingLevelEl) {
+      const ng = (this.state && this.state.ngPlus) ? ` · NG+${this.state.ngPlus}` : '';
+      this._loadingLevelEl.textContent = `LEVEL ${this.state ? this.state.level : 1}${ng}`;
+    }
+    if (this._loadingBiomeEl) {
+      const pal = this.biomes.current?.palette;
+      this._loadingBiomeEl.textContent = pal?.label || 'STONE DUNGEON';
+    }
+    // Active buff + description
+    if (this._loadingBuffEl) {
+      const e = this.state ? this.state.buffEffect : 0;
+      const DESCRIPTIONS = [
+        'No active buff',
+        'BRIGHT — the level lights up, enemies flee from you',
+        'FIREBALL — right-click hurls an explosive fireball',
+        'EMPOWERED — longer reach, faster movement & attacks',
+        'VISION — enemies glow through walls (x-ray)',
+      ];
+      this._loadingBuffEl.textContent = DESCRIPTIONS[e] || DESCRIPTIONS[0];
+      this._loadingBuffEl.classList.toggle('none', !e);
+      if (this._loadingBuffEl.querySelector?.('.strong')) this._loadingBuffEl.innerHTML = '';
+      if (e) {
+        this._loadingBuffEl.innerHTML = `<span class="strong">${['', 'BRIGHT', 'FIREBALL', 'EMPOWERED', 'VISION'][e]}</span> — ${DESCRIPTIONS[e].split(' — ')[1]}`;
+      }
+    }
+    // Statistics
+    if (this._loadingStatsEl) {
+      const s = this.state;
+      const sw = this.sword;
+      if (s) {
+        const orbMult = orbDamageMultiplier(s.collectedOrbs);
+        const rows = [
+          [`Souls`, `${s.collectedOrbs}`],
+          [`DMG ×`, `${(sw ? sw.damageMult : 1).toFixed(2)}`],
+          [`Orb DMG`, `${Math.round(ORB_WEAPON.DAMAGE * orbMult)}`],
+          [`Reach`, `${(sw ? sw.range : SWORD.RANGE).toFixed(1)}u`],
+          [`Enemy HP`, `×${enemyHpMultiplier(s.ngPlus).toFixed(1)}`],
+          [`Spawns`, `×${orbPowerMultiplier(s.collectedOrbs).toFixed(1)}`],
+          [`Regen`, `+1/5s @20s`],
+        ];
+        this._loadingStatsEl.innerHTML = rows
+          .map(([k, v]) => `<span>${k} <b>${v}</b></span>`).join('');
+      } else {
+        this._loadingStatsEl.innerHTML = '';
+      }
+    }
     this._loadingEl.classList.remove('hidden');
+    this._titleActive = true;
+    this._titleFpsTime = 0;
+    // Mobs spawn (queue drains) but stay frozen until the title lifts.
+    if (this.skeletons) this.skeletons.frozen = true;
   }
 
   _hideLoading() {
+    this._titleActive = false;
+    if (this.skeletons) this.skeletons.frozen = false;
     if (this._loadingEl) this._loadingEl.classList.add('hidden');
+    // Restart the clock cleanly the moment the title lifts so the level timer
+    // doesn't count the (laggy) title-screen frames.
+    this._lastTime = performance.now();
+  }
+
+  // While the title is up, count consecutive good-fps time; drop the title once
+  // >=30fps has held for ~3s. Called from _animate each frame.
+  _updateTitleFps(dt) {
+    if (!this._titleActive) return;
+    const good = dt <= (1 / this._titleMinFps);
+    this._titleFpsTime = good ? this._titleFpsTime + dt : 0;
+    if (this._titleFpsTime >= 3) this._hideLoading();
   }
 
   // Clean every level-owned system and the scene graph so memory from the
@@ -1166,7 +1243,7 @@ export class Game {
   async _regenerateDungeon({ newRun = false, nextState = null, startMessage = null } = {}) {
     this._isRunning = false; // stop the timer + update loop during the load
     const target = nextState ? nextState.level : (newRun ? 1 : this.state.level + 1);
-    this._showLoading('LEVEL LOAD', `Level ${target}`);
+    if (this._loadingEl) this._loadingEl.classList.remove('hidden'); // cover the scene while we rebuild
 
     // ---- STEP 1: clean memory first ----
     this._teardownLevel();
@@ -1257,8 +1334,8 @@ export class Game {
     this._setupPlayerStart();
     await this._nextFrame();
 
-    // ---- STEP 3: display the finished level ----
-    this._hideLoading();
+    // ---- STEP 3: display the finished level (title screen holds it) ----
+    this._showTitle();
     this._showMessage('Slay them for orbs — shoot or swing', 'goal');
     if (this.state.level > 1) this._showMessage(`Level ${this.state.level} — descend!`, 'goal');
     if (startMessage) this._showMessage(startMessage, 'goal');

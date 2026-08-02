@@ -37,6 +37,7 @@ export class SkeletonSystem {
     this.onBurn = null;    // Game hook: burning enemy set the ground alight
     this._spawnQueue = []; // deferred spawn jobs: one mob revealed per tick
     this._spawnTimer = 0;  // accumulator for the SPAWN_INTERVAL reveal cadence
+    this.frozen = false;   // title-screen gate: spawn drains, mobs stay put
   }
 
   _initProjectilePools() {
@@ -420,6 +421,9 @@ export class SkeletonSystem {
 
   update(dt, time, player, collisionBoxes) {
     this._revealQueue(dt);
+    // Frozen (title screen up): drain spawns so they exist, but keep all mobs
+    // immobile until the title lifts (level-start stability trick).
+    if (this.frozen) return;
     for (const s of this.skeletons) {
       const skel = s.skel;
       if (skel.state === 'DEAD') {

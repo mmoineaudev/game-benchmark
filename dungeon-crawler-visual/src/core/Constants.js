@@ -36,29 +36,29 @@ export const LIGHTING = {
   AMBIENT_INTENSITY: 0.3,   // raised from 0.2 — brighter base fill
   TORCH_COLOR: 0xff9944,
   TORCH_INTENSITY: 7,       // raised from 3.5
-  TORCH_DISTANCE: 40,       // raised from 16 — much wider pool of light
+  TORCH_DISTANCE: 36,       // 40 -10%
   TORCH_DECAY: 1.2,         // lowered decay so light reaches further
   TORCH_SHADOW_COUNT: 8,
   TORCH_SHADOW_MAP: 256,
   TORCH_SHADOW_NEAR: 0.5,
-  TORCH_SHADOW_FAR: 16,
+  TORCH_SHADOW_FAR: 14,     // 16 -10%
   FOG_COLOR: 0x0a0a15,
   FOG_DENSITY: 0.01,        // reduced from 0.015 — brighter, more visible distance
   FLAME_COLOR: 0xff8830,
   BRACKET_COLOR: 0x5a4a3a,
   BRAZIER_COLOR: 0xff7733,
   BRAZIER_INTENSITY: 5,     // raised from 2.2
-  BRAZIER_DISTANCE: 26,     // raised from 9
+  BRAZIER_DISTANCE: 23,     // 26 -10%
   BRAZIER_DECAY: 1.2,       // lowered from 1.6
   CRYSTAL_COLOR: 0x44ddff,
   CRYSTAL_INTENSITY: 3.2,   // raised from 1.4
-  CRYSTAL_DISTANCE: 20,     // raised from 7
+  CRYSTAL_DISTANCE: 18,     // 20 -10%
   CRYSTAL_DECAY: 1.2,       // lowered from 1.5
   CRYSTAL_COLORS: [0x44ddff, 0xbb66ff, 0x66ffcc], // per-crystal hue
   // Player headlight: attached to the camera, keeps close surroundings visible.
   PLAYER_LIGHT_COLOR: 0xffdd99,
   PLAYER_LIGHT_INTENSITY: 22,  // raised from 13 — wider, brighter headlight
-  PLAYER_LIGHT_DISTANCE: 24,   // raised from 9
+  PLAYER_LIGHT_DISTANCE: 22,   // 24 -10%
   PLAYER_LIGHT_DECAY: 1.2,     // lowered from 1.6
 };
 
@@ -422,12 +422,12 @@ export const PROPS = {
 };
 
 export const LIGHT_SOURCES = {
-  CANDLE: { color: 0xffaa55, intensity: 1.4, distance: 12, decay: 1.2 },
-  CHANDELIER: { color: 0xff9944, intensity: 1.4, distance: 15, decay: 1.2 },
-  LAVA: { color: 0xff5522, intensity: 4.5, distance: 22, decay: 1.2 },
-  MUSHROOM: { color: 0x44ff88, intensity: 2.5, distance: 14, decay: 1.2 },
-  WISP: { color: 0x88ffcc, intensity: 2.2, distance: 15, decay: 1.2 },
-  ICE: { color: 0x66ccff, intensity: 3.0, distance: 16, decay: 1.2 },
+  CANDLE: { color: 0xffaa55, intensity: 1.4, distance: 11, decay: 1.2 },      // 12 -10%
+  CHANDELIER: { color: 0xff9944, intensity: 1.4, distance: 14, decay: 1.2 },  // 15 -10%
+  LAVA: { color: 0xff5522, intensity: 4.5, distance: 20, decay: 1.2 },        // 22 -10%
+  MUSHROOM: { color: 0x44ff88, intensity: 2.5, distance: 13, decay: 1.2 },    // 14 -10%
+  WISP: { color: 0x88ffcc, intensity: 2.2, distance: 14, decay: 1.2 },        // 15 -10%
+  ICE: { color: 0x66ccff, intensity: 3.0, distance: 14, decay: 1.2 },         // 16 -10%
 };
 
 export const TIMED_RUN = {

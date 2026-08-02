@@ -4,7 +4,6 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
-import { VignetteShader } from 'three/examples/jsm/shaders/VignetteShader.js';
 import { HueSaturationShader } from 'three/examples/jsm/shaders/HueSaturationShader.js';
 
 // Final composite: adds the enemy highlight glow on top of the graded scene.
@@ -110,12 +109,6 @@ export class PostProcessing {
     this.saturationPass = new ShaderPass(HueSaturationShader);
     this.saturationPass.uniforms['saturation'].value = 0.0175;
     this.composer.addPass(this.saturationPass);
-
-    // Very faint dungeon vignette — 5% of previous 0.7 darkness
-    this.vignettePass = new ShaderPass(VignetteShader);
-    this.vignettePass.uniforms['offset'].value = 0.995;
-    this.vignettePass.uniforms['darkness'].value = 0.035;
-    this.composer.addPass(this.vignettePass);
 
     // Enemy highlight (final pass — added last so it pops on top)
     this.enemyGlowPass = new ShaderPass(EnemyGlowShader);

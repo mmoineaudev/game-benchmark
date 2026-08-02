@@ -187,8 +187,8 @@ export const RENDERER = {
 };
 
 export const SMOKE = {
-  POOL_SIZE: 90,        // halved from 180 — particle effects cut 50%
-  RATE: 0.6,            // puffs/sec per emitter (halved from 1.2)
+  POOL_SIZE: 9,         // ~90% cut from 90 — smoke particles near-none
+  RATE: 0.06,           // puffs/sec per emitter (was 0.6)
   RISE_SPEED: 0.5,
   TURBULENCE: 0.6,
   LIFETIME: 3.2,

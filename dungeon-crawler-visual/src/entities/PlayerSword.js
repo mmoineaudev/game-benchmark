@@ -206,7 +206,7 @@ export class PlayerSword {
         opacity: 0,
       });
       this._mats.push(pool.mat);
-      for (let i = 0; i < 4; i++) {  // halved from 8 — strike-trace particles cut 50%
+      for (let i = 0; i < 1; i++) {  // ~90% cut from 4 — minimal strike-trace particles
         const s = new THREE.Sprite(pool.mat);
         s.visible = false;
         this.camera.add(s);
@@ -262,7 +262,7 @@ export class PlayerSword {
     this.sparkMat = new THREE.MeshBasicMaterial({ color: 0xffcc88 });
     this._mats.push(this.sparkMat);
     this._sparks = [];
-    for (let i = 0; i < 4; i++) {  // halved from 8 — impact-spark particles cut 50%
+    for (let i = 0; i < 1; i++) {  // ~90% cut from 4 — minimal impact-spark particles
       const m = new THREE.Mesh(this.sparkGeo, this.sparkMat);
       m.visible = false;
       this.camera.add(m);
@@ -312,7 +312,7 @@ export class PlayerSword {
   _buildSmoke() {
     this._smokeSprites = [];
     this._smokeIdx = 0;
-    for (let i = 0; i < 14; i++) {  // halved from 28 — sword-smoke particles cut 50%
+    for (let i = 0; i < 1; i++) {  // ~90% cut from 14 — minimal sword-smoke particles
       const mat = new THREE.SpriteMaterial({
         map: this._glowTex, color: 0x08090b,
         blending: THREE.NormalBlending, depthWrite: false,
@@ -357,7 +357,7 @@ export class PlayerSword {
   updateSmoke(dt) {
     // Always emit a baseline (independent of orb count) so the black smoke
     // wrap is always visible.
-    this._smokeAcc += dt * (1.0 + this._orbSmokeFactor * 1.0);  // emission halved
+    this._smokeAcc += dt * (0.1 + this._orbSmokeFactor * 0.1);  // emission ~90% cut
     while (this._smokeAcc >= 1) {
       this._emitSmoke();
       this._smokeAcc -= 1;

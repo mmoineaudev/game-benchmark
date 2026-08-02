@@ -33,33 +33,33 @@ export const CAMERA = {
 
 export const LIGHTING = {
   AMBIENT_COLOR: 0x111122,
-  AMBIENT_INTENSITY: 0.2,
+  AMBIENT_INTENSITY: 0.3,   // raised from 0.2 — brighter base fill
   TORCH_COLOR: 0xff9944,
-  TORCH_INTENSITY: 3.5,
-  TORCH_DISTANCE: 16,
-  TORCH_DECAY: 1.6,
+  TORCH_INTENSITY: 7,       // raised from 3.5
+  TORCH_DISTANCE: 40,       // raised from 16 — much wider pool of light
+  TORCH_DECAY: 1.2,         // lowered decay so light reaches further
   TORCH_SHADOW_COUNT: 8,
   TORCH_SHADOW_MAP: 256,
   TORCH_SHADOW_NEAR: 0.5,
-  TORCH_SHADOW_FAR: 12,
+  TORCH_SHADOW_FAR: 16,
   FOG_COLOR: 0x0a0a15,
-  FOG_DENSITY: 0.015,
+  FOG_DENSITY: 0.01,        // reduced from 0.015 — brighter, more visible distance
   FLAME_COLOR: 0xff8830,
   BRACKET_COLOR: 0x5a4a3a,
   BRAZIER_COLOR: 0xff7733,
-  BRAZIER_INTENSITY: 2.2,
-  BRAZIER_DISTANCE: 9,
-  BRAZIER_DECAY: 1.6,
+  BRAZIER_INTENSITY: 5,     // raised from 2.2
+  BRAZIER_DISTANCE: 26,     // raised from 9
+  BRAZIER_DECAY: 1.2,       // lowered from 1.6
   CRYSTAL_COLOR: 0x44ddff,
-  CRYSTAL_INTENSITY: 1.4,
-  CRYSTAL_DISTANCE: 7,
-  CRYSTAL_DECAY: 1.5,
+  CRYSTAL_INTENSITY: 3.2,   // raised from 1.4
+  CRYSTAL_DISTANCE: 20,     // raised from 7
+  CRYSTAL_DECAY: 1.2,       // lowered from 1.5
   CRYSTAL_COLORS: [0x44ddff, 0xbb66ff, 0x66ffcc], // per-crystal hue
   // Player headlight: attached to the camera, keeps close surroundings visible.
   PLAYER_LIGHT_COLOR: 0xffdd99,
-  PLAYER_LIGHT_INTENSITY: 13,  // headlight (rows ×10 = 26, now halved to 13)
-  PLAYER_LIGHT_DISTANCE: 9,
-  PLAYER_LIGHT_DECAY: 1.6,
+  PLAYER_LIGHT_INTENSITY: 22,  // raised from 13 — wider, brighter headlight
+  PLAYER_LIGHT_DISTANCE: 24,   // raised from 9
+  PLAYER_LIGHT_DECAY: 1.2,     // lowered from 1.6
 };
 
 export const MATERIALS = {
@@ -112,39 +112,39 @@ export const BIOMES = {
   LEVELS_PER_BIOME: 2,
   STONE: {
     wall: 0x3a3a4a, floor: 0x2a2a35, ceiling: 0x1a1a25,
-    fog: 0x0a0a15, fogDensity: 0.0195,   // fog-of-war: heavy fade ~100m
-    ambient: 0x111122, ambientIntensity: 0.2,
+    fog: 0x0a0a15, fogDensity: 0.011,   // reduced from 0.0195 — brighter distance
+    ambient: 0x111122, ambientIntensity: 0.3,
     torchColor: 0xff9944, label: 'STONE DUNGEON',
   },
   HAUNTED_CRYPT: {
     wall: 0x2e2e3e, floor: 0x20202c, ceiling: 0x14141c,
-    fog: 0x060610, fogDensity: 0.021,
-    ambient: 0x10101e, ambientIntensity: 0.22,
+    fog: 0x060610, fogDensity: 0.012,
+    ambient: 0x10101e, ambientIntensity: 0.32,
     torchColor: 0x88ddff, label: 'HAUNTED CRYPT',
   },
   FUNGAL_CAVERN: {
     wall: 0x2a3a2e, floor: 0x1e2a22, ceiling: 0x141e18,
-    fog: 0x0a140e, fogDensity: 0.018,
-    ambient: 0x0c1a10, ambientIntensity: 0.25,
+    fog: 0x0a140e, fogDensity: 0.011,
+    ambient: 0x0c1a10, ambientIntensity: 0.34,
     torchColor: 0x44ff88, label: 'FUNGAL CAVERN',
   },
   VOLCANIC_DEPTHS: {
     wall: 0x3a2420, floor: 0x2a1814, ceiling: 0x1e100e,
-    fog: 0x1a0a06, fogDensity: 0.024,
-    ambient: 0x2a0e06, ambientIntensity: 0.25,
+    fog: 0x1a0a06, fogDensity: 0.013,
+    ambient: 0x2a0e06, ambientIntensity: 0.34,
     torchColor: 0xff5522, label: 'VOLCANIC DEPTHS',
   },
   FROZEN_HALLS: {
     wall: 0x3a4654, floor: 0x28303c, ceiling: 0x1a2028,
-    fog: 0x0c1220, fogDensity: 0.0165,
-    ambient: 0x16203a, ambientIntensity: 0.28,
+    fog: 0x0c1220, fogDensity: 0.01,
+    ambient: 0x16203a, ambientIntensity: 0.36,
     torchColor: 0x66ccff, label: 'FROZEN HALLS',
   },
   // Boss arena: a haunted court lit by cold spectral flames.
   SPECTRAL_COURT: {
     wall: 0x2c3448, floor: 0x1c2434, ceiling: 0x10141e,
-    fog: 0x0a1024, fogDensity: 0.015,
-    ambient: 0x14204a, ambientIntensity: 0.3,
+    fog: 0x0a1024, fogDensity: 0.009,
+    ambient: 0x14204a, ambientIntensity: 0.38,
     torchColor: 0x66e0ff, label: 'SPECTRAL COURT',
   },
 };
@@ -422,12 +422,12 @@ export const PROPS = {
 };
 
 export const LIGHT_SOURCES = {
-  CANDLE: { color: 0xffaa55, intensity: 0.6, distance: 5, decay: 1.8 },
-  CHANDELIER: { color: 0xff9944, intensity: 0.5, distance: 6, decay: 1.8 },
-  LAVA: { color: 0xff5522, intensity: 2.2, distance: 9, decay: 1.5 },
-  MUSHROOM: { color: 0x44ff88, intensity: 1.2, distance: 6, decay: 1.7 },
-  WISP: { color: 0x88ffcc, intensity: 1.0, distance: 7, decay: 1.8 },
-  ICE: { color: 0x66ccff, intensity: 1.4, distance: 7, decay: 1.5 },
+  CANDLE: { color: 0xffaa55, intensity: 1.4, distance: 12, decay: 1.2 },
+  CHANDELIER: { color: 0xff9944, intensity: 1.4, distance: 15, decay: 1.2 },
+  LAVA: { color: 0xff5522, intensity: 4.5, distance: 22, decay: 1.2 },
+  MUSHROOM: { color: 0x44ff88, intensity: 2.5, distance: 14, decay: 1.2 },
+  WISP: { color: 0x88ffcc, intensity: 2.2, distance: 15, decay: 1.2 },
+  ICE: { color: 0x66ccff, intensity: 3.0, distance: 16, decay: 1.2 },
 };
 
 export const TIMED_RUN = {

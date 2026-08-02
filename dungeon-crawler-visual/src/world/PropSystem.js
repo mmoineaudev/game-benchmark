@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { WORLD, PROPS, LIGHT_SOURCES } from '../core/Constants.js';
 import { generateGlowTexture } from './Textures.js';
-import { makeWood, makeStone, makeMetal, makeCloth, makeBone, makeHide } from '../core/Materials.js';
+import { makeWood, makeStone, makeMetal, makeBone, makeHide } from '../core/Materials.js';
 
 // Props & decorations: breakables, interactives, structural collision props,
 // and InstancedMesh decoratives. Placed per room type + biome rules (spec §6).
@@ -197,7 +197,6 @@ export class PropSystem {
     add('BARREL', room.type === 'CHAMBER' || room.type === 'VAULT' ? 3 : 1);
     add('CRATE', room.type === 'CHAMBER' || room.type === 'HALL' ? 2 : 1);
     add('CHAIN', ['HALL', 'VAULT', 'ARMORY'].includes(room.type) ? 2 : 0);
-    add('BANNER', ['HALL', 'VAULT', 'ARENA'].includes(room.type) ? 2 : 0);
 
     // Biome-specific
     if (biome === 'HAUNTED_CRYPT' || biome === 'FUNGAL_CAVERN') {
@@ -236,7 +235,6 @@ export class PropSystem {
       case 'BARREL': return this._spawnBarrel(x, z, placed);
       case 'CRATE': return this._spawnCrate(x, z, placed);
       case 'CHAIN': return this._spawnChain(x, z);
-      case 'BANNER': return this._spawnBanner(x, z, room);
       case 'SKULL_PILE': return this._spawnSkullPile(x, z);
       case 'ROOT': return this._spawnRoot(x, z);
       case 'WEB': return this._spawnWeb(x, z);
@@ -303,28 +301,37 @@ export class PropSystem {
 
   _spawnChain(x, z) {
     const mat = makeMetal(0x4a4a52, { seed: 89, rough: 0.4, metal: 0.8 });
-    const chain = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 2.5, 6), mat);
-    chain.position.set(x, WORLD.WALL_HEIGHT - 1.25, z);
-    this._add(chain);
-    this._mats.push(mat);
-    return true;
-  }
+    const chainLen = 3.2;
+    // Hang the chain from the ceiling, with a torch fixture at its bottom end.
+    const group = new THREE.Group();
+    const chain = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, chainLen, 6), mat);
+    chain.position.y = -chainLen / 2;
+    group.add(chain);
 
-  _spawnBanner(x, z, room) {
-    const palettes = {
-      STONE: 0x7a2a2a, HAUNTED_CRYPT: 0x2a3a5a, FUNGAL_CAVERN: 0x2a5a3a,
-      VOLCANIC_DEPTHS: 0x7a3a1a, FROZEN_HALLS: 0x2a4a6a,
-    };
-    const mat = makeCloth(palettes[this.biome] || 0x7a2a2a, { seed: 97, rough: 0.9, metal: 0 });
-    mat.side = THREE.DoubleSide;
-    const banner = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.8), mat);
-    banner.position.set(x, 2.2, z);
-    banner.rotation.y = Math.random() * Math.PI;
-    this._add(banner);
-    // Track banners for cloth sway in update().
-    this._banners = this._banners || [];
-    this._banners.push({ mesh: banner, baseZ: x, seed: Math.random() * 10 });
-    this._mats.push(mat);
+    // Small iron cup holding the flame at the chain's extremity
+    const cupGeo = new THREE.CylinderGeometry(0.12, 0.1, 0.16, 8);
+    const cup = new THREE.Mesh(cupGeo, mat);
+    cup.position.y = -chainLen - 0.05;
+    group.add(cup);
+
+    // Flame cone
+    const flameMat = new THREE.MeshBasicMaterial({ color: 0xff8830 });
+    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.5, 6, 1), flameMat);
+    flame.position.y = -chainLen - 0.16;
+    group.add(flame);
+
+    // Point light casting a wide warm pool at floor level
+    const light = new THREE.PointLight(
+      0xff9944, 6, 26, 1.2,
+    );
+    light.position.y = -chainLen - 0.2;
+    group.add(light);
+
+    group.position.set(x, WORLD.WALL_HEIGHT + 0.1, z);
+    this._add(group);
+    this._mats.push(mat, flameMat);
+    this._chainLights = this._chainLights || [];
+    this._chainLights.push({ light, phase: Math.random() * 10 });
     return true;
   }
 
@@ -687,12 +694,11 @@ export class PropSystem {
   update(dt, time, playerPos) {
     this._updateShards(dt);
     this._updateWisps(dt, time);
-    // Banner cloth sway (gentle idle wave; depth-consistent so each hangs
-    // straight from its own wall point).
-    if (this._banners) {
-      for (const b of this._banners) {
-        b.mesh.rotation.z = Math.sin(time * 1.6 + b.seed) * 0.06;
-        b.mesh.position.y = 2.2 + Math.sin(time * 1.2 + b.seed) * 0.02;
+    // Hanging chain torch flames flicker gently
+    if (this._chainLights) {
+      for (const c of this._chainLights) {
+        const flicker = Math.sin(time * 9 + c.phase) * 0.12 + Math.sin(time * 14 + c.phase * 2) * 0.08;
+        c.light.intensity = 6 * (1 + flicker);
       }
     }
     // Interactive props (sarcophagus lid slide + wraith spawn handled once)
@@ -808,6 +814,10 @@ export class PropSystem {
         }
       });
     }
+    for (const c of this._chainLights || []) {
+      if (c.light) c.light.dispose?.();
+      this.scene.remove(c.light);
+    }
     for (const m of this._mats) {
       if (!m._propDisposed) { m._propDisposed = true; m.dispose(); }
     }
@@ -817,7 +827,7 @@ export class PropSystem {
     this.lavaPools = [];
     this._shards = [];
     this._added = [];
-    this._banners = [];
+    this._chainLights = [];
     this.collisionBoxes = [];
   }
 }

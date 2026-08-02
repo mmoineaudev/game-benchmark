@@ -322,7 +322,7 @@ export class PropSystem {
 
     // Point light casting a wide warm pool at floor level
     const light = new THREE.PointLight(
-      0xff9944, 6, 26, 1.2,
+      0xff9944, 6, 21, 1.2,   // distance 26 -20% = 21
     );
     light.position.y = -chainLen - 0.2;
     group.add(light);

@@ -53,23 +53,21 @@ assert(gl.webgl2, 'WebGL2 context created (renderer up)');
 
 const d = await evalExpr(`(() => {
   const out = {};
-  for (const id of ['orb-count','orb-scale','souls-line','tier-pips','biome-label','timer','hp-fill','combo-pips','weapon-slot','stats-panel','loading']) {
+  for (const id of ['orb-count','orb-scale','souls-line','perf-warning','biome-label','timer','hp-fill','combo-pips','weapon-slot','stats-panel','loading']) {
     out[id] = !!document.getElementById(id);
   }
   out.biomeText = document.getElementById('biome-label')?.textContent;
   out.soulsLine = document.getElementById('souls-line')?.textContent;
   out.loadingHidden = document.getElementById('loading')?.classList.contains('hidden');
-  out.pips = document.querySelectorAll('#tier-pips .pip').length;
-  out.pipsLit = document.querySelectorAll('#tier-pips .pip.lit').length;
+  out.perfHidden = document.getElementById('perf-warning')?.classList.contains('hidden');
   return out;
 })()`);
-for (const id of ['orb-count', 'souls-line', 'tier-pips', 'biome-label', 'timer', 'hp-fill', 'combo-pips', 'weapon-slot', 'stats-panel']) {
+for (const id of ['orb-count', 'souls-line', 'perf-warning', 'biome-label', 'timer', 'hp-fill', 'combo-pips', 'weapon-slot', 'stats-panel']) {
   assert(d[id], `HUD #${id} present`);
 }
 assert(d.biomeText && d.biomeText.includes('LEVEL 1'), `biome label = "${d.biomeText}"`);
-assert(d.soulsLine && d.soulsLine.startsWith('Souls 0 · Tier 0'), `souls line = "${d.soulsLine}"`);
-assert(d.pips === 5, 'tier pips = 5');
-assert(d.pipsLit === 0, 'tier pips lit = 0 at run start');
+assert(d.soulsLine === 'Souls 0', `souls line = "${d.soulsLine}" (total-only §7.1)`);
+assert(d.perfHidden, 'perf warning hidden at run start');
 assert(d.loadingHidden, 'loading screen passed');
 
 // Game loop alive: timer must advance over 2s.

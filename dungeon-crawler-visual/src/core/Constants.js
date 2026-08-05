@@ -87,17 +87,22 @@ export const DUNGEON = {
     CRYPT: { weight: 10, minSize: 2, maxSize: 3 },
     MUSHROOM_GROVE: { weight: 8, minSize: 2, maxSize: 3 },
     ARENA: { weight: 6, minSize: 4, maxSize: 4 },
+    // --- Biome expansion: new room types (BIOME_EXPANSION_PLAN §4.1) ---
+    CRYSTAL_CHAMBER: { weight: 8, minSize: 2, maxSize: 3 },
+    TEMPLE: { weight: 8, minSize: 3, maxSize: 3 },
   },
   // Room-type eligibility: which biomes may generate a given room type
   ROOM_BIOME_ELIGIBILITY: {
     CHAMBER: 'all',
     HALL: 'all',
     VAULT: 'all',
-    ARMORY: ['STONE', 'VOLCANIC_DEPTHS'],
+    ARMORY: ['STONE', 'VOLCANIC_DEPTHS', 'GOLDEN_TEMPLE', 'EMBER_FORGE'],
     LIBRARY: ['STONE', 'HAUNTED_CRYPT'],
     CRYPT: ['HAUNTED_CRYPT'],
-    MUSHROOM_GROVE: ['FUNGAL_CAVERN'],
+    MUSHROOM_GROVE: ['FUNGAL_CAVERN', 'POISON_SWAMP'],
     ARENA: 'all',
+    CRYSTAL_CHAMBER: ['CRYSTAL_DEPTHS'],
+    TEMPLE: ['GOLDEN_TEMPLE'],
   },
   MIN_ROOMS: 8,
   MAX_ROOMS: 12,
@@ -110,44 +115,78 @@ export const DUNGEON = {
 
 // --- Extended spec: biomes -------------------------------------------------
 export const BIOMES = {
-  SEQUENCE: ['STONE', 'HAUNTED_CRYPT', 'FUNGAL_CAVERN', 'VOLCANIC_DEPTHS', 'FROZEN_HALLS'],
+  SEQUENCE: ['STONE', 'HAUNTED_CRYPT', 'FUNGAL_CAVERN', 'VOLCANIC_DEPTHS', 'FROZEN_HALLS',
+    'CRYSTAL_DEPTHS', 'POISON_SWAMP', 'GOLDEN_TEMPLE', 'FLOODED_RUINS', 'EMBER_FORGE'],
   LEVELS_PER_BIOME: 2,
+  // torchMode: 'standard' = torches on every exposed edge | 'vaultOnly' =
+  // torches only inside VAULT rooms (torchless biomes, lit by their own glow).
   STONE: {
     wall: 0x3a3a4a, floor: 0x2a2a35, ceiling: 0x1a1a25,
     fog: 0x0a0a15, fogDensity: 0.011,   // reduced from 0.0195 — brighter distance
     ambient: 0x111122, ambientIntensity: 0.3,
-    torchColor: 0xff9944, label: 'STONE DUNGEON',
+    torchColor: 0xff9944, label: 'STONE DUNGEON', torchMode: 'standard',
   },
   HAUNTED_CRYPT: {
     wall: 0x2e2e3e, floor: 0x20202c, ceiling: 0x14141c,
     fog: 0x060610, fogDensity: 0.012,
     ambient: 0x10101e, ambientIntensity: 0.32,
-    torchColor: 0x88ddff, label: 'HAUNTED CRYPT',
+    torchColor: 0x88ddff, label: 'HAUNTED CRYPT', torchMode: 'standard',
   },
   FUNGAL_CAVERN: {
     wall: 0x2a3a2e, floor: 0x1e2a22, ceiling: 0x141e18,
     fog: 0x0a140e, fogDensity: 0.011,
     ambient: 0x0c1a10, ambientIntensity: 0.34,
-    torchColor: 0x44ff88, label: 'FUNGAL CAVERN',
+    torchColor: 0x44ff88, label: 'FUNGAL CAVERN', torchMode: 'vaultOnly',
   },
   VOLCANIC_DEPTHS: {
     wall: 0x3a2420, floor: 0x2a1814, ceiling: 0x1e100e,
     fog: 0x1a0a06, fogDensity: 0.013,
     ambient: 0x2a0e06, ambientIntensity: 0.34,
-    torchColor: 0xff5522, label: 'VOLCANIC DEPTHS',
+    torchColor: 0xff5522, label: 'VOLCANIC DEPTHS', torchMode: 'standard',
   },
   FROZEN_HALLS: {
     wall: 0x3a4654, floor: 0x28303c, ceiling: 0x1a2028,
     fog: 0x0c1220, fogDensity: 0.01,
     ambient: 0x16203a, ambientIntensity: 0.36,
-    torchColor: 0x66ccff, label: 'FROZEN HALLS',
+    torchColor: 0x66ccff, label: 'FROZEN HALLS', torchMode: 'standard',
+  },
+  // --- Biome expansion: 5 new biomes (BIOME_EXPANSION_PLAN §3) ---
+  CRYSTAL_DEPTHS: {
+    wall: 0x3a2a4a, floor: 0x2a1e35, ceiling: 0x1a1425,
+    fog: 0x120a20, fogDensity: 0.011,
+    ambient: 0x1c1030, ambientIntensity: 0.34,
+    torchColor: 0xcc66ff, label: 'CRYSTAL DEPTHS', torchMode: 'standard',
+  },
+  POISON_SWAMP: {
+    wall: 0x3a3a20, floor: 0x2a2a14, ceiling: 0x1e1e0e,
+    fog: 0x121a06, fogDensity: 0.012,
+    ambient: 0x16220a, ambientIntensity: 0.32,
+    torchColor: 0xccff44, label: 'POISON SWAMP', torchMode: 'vaultOnly',
+  },
+  GOLDEN_TEMPLE: {
+    wall: 0x4a4230, floor: 0x3a3220, ceiling: 0x2a2416,
+    fog: 0x241c0e, fogDensity: 0.010,
+    ambient: 0x2a2412, ambientIntensity: 0.36,
+    torchColor: 0xffcc66, label: 'GOLDEN TEMPLE', torchMode: 'standard',
+  },
+  FLOODED_RUINS: {
+    wall: 0x2a3a3e, floor: 0x1e2a2e, ceiling: 0x141e20,
+    fog: 0x0a1a1e, fogDensity: 0.012,
+    ambient: 0x0e1e24, ambientIntensity: 0.33,
+    torchColor: 0x55ddcc, label: 'FLOODED RUINS', torchMode: 'standard',
+  },
+  EMBER_FORGE: {
+    wall: 0x3a3230, floor: 0x2a2420, ceiling: 0x1e1a18,
+    fog: 0x1a0e0a, fogDensity: 0.013,
+    ambient: 0x22120a, ambientIntensity: 0.35,
+    torchColor: 0xff7733, label: 'EMBER FORGE', torchMode: 'standard',
   },
   // Boss arena: a haunted court lit by cold spectral flames.
   SPECTRAL_COURT: {
     wall: 0x2c3448, floor: 0x1c2434, ceiling: 0x10141e,
     fog: 0x0a1024, fogDensity: 0.009,
     ambient: 0x14204a, ambientIntensity: 0.38,
-    torchColor: 0x66e0ff, label: 'SPECTRAL COURT',
+    torchColor: 0x66e0ff, label: 'SPECTRAL COURT', torchMode: 'standard',
   },
 };
 
@@ -178,6 +217,12 @@ export const BIOME_ROOM_MODIFIERS = {
   FUNGAL_CAVERN: { MUSHROOM_GROVE: 3, VAULT: 0.7 },
   VOLCANIC_DEPTHS: { ARMORY: 2, CHAMBER: 0.8 },
   FROZEN_HALLS: { VAULT: 1.5, CHAMBER: 1.2, MUSHROOM_GROVE: 0 },
+  // --- Biome expansion (BIOME_EXPANSION_PLAN §4.3) ---
+  CRYSTAL_DEPTHS: { CRYSTAL_CHAMBER: 3, VAULT: 1.2 },
+  POISON_SWAMP: { MUSHROOM_GROVE: 2.5, VAULT: 0.5 },
+  GOLDEN_TEMPLE: { TEMPLE: 3, VAULT: 2, ARMORY: 1.5 },
+  FLOODED_RUINS: { VAULT: 1.5, CHAMBER: 1.2 },
+  EMBER_FORGE: { ARMORY: 2.5, VAULT: 0.7 },
 };
 
 export const RENDERER = {
@@ -285,6 +330,12 @@ export const ENEMY_SPAWN_WEIGHTS = {
   FUNGAL_CAVERN: [30, 10, 10, 5, 40, 5, 0],
   VOLCANIC_DEPTHS: [20, 10, 25, 15, 10, 20, 0],
   FROZEN_HALLS: [25, 10, 20, 25, 10, 10, 0],
+  // --- Biome expansion (BIOME_EXPANSION_PLAN §7) ---
+  CRYSTAL_DEPTHS: [30, 15, 15, 20, 10, 10, 0],
+  POISON_SWAMP: [15, 10, 10, 10, 45, 10, 0],
+  GOLDEN_TEMPLE: [20, 10, 25, 20, 10, 15, 0],
+  FLOODED_RUINS: [20, 15, 10, 15, 25, 15, 0],
+  EMBER_FORGE: [10, 10, 25, 15, 5, 35, 0],
 };
 export const ENEMY_TYPES = ['SKELETON', 'MAGICIAN', 'ARMORED', 'ARCHER', 'RAT', 'BRUTE', 'WRAITH'];
 
@@ -294,6 +345,8 @@ export const ROOM_ENEMY_MODIFIERS = {
   LIBRARY: { SKELETON: 1, MAGICIAN: 0, ARMORED: 0, ARCHER: 0, RAT: 0, BRUTE: 0, WRAITH: 0 },
   CRYPT: { WRAITH: 1.4, SKELETON: 1.2 },
   MUSHROOM_GROVE: { RAT: 1.5 },
+  // --- Biome expansion: TEMPLE guards (BIOME_EXPANSION_PLAN §4.1) ---
+  TEMPLE: { ARMORED: 1.2 },
 };
 
 export const SWORD = {
@@ -429,7 +482,13 @@ export const DROP = {
 // --- Extended spec: props --------------------------------------------------
 export const PROPS = {
   BREAKABLE_HP: 1,
-  LAVA_DAMAGE: 1,
+  // Pool hazards (lava + acid share the same tick logic, keyed by type):
+  // BIOME_EXPANSION_PLAN §6.2. LAVA_* legacy keys removed in Phase A3.
+  POOLS: {
+    LAVA: { damage: 1, interval: 0.8, radius: 1.2, color: 0xff5522, emissive: 2.2 },
+    ACID: { damage: 1, interval: 0.8, radius: 1.2, color: 0x88ff22, emissive: 2.2 },
+  },
+  LAVA_DAMAGE: 1,      // legacy — consumed by Game until the A3 POOLS sweep
   LAVA_INTERVAL: 0.8,
   LAVA_RADIUS: 1.2,
   SARCOPHAGUS_WRAITH_CHANCE: 0.3,
@@ -437,6 +496,8 @@ export const PROPS = {
   PROPS_PER_ROOM: {
     CHAMBER: 6, HALL: 4, VAULT: 10, ARMORY: 8,
     LIBRARY: 12, CRYPT: 10, MUSHROOM_GROVE: 12, ARENA: 6,
+    // --- Biome expansion (BIOME_EXPANSION_PLAN §4.1) ---
+    CRYSTAL_CHAMBER: 10, TEMPLE: 10,
   },
   MAX_BREAKABLES_PER_ROOM: 3,
   MAX_INTERACTIVE_PER_ROOM: 3,
@@ -449,7 +510,17 @@ export const LIGHT_SOURCES = {
   MUSHROOM: { color: 0x44ff88, intensity: 2.5, distance: 10, decay: 1.2 },    // 13 -20%
   WISP: { color: 0x88ffcc, intensity: 2.2, distance: 11, decay: 1.2 },        // 14 -20%
   ICE: { color: 0x66ccff, intensity: 3.0, distance: 11, decay: 1.2 },         // 14 -20%
+  // --- Biome expansion (BIOME_EXPANSION_PLAN §6.1) ---
+  CRYSTAL: { color: 0xcc66ff, intensity: 3.0, distance: 11, decay: 1.2 },
+  ACID: { color: 0x88ff22, intensity: 4.5, distance: 16, decay: 1.2 },
 };
+
+// Measured per-level light ceiling (BIOME_EXPANSION_PLAN §9): the heaviest
+// existing biome (VOLCANIC/FROZEN) averages 154 lights and peaks at 199
+// (probe model; the faithful model in biome-check measures ~132). The vaultOnly
+// torch bounds are calibrated to the EXISTING fungal biome (measured avg ~9,
+// max ~49) — thresholds below that would fail the current game.
+export const LIGHT_CEILING = { AVG: 154, MAX: 199, VAULT_ONLY_TORCH_AVG: 10, VAULT_ONLY_TORCH_MAX: 50 };
 
 export const TIMED_RUN = {
   LEVEL_TIME_LIMIT: 180, // seconds per level — tunable; avg exit is ~22 cells ≈ 20-30s at sprint, so 3min leaves room to explore/collect orbs

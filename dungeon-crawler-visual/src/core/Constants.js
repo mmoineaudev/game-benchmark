@@ -352,6 +352,11 @@ export const ROOM_ENEMY_MODIFIERS = {
 
 export const SWORD = {
   RANGE: 2.2,             // melee reach (base; scales with orb growth)
+  // Electric legendary proc (WEAPON_EVOLUTION_PLAN §6): hoisted from COMBO —
+  // Game reads SWORD.ELECTRIC_*; the old nested location made both undefined
+  // and the 1% chain blast dead code.
+  ELECTRIC_CHANCE: 0.01,  // 1% per landing strike: chain an electric blast
+  ELECTRIC_RANGE: 20,     // ...that kills every enemy within this distance
   COMBO: {
     WINDUP1: 0.10, SLASH1: 0.16, RECOVER1: 0.14,
     WINDUP2: 0.08, SLASH2: 0.15, RECOVER2: 0.14,
@@ -363,12 +368,44 @@ export const SWORD = {
     ARC2: Math.PI * 0.38,  // ±68° opposite diagonal slash
     ARC3: Math.PI * 0.09,  // ±16° piercing thrust (line, not a cone)
     RANGE3: 1.25,          // thrust lunge reach multiplier (range × 1.25)
-    ELECTRIC_CHANCE: 0.01, // 1% per landing strike: chain an electric blast
-    ELECTRIC_RANGE: 20,    // ...that kills every enemy within this distance
   },
 };
 
 export const HIT_STOP = 0.06; // seconds of world-freeze on sword hit
+
+// --- Weapon evolution: souls ladder (WEAPON_EVOLUTION_PLAN §3) ---
+// Every EVOLUTION.TIER_SOULS lifetime souls the sword gains +1 damage per hit
+// and a new form, stepping to a lightsaber that throws electric arcs (tier 5).
+export const EVOLUTION = {
+  TIER_SOULS: 100,
+  MAX_TIER: 5,
+  DAMAGE_PER_TIER: 1,
+  BLADE_LENGTH: [0.76, 0.81, 0.86, 0.92, 0.96, 1.0], // form blade length per tier (u)
+  RANGE_PER_TIER: 0.04,   // +4% melee reach per tier
+  MAX_TOTAL_SCALE: 5.0,   // group-scale safety clamp (orb ladder × EMPOWERED)
+  ARC_CHANCE: [0, 0, 0, 0.10, 0.35, 1.0], // arc bolts per landing strike
+  ARC_BOLTS: [0, 0, 0, 1, 1, 2],
+  ARC_POOL: 8,
+  ARC_SPEED: 24,
+  ARC_LIFE: 1.2,
+  ARC_DAMAGE: 1,
+  ARC_RANGE: 20,
+  BOLT_COLOR: 0x66eeff,
+  T5_BLADE_LIGHT: { color: 0x66eeff, intensity: 1.5, distance: 6, decay: 1.6 },
+};
+
+// Tier from lifetime souls (monotonic; capped at MAX_TIER).
+export function weaponTier(souls) {
+  return Math.min(Math.floor(souls / EVOLUTION.TIER_SOULS), EVOLUTION.MAX_TIER);
+}
+
+// Base per-hit damage before the size multiplier: HIT{1,2,3} + tier.
+export function swordHitDamage(step, tier) {
+  const base = step === 2 ? SWORD.COMBO.HIT2_DAMAGE
+    : step === 3 ? SWORD.COMBO.HIT3_DAMAGE
+      : SWORD.COMBO.HIT1_DAMAGE;
+  return base + tier * EVOLUTION.DAMAGE_PER_TIER;
+}
 
 // Temporary buffs looted from breakables (6% per break). One random effect
 // lasts BUFF.DURATION seconds. Effects:

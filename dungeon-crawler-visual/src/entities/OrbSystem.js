@@ -150,6 +150,9 @@ export class OrbSystem {
           this.scene.remove(drop.group);
         } else {
           this.state.collectedOrbs++;
+          // Lifetime souls counter (monotonic — the weapon-evolution tier
+          // source). Incremented ONLY on orb pickups, never health/buff drops.
+          this.state.soulsEarned = (this.state.soulsEarned || 0) + 1;
           this._spawnPickupRing(drop.x, drop.y, drop.z, time);
           this.scene.remove(drop.mesh);
           this.scene.remove(drop.glow);

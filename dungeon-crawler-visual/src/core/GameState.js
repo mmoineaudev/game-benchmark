@@ -1,9 +1,11 @@
 import { PLAYER, BUFF } from './Constants.js';
 
 export class GameState {
-  constructor({ runTime = 0, level = 1, collectedOrbs = 0, ngPlus = 0, bossKills = 0 } = {}) {
+  constructor({ runTime = 0, level = 1, collectedOrbs = 0, ngPlus = 0, bossKills = 0, soulsEarned = 0, weaponTier = 0 } = {}) {
     this.player = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 };
     this.collectedOrbs = collectedOrbs; // cumulative ammo/score (persists across levels)
+    this.soulsEarned = soulsEarned; // lifetime orb pickups (monotonic — WEAPON_EVOLUTION_PLAN §2)
+    this.weaponTier = weaponTier;   // evolution tier (0..5), derived from soulsEarned
     this.ngPlus = ngPlus;   // New Game+ cycle: enemies have +100% HP per cycle
     this.bossKills = bossKills; // permanent: mobs +10% move/attack speed per boss kill
     this.totalOrbs = 0;   // pickups present on the current level

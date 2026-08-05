@@ -1359,6 +1359,8 @@ export class Game {
           collectedOrbs: this.state.collectedOrbs,
           ngPlus: this.state.ngPlus || 0,
           bossKills: this.state.bossKills || 0,
+          soulsEarned: this.state.soulsEarned || 0,
+          weaponTier: this.state.weaponTier || 0,
         }));
 
     // Carry the buff over (x5 remaining) so the HUD and level systems see it.

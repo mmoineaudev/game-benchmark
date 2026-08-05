@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { SWORD, orbPowerMultiplier } from '../core/Constants.js';
+import { SWORD, EVOLUTION, swordHitDamage, orbPowerMultiplier } from '../core/Constants.js';
 import { generateGlowTexture } from '../world/Textures.js';
 
 // First-person DAGGER attached to the camera: a short, tapered double-edged
@@ -59,6 +59,7 @@ export class PlayerSword {
     this._glowTarget = 0;
     this._colorStep = 0;
     this._rangeScale = 1;
+    this.tier = 0;         // weapon evolution tier (0..5) — WEAPON_EVOLUTION_PLAN §3
     this.lengthMult = 1;   // temporary length boost (EMPOWERED buff)
     this.attackSpeedMult = 1; // temporary attack-speed boost (EMPOWERED buff)
     this._flashTimer = 0;
@@ -386,13 +387,22 @@ export class PlayerSword {
     this.group.rotation.set(-0.15, 0, 0.35);
   }
 
-  // Effective melee reach — grows with the sword size bonus
+  // Effective melee reach — grows with the sword size bonus AND the evolution
+  // tier (+4% per tier, WEAPON_EVOLUTION_PLAN §3).
   get range() {
-    return SWORD.RANGE * this._rangeScale;
+    return SWORD.RANGE * this._rangeScale * (1 + EVOLUTION.RANGE_PER_TIER * this.tier);
   }
 
   get scale() {
     return this._rangeScale;
+  }
+
+  // Set the evolution tier: +1 damage per hit, +4% reach per tier, and a new
+  // visual form (built in _applyForm — B2/B3/B4). Called by Game on threshold
+  // crossing and level start.
+  setTier(tier) {
+    this.tier = Math.max(0, Math.min(EVOLUTION.MAX_TIER, tier | 0));
+    if (this._applyForm) this._applyForm(this.tier);
   }
 
   // Grows the dagger +20% per 10 orbs held (capped at +200% = 3x at 100
@@ -400,8 +410,12 @@ export class PlayerSword {
   // growth light.
   setOrbCount(count) {
     // Same multiplier drives the enemy spawn rate (orbPowerMultiplier);
-    // lengthMult stacks on top (EMPOWERED buff: +50% longer).
-    this._rangeScale = orbPowerMultiplier(count) * this.lengthMult;
+    // lengthMult stacks on top (EMPOWERED buff: +50% longer). Clamped at
+    // MAX_TOTAL_SCALE so the ready pose never covers the crosshair (§3, §10).
+    this._rangeScale = Math.min(
+      orbPowerMultiplier(count) * this.lengthMult,
+      EVOLUTION.MAX_TOTAL_SCALE,
+    );
     this.group.scale.setScalar(this._rangeScale);
     // Blue smoke bleeds off the blade proportional to orbs (capped at 500)
     this._orbSmokeFactor = Math.min(count, 500) / 500;
@@ -458,11 +472,12 @@ export class PlayerSword {
     return 1 + (this._rangeScale - 1) * 0.5;
   }
 
+  // Sword damage = (base per-hit + evolution tier) × size multiplier.
+  // Base per-hit from swordHitDamage (2/2/3 + tier → 7/7/8 at tier 5).
   get currentDamage() {
-    const base = this.state === 'slash2' ? SWORD.COMBO.HIT2_DAMAGE
-      : this.state === 'thrust3' ? SWORD.COMBO.HIT3_DAMAGE
-        : SWORD.COMBO.HIT1_DAMAGE;
-    return base * this.damageMult;
+    const step = this.state === 'slash2' ? 2
+      : this.state === 'thrust3' ? 3 : 1;
+    return swordHitDamage(step, this.tier) * this.damageMult;
   }
 
   // The piercing thrust lunges further than the slashes.

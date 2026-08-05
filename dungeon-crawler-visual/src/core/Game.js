@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON, SWORD, PROPS, HIT_STOP, LIGHTING, DROP, BUFF, excessOrbs, orbDamageMultiplier, orbPowerMultiplier, enemyHpMultiplier } from './Constants.js';
+import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON, SWORD, PROPS, HIT_STOP, LIGHTING, DROP, BUFF, EVOLUTION, weaponTier, excessOrbs, orbDamageMultiplier, orbPowerMultiplier, enemyHpMultiplier } from './Constants.js';
 import { GameState } from './GameState.js';
 import { Leaderboard } from './Leaderboard.js';
 import { EventBus } from './EventBus.js';
@@ -33,6 +33,8 @@ export class Game {
     this._promptEl = document.getElementById('prompt');
     this._orbCountEl = document.getElementById('orb-count');
     this._orbScaleEl = document.getElementById('orb-scale');
+    this._soulsLineEl = document.getElementById('souls-line');
+    this._tierPipsEl = document.getElementById('tier-pips');
     this._biomeLabelEl = document.getElementById('biome-label');
     this._comboPipsEl = document.getElementById('combo-pips');
     this._exitEl = document.getElementById('exit-prompt');
@@ -515,10 +517,33 @@ export class Game {
   }
 
   _emitLevelStart() {
+    // Re-sync the sword's evolution form (idempotent; tier carried in state).
+    if (this.sword) this.sword.setTier(this.state.weaponTier || 0);
     this.events.emit('level:start', {
       level: this.state.level,
       biome: this.state.biome,
     });
+  }
+
+  // Weapon evolution: tier derives from lifetime souls (monotonic). On a tier
+  // increase: rebuild the sword form, toast, blade flash, brief hit-stop.
+  // (WEAPON_EVOLUTION_PLAN §3, §7)
+  _checkWeaponEvolution() {
+    if (!this.sword) return;
+    const t = weaponTier(this.state.soulsEarned || 0);
+    if (t === (this.state.weaponTier || 0)) return;
+    this.state.weaponTier = t;
+    this.sword.setTier(t);
+    if (t >= 1) {
+      const isMax = t >= EVOLUTION.MAX_TIER;
+      this._showMessage(
+        isMax ? 'Your blade is whole — the lightsaber sings' : `Your blade awakens — Tier ${t}`,
+        'success',
+      );
+      this.sword.flashBlade();
+      this.state.hitStop = 0.1; // non-blocking evolution beat (vs 0.06 combat)
+    }
+    this._updateHUD();
   }
 
   _bindEventToasts() {
@@ -575,6 +600,7 @@ export class Game {
     this._animateWater(t);
     this._checkMessages();
     this._updateHUD();
+    this._checkWeaponEvolution();
     this._eKeyWasDown = this.input.isPressed('KeyE');
     if (this.sword) this.sword.updateSmoke(this._delta);
 
@@ -1468,13 +1494,28 @@ export class Game {
 
   _updateHUD() {
     if (this._orbCountEl) {
-      // Dark Souls "Souls" counter: just the number, scale as a sub-line
+      // Ammo counter (banked orbs) — labeled ORBS in the HUD.
       this._orbCountEl.textContent = String(this.state.collectedOrbs);
       if (this._orbScaleEl) {
         const scale = this.sword ? this.sword.scale : 1;
         const pct = Math.round((scale - 1) * 100);
         this._orbScaleEl.textContent = scale > 1.01 ? `+${pct}% power` : '';
       }
+    }
+    // Weapon evolution line: lifetime souls, tier, progress to next (or MAX).
+    if (this._soulsLineEl) {
+      const s = this.state.soulsEarned || 0;
+      const t = this.state.weaponTier || 0;
+      const max = t >= EVOLUTION.MAX_TIER;
+      const next = max ? 'MAX'
+        : `${EVOLUTION.TIER_SOULS - (s % EVOLUTION.TIER_SOULS)}/${EVOLUTION.TIER_SOULS}`;
+      this._soulsLineEl.textContent = `Souls ${s} · Tier ${t} · ${next}`;
+      this._soulsLineEl.style.color = max ? '#88ffff' : '#9a8a5c';
+    }
+    if (this._tierPipsEl) {
+      const t = this.state.weaponTier || 0;
+      const pips = this._tierPipsEl.querySelectorAll('.pip');
+      pips.forEach((el, i) => el.classList.toggle('lit', i < t));
     }
     if (this.sword) this.sword.setOrbCount(this.state.collectedOrbs);
     if (this._biomeLabelEl) {

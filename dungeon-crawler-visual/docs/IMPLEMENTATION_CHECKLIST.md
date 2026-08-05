@@ -148,36 +148,40 @@ hard stop — fix, commit, continue.
 
 ### B0. Phase 0 — Constants, state, counter (plan §2, §6, §8, §12 P0)
 
-- [ ] `src/core/Constants.js`: NEW `EVOLUTION` block exactly per §3
+- [x] `src/core/Constants.js`: NEW `EVOLUTION` block exactly per §3
       (TIER_SOULS 100, MAX_TIER 5, DAMAGE_PER_TIER 1, BLADE_LENGTH
       [0.76, 0.81, 0.86, 0.92, 0.96, 1.0], RANGE_PER_TIER 0.04,
       MAX_TOTAL_SCALE 5.0, ARC_CHANCE/ARC_BOLTS/ARC_POOL 8/ARC_SPEED 24/
       ARC_LIFE 1.2/ARC_DAMAGE 1/ARC_RANGE 20, BOLT_COLOR, T5_BLADE_LIGHT)
-- [ ] **Bug fix (owned):** hoist `SWORD.ELECTRIC_CHANCE` (0.01) and
-      `SWORD.ELECTRIC_RANGE` (20) to the `SWORD` level; update `Game` refs
-      (lines 779, 885) (§6)
-- [ ] `GameState`: +`soulsEarned: 0`, +`weaponTier: 0` (constructor params)
-- [ ] `OrbSystem`: `state.soulsEarned++` in the orb-pickup branch ONLY (not
+      + `weaponTier()` / `swordHitDamage()` pure functions
+- [x] **Bug fix (owned):** hoist `SWORD.ELECTRIC_CHANCE` (0.01) and
+      `SWORD.ELECTRIC_RANGE` (20) to the `SWORD` level; Game refs now resolve
+      (§6) — gate 5 proves the proc is reachable
+- [x] `GameState`: +`soulsEarned: 0`, +`weaponTier: 0` (constructor params);
+      carried on level-advance state rebuild in Game
+- [x] `OrbSystem`: `state.soulsEarned++` in the orb-pickup branch ONLY (not
       buff/health pickups) (§2)
-- [ ] NEW `scripts/weapon-check.mjs` implementing ALL 8 gates (§11)
-- [ ] **Gate B0:** `node scripts/weapon-check.mjs` green (1–8);
+- [x] NEW `scripts/weapon-check.mjs` implementing ALL 8 gates (§11)
+- [x] **Gate B0:** `node scripts/weapon-check.mjs` green (1–8);
       `node scripts/dungeon-check.mjs` = broken=0/40
-- [ ] **Commit B0**
+- [x] **Commit B0**
 
 ### B1. Phase 1 — Damage ladder + HUD (plan §3, §7, §12 P1)
 
-- [ ] Pure function `swordHitDamage(step, tier) = HIT{1,2,3}_DAMAGE + tier`
-      in Game's hit path; constants never mutated (§3)
-- [ ] Tier recompute on every pickup: `min(floor(soulsEarned/100), 5)`;
-      stored in `state.weaponTier`; persists across regens (§2)
-- [ ] HUD: `#souls-line` (`Souls: N · Tier T · M/100`, `MAX` at tier 5) +
-      `#tier-pips` (5 pips, lit = earned) in `index.html` (§7)
-- [ ] Evolution toast on threshold crossing + blade flash + 0.1 s non-blocking
-      hit-stop; final tier toast `Your blade is whole — the lightsaber sings`
-      (§7)
-- [ ] **Gate B1:** headless tier-math probe (0/99/100/199/200/500/999 →
-      0/0/1/1/2/5/5); DOM ids present; dungeon-check 0/40
-- [ ] **Commit B1**
+- [x] `PlayerSword.currentDamage = swordHitDamage(step, tier) × damageMult`
+      (pure-function base; existing size scaling preserved); `setTier(tier)`
+      with `_applyForm` hook (visuals B2–B4); range `+4%` per tier;
+      `setOrbCount` scale clamped at `MAX_TOTAL_SCALE` (§3)
+- [x] Tier recompute every frame: `weaponTier(soulsEarned)` → `state.weaponTier`
+      on change; evolves mid-level with toast + blade flash + 0.1 s hit-stop;
+      re-synced on `level:start` (§2, §7)
+- [x] HUD: `#souls-line` (`Souls N · Tier T · M/100`, `MAX` at tier 5) +
+      `#tier-pips` (5 pips, lit = earned) in `index.html`; ammo label renamed
+      SOULS → ORBS (two counters, two labels) (§7)
+- [x] **Gate B1:** headless probe — tier damage 2/2/3 → 7/7/8, range ×1.2 at
+      tier 5, scale clamp 5.0, weaponTier 237→2/500→5/999→5; weapon-check 1–8
+      green; dungeon-check 0/40
+- [x] **Commit B1**
 
 ### B2. Phase 2 — Visuals T1–T2 (plan §4, §12 P2)
 

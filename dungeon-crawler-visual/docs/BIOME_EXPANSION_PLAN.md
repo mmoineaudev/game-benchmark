@@ -7,7 +7,45 @@ cycle to a **10-biome cycle** (20 levels per full cycle).
 Status: **CLOSED** — every open point from the draft arbitrated and embedded
 inline, plus a measured performance audit (§9) that supersedes the plan's
 original budget claims. Resolution priority: ease of development, maintainability,
-internal consistency, fun. Gap-closure log in §14 (32 rows).
+internal consistency, fun. Gap-closure log in §14 (35 rows).
+
+---
+
+## 0. Implementation status (verified 2026-08-05)
+
+STATUS: **all phases shipped and green.** This document is now the CONTRACT
+(what must stay true) + verification spec. A fresh model must NOT re-implement
+any of §2–§9 — it must verify (run the gates below) and maintain.
+
+Verified by running (all PASS):
+  node scripts/biome-check.mjs        → biome-check: ALL GATES PASS (11 gates)
+  node scripts/dungeon-check.mjs 40   → broken=0/40
+  node scripts/biome-light-probe.mjs  → §9 measurement tool (25 seeds)
+
+Shipped (file → what):
+- `src/core/Constants.js`: `SEQUENCE` = 10 ids; 5 new `BIOMES` entries (each
+  with `torchMode`); `CRYSTAL_CHAMBER` + `TEMPLE` room types; eligibility rows;
+  5 `BIOME_ROOM_MODIFIERS` rows; 5 `ENEMY_SPAWN_WEIGHTS` columns; `LIGHT_SOURCES.
+  CRYSTAL`/`ACID`; `PROPS.POOLS` (LAVA/ACID); `PROPS.PROPS_PER_ROOM`;
+  `ROOM_ENEMY_MODIFIERS.TEMPLE = { ARMORED: 1.2 }`; `LIGHT_CEILING` (+
+  `VAULT_ONLY_TORCH_AVG 10` / `VAULT_ONLY_TORCH_MAX 50`).
+- `src/world/BiomeSystem.js`: lazy per-biome texture cache (11 sets max, built
+  on FIRST use in `texturesFor` — the §3/§8 "run start" wording is corrected
+  here; the cache is lazy, `biomeCached` markers keep regen from disposing it).
+- `src/world/DungeonGenerator.js`: `_pickRoomType` reads eligibility +
+  `BIOME_ROOM_MODIFIERS` (no change needed).
+- `src/world/PropSystem.js`: full §5.1 catalog + §5.2 per-biome sets + §6.2
+  pool type-keying + TEMPLE/CRYSTAL_CHAMBER layouts — exact implemented recipes
+  in §16 (the contract; do not re-derive from scratch).
+- `src/systems/LightingSystem.js`: `_placeAllTorches` reads `palette.torchMode`
+  (§6.1 — the fungal color-equality hardcode is GONE); braziers read
+  `palette.brazierRooms` (`['HALL']` default; `['HALL','TEMPLE']` for
+  GOLDEN_TEMPLE — §4.1).
+- `src/core/Game.js`: `_lavaDamage` reads `PROPS.POOLS.LAVA` (§6.2 — numbers
+  identical to the old LAVA_* keys).
+
+Remaining work: none structural. Optional hardening = biome-check Gate 2b
+(§11) — assert the §3 palette VALUES for the 5 new biomes verbatim.
 
 ---
 
@@ -288,7 +326,7 @@ FINAL rulings:
 | File | Change |
 |---|---|
 | `src/core/Constants.js` | +5 `BIOMES` entries (each with `torchMode`); `torchMode` added to the 6 existing entries (FUNGAL = `'vaultOnly'`, others `'standard'`); `SEQUENCE` → 10; +2 `DUNGEON.ROOM_TYPES` (CRYSTAL_CHAMBER, TEMPLE); `ROOM_BIOME_ELIGIBILITY` rows (new rooms + ARMORY += GOLDEN_TEMPLE/EMBER_FORGE + MUSHROOM_GROVE += POISON_SWAMP); +5 `BIOME_ROOM_MODIFIERS` rows; +5 `ENEMY_SPAWN_WEIGHTS` columns; +2 `LIGHT_SOURCES` (CRYSTAL, ACID); `PROPS.POOLS` (LAVA/ACID, replaces LAVA_* keys); `PROPS.PROPS_PER_ROOM` += CRYSTAL_CHAMBER 10, TEMPLE 10; `ROOM_ENEMY_MODIFIERS.TEMPLE`; prop constants (crystal cluster, acid pool, water pool, altar, anvil); perf reference constants for the light probe (LIGHT_CEILING_AVG 154, LIGHT_CEILING_MAX 199) |
-| `src/world/BiomeSystem.js` | **No code change** — `biomeForLevel`, `SEQUENCE`, palette, and tinted-texture generation are fully data-driven; cache builds 11 sets (10 + SPECTRAL_COURT) at run start |
+| `src/world/BiomeSystem.js` | **No code change** — `biomeForLevel`, `SEQUENCE`, palette, and tinted-texture generation are fully data-driven; cache is lazy per biome (11 sets max, built on first use in `texturesFor`, `biomeCached` markers prevent regen disposal) |
 | `src/world/DungeonGenerator.js` | **No code change** — `_pickRoomType` already reads eligibility + modifiers |
 | `src/entities/SkeletonSystem.js` | **No code change** — weights keyed by `state.biome`; new columns picked up automatically. Runtime fallback `\|\| ENEMY_SPAWN_WEIGHTS.STONE` remains as a safety net; `biome-check.mjs` (§11) is the guard against missing columns |
 | `src/world/PropSystem.js` | +5 per-biome prop-set entries (§5.2); placement for crystal clusters, acid pools, water pools, altars, anvils; `lavaPools` entries gain `type`, tick reads `PROPS.POOLS[type]`; lava/wisp eligibility extensions |
@@ -357,7 +395,8 @@ lights of headroom each.
 **Enforced gate (hard, not aspirational).** `biome-check.mjs` (§11) runs a
 headless light probe at Phase 3: for every SEQUENCE biome, generate 10 seeds and
 assert `avg ≤ 154` and `max ≤ 199` (the current heaviest, frozen at Phase 0 as a
-reference constant), `torches ≤ 2` for `torchMode: 'vaultOnly'` biomes, and
+reference constant), `torchAvg ≤ 10` / `torchMax ≤ 50` for `torchMode:
+'vaultOnly'` biomes (calibrated to the existing fungal biome — see §11), and
 shadow-casters = 8. A future biome that would raise the per-level cost above the
 current ceiling fails CI-style at the gate instead of shipping a lag spike.
 
@@ -373,7 +412,7 @@ current ceiling fails CI-style at the gate instead of shipping a lag spike.
 | 4 | Acid pool overlaps exit | Excluded by placement rule (≥ 3 u, mirrors lava) |
 | 5 | Water pool overlaps exit | Kept off exit cell (2 u) for cleanliness; no hazard either way |
 | 6 | CRYSTAL_CHAMBER / TEMPLE in boss biome | Impossible — eligibility is biome-scoped; SPECTRAL_COURT rooms fall back to the arena's own layout |
-| 7 | Texture cache growth on regen | 11 sets cached at run start; `dispose()` path unchanged (`biomeCached` flag) |
+| 7 | Texture cache growth on regen | Lazy per-biome cache (11 sets max, built on first use in `texturesFor`); `dispose()` path unchanged (`biomeCached` flag) |
 | 8 | HUD / loading label width | 'CRYSTAL DEPTHS' / 'GOLDEN TEMPLE' fit existing label styling (checked at ≥ 1280 px) |
 | 9 | dungeon-check.mjs | Unaffected — no world-geometry changes; must still report broken=0/40 |
 | 10 | Elite rolls in new biomes | Unchanged: 1-in-10, elite-eligible types only (Armored/Archer/Brute/Wraith). Wraith weight 0 in all new biomes → no new elite exposure |
@@ -381,37 +420,64 @@ current ceiling fails CI-style at the gate instead of shipping a lag spike.
 | 12 | `biomeIndex` for SPECTRAL_COURT | `SEQUENCE.indexOf` = −1 (existing behavior, unchanged) |
 | 13 | ARMORY now eligible in 4 biomes | Weight pool math already recomputed per biome (§4.3); no spawn-slot change |
 | 14 | Pool tick with mixed pool types on one level | Impossible — each level has exactly one biome's pool type (POISON acid xor EMBER lava); the `type` key still makes the code future-proof |
-| 15 | torchMode refactor regresses FUNGAL torch layout | Regression-gated in Phase 3: fungal levels must keep torches in VAULT rooms only (probe asserts `torches ≤ 2` average for `vaultOnly` biomes) |
-| 16 | A future biome would exceed the measured ceiling | `biome-check.mjs` light probe fails (avg > 154 / max > 199 / vaultOnly torches > 2) — the gate is a hard CI-style failure, not a warning |
+| 15 | torchMode refactor regresses FUNGAL torch layout | Regression-gated in Phase 3: fungal levels must keep torches in VAULT rooms only (probe asserts `torchAvg ≤ 10` / `torchMax ≤ 50` for `vaultOnly` biomes — the shipped calibration, §11) |
+| 16 | A future biome would exceed the measured ceiling | `biome-check.mjs` light probe fails (avg > 154 / max > 199 / vaultOnly torchAvg > 10 or torchMax > 50) — the gate is a hard CI-style failure, not a warning |
 
 ---
 
-## 11. Verification — `scripts/biome-check.mjs` (NEW)
+## 11. Verification — `scripts/biome-check.mjs` (SHIPPED, 11 gates)
 
-Mirrors the existing scripts/ pattern (node, no deps). Gates:
+Mirrors the existing scripts/ pattern (node, no deps). Usage:
+`node scripts/biome-check.mjs [seeds]` (default 10). The gates below match the
+SHIPPED script exactly (verified green 2026-08-05); the only planned addition
+is Gate 2b.
 
 1. `BIOMES.SEQUENCE.length === 10`; every id exists as a `BIOMES` key.
 2. Every SEQUENCE biome palette has **all 9 keys** (wall, floor, ceiling, fog,
    fogDensity, ambient, ambientIntensity, torchColor, label).
-3. Every SEQUENCE biome has an `ENEMY_SPAWN_WEIGHTS` column summing to **exactly 100**.
+2b. **(PLANNED hardening)** Every SEQUENCE biome's palette VALUES match the
+    tables verbatim — for the 5 NEW biomes hardcode the §3 hex values in the
+    script (CRYSTAL_DEPTHS wall 0x3a2a4a, floor 0x2a1e35, ceiling 0x1a1425,
+    fog 0x120a20, fogDensity 0.011, ambient 0x1c1030, ambientIntensity 0.34,
+    torchColor 0xcc66ff; POISON_SWAMP …; GOLDEN_TEMPLE …; FLOODED_RUINS …;
+    EMBER_FORGE … per the §3 table). Closes the old "POISON_SWAMP never
+    value-checked" gap at the constants level.
+3. Every SEQUENCE biome has an `ENEMY_SPAWN_WEIGHTS` column of length 7
+   (`ENEMY_TYPES.length`) summing to **exactly 100**.
 4. Every SEQUENCE biome has a `BIOME_ROOM_MODIFIERS` entry (may be `{}`).
 5. Every `ROOM_BIOME_ELIGIBILITY` value is `'all'` or an existing biome id;
-   every SEQUENCE biome appears in ≥ 1 non-`'all'` eligibility list; every room
-   type appears in ≥ 1 eligibility list.
-6. Per-biome eligible-room weight sum ≥ 100 — recompute §4.3 table from
+   every room type appears in ≥ 1 eligibility list; every NEW biome except
+   FLOODED_RUINS (its §4.2 exemption: reuses VAULT/CHAMBER/HALL, no signature
+   room) appears in ≥ 1 non-`'all'` list.
+6. Per-biome eligible-room weight sum ≥ 100 — recomputed from
    `DUNGEON.ROOM_TYPES` + `ROOM_BIOME_ELIGIBILITY` + `BIOME_ROOM_MODIFIERS`.
 7. Every room type has a `PROPS.PROPS_PER_ROOM` entry.
-8. Every `LIGHT_SOURCES` id referenced by prop placement exists.
-9. `ROOM_ENEMY_MODIFIERS.TEMPLE` exists.
-10. **Light probe** (10 seeds per SEQUENCE biome — the CI gate; same placement
-    math as §9's 25-seed measurement):
-    `avg ≤ 154` and `max ≤ 199` (LIGHT_CEILING constants); `torches ≤ 2` average
-    for `torchMode: 'vaultOnly'` biomes; shadow-caster count = 8.
-11. Existing gate: `node scripts/dungeon-check.mjs` → broken=0/40.
+8. Every referenced `LIGHT_SOURCES` id exists (CANDLE, LAVA, MUSHROOM, WISP,
+   ICE, CRYSTAL, ACID).
+9. `ROOM_ENEMY_MODIFIERS.TEMPLE` exists and `ARMORED === 1.2`.
+10. **Light probe** (SEEDS argument, default 10; replicates the REAL placement
+    rules — torches per exposed edge @ spacing 16, braziers per HALL, crystals
+    per CHAMBER, 1 chain light per HALL/VAULT/ARMORY, candles per LIBRARY 6 /
+    CRYPT 4 / HALL 2 / ARMORY 2, wisps/mushrooms/pools/lamp/altar per biome):
+    `avg ≤ LIGHT_CEILING.AVG` (154) and `max ≤ LIGHT_CEILING.MAX` (199) for
+    every biome; `torchAvg ≤ VAULT_ONLY_TORCH_AVG` (10) and
+    `torchMax ≤ VAULT_ONLY_TORCH_MAX` (50) for `torchMode: 'vaultOnly'` biomes.
+    NOTE: the vaultOnly thresholds are CALIBRATED TO THE EXISTING fungal biome
+    (measured avg ~9 torches) — the earlier plan text "torches ≤ 2 average"
+    was superseded by this measured calibration; do NOT lower them.
+11. Existing gate: `node scripts/dungeon-check.mjs 40` → broken=0/40.
+
+Also: `node scripts/biome-light-probe.mjs` reproduces the §9 measured table
+(25 seeds) — the §9 numbers came from this tool; rerun it after any lighting
+change and confirm the new-biome rows stay ≤ the current heaviest biome.
 
 ---
 
 ## 12. Implementation phases (commit per phase)
+
+STATUS (2026-08-05): A0–A4 SHIPPED; only the final-gates phase remains as a
+recurring verification (run the three scripts). The phase table below is kept
+as the historical contract; a fresh model must NOT re-do shipped phases.
 
 | Phase | Scope | Files | Gate |
 |---|---|---|---|
@@ -479,14 +545,97 @@ hostile consistency review, with the arbitration applied.
 | 29 | Perf claims unverifiable | `biome-check.mjs` gains a headless light probe (10 seeds/biome): avg ≤ 154, max ≤ 199, vaultOnly torches ≤ 2, shadow-casters = 8 — hard CI-style gate (§11, §12 P3). |
 | 30 | Phase 1 palette probe skipped POISON_SWAMP (level 13 — its only rung per cycle) | Probe list extended to 12, 13, 15, 17, 19, 22: all 5 new biomes + the STONE cycle-restart rung get §3 value-checks (§12 P1). |
 | 31 | Probe seed counts differ (25 vs 10) | Clarified: 25 = §9 measurement pass; 10 = §11 CI gate. Same placement math; the gate is a faster re-check, not a re-measurement (§9, §11). |
-| 32 | Texture-cache wording ("grows to 11" vs "11 at run start") | Harmonized: cache builds 11 sets (10 + SPECTRAL_COURT) at run start; `dispose()` path unchanged (§8, §10 #7). |
+| 32 | Texture-cache wording ("grows to 11" vs "11 at run start") | Corrected to the CODE reality: the cache is LAZY — `BiomeSystem.texturesFor` builds each set on first use (11 sets max), `biomeCached` markers keep regen from disposing it (§3, §8, §10 #7). |
+| 33 | Status was unverifiable by a fresh model | §0 status map (verified 2026-08-05): all biome phases shipped; biome-check 11/11 green; doc converted to contract + verification mode (§0). |
+| 34 | Gate calibration drift — plan said "vaultOnly torches ≤ 2 avg" but the shipped gate uses 10/50 | §11 corrected to the shipped `LIGHT_CEILING.VAULT_ONLY_TORCH_AVG 10 / MAX 50` (calibrated to the existing fungal biome, measured avg ~9); the "≤ 2" text was superseded (§11). |
+| 35 | New-biome palette VALUES never asserted (only key presence) | Planned Gate 2b: hardcode the §3 hex values for the 5 new biomes in biome-check.mjs (§11). |
 
 ---
 
 ## 15. Verification summary for implementer
 
-Before starting: `node scripts/dungeon-check.mjs` must report broken=0/40
-(baseline). After Phase 0: `node scripts/biome-check.mjs` green (1–11, incl. the
-light probe: every biome avg ≤ 154 / max ≤ 199, vaultOnly torches ≤ 2). Every
-phase ends with a commit (repo-local convention: commit in the consolidated
-games-benchmarks parent repo, plan file at `docs/BIOME_EXPANSION_PLAN.md`).
+Status (verified 2026-08-05): all phases shipped. Verify, don't rebuild:
+`node scripts/dungeon-check.mjs 40` → broken=0/40; `node scripts/biome-check.mjs`
+→ ALL GATES PASS (1–11; default 10 seeds); `node scripts/biome-light-probe.mjs`
+→ §9 measured table reproduced. The single optional hardening is biome-check
+Gate 2b (§11) — assert the §3 palette values verbatim. Any future lighting
+change must keep every biome's light probe ≤ the current heaviest biome
+(LIGHT_CEILING.AVG 154 / MAX 199; vaultOnly torchAvg ≤ 10, torchMax ≤ 50).
+Commits go in the consolidated games-benchmarks parent repo, plan file at
+`docs/BIOME_EXPANSION_PLAN.md`.
+
+---
+
+## 16. Geometry contract — implemented prop/room recipes (do not re-derive)
+
+These are the EXACT recipes in `PropSystem.js` today (verified 2026-08-05).
+Treat them as the contract: if you touch any of these, re-run biome-check and
+the light probe. All dimensions in units; world y=0 is the floor.
+
+### 16.1 Prop recipes (PropSystem.js)
+
+- **Crystal cluster** (`_spawnCrystalCluster`): MeshStandardMaterial { color
+  0xcc88ff, emissive 0xcc66ff, emissiveIntensity 1.4, transparent, opacity 0.8,
+  roughness 0.2 }. 3–5 cones: ConeGeometry(r 0.10–0.20, h 0.5–1.2, 5), position
+  = (x + (rnd−0.5)·1.5, h/2, z + (rnd−0.5)·1.5), rotX ±0.2, rotY random. One
+  PointLight LIGHT_SOURCES.CRYSTAL (0xcc66ff, 3.0, 11, 1.2) at (x, 1.0, z).
+- **Acid pool** (`_spawnLava(x, z, 'ACID')`): MeshBasicMaterial { color
+  PROPS.POOLS.ACID.color (0x88ff22), transparent, opacity 0.85, depthWrite
+  false }; CircleGeometry(r 1.5–2.5, 16) rotX −π/2 at y 0.02; PointLight
+  LIGHT_SOURCES.ACID (0x88ff22, 4.5, 16, 1.2) at (x, 0.6, z). Registered in
+  `lavaPools` as { x, z, type: 'ACID', radius: PROPS.POOLS.ACID.radius (1.2) } —
+  hazard ticks at 1 dmg / 0.8 s within 1.2 u (same numbers as LAVA).
+- **Water pool** (`_spawnWater`): ONE InstancedMesh per level (capacity 24) of
+  PlaneGeometry(1, 1) rotX −π/2, MeshBasicMaterial { color 0x1a5a5a, opacity
+  0.45, depthWrite false }; instance scale 1.5–3.0 at y 0.02. Global pulse:
+  `_waterMat.opacity = 0.45 + sin(time·3 + phase)·0.08`. No hazard, no light.
+- **Altar** (`_spawnAltar`): stone MeshStandard { 0x8a7a4a, rough 0.8 } base
+  Box(0.8, 0.5, 1.2) @ y 0.25; gold MeshStandard { 0xd8b44a, rough 0.3, metal
+  0.8 } trim Box(0.86, 0.08, 1.26) @ y 0.5; 2 flames Cone(0.05, 0.14, 6)
+  MeshBasic 0xffcc66 @ (±0.2, 0.62, 0); PointLight (0xffcc66, 2.0, 8, 1.5) at
+  (x, 1.0, z). Group @ (x, 0, z).
+- **Anvil** (`_spawnAnvil`): MeshStandard { 0x4a4a52, rough 0.4, metal 0.8 };
+  body Box(0.5, 0.3, 0.35) @ y 0.25; horn Cone(0.15, 0.3, 8) rotZ −π/2 @
+  (0.35, 0.38, 0); base Cyl(0.28, 0.32, 0.12, 8) @ y 0.06. Group @ (x, 0, z),
+  rotY random. Static.
+- **Stalactite** (`_spawnStalactite`): ONE InstancedMesh per level (capacity
+  60) of ConeGeometry(0.15, 1, 6); tint = 0x6a4a8a (CRYSTAL_DEPTHS) or 0x6a6a2a
+  (POISON_SWAMP); MeshStandard { tint, rough 0.85 }. Each instance: h 0.6–1.2,
+  position (x, WORLD.WALL_HEIGHT − h/2, z), rotY random, scale (0.5–1.0, 1, 1).
+- **Toxic mushroom** (POISON_SWAMP recolor in `_spawnMushroom`): stem
+  MeshStandard 0x8a7a5a; cap MeshStandard { color 0xccff44, emissive 0xccff44,
+  emissiveIntensity 2.0, rough 0.6 } Cone(0.18, 0.1, 8); 3–5 per cluster;
+  PointLight LIGHT_SOURCES.MUSHROOM at (x, 0.5, z).
+- **Aqua wisp** (FLOODED_RUINS): `_placeWisps(room, 1, 0x55ddcc)` — 1 per room;
+  sprite additive 0.5 scale, core sphere, PointLight LIGHT_SOURCES.WISP;
+  patrols a 2 u circle at y 1.2 around the room center, bounce on empty cells.
+- **Lava pool in EMBER_FORGE**: identical to VOLCANIC (`_spawnLava(x, z,
+  'LAVA')`) — color 0xff5522, same hazard. No recolor variant (per §5.2).
+
+### 16.2 Room layout recipes (PropSystem._placeRoomProps)
+
+- **CRYSTAL_CHAMBER**: exactly 3 crystal clusters via
+  `_randomPointInRoomClear(room, 1.2)` (margin 1.2 u, spawn/exit cleared) + 1
+  stalactite via `_randomPointInRoom(room, 1.2)`. No pillars.
+- **TEMPLE**: 2 pillars (`_placePillars(room, 2)` — Box(0.8, WALL_HEIGHT, 0.8)
+  gold tint 0x8a7a4a, collision AABBs ±0.4) + 1 altar centered on the BACK
+  wall: `_spawnAltar(centerX, (room.cz + room.h) * cs − 1.2)`. Plus 1 lit
+  brazier from LightingSystem (`brazierRooms: ['HALL','TEMPLE']` for
+  GOLDEN_TEMPLE) and 1 chandelier light (LightingSystem HALL/VAULT/ARENA/TEMPLE
+  rule — see §16.3).
+- Pillar tint rule (`_placePillars`): GOLDEN_TEMPLE 0x8a7a4a, FLOODED_RUINS
+  0x3a5a5e, else 0x4a4a5a.
+
+### 16.3 Lighting rules already wired (LightingSystem.js)
+
+- Torches: `_placeAllTorches` reads `palette.torchMode` — `'standard'` = every
+  exposed grid edge (spacing 16, torch y 2.5); `'vaultOnly'` = VAULT rooms
+  only. Color = `palette.torchColor` (flame + light + glow).
+- Braziers: `_placeBraziers` reads `palette.brazierRooms || ['HALL']` — one
+  brazier (bowl Cyl 0.55/0.4 × 0.45, flame Cone 0.22 × 0.9, PointLight
+  BRAZIER 5/18/1.2, smoke source) per room top of the listed types.
+- Crystal lamps: CHAMBER rooms get 1 cluster (3–5 cones, `LIGHTING.CRYSTAL_*`
+  hues/light) — pre-existing, unchanged; new CRYSTAL (violet) lights come from
+  the CRYSTAL_DEPTHS cluster prop (§16.1), not this loop.
+- Shadow budget: nearest-8 torches only (`TORCH_SHADOW_COUNT`); every new
+  light is `castShadow = false`.

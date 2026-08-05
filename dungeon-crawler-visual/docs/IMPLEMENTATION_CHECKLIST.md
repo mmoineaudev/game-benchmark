@@ -64,7 +64,8 @@ hard stop — fix, commit, continue.
       to CRYSTAL_DEPTHS, POISON_SWAMP, GOLDEN_TEMPLE, FLOODED_RUINS, EMBER_FORGE,
       STONE (cycle restart) per the corrected §2 table; wall/floor/ceiling/fog/
       ambient match §3 for each new biome
-- [x] `BiomeSystem` texture cache builds 11 sets at run start; regen reuses cache
+- [x] `BiomeSystem` texture cache is LAZY — builds each biome set on first use
+      (11 sets max); regen reuses cache
       (no leak via the dispose path) (§3) — data-driven, no code change;
       cache growth verified by inspection (texturesFor keys off BIOMES)
 - [x] **Gate A1:** probe green; `biome-check.mjs` green
@@ -177,22 +178,31 @@ hard stop — fix, commit, continue.
       re-synced on `level:start` (§2, §7)
 - [x] HUD: `#souls-line` (`Souls N · Tier T · M/100`, `MAX` at tier 5) +
       `#tier-pips` (5 pips, lit = earned) in `index.html`; ammo label renamed
-      SOULS → ORBS (two counters, two labels) (§7)
+      SOULS → ORBS (two counters, two labels) (§7) — SHIPPED but SUPERSEDED
+      by the total-only ruling (B4', §7.1)
 - [x] **Gate B1:** headless probe — tier damage 2/2/3 → 7/7/8, range ×1.2 at
       tier 5, scale clamp 5.0, weaponTier 237→2/500→5/999→5; weapon-check 1–8
       green; dungeon-check 0/40
 - [x] **Commit B1**
 
-### B2. Phase 2 — Visuals T1–T2 (plan §4, §12 P2)
+### B2. Phase 2 — Distinct models T1–T2 (plan §4 "Arsenal of Ascension", §12 P2)
 
-- [ ] Tier 1: bronze fuller/edge recolor 0xd8a060; blade + tip meshes scaled
-      to BLADE_LENGTH[1] = 0.81; TIP_LOCAL.y = 0.64 (§4)
-- [ ] Tier 2: 2 emissive blue stripe planes (0x4ac8ff) on blade faces + hilt
-      glow band; blade length 0.86; TIP_LOCAL.y = 0.68 (§4)
-- [ ] `TIP_LOCAL` derived from `BLADE_LENGTH[tier] × 0.79` at every tier
-      (trails + hit arcs follow the tip) (§4)
-- [ ] **Gate B2:** console/visual probe — scale values match table; straight
-      geometry; floating weapon (no hands); layer-2 self-lit preserved
+NOTE (2026-08-05): the OLD B2 trims (bronze fuller recolor, blue stripe
+planes, torus hilt band) ARE in the code today — they are REPLACED by the
+distinct-model redesign. Do not "finish" the old items; delete them.
+
+- [ ] §4.3 rewrite: `_applyForm` dispatch + per-tier builders
+      (`_formCleaver` … `_formLightsaber`), `_formMeshes[tier]` registry,
+      one-form-visible rule, `TIP_LOCAL = BLADE_LENGTH[tier] × 0.79` (§4.2/§4.3)
+- [ ] `_formArmingSword` (T1): steel blade Box(0.05, 0.40, 0.012) + cone tip +
+      fuller + brass crossguard Box(0.16, 0.03, 0.05) + grip + brass pommel
+      (§4.2 T1)
+- [ ] `_formRunicGreatsword` (T2): wide steel blade + 3 runes Box(0.004, 0.09,
+      0.002) MeshBasic 0x4ac8ff + long grip + rectangular guard; DELETE the
+      old stripe planes + torus hilt band (weapon-check gate 10 enforces)
+      (§4.2 T2)
+- [ ] **Gate B2:** weapon-check gates 9–10 green; visual probe — crossguard +
+      runes visible, torus gone, straight geometry, layer-2 self-lit
 - [ ] **Commit B2**
 
 ### B3. Phase 3 — T3–T4 energy blade + arc ladder + proc fix (plan §5, §6, §12 P3)
@@ -276,19 +286,22 @@ hard stop — fix, commit, continue.
 
 ## Open Issues
 
-None — both source plans are CLOSED with zero TBDs (biome plan §14: 32 rows;
-weapon plan §14: 30 rows). Post-close audit closed 6 more points: POISON_SWAMP
-added to the Phase 1 palette probe, seed-count (25 vs 10) clarified, cache
-wording harmonized, HUD souls line reduced to total-only (user ruling), pips
-removed, weapon-check item 7 arbitrated, line refs made symbolic. If a phase
-gate surfaces a contradiction, fix the plan first (commit), then the code.
+Biome plan: SHIPPED and green (verified 2026-08-05) — biome-check 11/11,
+dungeon-check 0/40, biome-light-probe reproduces §9. §14 = 35 rows. Only
+optional item: biome-check Gate 2b (hardcode §3 palette values) (§11).
+Weapon plan: phases 0–1 + arcs + toast + electric fix SHIPPED (weapon-check
+8/8 green); §14 = 36 rows. REMAINING: B2/B3 distinct weapon models (Arsenal
+of Ascension, §4.2), B4 HUD total-only (§7.1), B5 gate updates (gates
+7/9/10/11) + full-descend. If a phase gate surfaces a contradiction, fix the
+plan first (commit), then the code.
 
 ## Testing Items
 
 - `node scripts/dungeon-check.mjs` → broken=0/40 (every phase)
 - `node scripts/biome-check.mjs` → gates 1–11 (A0 onward)
 - `node scripts/weapon-check.mjs` → gates 1–8 (B0 onward)
-- Light probe (10 seeds/biome): avg ≤ 154, max ≤ 199, vaultOnly torches ≤ 2
+- Light probe (10 seeds/biome): avg ≤ 154, max ≤ 199, vaultOnly torches
+  avg ≤ 10 / max ≤ 50 (calibrated to existing fungal)
   (A3, then every biome phase)
 - Headless DOM probes for `#souls-line`, `#tier-pips`, biome label
 - `renderer.info`: draw calls ≤ 120, prop instances ≤ 400, lights ≤ ceiling,

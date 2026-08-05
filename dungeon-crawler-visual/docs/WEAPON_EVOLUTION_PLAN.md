@@ -6,7 +6,47 @@ Implementation plan for a weapon-evolution system in the dungeon crawler at
 Status: **CLOSED** — every open point from the draft arbitrated and embedded
 inline; a latent electric-proc bug found and owned (§6). Resolution priority:
 ease of development, maintainability, internal consistency, fun. Gap-closure log
-in §12 (30 rows).
+in §12 (36 rows).
+
+---
+
+## 0. Implementation status (verified 2026-08-05)
+
+STATUS: phases 0–1 SHIPPED and green. What remains is the distinct-model
+redesign (§4 — NEW, replaces the shipped progressive-trims form), the HUD
+total-only ruling (§7.1 — NOT yet applied: the HUD still shows tier/progress),
+and the gate updates (§11). Do NOT re-implement shipped parts; change exactly
+what §4.3/§7.1/§11 specify.
+
+Verified by running (all PASS):
+  node scripts/weapon-check.mjs   → weapon-check: ALL GATES PASS (8 gates)
+  node scripts/dungeon-check.mjs 40 → broken=0/40
+
+Shipped (file → what, do not touch unless §4.3/§7.1 says so):
+- `Constants.js`: `EVOLUTION` block; `weaponTier()`; `swordHitDamage()`;
+  `SWORD.ELECTRIC_CHANCE`/`ELECTRIC_RANGE` hoisted to the `SWORD` level (§6 fix).
+- `GameState.js`: `soulsEarned` + `weaponTier` fields (constructor defaults 0).
+- `OrbSystem.js`: `soulsEarned++` on the orb-pickup branch only (line ~155).
+- `PlayerSword.js`: `setTier(tier)` → `_applyForm(tier)` (SHIPPED FORM = the old
+  progressive-trims design: T1 bronze fuller, T2 blue stripes + torus hilt band,
+  T3+ energy blade + core + glow, T5 blade light + crackle). THIS IS REPLACED
+  by §4.2/§4.3. Also `currentDamage` via `swordHitDamage`; `range` includes
+  `RANGE_PER_TIER`; `scale` clamped at `MAX_TOTAL_SCALE` (all keep).
+- `Game.js`: `_checkWeaponEvolution()` (toast + `flashBlade()` + `hitStop 0.1`),
+  `_emitLevelStart` → `sword.setTier(state.weaponTier)`, arc pool
+  `_buildArcBolts`/`_spawnArcBolts`/`_updateArcBolts`/`_nearestAlive`
+  (lines ~806–887), `_electricChain` proc fixed and firing, `_updateHUD`
+  souls-line block (lines ~1595–1608 — REPLACED by §7.1).
+- `index.html`: `#souls-line` (default `Souls 0 · Tier 0 · 100/100`) +
+  `#tier-pips` (REPLACED by §7.1). Slot label still reads "Dagger".
+- `scripts/weapon-check.mjs`: gates 1–6 + 8 pass; gate 7 asserts `#tier-pips`
+  EXISTS — updated by §11 (must assert its ABSENCE after §7.1).
+
+Remaining work (the implementable delta):
+1. §4.2/4.3 — six distinct weapon models (T1–T4 are new; T0/T5 unchanged).
+2. §7.1 — HUD souls line = total only; delete tier text + pips.
+3. §11 — gates 7 (inverted), 9 (distinct silhouettes), 10 (straightness),
+   11 (HUD grep). Phases in §12 (B2–B5).
 
 ---
 
@@ -98,24 +138,115 @@ distance: 6, decay: 1.6 } }`
 
 ---
 
-## 4. Aesthetics — per-tier form (FINAL)
+## 4. Weapon models — Arsenal of Ascension (FINAL)
 
-All geometry stays primitive-based, straight, self-lit (layer 2), no shadows.
+USER RULING (2026-08-05): every tier is a DIFFERENT weapon, not a trim of the
+same dagger. Cosmetic only — the damage ladder, range, arc table, combo rig,
+and TIP_LOCAL math (§3/§5) are untouched. Narrative arc: makeshift cleaver →
+proper steel → enchanted steel → soul-crystal → pure soul-energy → perfected
+light. Every blade stays STRAIGHT (no bends), FLOATING (no hands),
+primitive-based, self-lit on layer 2, no shadow casting, ≤ 6 meshes per form,
+one form visible at a time.
 
-| Tier | Blade length | Change |
-|---|---|---|
-| 0 | 0.76 | current executioner blade (gunmetal 0x2a2d33 + brass pommel) — byte-identical |
-| 1 | 0.81 | bronze edge: fuller material recolored 0xd8a060 (was bright silver); blade + tip meshes scaled to length |
-| 2 | 0.86 | + 2 emissive blue stripe planes (0.006 × 0.40, 0x4ac8ff, emissive 1.6) on both blade faces; hilt glow band (thin torus, 0x2a6a9a emissive) |
-| 3 | 0.92 | **energy blade**: steel blade + tip meshes hidden; replaced by ONE straight additive cylinder (0.045 × 0.92, 0x66eeff, opacity 0.85, depthWrite false) + white-hot core line (0.012 × 0.85, 0xfff4d8, MeshBasic). Blade color no longer follows the orb-size `BLADE_COLORS` ladder — the evolution form fully owns blade color from here on (the orb ladder keeps driving size/range only) |
-| 4 | 0.96 | core brightens (emissive 2.0), glow sprite grows 0.3 → 0.5, hum pulse: sprite scale ±5% @ 3 Hz |
-| 5 | 1.00 | **full lightsaber**: blade 0x66eeff → 0x88ffff, white core, idle crackle (≤ 3 pooled additive arc sprites flickering along the blade, cosmetic), + blade point light `EVOLUTION.T5_BLADE_LIGHT` (layer 0, camera-attached — it lights the WORLD around the player in cyan; the sword itself stays self-lit) |
+### 4.1 Model ladder (identity per tier)
 
-`TIP_LOCAL.y = BLADE_LENGTH[tier] × 0.79` drives trails and hit arcs at every
-tier (the tip is where the arc trace spawns).
+| Tier | Souls | Model | Blade len | Silhouette | Color identity |
+|---|---|---|---|---|---|
+| 0 | 0–99 | Executioner's Cleaver (unchanged) | 0.76 | broad short single-edge, NO guard | gunmetal 0x2a2d33 + brass pommel |
+| 1 | 100–199 | Knight's Arming Sword | 0.81 | classic crossguard + central fuller | silver steel + bronze crossguard |
+| 2 | 200–299 | Runic Greatsword | 0.86 | long two-hand grip, wide blade, 3 glowing runes | steel + runes 0x4ac8ff |
+| 3 | 300–399 | Crystal Soulblade | 0.92 | faceted violet crystal shards on a straight white core | crystal 0xcc88ff / core 0xfff4d8 |
+| 4 | 400–499 | Soulfire Greatblade | 0.96 | smooth white-hot energy blade, vented emitter | energy 0xddddff / core 0xfff4d8 |
+| 5 | 500+ | Lightsaber (unchanged) | 1.00 | perfect straight energy cylinder | 0x88ffff / white core |
 
-Rest pose, trail colors, and combo animation are unchanged at every tier (the
-form swaps meshes; the rig and state machine do not move).
+Color ramp across the run: gunmetal → bronze → blue runes → violet crystal →
+white-hot → cyan. Forms are cumulative and never revert.
+
+### 4.2 Geometry recipes (exact; group origin = grip, blade along +y, faces ±z)
+
+Conventions: all dimensions in units (u); `L = EVOLUTION.BLADE_LENGTH[tier]`;
+materials — reuse the existing `bladeMat` (0x2a2d33 gunmetal), `steelMat`
+(0x9aa0aa, tintable by the orb ladder), `brassMat` (0xd8b44a), `dark`
+(grip/wood), `fullerMat` (0xd8dce2) where possible; new materials pushed to
+`this._mats` for `dispose()`. Every mesh: `layers.set(2)`, `castShadow = false`.
+
+T0 (byte-identical to today — `PlayerSword._build`):
+  blade Box(0.045, 0.42, 0.08) bladeMat @ y 0.21; tip Cone(r 0.05, h 0.34, 4)
+  bladeMat @ y 0.56, rotY π/4, scale(0.6, 1, 1); fuller Box(0.012, 0.4, 0.006)
+  fullerMat @ (0, 0.21, 0.033); grip Cyl(0.026, 0.024, 0.18, 8) dark @ y −0.09;
+  collar Cyl(0.028, 0.03, 0.03, 8) dark @ y 0; pommel Sphere(0.045, 8, 6)
+  brassMat @ y −0.21.
+
+T1 Knight's Arming Sword (replaces the T0 blade block when tier ≥ 1):
+  blade Box(0.05, 0.40, 0.012) steelMat @ y 0.20 (orb ladder keeps tinting);
+  tip Cone(r 0.06, h 0.30, 4) steelMat @ y 0.62, rotY π/4, scale(0.55, 1, 1)
+  (tip reaches 0.77 ≥ TIP_LOCAL 0.64); fuller Box(0.01, 0.34, 0.004) fullerMat
+  @ (0, 0.20, 0.024); crossguard Box(0.16, 0.03, 0.05) brassMat @ y 0;
+  grip Cyl(0.022, 0.02, 0.16, 8) dark @ y −0.08; pommel Sphere(0.04, 8, 6)
+  brassMat @ y −0.18.
+
+T2 Runic Greatsword (adds to T1 skeleton — wider, longer, runes):
+  blade Box(0.055, 0.44, 0.014) steelMat @ y 0.22; tip Cone(r 0.065, h 0.32, 4)
+  steelMat @ y 0.68, rotY π/4, scale(0.5, 1, 1); 3 runes: Box(0.004, 0.09,
+  0.002) MeshBasic 0x4ac8ff @ (0, 0.16 / 0.28 / 0.40, 0.026) — straight, on the
+  +z face (this replaces the old stripe planes + torus hilt band; the torus is
+  REMOVED); crossguard Box(0.22, 0.035, 0.06) bladeMat @ y 0; grip
+  Cyl(0.026, 0.024, 0.22, 8) dark @ y −0.11 (long two-hand grip); pommel
+  Cyl(0.035, 0.035, 0.06, 8) brassMat @ y −0.24.
+
+T3 Crystal Soulblade (steel hidden; crystal takes over — form owns color):
+  spine Box(0.025, 0.52, 0.025) crystalMat @ y 0.26; 4 facet shards: Cone(
+  r 0.035, h 0.22–0.30, 5) crystalMat @ y 0.12 / 0.28 / 0.44 / 0.60, x jitter
+  ±0.015, rotZ ±0.1 (straight segments — jagged silhouette, no bends); core
+  Cyl(0.006, 0.006, 0.90, 6) MeshBasic 0xfff4d8 @ y 0.45 (tip 0.90 ≥ 0.727);
+  emitter grip Cyl(0.024, 0.028, 0.16, 8) dark @ y −0.08; collar as T0.
+  crystalMat = MeshStandardMaterial({ color 0xcc88ff, emissive 0xcc66ff,
+  emissiveIntensity 1.4, transparent, opacity 0.8, roughness 0.2 }) — mirrors
+  the existing `_spawnCrystalCluster` material.
+
+T4 Soulfire Greatblade (energy form):
+  blade Cyl(0.03, 0.03, 0.92, 8) energyMat @ y 0.46 (base at 0, tip 0.92);
+  core Cyl(0.008, 0.008, 0.88, 6) MeshBasic 0xfff4d8 @ y 0.44; 2 vent fins
+  Box(0.02, 0.1, 0.02) bladeMat @ (x ±0.035, y 0.02), rotZ ∓0.35 (straight
+  angled — emitters); emitter hilt Cyl(0.026, 0.03, 0.14, 8) dark @ y −0.07;
+  glow sprite scale 0.5, opacity 0.35 (existing `_bladeGlow`, already built).
+  energyMat = MeshBasicMaterial({ color 0xddddff, transparent, opacity 0.9,
+  blending Additive, depthWrite false }).
+
+T5 Lightsaber (unchanged — keep the current T3+ energy-blade block at tier 5:
+  blade 0x88ffff, core, `_bladeGlow` 0x88ffff, `bladeLight`, crackle pool).
+
+Shared rules:
+- `TIP_LOCAL.set(0, L * 0.79, 0.02)` for every tier — trails/arcs need no change.
+- `BLADE_COLORS` tints `bladeMat`/`steelMat` ONLY while `tier < 3` (T3+ owns
+  color) — existing rule, keep.
+- `setOrbCount`/`_rangeScale`/`MAX_TOTAL_SCALE` clamp: unchanged (group scale
+  still drives overall size; form geometry only carries the silhouette).
+- `flashBlade()` per form: steel forms flash `bladeMat.emissive` 0xffdd88;
+  energy forms (T3+) flash `material.color` 0xffdd88 (current behavior — keep).
+
+### 4.3 Build-function contract (replaces the shipped `_applyForm` internals)
+
+1. Name the per-tier builders `_formCleaver()`, `_formArmingSword()`,
+   `_formRunicGreatsword()`, `_formCrystalSoulblade()`, `_formSoulfireGreatblade()`,
+   `_formLightsaber()`. Each is idempotent (creates its meshes once on first
+   call, records them in `this._formMeshes[tier]`, tags them layer 2 / no
+   shadow, pushes new materials to `this._mats`).
+2. `_applyForm(tier)` becomes a dispatch: for t in 0..5, hide every mesh in
+   `_formMeshes[t]` unless t === tier, then call the tier builder (ensures
+   meshes exist) and show its set; update `_tipLocal`. Steel-group meshes may
+   be shared between T0–T2 only if the silhouette differs by ADDED meshes
+   (T1/T2 build on T0's grip/pommel pattern but must swap the blade block —
+   see 4.2) — the point is a distinct silhouette per tier, not recolors.
+3. The old lazy `tier >= N` stripe/torus/energy branches are deleted (their
+   meshes either move into the new builders or vanish; the torus hilt band is
+   removed entirely — no curved primitives in any form).
+4. Keep `setTier(tier)` clamp, `range`, `currentDamage`, `scale`, hum pulse
+   (T4 — retarget it to `_formSoulfireGreatblade` core), crackle (T5), and
+   `update()` calls. `dispose()` must dispose `_formMeshes` too.
+
+### 4.4 Perf (unchanged): ≤ 6 meshes/form; +0 textures; draw calls ≤ +4 vs T0;
+one form visible at a time; all new materials pooled into `_mats`.
 
 ---
 
@@ -172,6 +303,32 @@ this fixed proc.
   line reads `Souls` (lifetime) — two counters, two labels, both real state.
 - All elements are static-positioned divs in `index.html`; no new framework.
 
+### 7.1 Exact change (index.html + Game.js — NOT yet applied, verified 2026-08-05)
+
+index.html — replace the current `#vp-souls` block (lines ~304–309):
+
+    <div id="vp-souls">
+      <div class="souls"><span class="lbl">ORBS</span><span id="orb-count">0</span></div>
+      <div id="orb-scale"></div>
+      <div id="souls-line">Souls 0</div>
+    </div>
+
+  (delete the `#tier-pips` div entirely; default `#souls-line` content is
+  exactly `Souls 0`. Keep the `#souls-line` CSS rule — gold #9a8a5c, 16px,
+  ds-font-body — and DELETE the `#tier-pips` CSS rules, lines ~73–74.)
+
+Game.js `_updateHUD()` — replace lines ~1595–1608 (the souls-line + tier-pips
+blocks) with exactly:
+
+    if (this._soulsLineEl) {
+      this._soulsLineEl.textContent = `Souls ${this.state.soulsEarned || 0}`;
+    }
+
+  (remove the tier/progress/MAX logic and the `_tierPipsEl` block; the
+  `#souls-line` color stays CSS-driven. In the constructor, the
+  `this._tierPipsEl = document.getElementById('tier-pips')` line (line ~37)
+  can stay — it will be null — but it must NOT be re-added to index.html.)
+
 ---
 
 ## 8. Integration surface (complete)
@@ -181,8 +338,8 @@ this fixed proc.
 | `src/core/Constants.js` | NEW `EVOLUTION` block (§3); hoist `SWORD.ELECTRIC_CHANCE`/`ELECTRIC_RANGE` to `SWORD` level (§6) |
 | `src/core/GameState.js` | +`soulsEarned`, +`weaponTier` (constructor params, default 0) |
 | `src/entities/OrbSystem.js` | +`state.soulsEarned++` on the orb-pickup branch (NOT buff/health pickups) |
-| `src/entities/PlayerSword.js` | `evolve(tier)`: form build per tier (T3+ energy blade swap, stripes, glow, crackle, blade light), `evolveScale` in the scale getter, arc-bolt emission hooks, `swordHitDamage` consumer side |
-| `src/core/Game.js` | `swordHitDamage(step, tier)` applied in the hit path; arc spawning (pooled, Game-managed like `_electricChain`); electric proc references fixed; evolution toast/flash/hit-stop on threshold crossing; HUD update |
+| `src/entities/PlayerSword.js` | §4.3 rewrite: `_applyForm` dispatch + per-tier builders (`_formCleaver`…`_formLightsaber`); `setTier`/`range`/`currentDamage`/`scale`/`dispose` updated per §4.3; hum pulse retargeted to T4 core; crackle + blade light stay T5-only |
+| `src/core/Game.js` | `swordHitDamage(step, tier)` applied in the hit path (SHIPPED); arc spawning pooled & Game-managed (SHIPPED, lines ~806–887); electric proc references fixed (SHIPPED); evolution toast/flash/hit-stop on threshold crossing (SHIPPED); `_updateHUD` souls-line = total-only (§7.1) |
 | `index.html` | +souls line (total only) |
 | `scripts/weapon-check.mjs` | NEW — validation (§11) |
 | `docs/SPEC.md` | unchanged (separate plan, same convention as the biome plan) |
@@ -234,22 +391,39 @@ Blade light only exists at tier 5 and is disposed/rebuilt with the form.
 ## 11. Verification — `scripts/weapon-check.mjs` (NEW)
 
 1. `EVOLUTION` block complete; every table value finite (no NaN — guards the
-   same class of bug as §6).
+   same class of bug as §6). — SHIPPED (gate passes)
 2. Tier math: `tier(souls)` for 0, 99, 100, 199, 200, 500, 999 → 0, 0, 1, 1, 2,
-   5, 5; cap at MAX_TIER.
+   5, 5; cap at MAX_TIER. — SHIPPED
 3. Damage ladder: `swordHitDamage(step, tier)` = 2/2/3 + tier → 7/7/8 at tier 5;
    brute breakpoint: tier 5 needs 2 hits on HP 8 (7+7), armored 5 dies in 1.
+   — SHIPPED
 4. Arc table: `ARC_CHANCE`/`ARC_BOLTS` lengths = MAX_TIER + 1; T5 = 1.0/2;
-   pool 8 ≥ 6 max bolts per combo.
+   pool 8 ≥ 6 max bolts per combo. — SHIPPED
 5. **Electric proc fix**: `SWORD.ELECTRIC_CHANCE` and `SWORD.ELECTRIC_RANGE`
-   are finite numbers (not undefined); `Game` references resolve.
+   are finite numbers (not undefined); `Game` references resolve. — SHIPPED
 6. Scale/size cap: max group scale (150 orbs × EMPOWERED) ≤ 5.0; `BLADE_LENGTH`
    monotonic (0.76 → 1.0); `TIP_LOCAL.y = BLADE_LENGTH[tier] × 0.79` for all tiers.
-7. HUD: `#souls-line` exists and its initial content is the lifetime total
-   (arbitrated: static id + content check in weapon-check.mjs — headless node
-   has no DOM; pickup-path updates are covered by the tier-math probe and the
-   Phase 5 full-descend gate).
-8. Existing gate: `node scripts/dungeon-check.mjs` → broken=0/40.
+   — SHIPPED
+7. HUD (total-only ruling — §7.1, NOT yet applied): `#souls-line` exists in
+   index.html AND its default content is exactly `Souls 0`; `#tier-pips` must
+   NOT be present. Implementation: `html.includes('id="souls-line"')`,
+   `html.includes('>Souls 0<')`, `!html.includes('tier-pips')`.
+8. Existing gate: `node scripts/dungeon-check.mjs` → broken=0/40. — SHIPPED
+9. **Distinct silhouettes (NEW)**: PlayerSword.js source contains all six
+   builder names from §4.3 (`_formCleaver`, `_formArmingSword`,
+   `_formRunicGreatsword`, `_formCrystalSoulblade`, `_formSoulfireGreatblade`,
+   `_formLightsaber`) and `_applyForm` dispatches on tier. Proxy assertion:
+   source includes `_formMeshes` and `_applyForm` contains the six names.
+10. **Straightness (NEW)**: PlayerSword.js contains no curved/hollow blade
+    primitives — grep asserts the file does NOT construct `TorusGeometry`/
+    `TorusKnotGeometry` (the legacy T2 hilt band must be gone after §4.3) and
+    that `ConeGeometry`/`CylinderGeometry` are the only blade-building
+    primitives besides `BoxGeometry` (pommel spheres allowed on guards/pommels).
+11. **HUD grep (NEW)**: Game.js `_updateHUD` writes the total only — source
+    assertion: `_updateHUD` block contains `Souls ${` and does NOT contain
+    `weaponTier` or `tier-pips` within the souls-line block (§7.1).
+12. Existing gate: dungeon-check broken=0/40 (same as 8 — kept for parity with
+    biome-check's numbering).
 
 ---
 
@@ -257,12 +431,12 @@ Blade light only exists at tier 5 and is disposed/rebuilt with the form.
 
 | Phase | Scope | Gate |
 |---|---|---|
-| 0 | `EVOLUTION` constants, `SWORD.ELECTRIC_*` hoist, GameState fields, OrbSystem `soulsEarned`, `weapon-check.mjs` | weapon-check 1–8 green; dungeon-check 0/40 |
-| 1 | Damage ladder (pure function in Game) + HUD (souls line, toasts) | headless tier-math probe; `#souls-line` id present |
-| 2 | Visuals T1–T2 (scale steps, bronze edge, blue stripes, hilt band) | console/visual probe; scale values match table |
-| 3 | T3–T4 energy blade + arc chance ladder + proc actually firing (bug fix verified) | arc proc table matches constants; proc fires headlessly; blade is straight cylinder |
-| 4 | T5 lightsaber: guaranteed bolts (2/strike), idle crackle, blade light | pool ≤ 8; lights +1; no per-frame alloc |
-| 5 | Final gates: full descend through all tiers, no console errors, dungeon-check 0/40, weapon-check clean, perf probe (draw calls, lights) | all gates |
+| 0 | `EVOLUTION` constants, `SWORD.ELECTRIC_*` hoist, GameState fields, OrbSystem `soulsEarned`, `weapon-check.mjs` | weapon-check 1–8 green; dungeon-check 0/40 — **SHIPPED** |
+| 1 | Damage ladder (pure function in Game) + HUD (souls line, toasts) | headless tier-math probe; `#souls-line` id present — **SHIPPED** (toast + arcs also shipped) |
+| 2 | **Distinct models T1–T2** (§4.2: `_formArmingSword`, `_formRunicGreatsword`; delete stripes/torus) | weapon-check 9–10 green; visual probe: crossguard/runes visible, torus gone |
+| 3 | **Distinct models T3–T4** (§4.2: `_formCrystalSoulblade`, `_formSoulfireGreatblade`) | weapon-check 9–10 green; hum pulse targets T4 core; T3 faceted silhouette headless-verified (mesh count per tier) |
+| 4 | **HUD total-only** (§7.1: index.html + `Game._updateHUD` + delete `#tier-pips`) | weapon-check gates 7 + 11 green; `#souls-line` default `Souls 0`; no `tier-pips` anywhere |
+| 5 | Final gates: full descend through all tiers, no console errors, dungeon-check 0/40, weapon-check clean (1–12), perf probe (draw calls, lights) | all gates |
 
 ---
 
@@ -311,12 +485,22 @@ Blade light only exists at tier 5 and is disposed/rebuilt with the form.
 | 28 | Tier pips orphaned by the total-only ruling | Removed — they were tied to the tier number (§7). |
 | 29 | weapon-check item 7 "DOM probe in the game, or static id check" | Arbitrated: static id + initial-content check in weapon-check.mjs (headless node has no DOM); pickup-path updates verified at state level by the tier-math probe and the Phase 5 full-descend gate (§11, §12 P1). |
 | 30 | Drift-prone code line references (748 / 779 / 885) | Replaced with symbolic refs: `Game._handleShooting` first-step decrement; `Game._electricChain` read sites (§1, §6, §14 #1). |
+| 31 | User wants a DIFFERENT weapon model per tier (cosmetic) | **Arsenal of Ascension** adopted (2026-08-05): T0 cleaver (unchanged), T1 arming sword, T2 runic greatsword, T3 crystal soulblade, T4 soulfire greatblade, T5 lightsaber (unchanged). §4 rewritten with exact geometry recipes + build contract (§4.2/§4.3). |
+| 32 | HUD total-only ruling (display ONLY total souls) — not yet applied in code | §7.1 specifies the exact index.html + Game._updateHUD diff; weapon-check gate 7 now asserts `#souls-line` default `Souls 0` AND the ABSENCE of `#tier-pips` (§7, §11). |
+| 33 | weapon-check gate 7 previously REQUIRED `#tier-pips` | Inverted by the total-only ruling: gate 7 asserts no `tier-pips` anywhere; new gates 9 (six distinct builders present), 10 (no TorusGeometry — legacy T2 band removed), 11 (Game.js writes total-only) (§11). |
+| 34 | Implementation status unverifiable by a fresh model | §0 status map (verified 2026-08-05): phases 0–1 + arcs + toast + electric fix SHIPPED and green; the remaining delta is §4 models (B2–B3), §7.1 HUD (B4), gate updates (B5) (§0, §12). |
+| 35 | Straightness / no-bends taste needed a guard | Gate 10 greps PlayerSword for Torus/TorusKnot geometry — the legacy T2 hilt band is the only offender and §4.3 deletes it (§11). |
+| 36 | Silhouette-distinctness needed a guard | Gate 9 asserts the six named builders exist and `_applyForm` dispatches on tier — prevents the redesign degrading back into trims (§11). |
 
 ---
 
 ## 15. Verification summary for implementer
 
-Baseline: `node scripts/dungeon-check.mjs` = broken=0/40. After Phase 0:
-`node scripts/weapon-check.mjs` green (1–8). Phase 3 must prove the legendary
-proc actually fires (it has never fired — §6). Every phase ends with a commit in
-the consolidated games-benchmarks parent repo.
+Baseline (verified 2026-08-05): `node scripts/dungeon-check.mjs 40` = broken=0/40;
+`node scripts/weapon-check.mjs` = ALL GATES PASS (8 gates). The shipped phases
+(0–1, arcs, toast, electric fix) are done — do NOT re-implement them. Implement
+in order: B2 (§4.2 T1–T2 models + delete stripes/torus) → B3 (§4.2 T3–T4
+models) → B4 (§7.1 HUD total-only) → B5 (gates 7/9/10/11 in weapon-check,
+full-descend pass). Every phase ends with a commit in the consolidated
+games-benchmarks parent repo. The legendary proc now FIRES (bug fix shipped —
+weapon-check gate 5 guards it); nothing about §5/§6 remains open.

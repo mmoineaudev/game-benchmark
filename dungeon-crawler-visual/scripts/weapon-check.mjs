@@ -1,5 +1,7 @@
 // Weapon evolution integrity check (WEAPON_EVOLUTION_PLAN §11).
 // Usage: node scripts/weapon-check.mjs
+// Gates 1-8: economy/damage/arcs/HUD. Gates 9-10: distinct-model redesign
+// (§4.3). Gate 11: total-only HUD. Gate 12: dungeon-check gate.
 import { readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import {
@@ -87,6 +89,26 @@ for (const id of ['souls-line', 'tier-pips']) {
   if (!html.includes(`id="${id}"`)) fail(`index.html missing #${id}`);
 }
 ok('HUD ids #souls-line and #tier-pips present in index.html');
+
+// ---------------------------------------------------------------------------
+// Gate 9: distinct silhouettes — every tier has its own builder (Arsenal of
+// Ascension §4.3); guards the redesign from degrading back into trims.
+const swordSrc = readFileSync(new URL('../src/entities/PlayerSword.js', import.meta.url), 'utf8');
+const FORM_BUILDERS = ['_formCleaver', '_formArmingSword', '_formRunicGreatsword',
+  '_formCrystalSoulblade', '_formSoulfireGreatblade', '_formLightsaber'];
+for (const b of FORM_BUILDERS) {
+  if (!swordSrc.includes(b)) fail(`PlayerSword missing per-tier builder ${b} (§4.3)`);
+}
+if (!swordSrc.includes('_formMeshes')) fail('PlayerSword missing _formMeshes registry (§4.3)');
+ok(`distinct forms: all ${FORM_BUILDERS.length} per-tier builders + _formMeshes present`);
+
+// ---------------------------------------------------------------------------
+// Gate 10: straightness — no curved/hollow primitives in the weapon forms
+// (the legacy T2 torus hilt band must be gone; no-bends taste, §4).
+if (swordSrc.includes('TorusGeometry') || swordSrc.includes('TorusKnotGeometry')) {
+  fail('curved primitive found in PlayerSword (TorusGeometry/TorusKnotGeometry) — §4.3 deletes it');
+}
+ok('straightness: no Torus/TorusKnot geometry in PlayerSword');
 
 // ---------------------------------------------------------------------------
 // Gate 8: dungeon-check gate

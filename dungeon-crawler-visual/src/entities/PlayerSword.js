@@ -60,6 +60,7 @@ export class PlayerSword {
     this._colorStep = 0;
     this._rangeScale = 1;
     this.tier = 0;         // weapon evolution tier (0..5) — WEAPON_EVOLUTION_PLAN §3
+    this._formMeshes = [[], [], [], [], [], []]; // per-tier mesh sets (§4.3 Arsenal of Ascension)
     this._tipLocal = new THREE.Vector3(0, 0.60, 0.02); // blade tip (tier-scaled by _applyForm)
     this.lengthMult = 1;   // temporary length boost (EMPOWERED buff)
     this.attackSpeedMult = 1; // temporary attack-speed boost (EMPOWERED buff)
@@ -95,6 +96,7 @@ export class PlayerSword {
       color: 0xd8b44a, roughness: 0.4, metalness: 0.8,
       emissive: 0x6a552c, emissiveIntensity: 0.75,
     });
+    this._darkMat = dark;
     this._mats = [this.bladeMat, this.steelMat, this.brassMat, dark];
     // The dagger must NOT catch the ×10 player headlight: put every sword
     // mesh on layer 2, which the layer-0 headlight never lights. Emissive
@@ -130,6 +132,7 @@ export class PlayerSword {
       emissive: 0x4a5058, emissiveIntensity: 0.5,
     });
     this._mats.push(fullerMat);
+    this._fullerMat = fullerMat;
     const fuller = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.4, 0.006), fullerMat);
     fuller.position.set(0, 0.21, 0.033); // toward the +z (back) face
     this.group.add(fuller);
@@ -139,15 +142,18 @@ export class PlayerSword {
     const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.024, 0.18, 8), dark);
     grip.position.y = -0.09;
     this.group.add(grip);
+    this._grip = grip;
     // Grip collar (where blade seats into the grip).
     const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.03, 0.03, 8), dark);
     collar.position.y = 0.0;
     this.group.add(collar);
+    this._collar = collar;
 
     // Brass pommel at the very bottom (the pivot the combos swing around).
     const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 6), this.brassMat);
     pommel.position.y = -0.21;
     this.group.add(pommel);
+    this._pommel = pommel;
 
     // Danger glow sprite around the blade
     this._glowTex = generateGlowTexture();
@@ -407,146 +413,243 @@ export class PlayerSword {
     if (this._applyForm) this._applyForm(this.tier);
   }
 
-  // Rebuild the blade form for a tier (WEAPON_EVOLUTION_PLAN §4). T0 = the
-  // current executioner blade, T1 = longer + bronze edge, T2 = +blue energy
-  // stripes + hilt glow band. T3+ swaps to an energy blade (B3/B4). The size
-  // steps are baked into the form GEOMETRY (never the group scale) so they
-  // read at any orb count, and TIP_LOCAL follows the tip for trails/arcs.
+  // ----------------------------------------------------------------------
+  // Arsenal of Ascension (WEAPON_EVOLUTION_PLAN §4): every tier is a DIFFERENT
+  // weapon, not a trim of the same dagger. Builders are idempotent — each
+  // creates its meshes once into this.group and records them in
+  // _formMeshes[tier]; _applyForm hides every other tier's set and shows the
+  // current one. TIP_LOCAL follows the tip so trails/hit arcs need no changes.
+  // T0/T5 are visually unchanged from the pre-redesign game.
+  // ----------------------------------------------------------------------
+
+  _ensureForms() {
+    if (this._formsBuilt) return;
+    this._formsBuilt = true;
+    this._formCleaver();
+    this._formArmingSword();
+    this._formRunicGreatsword();
+    this._formCrystalSoulblade();
+    this._formSoulfireGreatblade();
+    this._formLightsaber();
+    // Shared blade glow sprite (tuned per tier in _applyForm; T3 subtle, T4+ strong)
+    this._bladeGlowMat = new THREE.SpriteMaterial({
+      map: this._glowTex, color: 0x66eeff,
+      blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0,
+    });
+    this._bladeGlow = new THREE.Sprite(this._bladeGlowMat);
+    this.group.add(this._bladeGlow);
+    this._mats.push(this._bladeGlowMat);
+  }
+
+  _tagFormMeshes(tier, meshes) {
+    for (const m of meshes) {
+      m.layers.set(2);
+      m.castShadow = false;
+      this.group.add(m);
+      this._formMeshes[tier].push(m);
+    }
+  }
+
+  // T0 — Executioner's Cleaver (byte-identical: meshes built in _build()).
+  _formCleaver() {
+    this._formMeshes[0] = [
+      this._upperBlade, this._tip, this._fuller,
+      this._grip, this._collar, this._pommel,
+    ];
+  }
+
+  // T1 — Knight's Arming Sword: classic crossguard + central fuller.
+  _formArmingSword() {
+    const meshes = [];
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.40, 0.012), this.steelMat);
+    blade.position.y = 0.20;
+    meshes.push(blade);
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.30, 4), this.steelMat);
+    tip.position.y = 0.62;
+    tip.rotation.y = Math.PI / 4;
+    tip.scale.set(0.55, 1, 1);
+    meshes.push(tip);
+    const fuller = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.34, 0.004), this._fullerMat);
+    fuller.position.set(0, 0.20, 0.024);
+    meshes.push(fuller);
+    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.03, 0.05), this.brassMat);
+    guard.position.y = 0;
+    meshes.push(guard);
+    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.02, 0.16, 8), this._darkMat);
+    grip.position.y = -0.08;
+    meshes.push(grip);
+    const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 6), this.brassMat);
+    pommel.position.y = -0.18;
+    meshes.push(pommel);
+    this._tagFormMeshes(1, meshes);
+  }
+
+  // T2 — Runic Greatsword: long two-hand grip, wide blade, 3 glowing runes
+  // (replaces the old stripe planes + torus hilt band — no curved primitives).
+  _formRunicGreatsword() {
+    const meshes = [];
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.44, 0.014), this.steelMat);
+    blade.position.y = 0.22;
+    meshes.push(blade);
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.065, 0.32, 4), this.steelMat);
+    tip.position.y = 0.68;
+    tip.rotation.y = Math.PI / 4;
+    tip.scale.set(0.5, 1, 1);
+    meshes.push(tip);
+    const runeMat = new THREE.MeshBasicMaterial({ color: 0x4ac8ff });
+    this._mats.push(runeMat);
+    for (const ry of [0.16, 0.28, 0.40]) {
+      const rune = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.09, 0.002), runeMat);
+      rune.position.set(0, ry, 0.026);
+      meshes.push(rune);
+    }
+    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.035, 0.06), this.bladeMat);
+    guard.position.y = 0;
+    meshes.push(guard);
+    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.024, 0.22, 8), this._darkMat);
+    grip.position.y = -0.11;
+    meshes.push(grip);
+    const pommel = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.06, 8), this.brassMat);
+    pommel.position.y = -0.24;
+    meshes.push(pommel);
+    this._tagFormMeshes(2, meshes);
+  }
+
+  // T3 — Crystal Soulblade: faceted violet crystal shards on a straight white
+  // core (form OWNS the blade color from here on; BLADE_COLORS stops applying).
+  _formCrystalSoulblade() {
+    this._crystalMat = new THREE.MeshStandardMaterial({
+      color: 0xcc88ff, emissive: 0xcc66ff, emissiveIntensity: 1.4,
+      transparent: true, opacity: 0.8, roughness: 0.2,
+    });
+    this._mats.push(this._crystalMat);
+    const meshes = [];
+    const spine = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.52, 0.025), this._crystalMat);
+    spine.position.y = 0.26;
+    meshes.push(spine);
+    for (const fy of [0.12, 0.28, 0.44, 0.60]) {
+      const h = 0.22 + Math.random() * 0.08;
+      const facet = new THREE.Mesh(new THREE.ConeGeometry(0.035, h, 5), this._crystalMat);
+      facet.position.set((Math.random() - 0.5) * 0.03, fy, 0);
+      facet.rotation.z = (Math.random() - 0.5) * 0.2;
+      meshes.push(facet);
+    }
+    const coreMat = new THREE.MeshBasicMaterial({ color: 0xfff4d8 });
+    this._mats.push(coreMat);
+    const core = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.90, 6), coreMat);
+    core.position.y = 0.45;
+    meshes.push(core);
+    this._crystalCore = core;
+    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.028, 0.16, 8), this._darkMat);
+    grip.position.y = -0.08;
+    meshes.push(grip);
+    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.03, 0.03, 8), this._darkMat);
+    collar.position.y = 0;
+    meshes.push(collar);
+    this._tagFormMeshes(3, meshes);
+  }
+
+  // T4 — Soulfire Greatblade: smooth white-hot energy blade, vented emitter.
+  _formSoulfireGreatblade() {
+    this._soulfireMat = new THREE.MeshBasicMaterial({
+      color: 0xddddff, transparent: true, opacity: 0.9,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    this._mats.push(this._soulfireMat);
+    const meshes = [];
+    const blade = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.92, 8), this._soulfireMat);
+    blade.position.y = 0.46;
+    meshes.push(blade);
+    const coreMat = new THREE.MeshBasicMaterial({ color: 0xfff4d8 });
+    this._mats.push(coreMat);
+    const core = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.88, 6), coreMat);
+    core.position.y = 0.44;
+    meshes.push(core);
+    this._soulfireCore = core;
+    for (const [sx, rz] of [[0.035, -0.35], [-0.035, 0.35]]) {
+      const fin = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.1, 0.02), this.bladeMat);
+      fin.position.set(sx, 0.02, 0);
+      fin.rotation.z = rz;
+      meshes.push(fin);
+    }
+    const hilt = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.03, 0.14, 8), this._darkMat);
+    hilt.position.y = -0.07;
+    meshes.push(hilt);
+    this._tagFormMeshes(4, meshes);
+  }
+
+  // T5 — Lightsaber: perfect straight energy cylinder, white core, blade
+  // light (layer 0, camera-attached) + idle crackle pool.
+  _formLightsaber() {
+    this._energyBladeMat = new THREE.MeshBasicMaterial({
+      color: 0x88ffff, transparent: true, opacity: 0.85,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    this._mats.push(this._energyBladeMat);
+    const meshes = [];
+    const blade = new THREE.Mesh(new THREE.CylinderGeometry(0.0225, 0.0225, 1.0, 8), this._energyBladeMat);
+    blade.position.y = 0.5;
+    meshes.push(blade);
+    this._energyBlade = blade;
+    const coreMat = new THREE.MeshBasicMaterial({ color: 0xfff4d8 });
+    this._mats.push(coreMat);
+    const core = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.92, 6), coreMat);
+    core.position.y = 0.46;
+    meshes.push(core);
+    this._energyCore = core;
+    this._tagFormMeshes(5, meshes);
+    // Blade point light — layer 0, camera-attached: lights the WORLD around
+    // the player in cyan (the sword itself stays layer-2 self-lit, §4).
+    this.bladeLight = new THREE.PointLight(
+      EVOLUTION.T5_BLADE_LIGHT.color, EVOLUTION.T5_BLADE_LIGHT.intensity,
+      EVOLUTION.T5_BLADE_LIGHT.distance, EVOLUTION.T5_BLADE_LIGHT.decay,
+    );
+    this.bladeLight.position.set(0, 0.45, 0.1);
+    this.bladeLight.castShadow = false;
+    this.group.add(this.bladeLight);
+    // Idle crackle pool (≤ 3 pooled additive arc sprites, cosmetic, §5)
+    this._crackleSprites = [];
+    const crackleMat = new THREE.SpriteMaterial({
+      map: this._glowTex, color: 0x88ffff,
+      blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0,
+    });
+    this._mats.push(crackleMat);
+    for (let i = 0; i < 3; i++) {
+      const s = new THREE.Sprite(crackleMat);
+      s.visible = false;
+      this.group.add(s);
+      this._crackleSprites.push({ sprite: s, life: 0, active: false, y: 0 });
+    }
+  }
+
+  // Dispatch: show exactly one tier's mesh set; tune shared extras per tier.
   _applyForm(tier) {
-    const len = EVOLUTION.BLADE_LENGTH[tier] ?? EVOLUTION.BLADE_LENGTH[0];
-    const k = len / EVOLUTION.BLADE_LENGTH[0];
-    if (this._upperBlade) {
-      this._upperBlade.scale.y = k;
-      this._upperBlade.position.y = 0.21 * k;
+    this._ensureForms();
+    const L = EVOLUTION.BLADE_LENGTH[tier] ?? EVOLUTION.BLADE_LENGTH[0];
+    this._tipLocal.set(0, L * 0.79, 0.02);
+    for (let t = 0; t <= EVOLUTION.MAX_TIER; t++) {
+      for (const m of this._formMeshes[t]) m.visible = (t === tier);
     }
-    if (this._tip) {
-      this._tip.scale.set(0.6, k, 1);
-      this._tip.position.y = 0.56 * k;
-    }
-    this._tipLocal.set(0, len * 0.79, 0.02);
-
-    // Tier 1+: bronze edge (fuller recolor — subtle first step)
-    if (this._fuller) {
-      this._fuller.material.color.setHex(tier >= 1 ? 0xd8a060 : 0xd8dce2);
-    }
-
-    // Tier 2+: emissive blue energy stripes on both blade faces + hilt glow
-    if (tier >= 2) {
-      if (!this._stripeMeshes) {
-        const stripeMat = new THREE.MeshBasicMaterial({ color: 0x4ac8ff });
-        this._stripeMeshes = [];
-        for (const side of [1, -1]) {
-          const s = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.4, 0.001), stripeMat);
-          s.position.set(0, 0.21, side * 0.041);
-          s.layers.set(2);
-          s.castShadow = false;
-          this.group.add(s);
-          this._stripeMeshes.push(s);
-        }
-        this._mats.push(stripeMat);
-        const bandMat = new THREE.MeshBasicMaterial({ color: 0x2a6a9a });
-        this._hiltBand = new THREE.Mesh(new THREE.TorusGeometry(0.032, 0.008, 6, 12), bandMat);
-        this._hiltBand.rotation.x = Math.PI / 2;
-        this._hiltBand.layers.set(2);
-        this._hiltBand.castShadow = false;
-        this.group.add(this._hiltBand);
-        this._mats.push(bandMat);
-      }
-      for (const s of this._stripeMeshes) {
-        s.scale.y = k;
-        s.position.y = 0.21 * k;
-        s.visible = true;
-      }
-      if (this._hiltBand) this._hiltBand.visible = true;
-    } else if (this._stripeMeshes) {
-      this._stripeMeshes.forEach((s) => { s.visible = false; });
-      if (this._hiltBand) this._hiltBand.visible = false;
-    }
-
-    // Tier 3+: ENERGY BLADE — the steel blade/tip/fuller are hidden and a
-    // straight additive cylinder + white-hot core take over (form OWNS the
-    // blade color; the orb-size BLADE_COLORS ladder stops applying, §4).
-    if (tier >= 3) {
-      if (!this._energyBlade) {
-        const bladeMat = new THREE.MeshBasicMaterial({
-          color: 0x66eeff, transparent: true, opacity: 0.85,
-          blending: THREE.AdditiveBlending, depthWrite: false,
-        });
-        const coreMat = new THREE.MeshBasicMaterial({ color: 0xfff4d8 });
-        const bGeo = new THREE.CylinderGeometry(0.0225, 0.0225, 1, 8);
-        bGeo.translate(0, 0.5, 0); // base at the grip, tip at +1
-        const cGeo = new THREE.CylinderGeometry(0.006, 0.006, 1, 6);
-        cGeo.translate(0, 0.5, 0);
-        this._energyBlade = new THREE.Mesh(bGeo, bladeMat);
-        this._energyCore = new THREE.Mesh(cGeo, coreMat);
-        for (const m of [this._energyBlade, this._energyCore]) {
-          m.layers.set(2);
-          m.castShadow = false;
-          this.group.add(m);
-        }
-        this._mats.push(bladeMat, coreMat);
-        // Soft blade glow sprite (grows at T4, brightens at T5)
-        this._bladeGlowMat = new THREE.SpriteMaterial({
-          map: this._glowTex, color: 0x66eeff,
-          blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0,
-        });
-        this._bladeGlow = new THREE.Sprite(this._bladeGlowMat);
-        this._bladeGlow.position.set(0, len * 0.5, 0);
-        this._bladeGlow.scale.setScalar(0.3);
-        this.group.add(this._bladeGlow);
-        this._mats.push(this._bladeGlowMat);
-        // Tier 5: blade point light — layer 0, camera-attached, lights the
-        // WORLD around the player (the sword stays layer-2 self-lit, §4).
-        this.bladeLight = new THREE.PointLight(
-          EVOLUTION.T5_BLADE_LIGHT.color, EVOLUTION.T5_BLADE_LIGHT.intensity,
-          EVOLUTION.T5_BLADE_LIGHT.distance, EVOLUTION.T5_BLADE_LIGHT.decay,
-        );
-        this.bladeLight.position.set(0, 0.45, 0.1);
-        this.bladeLight.castShadow = false;
-        this.group.add(this.bladeLight);
-        // Idle crackle pool (≤ 3 pooled additive arc sprites, cosmetic, §5)
-        this._crackleSprites = [];
-        const crackleMat = new THREE.SpriteMaterial({
-          map: this._glowTex, color: 0x88ffff,
-          blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0,
-        });
-        this._mats.push(crackleMat);
-        for (let i = 0; i < 3; i++) {
-          const s = new THREE.Sprite(crackleMat);
-          s.visible = false;
-          this.group.add(s);
-          this._crackleSprites.push({ sprite: s, life: 0, active: false, y: 0 });
-        }
-      }
-      const isT5 = tier >= 5;
-      this._energyBlade.material.color.setHex(isT5 ? 0x88ffff : 0x66eeff);
-      this._energyBlade.scale.y = len;
-      this._energyCore.scale.y = len * 0.92;
-      this._energyBlade.visible = true;
-      this._energyCore.visible = true;
-      this._bladeGlow.position.y = len * 0.5;
-      // T4+: visible blade glow, 0.5 scale; T5: brighter + light + crackle
-      this._bladeGlowMat.color.setHex(isT5 ? 0x88ffff : 0x66eeff);
-      this._bladeGlowMat.opacity = tier >= 4 ? 0.35 : 0;
-      this._bladeGlow.scale.setScalar(tier >= 4 ? 0.5 : 0.3);
-      if (this.bladeLight) this.bladeLight.visible = isT5;
-      for (const c of this._crackleSprites) c.sprite.visible = isT5 && c.active;
-      if (this._upperBlade) this._upperBlade.visible = false;
-      if (this._tip) this._tip.visible = false;
-      if (this._fuller) this._fuller.visible = false;
-      if (this._stripeMeshes) this._stripeMeshes.forEach((s) => { s.visible = false; });
+    // Shared blade glow: T3 subtle, T4+ strong; color follows the form
+    const glow = this._bladeGlow;
+    glow.position.y = L * 0.5;
+    if (tier === 3) {
+      this._bladeGlowMat.color.setHex(0xcc66ff);
+      this._bladeGlowMat.opacity = 0;
+      glow.scale.setScalar(0.3);
+    } else if (tier === 4) {
+      this._bladeGlowMat.color.setHex(0xddddff);
+      this._bladeGlowMat.opacity = 0.35;
+      glow.scale.setScalar(0.5);
+    } else if (tier === 5) {
+      this._bladeGlowMat.color.setHex(0x88ffff);
+      this._bladeGlowMat.opacity = 0.35;
+      glow.scale.setScalar(0.5);
     } else {
-      if (this._energyBlade) {
-        this._energyBlade.visible = false;
-        this._energyCore.visible = false;
-        this._bladeGlowMat.opacity = 0;
-        if (this.bladeLight) this.bladeLight.visible = false;
-        for (const c of this._crackleSprites) c.sprite.visible = false;
-      }
-      if (this._upperBlade) this._upperBlade.visible = true;
-      if (this._tip) this._tip.visible = true;
-      if (this._fuller) this._fuller.visible = true;
+      this._bladeGlowMat.opacity = 0;
     }
+    if (this.bladeLight) this.bladeLight.visible = tier === 5;
+    for (const c of this._crackleSprites || []) c.sprite.visible = tier === 5 && c.active;
   }
 
   // T5 idle crackle: tiny pooled arcs flickering along the blade (cosmetic).
@@ -678,18 +781,17 @@ export class PlayerSword {
     if (this._flashTimer > 0) {
       this._flashTimer -= dt;
       if (this._flashTimer <= 0) {
-        if (this._energyBlade && this._energyBlade.visible) {
-          this._energyBlade.material.color.setHex(0x66eeff); // neutral reset
-        } else {
-          this.bladeMat.emissive.setHex(0x14181f); // neutral reset
-        }
+        const t = this.tier;
+        if (t === 3 && this._crystalMat) this._crystalMat.color.setHex(0xcc88ff);
+        else if (t === 4 && this._soulfireMat) this._soulfireMat.color.setHex(0xddddff);
+        else if (t === 5 && this._energyBladeMat) this._energyBladeMat.color.setHex(0x88ffff);
+        else this.bladeMat.emissive.setHex(0x14181f); // neutral reset
       }
     }
-    // Tier 4+ hum: energy core length pulses ±5% at 3 Hz (§4)
-    if (this.tier >= 4 && this._energyCore && this._energyCore.visible) {
+    // Tier 4 hum: soulfire core length pulses ±5% at 3 Hz (§4)
+    if (this.tier === 4 && this._soulfireCore && this._soulfireCore.visible) {
       this._humPhase = (this._humPhase || 0) + dt;
-      const len = EVOLUTION.BLADE_LENGTH[this.tier];
-      this._energyCore.scale.y = len * 0.92 * (1 + Math.sin(this._humPhase * 3) * 0.05);
+      this._soulfireCore.scale.y = 1 + Math.sin(this._humPhase * 3) * 0.05;
       if (this._bladeGlow) {
         this._bladeGlow.scale.setScalar(0.5 * (1 + Math.sin(this._humPhase * 3) * 0.05));
       }
@@ -896,12 +998,14 @@ export class PlayerSword {
     }
   }
 
-  // Blade flash on hit (energy-aware — the energy blade is MeshBasic, so the
-  // flash tints its color; the steel blade flashes emissive).
+  // Blade flash on hit (energy-aware — T3/T4/T5 forms are MeshBasic and flash
+  // their material color; steel forms flash emissive). (§4)
   flashBlade() {
-    if (this._energyBlade && this._energyBlade.visible) {
-      this._energyBlade.material.color.setHex(0xffdd88);
-    } else {
+    const t = this.tier;
+    if (t === 3 && this._crystalMat) this._crystalMat.color.setHex(0xffdd88);
+    else if (t === 4 && this._soulfireMat) this._soulfireMat.color.setHex(0xffdd88);
+    else if (t === 5 && this._energyBladeMat) this._energyBladeMat.color.setHex(0xffdd88);
+    else {
       this.bladeMat.emissive.setHex(0xffdd88);
       this.bladeMat.emissiveIntensity = 1.2;
     }

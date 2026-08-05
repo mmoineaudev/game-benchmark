@@ -462,6 +462,47 @@ export class PlayerSword {
       this._stripeMeshes.forEach((s) => { s.visible = false; });
       if (this._hiltBand) this._hiltBand.visible = false;
     }
+
+    // Tier 3+: ENERGY BLADE — the steel blade/tip/fuller are hidden and a
+    // straight additive cylinder + white-hot core take over (form OWNS the
+    // blade color; the orb-size BLADE_COLORS ladder stops applying, §4).
+    if (tier >= 3) {
+      if (!this._energyBlade) {
+        const bladeMat = new THREE.MeshBasicMaterial({
+          color: 0x66eeff, transparent: true, opacity: 0.85,
+          blending: THREE.AdditiveBlending, depthWrite: false,
+        });
+        const coreMat = new THREE.MeshBasicMaterial({ color: 0xfff4d8 });
+        const bGeo = new THREE.CylinderGeometry(0.0225, 0.0225, 1, 8);
+        bGeo.translate(0, 0.5, 0); // base at the grip, tip at +1
+        const cGeo = new THREE.CylinderGeometry(0.006, 0.006, 1, 6);
+        cGeo.translate(0, 0.5, 0);
+        this._energyBlade = new THREE.Mesh(bGeo, bladeMat);
+        this._energyCore = new THREE.Mesh(cGeo, coreMat);
+        for (const m of [this._energyBlade, this._energyCore]) {
+          m.layers.set(2);
+          m.castShadow = false;
+          this.group.add(m);
+        }
+        this._mats.push(bladeMat, coreMat);
+      }
+      this._energyBlade.scale.y = len;
+      this._energyCore.scale.y = len * 0.92;
+      this._energyBlade.visible = true;
+      this._energyCore.visible = true;
+      if (this._upperBlade) this._upperBlade.visible = false;
+      if (this._tip) this._tip.visible = false;
+      if (this._fuller) this._fuller.visible = false;
+      if (this._stripeMeshes) this._stripeMeshes.forEach((s) => { s.visible = false; });
+    } else {
+      if (this._energyBlade) {
+        this._energyBlade.visible = false;
+        this._energyCore.visible = false;
+      }
+      if (this._upperBlade) this._upperBlade.visible = true;
+      if (this._tip) this._tip.visible = true;
+      if (this._fuller) this._fuller.visible = true;
+    }
   }
 
   // Grows the dagger +20% per 10 orbs held (capped at +200% = 3x at 100
@@ -485,8 +526,12 @@ export class PlayerSword {
     this.growthGlow.scale.setScalar(0.26 + growth * 0.4);
     if (capped !== this._colorStep) {
       this._colorStep = capped;
-      this.bladeMat.color.setHex(BLADE_COLORS[capped]);
-      this.steelMat.color.setHex(BLADE_COLORS[capped]);
+      // Evolution form OWNS blade color from tier 3 (energy blade) — the orb
+      // size ladder keeps tinting the steel blade only below tier 3 (§4).
+      if (this.tier < 3) {
+        this.bladeMat.color.setHex(BLADE_COLORS[capped]);
+        this.steelMat.color.setHex(BLADE_COLORS[capped]);
+      }
     }
   }
 
@@ -553,7 +598,19 @@ export class PlayerSword {
     this._updateSparks(dt);
     if (this._flashTimer > 0) {
       this._flashTimer -= dt;
-      if (this._flashTimer <= 0) this.bladeMat.emissive.setHex(0x14181f); // neutral reset
+      if (this._flashTimer <= 0) {
+        if (this._energyBlade && this._energyBlade.visible) {
+          this._energyBlade.material.color.setHex(0x66eeff); // neutral reset
+        } else {
+          this.bladeMat.emissive.setHex(0x14181f); // neutral reset
+        }
+      }
+    }
+    // Tier 4+ hum: energy core length pulses ±5% at 3 Hz (§4)
+    if (this.tier >= 4 && this._energyCore && this._energyCore.visible) {
+      this._humPhase = (this._humPhase || 0) + dt;
+      const len = EVOLUTION.BLADE_LENGTH[this.tier];
+      this._energyCore.scale.y = len * 0.92 * (1 + Math.sin(this._humPhase * 3) * 0.05);
     }
 
     if (this.state === 'idle') return;
@@ -755,10 +812,15 @@ export class PlayerSword {
     }
   }
 
-  // Blade flash on hit
+  // Blade flash on hit (energy-aware — the energy blade is MeshBasic, so the
+  // flash tints its color; the steel blade flashes emissive).
   flashBlade() {
-    this.bladeMat.emissive.setHex(0xffdd88);
-    this.bladeMat.emissiveIntensity = 1.2;
+    if (this._energyBlade && this._energyBlade.visible) {
+      this._energyBlade.material.color.setHex(0xffdd88);
+    } else {
+      this.bladeMat.emissive.setHex(0xffdd88);
+      this.bladeMat.emissiveIntensity = 1.2;
+    }
     this._flashTimer = 0.1;
   }
 

@@ -197,20 +197,21 @@ hard stop — fix, commit, continue.
 
 ### B3. Phase 3 — T3–T4 energy blade + arc ladder + proc fix (plan §5, §6, §12 P3)
 
-- [ ] Tier 3: steel blade/tip hidden; ONE straight additive cylinder
+- [x] Tier 3: steel blade/tip hidden; ONE straight additive cylinder
       (0.045 × 0.92, 0x66eeff, opacity 0.85, depthWrite false) + white-hot
       core line; blade color no longer follows BLADE_COLORS (§4)
-- [ ] Tier 4: core emissive 2.0, glow sprite 0.3 → 0.5, hum pulse ±5% @ 3 Hz;
-      blade length 0.96 (§4)
-- [ ] Arc bolt pool (8): thin cylinder + glow sprite, homes to nearest alive
-      enemy ≤ 20 u, speed 24 u/s, life 1.2 s, damage 1, re-target on target
-      death, fizzle at life end (§5)
-- [ ] Proc table wired: T3 = 10% → 1 bolt; T4 = 35% → 1 bolt (§5)
-- [ ] **Electric proc now actually fires** (1% legendary blast, §6) — prove it
-      headlessly; `weapon-check.mjs` gate 5 green
-- [ ] **Gate B3:** arc proc table matches constants; proc fires; energy blade
-      is a straight cylinder; pool ≤ 8; no per-frame alloc
-- [ ] **Commit B3**
+- [x] Tier 4: core hum pulse ±5% @ 3 Hz; blade length 0.96 (§4)
+- [x] Arc bolt pool (8): thin cylinder + glow, homes to nearest alive enemy
+      ≤ 20 u, speed 24 u/s, life 1.2 s, damage 1, re-target on target death,
+      fizzle at life end (§5)
+- [x] Proc table wired: T3 = 10% → 1 bolt; T4 = 35% → 1 bolt (§5)
+- [x] **Electric proc now actually fires** (1% legendary blast, §6) — constants
+      hoisted (B0), gate 5 green; blast runs on every landing strike
+- [x] **Gate B3:** headless probe — energy blade straight/visible/length/
+      additive/color-guard/hum; arc bolts spawn → nearest-target → impact
+      damage → re-target on death → pool ≤ 8 → teardown reset; weapon-check
+      1–8 green; dungeon-check 0/40
+- [x] **Commit B3**
 
 ### B4. Phase 4 — T5 lightsaber (plan §4, §5, §12 P4)
 

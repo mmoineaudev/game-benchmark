@@ -601,6 +601,7 @@ export class Game {
     this._checkMessages();
     this._updateHUD();
     this._checkWeaponEvolution();
+    this._updateArcBolts(this._delta);
     this._eKeyWasDown = this.input.isPressed('KeyE');
     if (this.sword) this.sword.updateSmoke(this._delta);
 
@@ -802,6 +803,89 @@ export class Game {
     this._updateHUD();
   }
 
+  // Arc bolt pool (WEAPON_EVOLUTION_PLAN §5): pooled homing projectiles thrown
+  // by the evolved blade. 8 in the pool — fits 2 bolts × 3 combo steps.
+  _buildArcBolts() {
+    this._arcBolts = [];
+    const geo = new THREE.CylinderGeometry(0.01, 0.01, 0.5, 6);
+    const mat = new THREE.MeshBasicMaterial({
+      color: EVOLUTION.BOLT_COLOR, transparent: true, opacity: 0.9,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    for (let i = 0; i < EVOLUTION.ARC_POOL; i++) {
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.visible = false;
+      this.scene.add(mesh);
+      this._arcBolts.push({ mesh, active: false, x: 0, y: 1.2, z: 0, target: null, life: 0 });
+    }
+  }
+
+  _nearestAlive(fromX, fromZ) {
+    if (!this.skeletons) return null;
+    let best = null;
+    let bd = EVOLUTION.ARC_RANGE * EVOLUTION.ARC_RANGE;
+    for (const s of this.skeletons.skeletons) {
+      if (s.skel.state === 'DEAD') continue;
+      const dx = s.x - fromX;
+      const dz = s.z - fromZ;
+      const d = dx * dx + dz * dz;
+      if (d < bd) { bd = d; best = s; }
+    }
+    return best;
+  }
+
+  // Throw `count` arc bolts at the nearest alive enemies (re-target mid-flight).
+  _spawnArcBolts(count) {
+    if (!this._arcBolts) this._buildArcBolts();
+    const p = this.state.player;
+    for (let k = 0; k < count; k++) {
+      const bolt = this._arcBolts.find((b) => !b.active);
+      if (!bolt) break;
+      const target = this._nearestAlive(p.x, p.z);
+      if (!target) break;
+      bolt.active = true;
+      bolt.x = p.x;
+      bolt.z = p.z;
+      bolt.target = target;
+      bolt.life = EVOLUTION.ARC_LIFE;
+      bolt.mesh.visible = true;
+      bolt.mesh.position.set(bolt.x, bolt.y, bolt.z);
+      bolt.mesh.lookAt(target.x, 1.0, target.z);
+    }
+  }
+
+  _updateArcBolts(dt) {
+    if (!this._arcBolts) return;
+    for (const b of this._arcBolts) {
+      if (!b.active) continue;
+      b.life -= dt;
+      if (!b.target || b.target.skel.state === 'DEAD') {
+        b.target = this._nearestAlive(b.x, b.z);
+      }
+      if (b.life <= 0 || !b.target) {
+        b.active = false;
+        b.mesh.visible = false;
+        continue;
+      }
+      const dx = b.target.x - b.x;
+      const dz = b.target.z - b.z;
+      const dist = Math.hypot(dx, dz);
+      const step = EVOLUTION.ARC_SPEED * dt;
+      if (dist <= step + 0.4) {
+        // Impact: arc damage + sparks at the target
+        this.skeletons.hitSkeleton(b.target.skel, EVOLUTION.ARC_DAMAGE);
+        b.active = false;
+        b.mesh.visible = false;
+        this.sword?.burstSparks(new THREE.Vector3(b.target.x, 1.2, b.target.z));
+        continue;
+      }
+      b.x += (dx / dist) * step;
+      b.z += (dz / dist) * step;
+      b.mesh.position.set(b.x, b.y + Math.sin(b.life * 20) * 0.1, b.z);
+      b.mesh.lookAt(b.target.x, 1.0, b.target.z);
+    }
+  }
+
   // Rare (1%) electric chain on a landing strike: a blue blast that kills
   // every enemy within ELECTRIC_RANGE of the player.
   _electricChain(x, z) {
@@ -911,9 +995,13 @@ export class Game {
           p0.x + fx * 1.5, 1.2, p0.z + fz * 1.5,
         ));
         // 1% chance the landing strike chains an electric blast that kills
-        // every enemy within ~20m
+        // every enemy within ~20m (proc fix — B0 hoisted the constants)
         if (Math.random() < SWORD.ELECTRIC_CHANCE) {
           this._electricChain(p.x, p.z);
+        }
+        // Evolution arc bolts: per-tier chance × bolt count (T5 = 100% × 2)
+        if (this.sword.tier >= 3 && Math.random() < EVOLUTION.ARC_CHANCE[this.sword.tier]) {
+          this._spawnArcBolts(EVOLUTION.ARC_BOLTS[this.sword.tier]);
         }
         this.events.emit('sword:hit', {
           step: this.sword.comboStep, enemiesHit, damage,
@@ -1346,6 +1434,7 @@ export class Game {
     this.smoke?.dispose();
     if (this.skeletons) this.skeletons.dispose();
     if (this.shooter) this.shooter.dispose();
+    this._arcBolts = null; // bolt meshes disposed by the scene teardown
     for (const p of (this._waterPuddles || [])) {
       p.mesh.geometry.dispose();
       p.mesh.material.dispose();
@@ -1658,6 +1747,7 @@ export class Game {
     }
     if (this.skeletons) this.skeletons.dispose();
     if (this.shooter) this.shooter.dispose();
+    this._arcBolts = null; // bolt meshes disposed by the scene teardown
     for (const p of this._waterPuddles) {
       p.mesh.geometry.dispose();
       p.mesh.material.dispose();

@@ -6,7 +6,7 @@ Implementation plan for a weapon-evolution system in the dungeon crawler at
 Status: **CLOSED** — every open point from the draft arbitrated and embedded
 inline; a latent electric-proc bug found and owned (§6). Resolution priority:
 ease of development, maintainability, internal consistency, fun. Gap-closure log
-in §12 (26 rows).
+in §12 (30 rows).
 
 ---
 
@@ -21,7 +21,7 @@ Final design constraints:
 
 1. **Souls = lifetime orb pickups.** The game's currency is orbs: picked up from
    kills, spent as ammo (`Game._handleShooting` decrements `collectedOrbs` on the
-   first step of each sequence — line 748). "Every 100 souls" therefore uses a
+   first step of each sequence). "Every 100 souls" therefore uses a
    NEW monotonic counter, `soulsEarned`, because the banked count fluctuates and
    a tier based on it could regress mid-fire. `totalOrbs` is not usable either —
    it is the per-level pickup count (reset to 0 on level build).
@@ -41,7 +41,8 @@ Final design constraints:
 ## 2. Soul economy (FINAL)
 
 - New `GameState` fields: `soulsEarned: 0` (monotonic, lifetime), `weaponTier: 0`
-  (derived, stored for HUD/persistence). Both constructor params with default 0
+  (derived, stored for persistence/form rebuild — the HUD shows the lifetime
+  total only). Both constructor params with default 0
   (mirrors `collectedOrbs`/`bossKills` pattern).
 - `OrbSystem` increments `state.soulsEarned++` in the SAME branch that
   increments `collectedOrbs` (the orb-pickup path). Buff pickups and health
@@ -76,8 +77,9 @@ distance: 6, decay: 1.6 } }`
 - **Damage application (FINAL):** pure function — no constant mutation:
   `swordHitDamage(step, tier) = SWORD.COMBO.HIT{1,2,3}_DAMAGE + tier`. Applied
   in `Game`'s sword-hit path for all three steps. At tier 5: 7/7/8.
-- **Cap (FINAL):** 500 souls = tier 5 = max. Beyond that the HUD shows `MAX`;
-  damage and arcs stop growing. Uncapped damage would trivialize the fixed-HP
+- **Cap (FINAL):** 500 souls = tier 5 = max. Beyond that damage and arcs stop
+  growing (the souls counter keeps counting; there is no `MAX` readout).
+  Uncapped damage would trivialize the fixed-HP
   roster (brute 8, armored 5) — capped, tier 5 still needs 2 hits on a brute
   (7+7) and 1-hit clears the rest, which is the intended endgame power fantasy,
   offset by the existing spawn pressure (held orbs raise enemy counts).
@@ -146,8 +148,8 @@ but those constants are defined inside `SWORD.COMBO` (`SWORD.COMBO.ELECTRIC_CHAN
 0.01`, `SWORD.COMBO.ELECTRIC_RANGE: 20`). Both top-level reads are `undefined` →
 `Math.random() < undefined` is always false → **the 1% electric chain has never
 fired**. Fix (FINAL): hoist both to the `SWORD` level (`SWORD.ELECTRIC_CHANCE:
-0.01`, `SWORD.ELECTRIC_RANGE: 20`) and update the `Game._electricChain`
-references (line 779, 885). Values unchanged. `weapon-check.mjs` asserts both
+0.01`, `SWORD.ELECTRIC_RANGE: 20`) and update both `Game._electricChain` read
+sites. Values unchanged. `weapon-check.mjs` asserts both
 are finite and the proc path is reachable. The tier ladder (§5) layers on top of
 this fixed proc.
 
@@ -155,12 +157,13 @@ this fixed proc.
 
 ## 7. HUD (FINAL)
 
-- **Souls line** (below the orb line, same styling): `Souls: 237 · Tier 2 ·
-  63/100`. At tier 5: `Souls: 537 · Tier 5 · MAX`. (Decimal tier number —
-  roman numerals were rejected in review for an off-by-one between "3 evolutions
-  = Tier III" and the capped "Tier V" display.)
-- **Tier pips**: 5 small pips beside the tier number, lit = earned (real
-  state, same rule as combo pips).
+- **Souls line** (below the orb line, same styling): `Souls: 237` — the TOTAL
+  lifetime souls only. No tier number, no progress fraction, no `MAX` readout
+  (USER RULING: display only the total; the blade form and the evolution toast
+  convey the tier). The old example's arithmetic (237 → "63/100") is moot —
+  there is no progress field.
+- **Tier pips**: removed (they were tied to the tier number, which the
+  total-only ruling drops).
 - **Evolution toast**: `Your blade awakens — Tier 3`; final tier:
   `Your blade is whole — the lightsaber sings`. Plus blade flash (emissive spike
   0.1 s) and a non-blocking hit-stop of 0.1 s (existing `state.hitStop`
@@ -180,7 +183,7 @@ this fixed proc.
 | `src/entities/OrbSystem.js` | +`state.soulsEarned++` on the orb-pickup branch (NOT buff/health pickups) |
 | `src/entities/PlayerSword.js` | `evolve(tier)`: form build per tier (T3+ energy blade swap, stripes, glow, crackle, blade light), `evolveScale` in the scale getter, arc-bolt emission hooks, `swordHitDamage` consumer side |
 | `src/core/Game.js` | `swordHitDamage(step, tier)` applied in the hit path; arc spawning (pooled, Game-managed like `_electricChain`); electric proc references fixed; evolution toast/flash/hit-stop on threshold crossing; HUD update |
-| `index.html` | +souls line, +tier pips |
+| `index.html` | +souls line (total only) |
 | `scripts/weapon-check.mjs` | NEW — validation (§11) |
 | `docs/SPEC.md` | unchanged (separate plan, same convention as the biome plan) |
 
@@ -219,7 +222,7 @@ Blade light only exists at tier 5 and is disposed/rebuilt with the form.
 | 7 | T5 arcs with no enemies alive | Bolts fizzle at life end; pool pattern, no crash |
 | 8 | Arc bolt target dies mid-flight | Re-target nearest alive within 20 u; else fizzle |
 | 9 | NG+ / new run | Fresh `soulsEarned = 0`; NG+ enemy HP ×2 keeps tier-5 damage in check |
-| 10 | 1000+ souls | Tier capped at V; HUD `MAX`; damage/arcs stop growing |
+| 10 | 1000+ souls | Tier capped at V; souls counter keeps counting; damage/arcs stop growing |
 | 11 | Legendary proc + arc bolts on the same strike | Both fire; blast is AOE screen-clear, bolts are single-target — no conflict, no double-application |
 | 12 | Arc bolt vs breakable props | Bolts only target enemies (spawned via the enemy system); props untouched |
 | 13 | Tier 3 form while combo is mid-animation | Form swap touches meshes only; the rig/state machine is untouched — safe mid-swing |
@@ -242,8 +245,10 @@ Blade light only exists at tier 5 and is disposed/rebuilt with the form.
    are finite numbers (not undefined); `Game` references resolve.
 6. Scale/size cap: max group scale (150 orbs × EMPOWERED) ≤ 5.0; `BLADE_LENGTH`
    monotonic (0.76 → 1.0); `TIP_LOCAL.y = BLADE_LENGTH[tier] × 0.79` for all tiers.
-7. HUD: `#souls-line` and `#tier-pips` elements exist; updated on pickup
-   (DOM probe in the game, or static id check in the script).
+7. HUD: `#souls-line` exists and its initial content is the lifetime total
+   (arbitrated: static id + content check in weapon-check.mjs — headless node
+   has no DOM; pickup-path updates are covered by the tier-math probe and the
+   Phase 5 full-descend gate).
 8. Existing gate: `node scripts/dungeon-check.mjs` → broken=0/40.
 
 ---
@@ -253,7 +258,7 @@ Blade light only exists at tier 5 and is disposed/rebuilt with the form.
 | Phase | Scope | Gate |
 |---|---|---|
 | 0 | `EVOLUTION` constants, `SWORD.ELECTRIC_*` hoist, GameState fields, OrbSystem `soulsEarned`, `weapon-check.mjs` | weapon-check 1–8 green; dungeon-check 0/40 |
-| 1 | Damage ladder (pure function in Game) + HUD (souls line, tier pips, toasts) | headless tier-math probe; DOM ids present |
+| 1 | Damage ladder (pure function in Game) + HUD (souls line, toasts) | headless tier-math probe; `#souls-line` id present |
 | 2 | Visuals T1–T2 (scale steps, bronze edge, blue stripes, hilt band) | console/visual probe; scale values match table |
 | 3 | T3–T4 energy blade + arc chance ladder + proc actually firing (bug fix verified) | arc proc table matches constants; proc fires headlessly; blade is straight cylinder |
 | 4 | T5 lightsaber: guaranteed bolts (2/strike), idle crackle, blade light | pool ≤ 8; lights +1; no per-frame alloc |
@@ -276,8 +281,8 @@ Blade light only exists at tier 5 and is disposed/rebuilt with the form.
 
 | # | Gap | Resolution |
 |---|---|---|
-| 1 | Souls counter source (banked orbs regress when firing — `collectedOrbs--` at Game.js:748; `totalOrbs` resets per level) | NEW monotonic `soulsEarned` in GameState, incremented in the OrbSystem pickup branch (§2) |
-| 2 | Tier cap | MAX_TIER 5 (500 souls). Enemies have fixed HP; uncapped damage trivializes them. HUD `MAX` beyond (§3) |
+| 1 | Souls counter source (banked orbs regress when firing — `_handleShooting` decrements `collectedOrbs` on the first step of each sequence; `totalOrbs` resets per level) | NEW monotonic `soulsEarned` in GameState, incremented in the OrbSystem pickup branch (§2) |
+| 2 | Tier cap | MAX_TIER 5 (500 souls). Enemies have fixed HP; uncapped damage trivializes them. Souls keep counting past the cap; the ladder stops (§3) |
 | 3 | Ladder thresholds | Exactly 100 souls per tier (user-specified); 6 forms T0–T5 (§3) |
 | 4 | Damage application | `+tier` to EVERY combo hit via pure function `swordHitDamage(step, tier)`; constants never mutated (§3) |
 | 5 | Visual tier details | Fixed scale steps 1.00→1.70; T3+ straight additive energy-blade cylinder (taste: no bends, floating, self-lit) (§4) |
@@ -285,7 +290,7 @@ Blade light only exists at tier 5 and is disposed/rebuilt with the form.
 | 7 | Arc ladder | T3 10% / T4 35% / T5 100% ×2 bolts; T0–T2 keep the (fixed) 1% legendary proc (§5) |
 | 8 | Arc bolt damage | Flat 1 — bolts are effect/utility; sword hits carry the damage (§5) |
 | 9 | ELECTRIC bug fix | Hoist to `SWORD.ELECTRIC_CHANCE`/`ELECTRIC_RANGE` (values unchanged); both consumers fixed; weapon-check asserts finiteness (§6) |
-| 10 | HUD content | Souls line + decimal tier + pips + progress + MAX; toasts; two labels (Orbs = ammo, Souls = lifetime). Roman numerals rejected — off-by-one at the cap (§7) |
+| 10 | HUD content | Souls line = ONLY the total lifetime souls (`Souls: 237`); no tier/progress/MAX (user ruling). Toasts; two labels (Orbs = ammo, Souls = lifetime). Roman-numeral question moot — no tier readout (§7) |
 | 11 | Sword-attached light at T5 | Layer-0 camera light (lights world around player), intensity 1.5 dist 6, no shadow; sword stays self-lit (§4, §9) |
 | 12 | Range stacking | +4% reach per tier on top of orb range ladder (§3) |
 | 13 | Size steps drowned by the orb scale ladder | Size baked into FORM GEOMETRY (`BLADE_LENGTH[tier]` 0.76→1.0, `TIP_LOCAL` derived); group scale unchanged with a 5.0 safety clamp (§3, §4) |
@@ -294,7 +299,7 @@ Blade light only exists at tier 5 and is disposed/rebuilt with the form.
 | 16 | BURN enemy and arcs | Arcs spawn via the enemy system — any living enemy (incl. Burning) is a valid target (§5) |
 | 17 | FIREBALL buff interaction | RMB replaced during the buff; evolved form stays visible; no interference (§10) |
 | 18 | New run / NG+ | Fresh souls; NG+ HP ×2 keeps tier 5 in check (§2, §10) |
-| 19 | HUD must show real state only | Souls = lifetime (real), pips = earned tiers (real), progress = remainder to next threshold (real); no fake elements (§7) |
+| 19 | HUD must show real state only | Souls line = lifetime total (real); tier/progress readout removed under the total-only ruling; no fake elements (§7) |
 | 20 | Pool sizing for arcs | ARC_POOL 8 ≥ 6 max in-flight (2/strike × 3 steps) (§5, §9) |
 | 21 | Perf parity | +1 light (T5), +8 pooled bolts, +≤3 crackle sprites, +≤4 draw calls; zero per-frame alloc; no new textures (§9) |
 | 22 | weapon-check scope | Tier math, damage ladder + brute breakpoint, arc table, ELECTRIC fix, scale cap, HUD ids, dungeon-check gate (§11) |
@@ -302,6 +307,10 @@ Blade light only exists at tier 5 and is disposed/rebuilt with the form.
 | 24 | Hit-stop on evolution | 0.1 s non-blocking via existing `state.hitStop` mechanism (vs 0.06 combat) (§7) |
 | 25 | Leaderboard untouched | Souls not added; leaderboard counts orbs only (§13) |
 | 26 | Plan placement | New file `docs/WEAPON_EVOLUTION_PLAN.md`; SPEC.md and the biome plan untouched; commit-per-phase in the consolidated repo |
+| 27 | HUD souls-line arithmetic (237 → "63/100" was wrong) | USER RULING: display ONLY the total lifetime souls — `Souls: 237`. No tier number, no progress fraction, no MAX readout; the blade form + evolution toast convey the tier (§7). |
+| 28 | Tier pips orphaned by the total-only ruling | Removed — they were tied to the tier number (§7). |
+| 29 | weapon-check item 7 "DOM probe in the game, or static id check" | Arbitrated: static id + initial-content check in weapon-check.mjs (headless node has no DOM); pickup-path updates verified at state level by the tier-math probe and the Phase 5 full-descend gate (§11, §12 P1). |
+| 30 | Drift-prone code line references (748 / 779 / 885) | Replaced with symbolic refs: `Game._handleShooting` first-step decrement; `Game._electricChain` read sites (§1, §6, §14 #1). |
 
 ---
 

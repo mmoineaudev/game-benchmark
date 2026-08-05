@@ -7,7 +7,7 @@ cycle to a **10-biome cycle** (20 levels per full cycle).
 Status: **CLOSED** — every open point from the draft arbitrated and embedded
 inline, plus a measured performance audit (§9) that supersedes the plan's
 original budget claims. Resolution priority: ease of development, maintainability,
-internal consistency, fun. Gap-closure log in §14 (29 rows).
+internal consistency, fun. Gap-closure log in §14 (32 rows).
 
 ---
 
@@ -288,7 +288,7 @@ FINAL rulings:
 | File | Change |
 |---|---|
 | `src/core/Constants.js` | +5 `BIOMES` entries (each with `torchMode`); `torchMode` added to the 6 existing entries (FUNGAL = `'vaultOnly'`, others `'standard'`); `SEQUENCE` → 10; +2 `DUNGEON.ROOM_TYPES` (CRYSTAL_CHAMBER, TEMPLE); `ROOM_BIOME_ELIGIBILITY` rows (new rooms + ARMORY += GOLDEN_TEMPLE/EMBER_FORGE + MUSHROOM_GROVE += POISON_SWAMP); +5 `BIOME_ROOM_MODIFIERS` rows; +5 `ENEMY_SPAWN_WEIGHTS` columns; +2 `LIGHT_SOURCES` (CRYSTAL, ACID); `PROPS.POOLS` (LAVA/ACID, replaces LAVA_* keys); `PROPS.PROPS_PER_ROOM` += CRYSTAL_CHAMBER 10, TEMPLE 10; `ROOM_ENEMY_MODIFIERS.TEMPLE`; prop constants (crystal cluster, acid pool, water pool, altar, anvil); perf reference constants for the light probe (LIGHT_CEILING_AVG 154, LIGHT_CEILING_MAX 199) |
-| `src/world/BiomeSystem.js` | **No code change** — `biomeForLevel`, `SEQUENCE`, palette, and tinted-texture generation are fully data-driven; cache grows to 11 sets automatically |
+| `src/world/BiomeSystem.js` | **No code change** — `biomeForLevel`, `SEQUENCE`, palette, and tinted-texture generation are fully data-driven; cache builds 11 sets (10 + SPECTRAL_COURT) at run start |
 | `src/world/DungeonGenerator.js` | **No code change** — `_pickRoomType` already reads eligibility + modifiers |
 | `src/entities/SkeletonSystem.js` | **No code change** — weights keyed by `state.biome`; new columns picked up automatically. Runtime fallback `\|\| ENEMY_SPAWN_WEIGHTS.STONE` remains as a safety net; `biome-check.mjs` (§11) is the guard against missing columns |
 | `src/world/PropSystem.js` | +5 per-biome prop-set entries (§5.2); placement for crystal clusters, acid pools, water pools, altars, anvils; `lavaPools` entries gain `type`, tick reads `PROPS.POOLS[type]`; lava/wisp eligibility extensions |
@@ -303,7 +303,8 @@ FINAL rulings:
 ## 9. Performance & memory budgets (MEASURED — corrected)
 
 **Methodology.** The numbers below come from a headless probe (25 seeds per
-biome) that replicates the exact placement math of `LightingSystem` (1 torch per
+biome — the measurement pass; the §11 CI gate runs the same probe at 10 seeds)
+that replicates the exact placement math of `LightingSystem` (1 torch per
 exposed cell edge, spacing 16 > cell 6; braziers per HALL; crystals per CHAMBER;
 chandeliers = 3 lights each; candles per room-type counts; per-biome light sets)
 and `PropSystem` (wisps, mushrooms, lava/acid pools, ice/crystal lamps, altars).
@@ -402,7 +403,8 @@ Mirrors the existing scripts/ pattern (node, no deps). Gates:
 7. Every room type has a `PROPS.PROPS_PER_ROOM` entry.
 8. Every `LIGHT_SOURCES` id referenced by prop placement exists.
 9. `ROOM_ENEMY_MODIFIERS.TEMPLE` exists.
-10. **Light probe** (10 seeds per SEQUENCE biome, replicating §9 placement math):
+10. **Light probe** (10 seeds per SEQUENCE biome — the CI gate; same placement
+    math as §9's 25-seed measurement):
     `avg ≤ 154` and `max ≤ 199` (LIGHT_CEILING constants); `torches ≤ 2` average
     for `torchMode: 'vaultOnly'` biomes; shadow-caster count = 8.
 11. Existing gate: `node scripts/dungeon-check.mjs` → broken=0/40.
@@ -414,7 +416,7 @@ Mirrors the existing scripts/ pattern (node, no deps). Gates:
 | Phase | Scope | Files | Gate |
 |---|---|---|---|
 | 0 | Constants scaffolding: 5 BIOMES entries (+torchMode on all 11), SEQUENCE 10, 2 room types, eligibility rows, 5 modifier rows, 5 weight columns, 2 light sources, PROPS.POOLS, PROPS_PER_ROOM, ROOM_ENEMY_MODIFIERS.TEMPLE, LIGHT_CEILING constants | `Constants.js`, `scripts/biome-check.mjs` (new) | biome-check 1–11 pass; dungeon-check 0/40 |
-| 1 | Palette/texture verification: headless probe forces levels 12, 15, 17, 19, 22 and asserts wall/floor/ceiling/fog/ambient match §3 | (constants only) | headless probe green; biome-check pass |
+| 1 | Palette/texture verification: headless probe forces levels 12 (CRYSTAL_DEPTHS), 13 (POISON_SWAMP), 15 (GOLDEN_TEMPLE), 17 (FLOODED_RUINS), 19 (EMBER_FORGE), 22 (STONE cycle-restart) and asserts wall/floor/ceiling/fog/ambient match §3 — every new biome rung value-checked | (constants only) | headless probe green; biome-check pass |
 | 2 | Rooms + props: CRYSTAL_CHAMBER, TEMPLE placement, 5 prop additions (water pools instanced), per-biome prop-set mapping, pool `type` keying | `PropSystem.js` | biome-check pass; prop counts via `renderer.info` (≤ 400 instances, +≤ 3 draw calls) |
 | 3 | Lighting: `torchMode` refactor (replaces fungal color-equality, FUNGAL regression-gated), brazier extension to TEMPLE, CRYSTAL/ACID sources, pool parametrization sweep (LAVA_* → POOLS) | `Constants.js`, `LightingSystem.js`, `PropSystem.js`, `Game.js` (only if the `_lavaDamage` payload changes — it should not) | light probe (10 seeds) ≤ ceiling (avg 154 / max 199); vaultOnly biomes ≤ 2 torches avg (FUNGAL regression); shadow-casters = 8; lava behavior regression-checked (VOLCANIC level identical) |
 | 4 | Spawn verification: headless spawn probe over each new biome asserts enemy mix matches §7 columns (weighted sample ± tolerance) | (constants only) | probe green; biome-check pass |
@@ -475,6 +477,9 @@ hostile consistency review, with the arbitration applied.
 | 27 | TEMPLE braziers listed as features but never accounted for | 1 lit brazier per TEMPLE (reuses LightingSystem brazier; `_placeBraziers` extends to TEMPLE for GOLDEN_TEMPLE), counted in the probe (§4.1, §9). |
 | 28 | Water pools as individual meshes = up to 24 extra draw calls | InstancedMesh, 1 draw call, shared material, global opacity pulse (§5.1, §9). |
 | 29 | Perf claims unverifiable | `biome-check.mjs` gains a headless light probe (10 seeds/biome): avg ≤ 154, max ≤ 199, vaultOnly torches ≤ 2, shadow-casters = 8 — hard CI-style gate (§11, §12 P3). |
+| 30 | Phase 1 palette probe skipped POISON_SWAMP (level 13 — its only rung per cycle) | Probe list extended to 12, 13, 15, 17, 19, 22: all 5 new biomes + the STONE cycle-restart rung get §3 value-checks (§12 P1). |
+| 31 | Probe seed counts differ (25 vs 10) | Clarified: 25 = §9 measurement pass; 10 = §11 CI gate. Same placement math; the gate is a faster re-check, not a re-measurement (§9, §11). |
+| 32 | Texture-cache wording ("grows to 11" vs "11 at run start") | Harmonized: cache builds 11 sets (10 + SPECTRAL_COURT) at run start; `dispose()` path unchanged (§8, §10 #7). |
 
 ---
 

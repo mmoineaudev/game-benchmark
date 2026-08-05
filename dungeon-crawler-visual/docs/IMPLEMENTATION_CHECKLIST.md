@@ -64,7 +64,7 @@ hard stop — fix, commit, continue.
       to CRYSTAL_DEPTHS, POISON_SWAMP, GOLDEN_TEMPLE, FLOODED_RUINS, EMBER_FORGE,
       STONE (cycle restart) per the corrected §2 table; wall/floor/ceiling/fog/
       ambient match §3 for each new biome
-- [x] `BiomeSystem` texture cache grows to 11 sets; regen reuses cache
+- [x] `BiomeSystem` texture cache builds 11 sets at run start; regen reuses cache
       (no leak via the dispose path) (§3) — data-driven, no code change;
       cache growth verified by inspection (texturesFor keys off BIOMES)
 - [x] **Gate A1:** probe green; `biome-check.mjs` green
@@ -276,9 +276,12 @@ hard stop — fix, commit, continue.
 
 ## Open Issues
 
-None — both source plans are CLOSED with zero TBDs (biome plan §14: 29 rows;
-weapon plan §14: 26 rows). If a phase gate surfaces a contradiction, fix the
-plan first (commit), then the code.
+None — both source plans are CLOSED with zero TBDs (biome plan §14: 32 rows;
+weapon plan §14: 30 rows). Post-close audit closed 6 more points: POISON_SWAMP
+added to the Phase 1 palette probe, seed-count (25 vs 10) clarified, cache
+wording harmonized, HUD souls line reduced to total-only (user ruling), pips
+removed, weapon-check item 7 arbitrated, line refs made symbolic. If a phase
+gate surfaces a contradiction, fix the plan first (commit), then the code.
 
 ## Testing Items
 

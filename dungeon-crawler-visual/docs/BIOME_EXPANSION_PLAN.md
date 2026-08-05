@@ -63,23 +63,25 @@ as they do today. `biomeForLevel` formula is unchanged:
 
 | Level | Biome | Level | Biome |
 |---|---|---|---|
-| 1–2 | STONE | 12–13 | CRYSTAL_DEPTHS |
-| 3–4 | HAUNTED_CRYPT | **14** | **SPECTRAL_COURT (boss)** |
-| 5–6 | FUNGAL_CAVERN | 15–16 | GOLDEN_TEMPLE |
-| **7** | **SPECTRAL_COURT (boss)** | 17–18 | FLOODED_RUINS |
-| 8–9 | VOLCANIC_DEPTHS | 19–20 | EMBER_FORGE |
-| 10–11 | FROZEN_HALLS | **21** | **SPECTRAL_COURT (boss)** |
-| | | 22–23 | STONE (cycle restarts) |
-| | | 24–25 | HAUNTED_CRYPT |
+| 1–2 | STONE | 11–12 | CRYSTAL_DEPTHS |
+| 3–4 | HAUNTED_CRYPT | 13 | POISON_SWAMP |
+| 5–6 | FUNGAL_CAVERN | **14** | **SPECTRAL_COURT (boss)** |
+| **7** | **SPECTRAL_COURT (boss)** | 15–16 | GOLDEN_TEMPLE |
+| 8 | VOLCANIC_DEPTHS | 17–18 | FLOODED_RUINS |
+| 9–10 | FROZEN_HALLS | 19–20 | EMBER_FORGE |
+| | | **21** | **SPECTRAL_COURT (boss)** |
+| | | 22 | STONE (cycle restarts) |
+| | | 23–24 | HAUNTED_CRYPT |
+| | | 25–26 | FUNGAL_CAVERN |
+| | | 27 | VOLCANIC_DEPTHS |
+| | | **28** | **SPECTRAL_COURT (boss)** |
+| | | 29–30 | FROZEN_HALLS |
 
-(Verified by re-deriving from the unchanged formula `floor((level−1)/2) % 10`:
-L10–11 → 4 = FROZEN, L12–13 → 5 = CRYSTAL_DEPTHS, L15–16 → 7 = GOLDEN_TEMPLE,
-L17–18 → 8 = FLOODED_RUINS, L19–20 → 9 = EMBER_FORGE, L22–23 → 0 = STONE,
-L24–25 → 1 = HAUNTED_CRYPT. POISON_SWAMP (index 6) lands on L13 and then
-L33–34: its second rung at L14 is pre-empted by the boss level — same
-boss-interleaving behavior the 5-biome cycle already had. The A1 probe asserts
-levels 12, 13, 15, 17, 19, 22 map to CRYSTAL, POISON, GOLDEN, FLOODED, EMBER,
-STONE.)
+(PROBE-VERIFIED against `biomeForLevel` — this table is the actual output of
+the unchanged formula `floor((level−1)/2) % 10`, not a hand derivation. The
+boss levels at 7/14/21/28 pre-empt one rung each, so those biomes appear as a
+single level that cycle: VOLCANIC 8, POISON 13, STONE 22, VOLCANIC 27. Levels
+1–10 content distribution is unchanged from the 5-biome game.)
 
 Difficulty does NOT reset: enemy level scaling (+5% speed/attack per 3 levels),
 spawn slots (2 + level−1, cap 10), `LEVEL_TIME_LIMIT` 180 s, NG+ HP multiplier,

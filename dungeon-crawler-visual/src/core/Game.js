@@ -34,7 +34,6 @@ export class Game {
     this._orbCountEl = document.getElementById('orb-count');
     this._orbScaleEl = document.getElementById('orb-scale');
     this._soulsLineEl = document.getElementById('souls-line');
-    this._tierPipsEl = document.getElementById('tier-pips');
     this._biomeLabelEl = document.getElementById('biome-label');
     this._comboPipsEl = document.getElementById('combo-pips');
     this._exitEl = document.getElementById('exit-prompt');
@@ -1591,20 +1590,11 @@ export class Game {
         this._orbScaleEl.textContent = scale > 1.01 ? `+${pct}% power` : '';
       }
     }
-    // Weapon evolution line: lifetime souls, tier, progress to next (or MAX).
+    // Weapon evolution line: lifetime souls, TOTAL ONLY (user ruling §7.1).
+    // No tier number, no progress, no MAX readout — the blade form + the
+    // evolution toast convey the tier.
     if (this._soulsLineEl) {
-      const s = this.state.soulsEarned || 0;
-      const t = this.state.weaponTier || 0;
-      const max = t >= EVOLUTION.MAX_TIER;
-      const next = max ? 'MAX'
-        : `${EVOLUTION.TIER_SOULS - (s % EVOLUTION.TIER_SOULS)}/${EVOLUTION.TIER_SOULS}`;
-      this._soulsLineEl.textContent = `Souls ${s} · Tier ${t} · ${next}`;
-      this._soulsLineEl.style.color = max ? '#88ffff' : '#9a8a5c';
-    }
-    if (this._tierPipsEl) {
-      const t = this.state.weaponTier || 0;
-      const pips = this._tierPipsEl.querySelectorAll('.pip');
-      pips.forEach((el, i) => el.classList.toggle('lit', i < t));
+      this._soulsLineEl.textContent = `Souls ${this.state.soulsEarned || 0}`;
     }
     if (this.sword) this.sword.setOrbCount(this.state.collectedOrbs);
     if (this._biomeLabelEl) {

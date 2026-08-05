@@ -70,8 +70,6 @@
       #orb-count { color: var(--ds-gold); font-size: 40px; text-shadow: 0 1px 3px #000, 0 0 12px rgba(201,176,120,0.35); }
       #orb-scale { color: #9a8a5c; font-size: 22px; letter-spacing: 1px; margin-top: 2px; }
       #souls-line { color: #9a8a5c; font-size: 16px; letter-spacing: 1px; margin-top: 4px; font-family: var(--ds-font-body); }
-      #tier-pips { font-size: 16px; letter-spacing: 3px; color: rgba(255,255,255,0.12); margin-top: 2px; }
-      #tier-pips .pip.lit { color: var(--ds-gold); text-shadow: 0 0 6px rgba(201,176,120,0.7); }
       @keyframes blink { 50% { opacity: 0.4; } }
 
       /* ---- Top-CENTER: biome title + level timer ---- */
@@ -300,12 +298,11 @@
         </div>
       </div>
 
-      <!-- Top-right: Orbs (ammo) + Souls (lifetime) + weapon tier -->
+      <!-- Top-right: Orbs (ammo) + Souls (lifetime total) -->
       <div id="vp-souls">
         <div class="souls"><span class="lbl">ORBS</span><span id="orb-count">0</span></div>
         <div id="orb-scale"></div>
-        <div id="souls-line">Souls 0 · Tier 0 · 100/100</div>
-        <div id="tier-pips"><span class="pip">▮</span><span class="pip">▮</span><span class="pip">▮</span><span class="pip">▮</span><span class="pip">▮</span></div>
+        <div id="souls-line">Souls 0</div>
       </div>
 
       <!-- Top-center: biome title + level timer (timer under level name, big) -->

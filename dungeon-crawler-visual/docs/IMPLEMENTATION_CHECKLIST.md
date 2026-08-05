@@ -254,6 +254,42 @@ ladder + proc fix items remain accurate and are SHIPPED.
       bottom-right label + CSS
 - [x] **Commit** (b7e6da1)
 
+### B4'''. Perf overhaul — spike-aware degraded tiers + render budget (PERFORMANCE_PLAN.md) — SHIPPED 2026-08-05
+
+The EMA safeguard was structurally blind to the real symptom (periodic
+hitches: a 1 s 5 fps spike only moved the EMA 60 → 57, and dt > 0.25 frames
+were excluded entirely). Replaced with a spike-aware tiered system; the plan
+is `docs/PERFORMANCE_PLAN.md`.
+
+- [x] Game._updatePerfMonitor: rolling ~3 s bad-frame window (dt > 50 ms = 1,
+      dt > 250 ms = 3, fed the RAW uncapped dt); 6 bad frames escalate a tier,
+      10 clean seconds de-escalate one tier (recovery restores shadows/post)
+- [x] Tiers: 1 = hide 50% decoratives (existing reduceDecorations),
+      2 = torch shadows off (LightingSystem.setShadowBudget), 3 = post off
+      + second deco cut; `#perf-warning` shows the active tier
+- [x] Shadow budget: TORCH_SHADOW_COUNT 8 → 1 (48 cube depth passes/frame →
+      6); static assignment at level build (nearest torches to entrance) —
+      the per-0.5 s re-sort + castShadow toggles that caused the recurring
+      hitches are gone; PCFSoftShadowMap → PCFShadowMap
+- [x] Light budget: torch spacing 16 → 20; decorative lights removed
+      (chains, candles, ice crystals, mushrooms, crystal clusters → emissive
+      only); crystal clusters capped at 3; lava/acid/wisps/altar lights kept
+- [x] Post budget: bloom at half res, enemy glow half-rate at quarter res
+      (30 Hz, ~1 frame stale — imperceptible), zero per-frame Set allocation
+      (setEnemyTargets diff), Game caches the alive-enemy roster
+- [x] CPU/GC/HUD: stats panel innerHTML cached (was rebuilt every frame),
+      combo pips queried once, biome border color written once per level,
+      water puddles freeze >20 u, particle loop hoists performance.now(),
+      _hasLOS cached per 3-unit cell
+- [x] Instrumentation: Game._frameStats (raw dt), window.__perfSeed dungeon
+      seed hook, scripts/perf-probe.mjs (rAF fps, longtasks, light/shadow
+      counts; --hard-gate enforces p95 ≤ 33 ms / max ≤ 150 ms on real
+      hardware), scripts/browser-smoke.mjs asserts warning ⇔ tier consistency
+- [x] Verified headless: perf-probe PASS (no exceptions; shadow torches 1 vs
+      old 8; longtasks 72 → ~46), degraded tiers 9/9 (escalation, cuts,
+      recovery), browser-smoke PASS, level-regen check PASS (1 → 2)
+- [x] **Commit** (perf overhaul — one commit)
+
 ### B4''. T5 lightsaber finalization (shipped with B2/B3 — plan §4/§5/§12 P4)
 
 - [x] Tier 5: blade 0x88ffff + white core, length 1.00, TIP_LOCAL.y = 0.79 (§4)

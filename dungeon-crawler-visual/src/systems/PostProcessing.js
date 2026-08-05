@@ -84,6 +84,8 @@ export class PostProcessing {
     this.composer = null;
     this._enemyGroups = [];
     this._enemyMeshes = new Set();
+    this._scratch = new Set(); // reusable target set — no per-frame allocation
+    this._glowTick = 0;        // half-rate enemy glow (alternates frames)
     this._enemyCam = null;
     this._enemyMat = null;
     this._enemyRT = null;
@@ -103,6 +105,8 @@ export class PostProcessing {
     // Bloom — reduced to ~5% of its previous 1.1 strength: a barely-there glow
     // on light sources, no ghosting.
     this.bloomPass = new UnrealBloomPass(size, 0.055, 0.5, 0.5);
+    // Half-res bloom: ~¼ the blur work, invisible at 5% strength (perf plan §5)
+    this.bloomPass.resolution.set(Math.max(1, Math.floor(w / 2)), Math.max(1, Math.floor(h / 2)));
     this.composer.addPass(this.bloomPass);
 
     // Punchier colors — 5% of previous 0.35 saturation
@@ -124,8 +128,8 @@ export class PostProcessing {
     });
     this.xray = false;
     this.enemyDist = 30; // nearest living enemy distance (for the highlight fade)
-    const hw = Math.max(1, Math.floor(w / 2));
-    const hh = Math.max(1, Math.floor(h / 2));
+    const hw = Math.max(1, Math.floor(w / 4));
+    const hh = Math.max(1, Math.floor(h / 4));
     const rtOpts = { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter };
     this._enemyRT = new THREE.WebGLRenderTarget(hw, hh, rtOpts);
     this._enemyBlurRT = new THREE.WebGLRenderTarget(hw, hh, rtOpts);
@@ -143,19 +147,32 @@ export class PostProcessing {
   // (e.g. corpses), so only living mobs glow.
   setEnemyTargets(groups) {
     this._enemyGroups = groups;
-    const current = new Set();
+    this._scratch.clear();
     for (const g of groups) {
       g.traverse((o) => {
         if (o.isMesh || o.isSprite) {
           o.layers.enable(1);
-          current.add(o);
+          this._scratch.add(o);
         }
       });
     }
-    for (const m of this._enemyMeshes) {
-      if (!current.has(m)) m.layers.disable(1);
+    // Diff against the live set; only touch the layer flags when the roster
+    // actually changed (avoids per-frame allocation + redundant writes).
+    let changed = this._scratch.size !== this._enemyMeshes.size;
+    if (!changed) {
+      for (const m of this._scratch) {
+        if (!this._enemyMeshes.has(m)) { changed = true; break; }
+      }
     }
-    this._enemyMeshes = current;
+    if (changed) {
+      for (const m of this._enemyMeshes) {
+        if (!this._scratch.has(m)) m.layers.disable(1);
+      }
+      const tmp = this._enemyMeshes;
+      this._enemyMeshes = this._scratch;
+      this._scratch = tmp;
+    }
+    this._scratch.clear();
   }
 
   // Render the living enemies as a flat red-orange silhouette, blur it, and
@@ -209,7 +226,10 @@ export class PostProcessing {
     // visualizes "see enemies through walls", so it must render even when
     // post-processing is otherwise off (the game starts with post disabled).
     if ((this.enabled || this.xray) && this.composer) {
-      this._renderEnemyGlow();
+      // Half-rate enemy glow (30 Hz): the pulse is slow, a 1-frame-stale
+      // silhouette is imperceptible, and it halves the extra scene render.
+      this._glowTick = (this._glowTick + 1) % 2;
+      if (this._glowTick === 0 && this.enemyDist < 60) this._renderEnemyGlow();
       // Slow pulse (~2s period) so the highlight reads as alive, not static
       this.enemyGlowPass.uniforms.uPulse.value = 0.75 + 0.25 * Math.sin(performance.now() * 0.003);
       // Distance fade: glow strongly when far, fade out as enemies approach.
@@ -237,11 +257,11 @@ export class PostProcessing {
       this.composer.setSize(w, h);
     }
     if (this.bloomPass) {
-      this.bloomPass.resolution.set(w, h);
+      this.bloomPass.resolution.set(Math.max(1, Math.floor(w / 2)), Math.max(1, Math.floor(h / 2)));
     }
     if (this._enemyRT) {
-      const hw = Math.max(1, Math.floor(w / 2));
-      const hh = Math.max(1, Math.floor(h / 2));
+      const hw = Math.max(1, Math.floor(w / 4));
+      const hh = Math.max(1, Math.floor(h / 4));
       this._enemyRT.setSize(hw, hh);
       this._enemyBlurRT.setSize(hw, hh);
       this._enemyBlurRT2.setSize(hw, hh);

@@ -873,7 +873,30 @@ export class SkeletonSystem {
     this.onBurnSpawned?.();
   }
 
+  // Line-of-sight raycast with a 3-unit cell cache. Called up to 3× per frame
+  // per mob — the cell key (player + mob position quantized) only changes as
+  // they move across cells, so most frames hit the cache instead of re-walking
+  // the collision boxes (perf plan §6).
   _hasLOS(skel, player, collisionBoxes) {
+    const pcx = Math.floor(player.x / 3);
+    const pcz = Math.floor(player.z / 3);
+    const scx = Math.floor(skel.group.position.x / 3);
+    const scz = Math.floor(skel.group.position.z / 3);
+    if (skel._losCellX === pcx && skel._losCellZ === pcz
+      && skel._losScx === scx && skel._losScz === scz
+      && skel._losVal !== undefined) {
+      return skel._losVal;
+    }
+    skel._losCellX = pcx;
+    skel._losCellZ = pcz;
+    skel._losScx = scx;
+    skel._losScz = scz;
+    const val = this._losRaycast(skel, player, collisionBoxes);
+    skel._losVal = val;
+    return val;
+  }
+
+  _losRaycast(skel, player, collisionBoxes) {
     const x0 = skel.group.position.x;
     const z0 = skel.group.position.z;
     const x1 = player.x;

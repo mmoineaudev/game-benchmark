@@ -40,7 +40,7 @@ export const LIGHTING = {
   TORCH_INTENSITY: 7,       // raised from 3.5
   TORCH_DISTANCE: 29,       // 36 -20%
   TORCH_DECAY: 1.2,         // lowered decay so light reaches further
-  TORCH_SHADOW_COUNT: 8,
+  TORCH_SHADOW_COUNT: 1,   // 8 → 1 — one cube shadow = 6 depth passes (was 48/frame)
   TORCH_SHADOW_MAP: 256,
   TORCH_SHADOW_NEAR: 0.5,
   TORCH_SHADOW_FAR: 11,     // 14 -20%

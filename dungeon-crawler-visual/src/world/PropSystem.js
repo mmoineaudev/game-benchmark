@@ -373,19 +373,10 @@ export class PropSystem {
     flame.position.y = -chainLen - 0.16;
     group.add(flame);
 
-    // Point light casting a wide warm pool at floor level
-    const light = new THREE.PointLight(
-      0xff9944, 6, 21, 1.2,   // distance 26 -20% = 21
-    );
-    light.position.y = -chainLen - 0.2;
-    group.add(light);
-
     group.position.set(x, WORLD.WALL_HEIGHT + 0.2, z);
     this._add(group);
     this._decoratives.push({ objs: [group] }); // light is a group child — hidden with it
     this._mats.push(mat, flameMat);
-    this._chainLights = this._chainLights || [];
-    this._chainLights.push({ light, phase: Math.random() * 10 });
     return true;
   }
 
@@ -560,13 +551,9 @@ export class PropSystem {
     const flame = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.08, 6), flameMat);
     flame.position.set(x, 0.22, z);
     this._add(flame);
-    const light = new THREE.PointLight(
-      LIGHT_SOURCES.CANDLE.color, LIGHT_SOURCES.CANDLE.intensity,
-      LIGHT_SOURCES.CANDLE.distance, LIGHT_SOURCES.CANDLE.decay,
-    );
-    light.position.set(x, 0.25, z);
-    this._add(light);
-    this._decoratives.push({ objs: [body, flame], light });
+    // No point light (perf plan §4): the unlit flame material carries the
+    // visual; the candle's warm pool was ~5 lights per library room.
+    this._decoratives.push({ objs: [body, flame] });
     this._mats.push(bodyMat, flameMat);
     return true;
   }
@@ -590,13 +577,8 @@ export class PropSystem {
       this._add(c);
       meshes.push(c);
     }
-    const light = new THREE.PointLight(
-      LIGHT_SOURCES.ICE.color, LIGHT_SOURCES.ICE.intensity,
-      LIGHT_SOURCES.ICE.distance, LIGHT_SOURCES.ICE.decay,
-    );
-    light.position.set(x, 1.0, z);
-    this._add(light);
-    this._decoratives.push({ objs: meshes, light });
+    // No point light (perf plan §4): emissive material already glows.
+    this._decoratives.push({ objs: meshes });
     this._mats.push(mat);
     return true;
   }
@@ -621,13 +603,8 @@ export class PropSystem {
       this._add(cap);
       meshes.push(stem, cap);
     }
-    const light = new THREE.PointLight(
-      LIGHT_SOURCES.MUSHROOM.color, LIGHT_SOURCES.MUSHROOM.intensity,
-      LIGHT_SOURCES.MUSHROOM.distance, LIGHT_SOURCES.MUSHROOM.decay,
-    );
-    light.position.set(x, 0.5, z);
-    this._add(light);
-    this._decoratives.push({ objs: meshes, light });
+    // No point light (perf plan §4): emissive cap material already glows.
+    this._decoratives.push({ objs: meshes });
     this._mats.push(stemMat, capMat);
     return true;
   }
@@ -676,12 +653,7 @@ export class PropSystem {
       c.rotation.set((Math.random() - 0.5) * 0.4, Math.random() * Math.PI, 0);
       this._add(c);
     }
-    const light = new THREE.PointLight(
-      LIGHT_SOURCES.CRYSTAL.color, LIGHT_SOURCES.CRYSTAL.intensity,
-      LIGHT_SOURCES.CRYSTAL.distance, LIGHT_SOURCES.CRYSTAL.decay,
-    );
-    light.position.set(x, 1.0, z);
-    this._add(light);
+    // No point light (perf plan §4): emissive material already glows.
     this._mats.push(mat);
     return true;
   }
@@ -838,13 +810,6 @@ export class PropSystem {
     // Water pools: global opacity pulse (1 shared material — §5.1)
     if (this._waterMat) {
       this._waterMat.opacity = 0.45 + Math.sin(time * 3 + this._waterPulsePhase) * 0.08;
-    }
-    // Hanging chain torch flames flicker gently
-    if (this._chainLights) {
-      for (const c of this._chainLights) {
-        const flicker = Math.sin(time * 9 + c.phase) * 0.12 + Math.sin(time * 14 + c.phase * 2) * 0.08;
-        c.light.intensity = 6 * (1 + flicker);
-      }
     }
     // Interactive props (sarcophagus lid slide + wraith spawn handled once)
     for (const it of this.interactives) {

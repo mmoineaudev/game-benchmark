@@ -60,6 +60,7 @@ const d = await evalExpr(`(() => {
   out.soulsLine = document.getElementById('souls-line')?.textContent;
   out.loadingHidden = document.getElementById('loading')?.classList.contains('hidden');
   out.perfHidden = document.getElementById('perf-warning')?.classList.contains('hidden');
+  out.tier = window.game ? window.game._degradedTier : 0;
   return out;
 })()`);
 for (const id of ['orb-count', 'souls-line', 'perf-warning', 'biome-label', 'timer', 'hp-fill', 'combo-pips', 'weapon-slot', 'stats-panel']) {
@@ -67,7 +68,9 @@ for (const id of ['orb-count', 'souls-line', 'perf-warning', 'biome-label', 'tim
 }
 assert(d.biomeText && d.biomeText.includes('LEVEL 1'), `biome label = "${d.biomeText}"`);
 assert(d.soulsLine === 'Souls 0', `souls line = "${d.soulsLine}" (total-only §7.1)`);
-assert(d.perfHidden, 'perf warning hidden at run start');
+// Warning visibility must match the degraded tier: hidden at tier 0, shown
+// otherwise (the spike detector may legitimately degrade on slow machines).
+assert(d.perfHidden === (d.tier === 0), `perf warning matches degraded tier (hidden=${d.perfHidden}, tier=${d.tier})`);
 assert(d.loadingHidden, 'loading screen passed');
 
 // Game loop alive: timer must advance over 2s.

@@ -35,13 +35,21 @@ export class Game {
     this._orbScaleEl = document.getElementById('orb-scale');
     this._soulsLineEl = document.getElementById('souls-line');
     this._perfWarningEl = document.getElementById('perf-warning');
-    // Perf safeguard (degraded mode): sustained <30 fps for >10 s halves the
-    // level's decorative props and shows the warning label (bottom-right).
-    this._fpsEma = 60;
-    this._lowFpsTime = 0;
-    this._degraded = false;
+    // Perf safeguard (degraded mode): spike-aware tiers — bad frames
+    // (dt > 50 ms) in a rolling ~3 s window escalate; a clean 10 s window
+    // de-escalates. Tier 1 hides 50% decoratives, tier 2 kills torch shadows,
+    // tier 3 turns post-processing off. (See _updatePerfMonitor.)
+    this._degradedTier = 0;
+    this._perfBad = 0;
+    this._perfWindow = [];
+    this._perfSum = 0;
+    this._recoverTimer = 0;
     this._biomeLabelEl = document.getElementById('biome-label');
     this._comboPipsEl = document.getElementById('combo-pips');
+    this._pipEls = this._comboPipsEl
+      ? Array.from(this._comboPipsEl.querySelectorAll('.pip'))
+      : [];
+    this._lastBiomePal = null; // cache biome border color (HUD writes once per level)
     this._exitEl = document.getElementById('exit-prompt');
     this._messagesEl = document.getElementById('messages');
     this._prevOrbCount = 0;
@@ -86,6 +94,7 @@ export class Game {
     this._staminaFillEl = document.getElementById('stamina-fill');
     this._bossBarEl = document.getElementById('boss-bar');
     this._statsEl = document.getElementById('stats-panel');
+    this._statsCache = ''; // stats panel innerHTML cache — only rewrites on change
     this._damageFlashEl = document.getElementById('damage-flash');
     this.skeletons = null;
     this.shooter = null;
@@ -101,6 +110,7 @@ export class Game {
     this._moveSpeedMult = 1; // EMPOWERED buff: +20% move speed
     this._heldFireball = null; // FIREBALL buff: hand visual replacing the dagger
     this._hlTargets = [];    // scratch array: alive enemy groups for the highlight pass
+    this._hlAliveCount = -1; // alive-roster cache (rebuild highlight only on change)
     this._maxHealth = PLAYER.MAX_HEALTH; // grows by 1 per boss kill
     if (this.state) this.state.maxHealth = this._maxHealth;
     this._bossPortalOpen = true; // boss arenas gate the exit portal
@@ -155,7 +165,7 @@ export class Game {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = RENDERER.EXPOSURE;
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap; // PCFSoft was ~3x the point-light cost
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.container.appendChild(this.renderer.domElement);
 
@@ -232,7 +242,9 @@ export class Game {
   }
 
   _generateDungeon() {
-    this.state.dungeonSeed = Date.now();
+    // window.__perfSeed is set by the headless perf probe (addScriptToEvaluate
+    // on new document) so A/B runs build the identical dungeon.
+    this.state.dungeonSeed = window.__perfSeed ?? Date.now();
     const gen = new DungeonGenerator(this.state.dungeonSeed, this.state.biome);
     this.dungeonData = gen.generate();
     this.state.entranceCell = this.dungeonData.entranceCell;
@@ -249,6 +261,8 @@ export class Game {
   _initLighting() {
     this.lighting = new LightingSystem(this.scene, this.biomes.current.palette);
     this.lighting.init(this.dungeonData);
+    // Degraded tier 2 persists across level regens (shadows stay off).
+    if (this._degradedTier >= 2) this.lighting.setShadowBudget(0);
   }
 
   _initProps() {
@@ -263,8 +277,9 @@ export class Game {
       if (Math.random() < chance) this.orbs.spawnBuff(x, z);
     };
     // Degraded mode (perf safeguard): once triggered, every NEW level builds
-    // at 50% decorative density so the run stays fluid.
-    if (this._degraded) this.props.reduceDecorations(0.5);
+    // with the active tier's cuts so the run stays fluid.
+    if (this._degradedTier >= 1) this.props.reduceDecorations(0.5);
+    if (this._degradedTier >= 3) this.props.reduceDecorations(0.5);
   }
 
   // Stepping on a breakable shatters it (same drop roll as a weapon break).
@@ -568,12 +583,21 @@ export class Game {
     requestAnimationFrame(() => this._animate());
 
     const now = performance.now();
-    this._delta = Math.min((now - this._lastTime) / 1000, 0.1);
+    const rawDt = (now - this._lastTime) / 1000; // uncapped — the perf monitor
+    this._delta = Math.min(rawDt, 0.1);          // sees real hitches
     this._lastTime = now;
     const t = now * 0.001;
 
-    // Perf safeguard: sustained <30 fps for >10 s → degraded mode (§16)
-    this._updatePerfMonitor(this._delta);
+    // Frame stats for headless perf probes (3 adds + 1 shift per frame).
+    // Raw dt — the capped sim delta would mask real frame times.
+    const fs = (this._frameStats = this._frameStats || { n: 0, sum: 0, max: 0, buf: [] });
+    fs.n++; fs.sum += rawDt;
+    if (rawDt > fs.max) fs.max = rawDt;
+    fs.buf.push(rawDt);
+    if (fs.buf.length > 300) fs.buf.shift();
+
+    // Perf safeguard: spike-aware degraded tiers (see _updatePerfMonitor)
+    this._updatePerfMonitor(rawDt);
 
     // Title screen holds the scene until ==30fps sustained for ~3s.
     this._updateTitleFps(this._delta);
@@ -616,12 +640,10 @@ export class Game {
     this._eKeyWasDown = this.input.isPressed('KeyE');
     if (this.sword) this.sword.updateSmoke(this._delta);
 
-    // Enemy highlight: feed the living enemy groups + nearest distance
+    // Enemy highlight: feed the living enemy groups + nearest distance.
+    // Roster is cached — setEnemyTargets only re-traverses when it changes.
     if (this.post && this.skeletons) {
-      this._hlTargets.length = 0;
-      for (const s of this.skeletons.skeletons) {
-        if (s.skel.state !== 'DEAD') this._hlTargets.push(s.skel.group);
-      }
+      this._refreshEnemyRoster();
       this.post.setEnemyTargets(this._hlTargets);
       this.post.setEnemyDist(this._nearestSkeletonDist());
     }
@@ -629,24 +651,72 @@ export class Game {
     this.post.render();
   }
 
-  // Perf safeguard: if sustained fps < 30 for more than 10 s, enter degraded
-  // mode — hide 50% of the current level's decorative props and show a small
-  // warning bottom-right. Once degraded, the run STAYS degraded (each new
-  // level builds at 50% via _initProps) so fluidity is preserved. Frame
-  // hitches (dt > 0.25 s, e.g. level regen) and the title screen are excluded
-  // so a single stutter never trips it.
+  // Perf safeguard: spike-aware degraded tiers. A rolling ~3 s window of
+  // frame deltas feeds a bad-frame counter (dt > 50 ms counts 1, dt > 250 ms
+  // counts 3 — the worst hitches now count the most, instead of being
+  // excluded). 6 bad frames escalate one tier; 10 clean seconds de-escalate
+  // one tier. Tiers: 1 = hide 50% decoratives, 2 = torch shadows off,
+  // 3 = post-processing off. De-escalation restores shadows/post (hidden
+  // decoratives stay hidden).
   _updatePerfMonitor(dt) {
-    if (this._degraded || this._titleActive) return;
-    if (dt <= 0 || dt > 0.25) return;
-    const fps = 1 / dt;
-    this._fpsEma = this._fpsEma ? this._fpsEma * 0.95 + fps * 0.05 : fps;
-    if (this._fpsEma < 30) this._lowFpsTime += dt;
-    else this._lowFpsTime = 0;
-    if (this._lowFpsTime > 10) {
-      this._degraded = true;
-      if (this.props) this.props.reduceDecorations(0.5);
-      if (this._perfWarningEl) this._perfWarningEl.classList.remove('hidden');
+    if (this._titleActive) return;
+    if (dt <= 0) return;
+    this._perfWindow.push(dt);
+    this._perfSum += dt;
+    while (this._perfSum > 3) this._perfSum -= this._perfWindow.shift();
+    const bad = dt > 0.05 ? (dt > 0.25 ? 3 : 1) : 0;
+    this._perfBad += bad;
+    if (this._perfBad >= 6) {
+      this._setDegradedTier(this._degradedTier + 1);
+      this._perfBad = 0;
     }
+    if (bad === 0) {
+      this._recoverTimer += dt;
+      if (this._recoverTimer > 10 && this._degradedTier > 0) {
+        this._setDegradedTier(this._degradedTier - 1);
+        this._recoverTimer = 0;
+      }
+    } else {
+      this._recoverTimer = 0;
+    }
+  }
+
+  // Apply/undo one degraded tier. Cumulative: higher tiers include the cuts
+  // of lower ones. reduceDecorations is idempotent per prop (visibility flag).
+  _setDegradedTier(t) {
+    const next = Math.max(0, Math.min(3, t));
+    if (next === this._degradedTier) return;
+    const prev = this._degradedTier;
+    this._degradedTier = next;
+    if (next >= 1 && prev < 1 && this.props) this.props.reduceDecorations(0.5);
+    if (next >= 2 && prev < 2 && this.lighting) this.lighting.setShadowBudget(0);
+    if (next >= 3 && prev < 3) {
+      if (this.post) this.post.enabled = false;
+      if (this.props) this.props.reduceDecorations(0.5);
+    }
+    if (next < 2 && prev >= 2 && this.lighting) {
+      this.lighting.setShadowBudget(LIGHTING.TORCH_SHADOW_COUNT);
+    }
+    if (next < 3 && prev >= 3 && this.post) this.post.enabled = true;
+    if (this._perfWarningEl) {
+      this._perfWarningEl.textContent = next > 0
+        ? `⚠ DEGRADED MODE (tier ${next}) — effects reduced for performance`
+        : '⚠ DEGRADED MODE — decorations reduced for performance';
+      this._perfWarningEl.classList.toggle('hidden', next === 0);
+    }
+  }
+
+  // Cache the alive-enemy roster: only rebuilds _hlTargets when the number of
+  // living mobs changes, so PostProcessing.setEnemyTargets re-traverses
+  // rarely instead of every frame.
+  _refreshEnemyRoster() {
+    const sks = this.skeletons ? this.skeletons.skeletons : [];
+    let alive = 0;
+    for (const s of sks) if (s.skel.state !== 'DEAD') alive++;
+    if (alive === this._hlAliveCount) return;
+    this._hlAliveCount = alive;
+    this._hlTargets.length = 0;
+    for (const s of sks) if (s.skel.state !== 'DEAD') this._hlTargets.push(s.skel.group);
   }
 
   _updateInput() {
@@ -1603,6 +1673,10 @@ export class Game {
 
   _animateWater(t) {
     for (const puddle of this._waterPuddles) {
+      // Freeze puddles >20u from the player — no per-frame VBO upload offscreen
+      const dx = puddle.mesh.position.x - this.state.player.x;
+      const dz = puddle.mesh.position.z - this.state.player.z;
+      if (dx * dx + dz * dz > 400) continue;
       const pos = puddle.mesh.geometry.attributes.position;
       const orig = puddle.vertices;
       for (let i = 0; i < pos.count; i++) {
@@ -1634,12 +1708,17 @@ export class Game {
       const ng = this.state.ngPlus ? ` · NG+${this.state.ngPlus}` : '';
       // Level title includes the level number.
       this._biomeLabelEl.textContent = `LEVEL ${this.state.level}${ng} — ${pal?.label || 'STONE DUNGEON'}`;
-      this._biomeLabelEl.style.borderBottomColor = pal ? `#${pal.fog.toString(16).padStart(6, '0')}` : '#444';
+      // Border color only changes per level — skip the style write every frame
+      if (pal !== this._lastBiomePal) {
+        this._lastBiomePal = pal;
+        this._biomeLabelEl.style.borderBottomColor = pal
+          ? `#${pal.fog.toString(16).padStart(6, '0')}` : '#444';
+      }
     }
     if (this._comboPipsEl) {
       const step = this.sword ? this.sword.comboStep : 0;
-      const pips = this._comboPipsEl.querySelectorAll('.pip');
-      pips.forEach((el, i) => el.classList.toggle('lit', i < step));
+      const pips = this._pipEls; // cached at construction — no per-frame query
+      for (let i = 0; i < pips.length; i++) pips[i].classList.toggle('lit', i < step);
       this._comboPipsEl.style.opacity = step > 0 ? '1' : '0.25';
     }
     if (this._sprintBonusEl) {
@@ -1731,9 +1810,13 @@ export class Game {
       ['Spawns', `×${spawnMult.toFixed(2)}`],
       ['Regen', '+1/5s @20s'],
     ];
-    this._statsEl.innerHTML = rows
+    const html = rows
       .map(([k, v]) => `<div class="stat-row"><span>${k}</span><b>${v}</b></div>`)
       .join('');
+    if (html !== this._statsCache) {
+      this._statsEl.innerHTML = html;
+      this._statsCache = html;
+    }
   }
 
   dispose() {

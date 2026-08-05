@@ -60,6 +60,7 @@ export class ParticleSystem {
     const px = playerPos.x;
     const pz = playerPos.z;
     const spread = 8;
+    const now = performance.now(); // hoisted — was 2 calls per particle per frame
 
     for (let i = 0; i < this.count; i++) {
       const idx = i * 3;
@@ -72,8 +73,8 @@ export class ParticleSystem {
       if (y > 3.8) y = 0.1;
 
       // Slight horizontal drift
-      x += (Math.sin(i * 0.7 + performance.now() * 0.0003) * dt * 0.3);
-      z += (Math.cos(i * 0.7 + performance.now() * 0.0003) * dt * 0.3);
+      x += (Math.sin(i * 0.7 + now * 0.0003) * dt * 0.3);
+      z += (Math.cos(i * 0.7 + now * 0.0003) * dt * 0.3);
 
       // Wrap around camera if too far
       if (Math.abs(x - px) > spread) x = px + (Math.random() - 0.5) * spread * 2;

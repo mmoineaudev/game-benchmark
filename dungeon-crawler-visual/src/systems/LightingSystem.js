@@ -48,18 +48,22 @@ export class LightingSystem {
 
     this._flameGeo = new THREE.ConeGeometry(0.1, 0.5, 6, 1);
 
+    const e = dungeonData.entranceCell;
+    this._entrance = { x: (e.x + 0.5) * dungeonData.cellSize, z: (e.z + 0.5) * dungeonData.cellSize };
     this._placeAllTorches(dungeonData);
     this._placeGodRays(dungeonData);
     this._placeStartEndMarkers(dungeonData);
     this._placeBraziers(dungeonData);
     this._placeCrystals(dungeonData);
-    this._updateShadowCasting(null);
+    // Static shadow assignment (nearest torches to the entrance cast shadows
+    // for the whole level — never toggled per frame, see _assignStaticShadows).
+    this._assignStaticShadows(LIGHTING.TORCH_SHADOW_COUNT);
   }
 
   _placeAllTorches(dungeonData) {
     const cs = dungeonData.cellSize;
     const gs = dungeonData.gridSize;
-    const spacing = 16;   // doubled from 8 — torches cut 50% for level-start perf
+    const spacing = 20;   // 16 → 20 — torches cut another ~20% (perf plan §4)
     const torchY = 2.5;
     // torchMode: 'standard' = every exposed edge | 'vaultOnly' = torches only
     // inside VAULT rooms (fungal cavern + poison swamp — lit by their own glow).
@@ -206,35 +210,41 @@ export class LightingSystem {
       cl.light.intensity = LIGHTING.CRYSTAL_INTENSITY * (1 + Math.sin(time * 0.8 + cl.phase) * 0.3);
     }
 
-    if (!this._lastShadowUpdate || time - this._lastShadowUpdate > 0.5) {
-      this._updateShadowCasting(playerPos);
-      this._lastShadowUpdate = time;
+  }
+
+  // Assign shadows ONCE at level build: the `count` torches nearest the
+  // entrance cast cube shadows for the whole level. Never toggled per frame —
+  // toggling light.castShadow mid-game allocates 6 shadow render targets per
+  // light (the old per-0.5 s re-sort caused the recurring hitches).
+  _assignStaticShadows(count = this._shadowBudget ?? LIGHTING.TORCH_SHADOW_COUNT) {
+    const anchor = this._entrance || { x: 0, z: 0 };
+    const sorted = [...this.torches].sort((a, b) => {
+      const da = (a.x - anchor.x) ** 2 + (a.z - anchor.z) ** 2;
+      const db = (b.x - anchor.x) ** 2 + (b.z - anchor.z) ** 2;
+      return da - db;
+    });
+    for (let i = 0; i < sorted.length; i++) {
+      const t = sorted[i];
+      const shouldCast = i < count;
+      if (t.shadowEnabled === shouldCast) continue;
+      t.shadowEnabled = shouldCast;
+      t.light.castShadow = shouldCast;
+      if (shouldCast) {
+        t.light.shadow.mapSize.set(LIGHTING.TORCH_SHADOW_MAP, LIGHTING.TORCH_SHADOW_MAP);
+        t.light.shadow.camera.near = LIGHTING.TORCH_SHADOW_NEAR;
+        t.light.shadow.camera.far = LIGHTING.TORCH_SHADOW_FAR;
+        t.light.shadow.bias = -0.005;
+        t.light.shadow.normalBias = 0.02;
+      }
     }
   }
 
-  _updateShadowCasting(playerPos) {
-    if (!playerPos) return;
-    const sorted = [...this.torches].sort((a, b) => {
-      const da = (a.x - playerPos.x) ** 2 + (a.z - playerPos.z) ** 2;
-      const db = (b.x - playerPos.x) ** 2 + (b.z - playerPos.z) ** 2;
-      return da - db;
-    });
-    const maxShadows = LIGHTING.TORCH_SHADOW_COUNT;
-    for (let i = 0; i < sorted.length; i++) {
-      const t = sorted[i];
-      const shouldCast = i < maxShadows;
-      if (t.shadowEnabled !== shouldCast) {
-        t.shadowEnabled = shouldCast;
-        t.light.castShadow = shouldCast;
-        if (shouldCast) {
-          t.light.shadow.mapSize.set(LIGHTING.TORCH_SHADOW_MAP, LIGHTING.TORCH_SHADOW_MAP);
-          t.light.shadow.camera.near = LIGHTING.TORCH_SHADOW_NEAR;
-          t.light.shadow.camera.far = LIGHTING.TORCH_SHADOW_FAR;
-          t.light.shadow.bias = -0.005;
-          t.light.shadow.normalBias = 0.02;
-        }
-      }
-    }
+  // Degraded-mode hook: override the shadow budget at runtime (tier 2 sets 0).
+  // Kept in instance state — never clobbers the shared LIGHTING constant, so
+  // restoring to LIGHTING.TORCH_SHADOW_COUNT always works.
+  setShadowBudget(count) {
+    this._shadowBudget = Math.max(0, count);
+    this._assignStaticShadows(this._shadowBudget);
   }
 
   _placeGodRays(dungeonData) {
@@ -387,8 +397,8 @@ export class LightingSystem {
         roughness: 0.2, metalness: 0.1,
       });
 
-      // Cluster of 3-5 crystals
-      const count = 3 + Math.floor(Math.random() * 3);
+      // Cluster capped at 3 (was 3-5) — perf plan §4
+      const count = 3;
       for (let i = 0; i < count; i++) {
         const h = 0.5 + Math.random() * 1.1;
         const geo = new THREE.ConeGeometry(0.12 + Math.random() * 0.1, h, 5);

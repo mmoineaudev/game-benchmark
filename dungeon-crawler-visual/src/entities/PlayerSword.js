@@ -60,6 +60,7 @@ export class PlayerSword {
     this._colorStep = 0;
     this._rangeScale = 1;
     this.tier = 0;         // weapon evolution tier (0..5) — WEAPON_EVOLUTION_PLAN §3
+    this._tipLocal = new THREE.Vector3(0, 0.60, 0.02); // blade tip (tier-scaled by _applyForm)
     this.lengthMult = 1;   // temporary length boost (EMPOWERED buff)
     this.attackSpeedMult = 1; // temporary attack-speed boost (EMPOWERED buff)
     this._flashTimer = 0;
@@ -132,6 +133,7 @@ export class PlayerSword {
     const fuller = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.4, 0.006), fullerMat);
     fuller.position.set(0, 0.21, 0.033); // toward the +z (back) face
     this.group.add(fuller);
+    this._fuller = fuller;
 
     // Wrapped grip directly below the blade — no crossguard between them.
     const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.024, 0.18, 8), dark);
@@ -218,7 +220,7 @@ export class PlayerSword {
 
   // Blade tip position in camera space (the sword group is a camera child).
   _tipCamSpace() {
-    return TIP_LOCAL.clone().applyEuler(this.group.rotation).add(this.group.position);
+    return this._tipLocal.clone().applyEuler(this.group.rotation).add(this.group.position);
   }
 
   _spawnTrail(pool, burst = false) {
@@ -403,6 +405,63 @@ export class PlayerSword {
   setTier(tier) {
     this.tier = Math.max(0, Math.min(EVOLUTION.MAX_TIER, tier | 0));
     if (this._applyForm) this._applyForm(this.tier);
+  }
+
+  // Rebuild the blade form for a tier (WEAPON_EVOLUTION_PLAN §4). T0 = the
+  // current executioner blade, T1 = longer + bronze edge, T2 = +blue energy
+  // stripes + hilt glow band. T3+ swaps to an energy blade (B3/B4). The size
+  // steps are baked into the form GEOMETRY (never the group scale) so they
+  // read at any orb count, and TIP_LOCAL follows the tip for trails/arcs.
+  _applyForm(tier) {
+    const len = EVOLUTION.BLADE_LENGTH[tier] ?? EVOLUTION.BLADE_LENGTH[0];
+    const k = len / EVOLUTION.BLADE_LENGTH[0];
+    if (this._upperBlade) {
+      this._upperBlade.scale.y = k;
+      this._upperBlade.position.y = 0.21 * k;
+    }
+    if (this._tip) {
+      this._tip.scale.set(0.6, k, 1);
+      this._tip.position.y = 0.56 * k;
+    }
+    this._tipLocal.set(0, len * 0.79, 0.02);
+
+    // Tier 1+: bronze edge (fuller recolor — subtle first step)
+    if (this._fuller) {
+      this._fuller.material.color.setHex(tier >= 1 ? 0xd8a060 : 0xd8dce2);
+    }
+
+    // Tier 2+: emissive blue energy stripes on both blade faces + hilt glow
+    if (tier >= 2) {
+      if (!this._stripeMeshes) {
+        const stripeMat = new THREE.MeshBasicMaterial({ color: 0x4ac8ff });
+        this._stripeMeshes = [];
+        for (const side of [1, -1]) {
+          const s = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.4, 0.001), stripeMat);
+          s.position.set(0, 0.21, side * 0.041);
+          s.layers.set(2);
+          s.castShadow = false;
+          this.group.add(s);
+          this._stripeMeshes.push(s);
+        }
+        this._mats.push(stripeMat);
+        const bandMat = new THREE.MeshBasicMaterial({ color: 0x2a6a9a });
+        this._hiltBand = new THREE.Mesh(new THREE.TorusGeometry(0.032, 0.008, 6, 12), bandMat);
+        this._hiltBand.rotation.x = Math.PI / 2;
+        this._hiltBand.layers.set(2);
+        this._hiltBand.castShadow = false;
+        this.group.add(this._hiltBand);
+        this._mats.push(bandMat);
+      }
+      for (const s of this._stripeMeshes) {
+        s.scale.y = k;
+        s.position.y = 0.21 * k;
+        s.visible = true;
+      }
+      if (this._hiltBand) this._hiltBand.visible = true;
+    } else if (this._stripeMeshes) {
+      this._stripeMeshes.forEach((s) => { s.visible = false; });
+      if (this._hiltBand) this._hiltBand.visible = false;
+    }
   }
 
   // Grows the dagger +20% per 10 orbs held (capped at +200% = 3x at 100

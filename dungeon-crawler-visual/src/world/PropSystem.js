@@ -16,11 +16,16 @@ export class PropSystem {
     this.collisionBoxes = [];
     this.breakables = []; // { mesh, x, z, radius, hp }
     this.interactives = []; // { mesh, x, z, radius, opened, ... }
-    this.lavaPools = []; // { x, z, radius }
+    this.lavaPools = []; // { x, z, type, radius } — type: 'LAVA' | 'ACID' (BIOME_EXPANSION_PLAN §6.2)
     this._textures = [];
     this._mats = [];
     this._shards = []; // pooled debris shards
     this._added = []; // every scene-added object, for clean removal in dispose()
+    // Instanced decoratives (1 draw call per type per level):
+    this._stalactiteMesh = null;   // ceiling cones, biome-tinted
+    this._waterMesh = null;        // FLOODED_RUINS pools (shared material, global pulse)
+    this._waterMat = null;
+    this._waterPulsePhase = Math.random() * 10;
   }
 
   _add(obj) {
@@ -148,18 +153,38 @@ export class PropSystem {
     if (is('LIBRARY')) this._placeBookshelves(room, 6 + Math.floor(Math.random() * 3)); // 6-8
     if (is('CRYPT')) this._placeSarcophagi(room, 2 + Math.floor(Math.random() * 2)); // 2-3
     if (is('ARMORY')) this._placeWeaponRacks(room, 4);
-    // Will-o'-wisps: 1-2 per CRYPT room (moving lights)
+    // Will-o'-wisps: 1-2 per CRYPT room (crypt) or 1 per room (flooded ruins)
     if (is('CRYPT') && biome === 'HAUNTED_CRYPT') {
-      this._placeWisps(room, 1 + Math.floor(Math.random() * 2)); // 1-2
+      this._placeWisps(room, 1 + Math.floor(Math.random() * 2), LIGHT_SOURCES.WISP.color); // 1-2
+    }
+    if (biome === 'FLOODED_RUINS') {
+      this._placeWisps(room, 1, 0x55ddcc); // 1 aqua wisp per room (plan §6.1)
+    }
+    // --- Biome expansion: new room types (BIOME_EXPANSION_PLAN §4.1) ---
+    if (is('CRYSTAL_CHAMBER')) {
+      // Signature room: 3 crystal clusters + magenta stalactites
+      for (let i = 0; i < 3; i++) {
+        const p = this._randomPointInRoomClear(room, 1.2);
+        this._spawnCrystalCluster(p.x, p.z);
+      }
+      const sp = this._randomPointInRoom(room, 1.2);
+      this._spawnStalactite(sp.x, sp.z);
+    }
+    if (is('TEMPLE')) {
+      this._placePillars(room, 2); // 2 pillars (gold-tinted via biome)
+      const c = this._cellCenter(room.cx + room.w / 2, room.cz + room.h / 2);
+      const cs = this.data.cellSize;
+      // Altar centered on the back wall of the room
+      this._spawnAltar(c.x, (room.cz + room.h) * cs - 1.2);
     }
   }
 
-  _placeWisps(room, count) {
+  _placeWisps(room, count, color) {
     for (let i = 0; i < count; i++) {
       const c = this._cellCenter(room.cx + room.w / 2, room.cz + room.h / 2);
       const spriteMat = new THREE.SpriteMaterial({
         map: generateGlowTexture(),
-        color: LIGHT_SOURCES.WISP.color,
+        color,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
         transparent: true,
@@ -172,7 +197,7 @@ export class PropSystem {
         new THREE.MeshBasicMaterial({ color: 0xccffdd }),
       );
       const light = new THREE.PointLight(
-        LIGHT_SOURCES.WISP.color, LIGHT_SOURCES.WISP.intensity,
+        color, LIGHT_SOURCES.WISP.intensity,
         LIGHT_SOURCES.WISP.distance, LIGHT_SOURCES.WISP.decay,
       );
       this.wisps = this.wisps || [];
@@ -213,6 +238,33 @@ export class PropSystem {
       add('CANDLE', room.type === 'LIBRARY' ? 4 : 2);
     }
     if (biome === 'STONE') add('RUBBLE', 2);
+    // --- Biome expansion: per-biome prop sets (BIOME_EXPANSION_PLAN §5.2) ---
+    if (biome === 'CRYSTAL_DEPTHS') {
+      add('CRYSTAL_CLUSTER', 3); // 1 light cluster per room (perf cap §5.1)
+      add('STALACTITE', 2);      // magenta-tinted ceiling cones
+      add('RUBBLE', 1);
+    }
+    if (biome === 'POISON_SWAMP') {
+      add('ACID_POOL', 2);       // hazard pool (POOLS.ACID)
+      add('STALACTITE', 2);      // toxic-green tint
+      add('RUBBLE', 1);
+      add('GLOWING_MUSHROOM', 3); // toxic recolors (cap 0xccff44)
+    }
+    if (biome === 'GOLDEN_TEMPLE') {
+      add('RUBBLE', 1);
+      add('CHAIN', 2);
+    }
+    if (biome === 'FLOODED_RUINS') {
+      add('WATER_POOL', 2);      // decorative, instanced (no hazard)
+      add('RUBBLE', 1);
+      add('CHAIN', 2);
+    }
+    if (biome === 'EMBER_FORGE') {
+      add('ANVIL', 2);
+      add('LAVA_POOL', 2);       // lava pools reused as-is (§5.2)
+      add('RUBBLE', 1);
+      add('CHAIN', 2);
+    }
 
     const sum = pool.reduce((a, [, w]) => a + w, 0);
     if (sum <= 0) return null;
@@ -237,6 +289,12 @@ export class PropSystem {
       case 'LAVA_POOL': return this._spawnLava(x, z);
       case 'CANDLE': return this._spawnCandle(x, z);
       case 'RUBBLE': return this._spawnRubble(x, z);
+      // --- Biome expansion: new props (BIOME_EXPANSION_PLAN §5.1) ---
+      case 'CRYSTAL_CLUSTER': return this._spawnCrystalCluster(x, z);
+      case 'ACID_POOL': return this._spawnLava(x, z, 'ACID');
+      case 'WATER_POOL': return this._spawnWater(x, z);
+      case 'ANVIL': return this._spawnAnvil(x, z);
+      case 'STALACTITE': return this._spawnStalactite(x, z);
       default: return false;
     }
   }
@@ -390,7 +448,10 @@ export class PropSystem {
   // ----------------------------------------------------------- structural
 
   _placePillars(room, count) {
-    const mat = makeStone(0x4a4a5a, { seed: 113, rough: 0.85, metal: 0.05 });
+    // Biome-tinted pillar stone (golden temple: warm gold; flooded ruins: teal)
+    const tint = this.biome === 'GOLDEN_TEMPLE' ? 0x8a7a4a
+      : this.biome === 'FLOODED_RUINS' ? 0x3a5a5e : 0x4a4a5a;
+    const mat = makeStone(tint, { seed: 113, rough: 0.85, metal: 0.05 });
     const cs = this.data.cellSize;
     for (let i = 0; i < count; i++) {
       const p = this._randomPointInRoomClear(room, 2.0);
@@ -533,8 +594,11 @@ export class PropSystem {
 
   _spawnMushroom(x, z) {
     const stemMat = new THREE.MeshStandardMaterial({ color: 0x8a7a5a, roughness: 0.9 });
+    // Poison swamp: toxic recolor (BIOME_EXPANSION_PLAN §5.2)
+    const toxic = this.biome === 'POISON_SWAMP';
+    const capColor = toxic ? 0xccff44 : 0x44ff88;
     const capMat = new THREE.MeshStandardMaterial({
-      color: 0x44ff88, emissive: 0x44ff88, emissiveIntensity: 2.0, roughness: 0.6,
+      color: capColor, emissive: capColor, emissiveIntensity: 2.0, roughness: 0.6,
     });
     const cluster = Math.floor(Math.random() * 3) + 3; // 3-5
     for (let i = 0; i < cluster; i++) {
@@ -556,23 +620,156 @@ export class PropSystem {
     return true;
   }
 
-  _spawnLava(x, z) {
+  _spawnLava(x, z, type = 'LAVA') {
+    // Pool hazard, keyed by PROPS.POOLS type (BIOME_EXPANSION_PLAN §6.2).
+    // LAVA keeps its exact current numbers/colors; ACID is the poison recolor.
+    const cfg = PROPS.POOLS[type] || PROPS.POOLS.LAVA;
     const mat = new THREE.MeshBasicMaterial({
-      color: 0xff5522, transparent: true, opacity: 0.85, depthWrite: false,
+      color: cfg.color, transparent: true, opacity: 0.85, depthWrite: false,
     });
     const radius = 1.5 + Math.random();
     const pool = new THREE.Mesh(new THREE.CircleGeometry(radius, 16), mat);
     pool.rotation.x = -Math.PI / 2;
     pool.position.set(x, 0.02, z);
     this._add(pool);
+    const lightCfg = type === 'ACID' ? LIGHT_SOURCES.ACID : LIGHT_SOURCES.LAVA;
     const light = new THREE.PointLight(
-      LIGHT_SOURCES.LAVA.color, LIGHT_SOURCES.LAVA.intensity,
-      LIGHT_SOURCES.LAVA.distance, LIGHT_SOURCES.LAVA.decay,
+      lightCfg.color, lightCfg.intensity,
+      lightCfg.distance, lightCfg.decay,
     );
     light.position.set(x, 0.6, z);
     this._add(light);
     this._mats.push(mat);
-    this.lavaPools.push({ x, z, radius: PROPS.LAVA_RADIUS });
+    this.lavaPools.push({ x, z, type, radius: cfg.radius });
+    return true;
+  }
+
+  // -------------------------------------------------------------------------
+  // Biome expansion props (BIOME_EXPANSION_PLAN §5.1)
+
+  _spawnCrystalCluster(x, z) {
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0xcc88ff, emissive: 0xcc66ff, emissiveIntensity: 1.4,
+      transparent: true, opacity: 0.8, roughness: 0.2,
+    });
+    const cluster = Math.floor(Math.random() * 3) + 3; // 3-5 crystals
+    for (let i = 0; i < cluster; i++) {
+      const h = 0.5 + Math.random() * 0.7;
+      const c = new THREE.Mesh(new THREE.ConeGeometry(0.1 + Math.random() * 0.1, h, 5), mat);
+      c.position.set(
+        x + (Math.random() - 0.5) * 1.5,
+        h / 2,
+        z + (Math.random() - 0.5) * 1.5,
+      );
+      c.rotation.set((Math.random() - 0.5) * 0.4, Math.random() * Math.PI, 0);
+      this._add(c);
+    }
+    const light = new THREE.PointLight(
+      LIGHT_SOURCES.CRYSTAL.color, LIGHT_SOURCES.CRYSTAL.intensity,
+      LIGHT_SOURCES.CRYSTAL.distance, LIGHT_SOURCES.CRYSTAL.decay,
+    );
+    light.position.set(x, 1.0, z);
+    this._add(light);
+    this._mats.push(mat);
+    return true;
+  }
+
+  _spawnWater(x, z) {
+    // Instanced decorative pools: one InstancedMesh per level, shared material,
+    // global opacity pulse (perf: 1 draw call total — §5.1).
+    if (!this._waterMesh) {
+      this._waterMat = new THREE.MeshBasicMaterial({
+        color: 0x1a5a5a, transparent: true, opacity: 0.45, depthWrite: false,
+      });
+      const geo = new THREE.PlaneGeometry(1, 1);
+      this._waterMesh = new THREE.InstancedMesh(geo, this._waterMat, 24);
+      this._waterMesh.count = 0;
+      this._waterMesh.rotation.x = -Math.PI / 2;
+      this._add(this._waterMesh);
+      this._mats.push(this._waterMat);
+    }
+    if (this._waterMesh.count >= this._waterMesh.instanceMatrix.count) return false;
+    const i = this._waterMesh.count++;
+    const scale = 1.5 + Math.random() * 1.5;
+    const m = new THREE.Matrix4().compose(
+      new THREE.Vector3(x, 0.02, z),
+      new THREE.Quaternion(),
+      new THREE.Vector3(scale, scale, 1),
+    );
+    this._waterMesh.setMatrixAt(i, m);
+    this._waterMesh.instanceMatrix.needsUpdate = true;
+    return true;
+  }
+
+  _spawnAnvil(x, z) {
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x4a4a52, roughness: 0.4, metalness: 0.8,
+    });
+    const group = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.3, 0.35), mat);
+    body.position.y = 0.25;
+    group.add(body);
+    const horn = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.3, 8), mat);
+    horn.rotation.z = -Math.PI / 2;
+    horn.position.set(0.35, 0.38, 0);
+    group.add(horn);
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 0.12, 8), mat);
+    base.position.y = 0.06;
+    group.add(base);
+    group.position.set(x, 0, z);
+    group.rotation.y = Math.random() * Math.PI;
+    this._add(group);
+    this._mats.push(mat);
+    return true;
+  }
+
+  _spawnAltar(x, z) {
+    const stone = new THREE.MeshStandardMaterial({ color: 0x8a7a4a, roughness: 0.8 });
+    const gold = new THREE.MeshStandardMaterial({ color: 0xd8b44a, roughness: 0.3, metalness: 0.8 });
+    const flameMat = new THREE.MeshBasicMaterial({ color: 0xffcc66 });
+    const group = new THREE.Group();
+    const base = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.5, 1.2), stone);
+    base.position.y = 0.25;
+    group.add(base);
+    const trim = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.08, 1.26), gold);
+    trim.position.y = 0.5;
+    group.add(trim);
+    for (const [fx, fz] of [[-0.2, 0], [0.2, 0]]) {
+      const flame = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.14, 6), flameMat);
+      flame.position.set(fx, 0.62, fz);
+      group.add(flame);
+    }
+    group.position.set(x, 0, z);
+    this._add(group);
+    const light = new THREE.PointLight(0xffcc66, 2.0, 8, 1.5);
+    light.position.set(x, 1.0, z);
+    this._add(light);
+    this._mats.push(stone, gold, flameMat);
+    return true;
+  }
+
+  _spawnStalactite(x, z) {
+    // Instanced ceiling cones, biome-tinted (crystal: magenta, poison: green).
+    if (!this._stalactiteMesh) {
+      const tint = this.biome === 'CRYSTAL_DEPTHS' ? 0x6a4a8a : 0x6a6a2a;
+      const mat = new THREE.MeshStandardMaterial({ color: tint, roughness: 0.85 });
+      const geo = new THREE.ConeGeometry(0.15, 1, 6);
+      this._stalactiteMesh = new THREE.InstancedMesh(geo, mat, 60);
+      this._stalactiteMesh.count = 0;
+      this._add(this._stalactiteMesh);
+      this._mats.push(mat);
+    }
+    const mesh = this._stalactiteMesh;
+    if (mesh.count >= mesh.instanceMatrix.count) return false;
+    const h = 0.6 + Math.random() * 0.6;
+    const i = mesh.count++;
+    const m = new THREE.Matrix4().compose(
+      new THREE.Vector3(x, WORLD.WALL_HEIGHT - h / 2, z),
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI, 0, Math.random() * Math.PI)),
+      new THREE.Vector3(0.5 + Math.random() * 0.5, 1, 1),
+    );
+    mesh.setMatrixAt(i, m);
+    mesh.instanceMatrix.needsUpdate = true;
     return true;
   }
 
@@ -607,6 +804,10 @@ export class PropSystem {
   update(dt, time, playerPos) {
     this._updateShards(dt);
     this._updateWisps(dt, time);
+    // Water pools: global opacity pulse (1 shared material — §5.1)
+    if (this._waterMat) {
+      this._waterMat.opacity = 0.45 + Math.sin(time * 3 + this._waterPulsePhase) * 0.08;
+    }
     // Hanging chain torch flames flicker gently
     if (this._chainLights) {
       for (const c of this._chainLights) {
@@ -741,6 +942,9 @@ export class PropSystem {
     this._shards = [];
     this._added = [];
     this._chainLights = [];
+    this._waterMesh = null;
+    this._waterMat = null;
+    this._stalactiteMesh = null;
     this.collisionBoxes = [];
   }
 }

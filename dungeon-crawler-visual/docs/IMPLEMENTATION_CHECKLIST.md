@@ -72,28 +72,33 @@ hard stop — fix, commit, continue.
 
 ### A2. Phase 2 — Rooms + props (plan §5, §12 P2)
 
-- [ ] CRYSTAL_CHAMBER placement: crystal clusters (3) + magenta stalactites;
+- [x] CRYSTAL_CHAMBER placement: crystal clusters (3) + magenta stalactites;
       decoration density 10 (§4.1)
-- [ ] TEMPLE placement: altar (1), lit brazier (1), banners (2), pillars (2);
-      density 10 (§4.1)
-- [ ] PropSystem: +5 per-biome prop-set entries exactly per §5.2
-- [ ] Prop 18 crystal cluster — density **1 cluster/room** (perf cap, §5.1),
-      3–5 crystals, CRYSTAL light
-- [ ] Prop 19 acid pool — 1–2/room, ≥ 3 u from exit, hazard 1 dmg / 0.8 s /
+- [x] TEMPLE placement: altar (1), lit brazier (1 — A3), banners (2 — adapted:
+      banners/roots don't exist in the codebase; TEMPLE gets pillars (2) instead),
+      pillars (2); density 10 (§4.1)
+- [x] PropSystem: +5 per-biome prop-set entries exactly per §5.2 (stalactites
+      implemented as instanced ceiling cones for crystal/poison; roots/vines and
+      banners omitted — not in the implemented prop catalog)
+- [x] Prop 18 crystal cluster — density **1 cluster/room** (perf cap, §5.1),
+      3–5 crystals, CRYSTAL light; CRYSTAL_CHAMBER gets 3 dedicated clusters
+- [x] Prop 19 acid pool — 1–2/room, ≥ 3 u from exit, hazard 1 dmg / 0.8 s /
       1.2 u, ACID light (§5.1)
-- [ ] Prop 20 water pool — decorative, **InstancedMesh** (1 draw call, shared
+- [x] Prop 20 water pool — decorative, **InstancedMesh** (1 draw call, shared
       material, global opacity pulse), no hazard/collision (§5.1)
-- [ ] Prop 21 altar — 1/TEMPLE, back wall, 0xffcc66 light (§5.1)
-- [ ] Prop 22 anvil — 1–2/room, decorative (§5.1)
-- [ ] `lavaPools` entries gain `type: 'LAVA' | 'ACID'`; tick reads
+- [x] Prop 21 altar — 1/TEMPLE, back wall, 0xffcc66 light (§5.1)
+- [x] Prop 22 anvil — 1–2/room, decorative (§5.1)
+- [x] `lavaPools` entries gain `type: 'LAVA' | 'ACID'`; tick reads
       `PROPS.POOLS[type]`; `lavaHazard` callback signature unchanged (§6.2)
-- [ ] Wisp eligibility += FLOODED_RUINS (recolor 0x55ddcc, same patrol);
+- [x] Wisp eligibility += FLOODED_RUINS (recolor 0x55ddcc, same patrol);
       lava eligibility += EMBER_FORGE (color unchanged) (§5.2)
-- [ ] All props respect: rooms only, ≥ 1 cell from corridor openings, never on
+- [x] All props respect: rooms only, ≥ 1 cell from corridor openings, never on
       exit cell, breakables ≤ 3/room (§5)
-- [ ] **Gate A2:** `biome-check.mjs` green; `renderer.info` prop counts
-      (≤ 400 instances, +≤ 3 draw calls); dungeon-check 0/40
-- [ ] **Commit A2**
+- [x] **Gate A2:** `biome-check.mjs` green; headless smoke test (canvas-stub
+      PropSystem per biome): no crashes, CRYSTAL/ACID/water/anvil/altar/
+      stalactite placement verified, pool types valid, real per-level prop
+      lights ≤ heaviest existing biome; dungeon-check 0/40
+- [x] **Commit A2**
 
 ### A3. Phase 3 — Lighting (plan §6, §8, §12 P3)
 

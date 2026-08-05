@@ -65,16 +65,21 @@ as they do today. `biomeForLevel` formula is unchanged:
 |---|---|---|---|
 | 1–2 | STONE | 12–13 | CRYSTAL_DEPTHS |
 | 3–4 | HAUNTED_CRYPT | **14** | **SPECTRAL_COURT (boss)** |
-| 5–6 | FUNGAL_CAVERN | 15–16 | POISON_SWAMP |
-| **7** | **SPECTRAL_COURT (boss)** | 17–18 | GOLDEN_TEMPLE |
-| 8–9 | VOLCANIC_DEPTHS | 19–20 | FLOODED_RUINS |
+| 5–6 | FUNGAL_CAVERN | 15–16 | GOLDEN_TEMPLE |
+| **7** | **SPECTRAL_COURT (boss)** | 17–18 | FLOODED_RUINS |
+| 8–9 | VOLCANIC_DEPTHS | 19–20 | EMBER_FORGE |
 | 10–11 | FROZEN_HALLS | **21** | **SPECTRAL_COURT (boss)** |
-| | | 22–23 | EMBER_FORGE |
-| | | 24–25 | STONE (cycle restarts) |
+| | | 22–23 | STONE (cycle restarts) |
+| | | 24–25 | HAUNTED_CRYPT |
 
-(Verified by re-deriving from `floor((level−1)/2) % 10`: L10 → 4 = FROZEN,
-L11 → 4 = FROZEN, L12 → 5 = CRYSTAL, L13 → 5 = CRYSTAL, L15 → 6 = POISON,
-L17 → 7 = GOLDEN, L19 → 8 = FLOODED, L22 → 9 = EMBER, L24 → 0 = STONE.)
+(Verified by re-deriving from the unchanged formula `floor((level−1)/2) % 10`:
+L10–11 → 4 = FROZEN, L12–13 → 5 = CRYSTAL_DEPTHS, L15–16 → 7 = GOLDEN_TEMPLE,
+L17–18 → 8 = FLOODED_RUINS, L19–20 → 9 = EMBER_FORGE, L22–23 → 0 = STONE,
+L24–25 → 1 = HAUNTED_CRYPT. POISON_SWAMP (index 6) lands on L13 and then
+L33–34: its second rung at L14 is pre-empted by the boss level — same
+boss-interleaving behavior the 5-biome cycle already had. The A1 probe asserts
+levels 12, 13, 15, 17, 19, 22 map to CRYSTAL, POISON, GOLDEN, FLOODED, EMBER,
+STONE.)
 
 Difficulty does NOT reset: enemy level scaling (+5% speed/attack per 3 levels),
 spawn slots (2 + level−1, cap 10), `LEVEL_TIME_LIMIT` 180 s, NG+ HP multiplier,

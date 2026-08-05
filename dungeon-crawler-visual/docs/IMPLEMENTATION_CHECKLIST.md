@@ -27,43 +27,48 @@ hard stop — fix, commit, continue.
 
 ### A0. Phase 0 — Constants scaffolding (plan §8, §11, §12 P0)
 
-- [ ] `src/core/Constants.js`: add 5 `BIOMES` entries — CRYSTAL_DEPTHS,
+- [x] `src/core/Constants.js`: add 5 `BIOMES` entries — CRYSTAL_DEPTHS,
       POISON_SWAMP, GOLDEN_TEMPLE, FLOODED_RUINS, EMBER_FORGE — with all 9
       palette keys matching §3 exactly (wall/floor/ceiling/fog/fogDensity/
       ambient/ambientIntensity/torchColor/label)
-- [ ] Add `torchMode: 'standard' | 'vaultOnly'` to ALL 11 BIOMES entries:
+- [x] Add `torchMode: 'standard' | 'vaultOnly'` to ALL 11 BIOMES entries:
       FUNGAL_CAVERN + POISON_SWAMP = `'vaultOnly'`, the other 9 = `'standard'`
       (§6.1)
-- [ ] `BIOMES.SEQUENCE` → 10 entries, order per §2 (append after FROZEN_HALLS);
+- [x] `BIOMES.SEQUENCE` → 10 entries, order per §2 (append after FROZEN_HALLS);
       `LEVELS_PER_BIOME` stays 2
-- [ ] `DUNGEON.ROOM_TYPES`: + CRYSTAL_CHAMBER (weight 8, 2–3 × 2–3),
+- [x] `DUNGEON.ROOM_TYPES`: + CRYSTAL_CHAMBER (weight 8, 2–3 × 2–3),
       + TEMPLE (weight 8, 3 × 3) (§4.1)
-- [ ] `ROOM_BIOME_ELIGIBILITY`: rows for the 2 new rooms; ARMORY +=
+- [x] `ROOM_BIOME_ELIGIBILITY`: rows for the 2 new rooms; ARMORY +=
       [GOLDEN_TEMPLE, EMBER_FORGE]; MUSHROOM_GROVE += [POISON_SWAMP] (§4.2)
-- [ ] `BIOME_ROOM_MODIFIERS`: +5 rows exactly per §4.3 (no dead entries)
-- [ ] `ENEMY_SPAWN_WEIGHTS`: +5 columns summing to exactly 100 each (§7)
-- [ ] `LIGHT_SOURCES`: + CRYSTAL (0xcc66ff, 3.0, 11, 1.2), + ACID (0x88ff22,
+- [x] `BIOME_ROOM_MODIFIERS`: +5 rows exactly per §4.3 (no dead entries)
+- [x] `ENEMY_SPAWN_WEIGHTS`: +5 columns summing to exactly 100 each (§7)
+- [x] `LIGHT_SOURCES`: + CRYSTAL (0xcc66ff, 3.0, 11, 1.2), + ACID (0x88ff22,
       4.5, 16, 1.2) (§6.1)
-- [ ] `PROPS.POOLS` = { LAVA, ACID } replacing `LAVA_DAMAGE/INTERVAL/RADIUS`
-      (same numbers; §6.2)
-- [ ] `PROPS.PROPS_PER_ROOM` += CRYSTAL_CHAMBER 10, TEMPLE 10
-- [ ] `ROOM_ENEMY_MODIFIERS.TEMPLE = { ARMORED: 1.2 }`
-- [ ] Perf reference constants: `LIGHT_CEILING_AVG: 154`, `LIGHT_CEILING_MAX: 199`
+- [x] `PROPS.POOLS` = { LAVA, ACID } replacing `LAVA_DAMAGE/INTERVAL/RADIUS`
+      (same numbers; §6.2) — added; legacy keys removed in A3
+- [x] `PROPS.PROPS_PER_ROOM` += CRYSTAL_CHAMBER 10, TEMPLE 10
+- [x] `ROOM_ENEMY_MODIFIERS.TEMPLE = { ARMORED: 1.2 }`
+- [x] Perf reference constants: `LIGHT_CEILING` (AVG 154 / MAX 199;
+      vaultOnly torch avg 10 / max 50, calibrated to the existing fungal biome)
       (§9)
-- [ ] NEW `scripts/biome-check.mjs` implementing ALL 11 gates (§11)
-- [ ] **Gate A0:** `node scripts/biome-check.mjs` green (1–11);
+- [x] NEW `scripts/biome-check.mjs` implementing ALL 11 gates (§11) — gate 10
+      uses the faithful placement model (chain lights, not chandeliers); gate 5
+      exempts FLOODED_RUINS (no signature room by design)
+- [x] **Gate A0:** `node scripts/biome-check.mjs` green (1–11);
       `node scripts/dungeon-check.mjs` = broken=0/40
-- [ ] **Commit A0**
+- [x] **Commit A0**
 
 ### A1. Phase 1 — Palette/texture verification (plan §12 P1)
 
-- [ ] Headless probe forces levels 12, 15, 17, 19, 22 and asserts
-      wall/floor/ceiling/fog/ambient match §3 for CRYSTAL_DEPTHS,
-      POISON_SWAMP, GOLDEN_TEMPLE, FLOODED_RUINS, EMBER_FORGE
-- [ ] `BiomeSystem` texture cache grows to 11 sets; regen reuses cache
-      (no leak via the dispose path) (§3)
-- [ ] **Gate A1:** probe green; `biome-check.mjs` green
-- [ ] **Commit A1**
+- [x] Headless probe forces levels 12, 13, 15, 17, 19, 22 and asserts they map
+      to CRYSTAL_DEPTHS, POISON_SWAMP, GOLDEN_TEMPLE, FLOODED_RUINS, EMBER_FORGE,
+      STONE (cycle restart) per the corrected §2 table; wall/floor/ceiling/fog/
+      ambient match §3 for each new biome
+- [x] `BiomeSystem` texture cache grows to 11 sets; regen reuses cache
+      (no leak via the dispose path) (§3) — data-driven, no code change;
+      cache growth verified by inspection (texturesFor keys off BIOMES)
+- [x] **Gate A1:** probe green; `biome-check.mjs` green
+- [x] **Commit A1**
 
 ### A2. Phase 2 — Rooms + props (plan §5, §12 P2)
 

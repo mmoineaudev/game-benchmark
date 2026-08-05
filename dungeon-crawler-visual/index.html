@@ -70,6 +70,15 @@
       #orb-count { color: var(--ds-gold); font-size: 40px; text-shadow: 0 1px 3px #000, 0 0 12px rgba(201,176,120,0.35); }
       #orb-scale { color: #9a8a5c; font-size: 22px; letter-spacing: 1px; margin-top: 2px; }
       #souls-line { color: #9a8a5c; font-size: 16px; letter-spacing: 1px; margin-top: 4px; font-family: var(--ds-font-body); }
+      /* Bottom-right: degraded-mode perf warning (perf safeguard) */
+      #perf-warning {
+        position: absolute; right: 24px; bottom: 24px;
+        color: #ff9944; font-size: 13px; letter-spacing: 1px;
+        font-family: var(--ds-font-body);
+        background: rgba(16,13,10,0.75); padding: 6px 10px;
+        border-left: 2px solid #ff9944;
+      }
+      #perf-warning.hidden { display: none; }
       @keyframes blink { 50% { opacity: 0.4; } }
 
       /* ---- Top-CENTER: biome title + level timer ---- */
@@ -322,6 +331,9 @@
 
       <div id="sprint-bonus"></div>
       <div id="buff-badge"></div>
+      <!-- Bottom-right: degraded-mode perf warning (shown by Game when fps
+           stays below 30 for >10s — decorative props are halved) -->
+      <div id="perf-warning" class="hidden">⚠ DEGRADED MODE — decorations reduced for performance</div>
       <!-- Level-start safe-spawn countdown (big, centered, fades when done) -->
       <div id="safe-spawn" class="hidden">5</div>
       <div id="stats-panel"></div>

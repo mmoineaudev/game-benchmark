@@ -17,6 +17,7 @@ export class PropSystem {
     this.breakables = []; // { mesh, x, z, radius, hp }
     this.interactives = []; // { mesh, x, z, radius, opened, ... }
     this.lavaPools = []; // { x, z, type, radius } — type: 'LAVA' | 'ACID' (BIOME_EXPANSION_PLAN §6.2)
+    this._decoratives = []; // purely cosmetic props { objs, light } — perf safeguard target (Game degraded mode)
     this._textures = [];
     this._mats = [];
     this._shards = []; // pooled debris shards
@@ -381,6 +382,7 @@ export class PropSystem {
 
     group.position.set(x, WORLD.WALL_HEIGHT + 0.2, z);
     this._add(group);
+    this._decoratives.push({ objs: [group] }); // light is a group child — hidden with it
     this._mats.push(mat, flameMat);
     this._chainLights = this._chainLights || [];
     this._chainLights.push({ light, phase: Math.random() * 10 });
@@ -401,6 +403,7 @@ export class PropSystem {
       s.scale.y = 0.8;
       s.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
       this._add(s);
+      this._decoratives.push({ objs: [s] });
     }
     this._mats.push(bone);
     return true;
@@ -429,6 +432,7 @@ export class PropSystem {
     blood.rotation.x = -Math.PI / 2;
     blood.position.set(x, 0.015, z);
     this._add(blood);
+    this._decoratives.push({ objs: [blood] });
     return true;
   }
 
@@ -440,6 +444,7 @@ export class PropSystem {
       r.position.set(x + (Math.random() - 0.5) * 1.2, 0.05 + Math.random() * 0.1, z + (Math.random() - 0.5) * 1.2);
       r.scale.setScalar(0.6 + Math.random() * 0.8);
       this._add(r);
+      this._decoratives.push({ objs: [r] });
     }
     this._mats.push(mat);
     return true;
@@ -561,6 +566,7 @@ export class PropSystem {
     );
     light.position.set(x, 0.25, z);
     this._add(light);
+    this._decoratives.push({ objs: [body, flame], light });
     this._mats.push(bodyMat, flameMat);
     return true;
   }
@@ -571,6 +577,7 @@ export class PropSystem {
       transparent: true, opacity: 0.8, roughness: 0.2,
     });
     const cluster = Math.floor(Math.random() * 3) + 3; // 3-5
+    const meshes = [];
     for (let i = 0; i < cluster; i++) {
       const h = 0.5 + Math.random() * 0.7;
       const c = new THREE.Mesh(new THREE.ConeGeometry(0.1 + Math.random() * 0.1, h, 5), mat);
@@ -581,6 +588,7 @@ export class PropSystem {
       );
       c.rotation.set((Math.random() - 0.5) * 0.4, Math.random() * Math.PI, 0);
       this._add(c);
+      meshes.push(c);
     }
     const light = new THREE.PointLight(
       LIGHT_SOURCES.ICE.color, LIGHT_SOURCES.ICE.intensity,
@@ -588,6 +596,7 @@ export class PropSystem {
     );
     light.position.set(x, 1.0, z);
     this._add(light);
+    this._decoratives.push({ objs: meshes, light });
     this._mats.push(mat);
     return true;
   }
@@ -601,6 +610,7 @@ export class PropSystem {
       color: capColor, emissive: capColor, emissiveIntensity: 2.0, roughness: 0.6,
     });
     const cluster = Math.floor(Math.random() * 3) + 3; // 3-5
+    const meshes = [];
     for (let i = 0; i < cluster; i++) {
       const h = 0.2 + Math.random() * 0.15;
       const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, h, 6), stemMat);
@@ -609,6 +619,7 @@ export class PropSystem {
       const cap = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.1, 8), capMat);
       cap.position.set(stem.position.x, h + 0.05, stem.position.z);
       this._add(cap);
+      meshes.push(stem, cap);
     }
     const light = new THREE.PointLight(
       LIGHT_SOURCES.MUSHROOM.color, LIGHT_SOURCES.MUSHROOM.intensity,
@@ -616,6 +627,7 @@ export class PropSystem {
     );
     light.position.set(x, 0.5, z);
     this._add(light);
+    this._decoratives.push({ objs: meshes, light });
     this._mats.push(stemMat, capMat);
     return true;
   }
@@ -719,8 +731,27 @@ export class PropSystem {
     group.position.set(x, 0, z);
     group.rotation.y = Math.random() * Math.PI;
     this._add(group);
+    this._decoratives.push({ objs: [group] });
     this._mats.push(mat);
     return true;
+  }
+
+  // -------------------------------------------------------------------------
+  // Perf safeguard (Game degraded mode): hide `fraction` of purely cosmetic
+  // props (+ their lights) in the CURRENT level. Gameplay items — hazards,
+  // breakables, interactives, structural props, and biome light props
+  // (crystal clusters, wisps, altars) — are never touched. Instanced meshes
+  // (water pools, stalactites) shed their tail instances by count.
+  reduceDecorations(fraction = 0.5) {
+    for (const d of this._decoratives) {
+      if (Math.random() < fraction) {
+        for (const o of d.objs || []) o.visible = false;
+        if (d.light) d.light.visible = false;
+      }
+    }
+    for (const m of [this._waterMesh, this._stalactiteMesh]) {
+      if (m && m.count > 0) m.count = Math.max(0, Math.floor(m.count * (1 - fraction)));
+    }
   }
 
   _spawnAltar(x, z) {
@@ -945,6 +976,7 @@ export class PropSystem {
     this._waterMesh = null;
     this._waterMat = null;
     this._stalactiteMesh = null;
+    this._decoratives = [];
     this.collisionBoxes = [];
   }
 }

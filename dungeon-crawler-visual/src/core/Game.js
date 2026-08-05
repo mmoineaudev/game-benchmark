@@ -34,6 +34,12 @@ export class Game {
     this._orbCountEl = document.getElementById('orb-count');
     this._orbScaleEl = document.getElementById('orb-scale');
     this._soulsLineEl = document.getElementById('souls-line');
+    this._perfWarningEl = document.getElementById('perf-warning');
+    // Perf safeguard (degraded mode): sustained <30 fps for >10 s halves the
+    // level's decorative props and shows the warning label (bottom-right).
+    this._fpsEma = 60;
+    this._lowFpsTime = 0;
+    this._degraded = false;
     this._biomeLabelEl = document.getElementById('biome-label');
     this._comboPipsEl = document.getElementById('combo-pips');
     this._exitEl = document.getElementById('exit-prompt');
@@ -256,6 +262,9 @@ export class Game {
       const chance = BUFF.CHANCE + excessOrbs(this.state.collectedOrbs) * BUFF.ORB_BUFF_CHANCE;
       if (Math.random() < chance) this.orbs.spawnBuff(x, z);
     };
+    // Degraded mode (perf safeguard): once triggered, every NEW level builds
+    // at 50% decorative density so the run stays fluid.
+    if (this._degraded) this.props.reduceDecorations(0.5);
   }
 
   // Stepping on a breakable shatters it (same drop roll as a weapon break).
@@ -563,6 +572,9 @@ export class Game {
     this._lastTime = now;
     const t = now * 0.001;
 
+    // Perf safeguard: sustained <30 fps for >10 s → degraded mode (§16)
+    this._updatePerfMonitor(this._delta);
+
     // Title screen holds the scene until ==30fps sustained for ~3s.
     this._updateTitleFps(this._delta);
 
@@ -615,6 +627,26 @@ export class Game {
     }
 
     this.post.render();
+  }
+
+  // Perf safeguard: if sustained fps < 30 for more than 10 s, enter degraded
+  // mode — hide 50% of the current level's decorative props and show a small
+  // warning bottom-right. Once degraded, the run STAYS degraded (each new
+  // level builds at 50% via _initProps) so fluidity is preserved. Frame
+  // hitches (dt > 0.25 s, e.g. level regen) and the title screen are excluded
+  // so a single stutter never trips it.
+  _updatePerfMonitor(dt) {
+    if (this._degraded || this._titleActive) return;
+    if (dt <= 0 || dt > 0.25) return;
+    const fps = 1 / dt;
+    this._fpsEma = this._fpsEma ? this._fpsEma * 0.95 + fps * 0.05 : fps;
+    if (this._fpsEma < 30) this._lowFpsTime += dt;
+    else this._lowFpsTime = 0;
+    if (this._lowFpsTime > 10) {
+      this._degraded = true;
+      if (this.props) this.props.reduceDecorations(0.5);
+      if (this._perfWarningEl) this._perfWarningEl.classList.remove('hidden');
+    }
   }
 
   _updateInput() {

@@ -485,11 +485,52 @@ export class PlayerSword {
           this.group.add(m);
         }
         this._mats.push(bladeMat, coreMat);
+        // Soft blade glow sprite (grows at T4, brightens at T5)
+        this._bladeGlowMat = new THREE.SpriteMaterial({
+          map: this._glowTex, color: 0x66eeff,
+          blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0,
+        });
+        this._bladeGlow = new THREE.Sprite(this._bladeGlowMat);
+        this._bladeGlow.position.set(0, len * 0.5, 0);
+        this._bladeGlow.scale.setScalar(0.3);
+        this.group.add(this._bladeGlow);
+        this._mats.push(this._bladeGlowMat);
+        // Tier 5: blade point light — layer 0, camera-attached, lights the
+        // WORLD around the player (the sword stays layer-2 self-lit, §4).
+        this.bladeLight = new THREE.PointLight(
+          EVOLUTION.T5_BLADE_LIGHT.color, EVOLUTION.T5_BLADE_LIGHT.intensity,
+          EVOLUTION.T5_BLADE_LIGHT.distance, EVOLUTION.T5_BLADE_LIGHT.decay,
+        );
+        this.bladeLight.position.set(0, 0.45, 0.1);
+        this.bladeLight.castShadow = false;
+        this.group.add(this.bladeLight);
+        // Idle crackle pool (≤ 3 pooled additive arc sprites, cosmetic, §5)
+        this._crackleSprites = [];
+        const crackleMat = new THREE.SpriteMaterial({
+          map: this._glowTex, color: 0x88ffff,
+          blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0,
+        });
+        this._mats.push(crackleMat);
+        for (let i = 0; i < 3; i++) {
+          const s = new THREE.Sprite(crackleMat);
+          s.visible = false;
+          this.group.add(s);
+          this._crackleSprites.push({ sprite: s, life: 0, active: false, y: 0 });
+        }
       }
+      const isT5 = tier >= 5;
+      this._energyBlade.material.color.setHex(isT5 ? 0x88ffff : 0x66eeff);
       this._energyBlade.scale.y = len;
       this._energyCore.scale.y = len * 0.92;
       this._energyBlade.visible = true;
       this._energyCore.visible = true;
+      this._bladeGlow.position.y = len * 0.5;
+      // T4+: visible blade glow, 0.5 scale; T5: brighter + light + crackle
+      this._bladeGlowMat.color.setHex(isT5 ? 0x88ffff : 0x66eeff);
+      this._bladeGlowMat.opacity = tier >= 4 ? 0.35 : 0;
+      this._bladeGlow.scale.setScalar(tier >= 4 ? 0.5 : 0.3);
+      if (this.bladeLight) this.bladeLight.visible = isT5;
+      for (const c of this._crackleSprites) c.sprite.visible = isT5 && c.active;
       if (this._upperBlade) this._upperBlade.visible = false;
       if (this._tip) this._tip.visible = false;
       if (this._fuller) this._fuller.visible = false;
@@ -498,10 +539,48 @@ export class PlayerSword {
       if (this._energyBlade) {
         this._energyBlade.visible = false;
         this._energyCore.visible = false;
+        this._bladeGlowMat.opacity = 0;
+        if (this.bladeLight) this.bladeLight.visible = false;
+        for (const c of this._crackleSprites) c.sprite.visible = false;
       }
       if (this._upperBlade) this._upperBlade.visible = true;
       if (this._tip) this._tip.visible = true;
       if (this._fuller) this._fuller.visible = true;
+    }
+  }
+
+  // T5 idle crackle: tiny pooled arcs flickering along the blade (cosmetic).
+  _emitCrackle() {
+    if (!this._crackleSprites) return;
+    const len = EVOLUTION.BLADE_LENGTH[this.tier];
+    const c = this._crackleSprites.find((x) => !x.active);
+    if (!c) return;
+    c.active = true;
+    c.life = 0.15 + Math.random() * 0.15;
+    c.y = 0.1 + Math.random() * (len - 0.15);
+    c.sprite.visible = true;
+    c.sprite.position.set((Math.random() - 0.5) * 0.03, c.y, (Math.random() - 0.5) * 0.03);
+    c.sprite.scale.setScalar(0.08 + Math.random() * 0.06);
+    c.sprite.material.opacity = 0.9;
+  }
+
+  _updateCrackle(dt) {
+    if (!this._crackleSprites || this.tier < 5) return;
+    this._crackleAcc = (this._crackleAcc || 0) + dt * 6;
+    while (this._crackleAcc >= 1) {
+      this._crackleAcc -= 1;
+      this._emitCrackle();
+    }
+    for (const c of this._crackleSprites) {
+      if (!c.active) continue;
+      c.life -= dt;
+      if (c.life <= 0) {
+        c.active = false;
+        c.sprite.visible = false;
+        continue;
+      }
+      c.sprite.material.opacity = 0.9 * (c.life / 0.3);
+      c.sprite.position.y += dt * 1.5;
     }
   }
 
@@ -611,7 +690,12 @@ export class PlayerSword {
       this._humPhase = (this._humPhase || 0) + dt;
       const len = EVOLUTION.BLADE_LENGTH[this.tier];
       this._energyCore.scale.y = len * 0.92 * (1 + Math.sin(this._humPhase * 3) * 0.05);
+      if (this._bladeGlow) {
+        this._bladeGlow.scale.setScalar(0.5 * (1 + Math.sin(this._humPhase * 3) * 0.05));
+      }
     }
+    // Tier 5 idle crackle (cosmetic arcs along the blade)
+    this._updateCrackle(dt);
 
     if (this.state === 'idle') return;
     this.time += dt;
@@ -840,6 +924,7 @@ export class PlayerSword {
     this.growthGlowMat.dispose();
     this.dangerLight.dispose();
     this.growthLight.dispose();
+    if (this.bladeLight) this.bladeLight.dispose();
     if (this._glowTex) this._glowTex.dispose();
   }
 }

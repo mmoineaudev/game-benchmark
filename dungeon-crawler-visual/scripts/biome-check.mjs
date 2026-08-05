@@ -31,6 +31,26 @@ for (const id of seq) {
 ok('all biome palettes have 9 keys');
 
 // ---------------------------------------------------------------------------
+// Gate 2b: the 5 NEW biomes' palette VALUES match the plan §3 table verbatim
+// (hardcoded — closes the old "POISON_SWAMP never value-checked" gap).
+const PALETTE_VALUES = {
+  CRYSTAL_DEPTHS: { wall: 0x3a2a4a, floor: 0x2a1e35, ceiling: 0x1a1425, fog: 0x120a20, fogDensity: 0.011, ambient: 0x1c1030, ambientIntensity: 0.34, torchColor: 0xcc66ff },
+  POISON_SWAMP: { wall: 0x3a3a20, floor: 0x2a2a14, ceiling: 0x1e1e0e, fog: 0x121a06, fogDensity: 0.012, ambient: 0x16220a, ambientIntensity: 0.32, torchColor: 0xccff44 },
+  GOLDEN_TEMPLE: { wall: 0x4a4230, floor: 0x3a3220, ceiling: 0x2a2416, fog: 0x241c0e, fogDensity: 0.010, ambient: 0x2a2412, ambientIntensity: 0.36, torchColor: 0xffcc66 },
+  FLOODED_RUINS: { wall: 0x2a3a3e, floor: 0x1e2a2e, ceiling: 0x141e20, fog: 0x0a1a1e, fogDensity: 0.012, ambient: 0x0e1e24, ambientIntensity: 0.33, torchColor: 0x55ddcc },
+  EMBER_FORGE: { wall: 0x3a3230, floor: 0x2a2420, ceiling: 0x1e1a18, fog: 0x1a0e0a, fogDensity: 0.013, ambient: 0x22120a, ambientIntensity: 0.35, torchColor: 0xff7733 },
+};
+for (const [id, want] of Object.entries(PALETTE_VALUES)) {
+  const pal = BIOMES[id];
+  const bad = [];
+  for (const [k, v] of Object.entries(want)) {
+    if (pal[k] !== v) bad.push(`${k}=${pal[k]} (want ${v})`);
+  }
+  if (bad.length) fail(`${id} palette value drift: ${bad.join(', ')}`);
+}
+ok('new-biome palette VALUES match the §3 table verbatim');
+
+// ---------------------------------------------------------------------------
 // Gate 3: every biome spawn-weight column sums to exactly 100
 for (const id of seq) {
   const col = ENEMY_SPAWN_WEIGHTS[id];

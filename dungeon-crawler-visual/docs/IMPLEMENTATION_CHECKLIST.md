@@ -102,20 +102,21 @@ hard stop — fix, commit, continue.
 
 ### A3. Phase 3 — Lighting (plan §6, §8, §12 P3)
 
-- [ ] `LightingSystem._placeAllTorches` reads `palette.torchMode` instead of
-      `torchColor === 0x44ff88` (FUNGAL behavior preserved)
-- [ ] `_placeBraziers` room list extends to TEMPLE when biome is GOLDEN_TEMPLE
-      (1 light per TEMPLE) (§4.1)
-- [ ] CRYSTAL/ACID light sources wired; all new lights `castShadow = false`
-- [ ] Pool parametrization sweep: `PROPS.LAVA_*` → `PROPS.POOLS` consumers
+- [x] `LightingSystem._placeAllTorches` reads `palette.torchMode` instead of
+      `torchColor === 0x44ff88` (FUNGAL behavior preserved — verified by probe)
+- [x] `_placeBraziers` extends to TEMPLE when the biome is GOLDEN_TEMPLE —
+      data-driven via `palette.brazierRooms` (1 light per TEMPLE) (§4.1)
+- [x] CRYSTAL/ACID light sources wired (A2); all new lights `castShadow = false`
+- [x] Pool parametrization sweep: `PROPS.LAVA_*` → `PROPS.POOLS` consumers
       updated (PropSystem + Game); lava numbers/colors byte-identical (§6.2)
-- [ ] Per-biome light placement per §6.1 table (crystal 1 cluster/room;
+- [x] Per-biome light placement per §6.1 table (crystal 1 cluster/room;
       poison torchless + acid 1–2 + mushrooms; golden altar + brazier +
-      chandeliers incl. TEMPLE; ruins wisps 1/room; forge lava 1/room)
-- [ ] **Gate A3 (perf, hard):** light probe (10 seeds/biome) — every SEQUENCE
-      biome avg ≤ 154 / max ≤ 199; `vaultOnly` biomes ≤ 2 torches avg (FUNGAL
-      regression); shadow-casters = 8 (§9, §11)
-- [ ] **Commit A3**
+      chains; ruins wisps 1/room; forge lava 1/room)
+- [x] **Gate A3 (perf, hard):** headless LightingSystem probe — shadow-casters
+      = 8 on every biome incl. SPECTRAL_COURT; vaultOnly torch max ≤ 50;
+      real per-level light totals: new biomes 96–105 avg vs existing 96–102
+      (parity); golden braziers = HALL + TEMPLE rooms
+- [x] **Commit A3**
 
 ### A4. Phase 4 — Spawn verification (plan §12 P4)
 

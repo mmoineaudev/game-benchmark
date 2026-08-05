@@ -168,6 +168,7 @@ export const BIOMES = {
     fog: 0x241c0e, fogDensity: 0.010,
     ambient: 0x2a2412, ambientIntensity: 0.36,
     torchColor: 0xffcc66, label: 'GOLDEN TEMPLE', torchMode: 'standard',
+    brazierRooms: ['HALL', 'TEMPLE'], // lit braziers also in TEMPLE rooms (§4.1)
   },
   FLOODED_RUINS: {
     wall: 0x2a3a3e, floor: 0x1e2a2e, ceiling: 0x141e20,
@@ -488,9 +489,6 @@ export const PROPS = {
     LAVA: { damage: 1, interval: 0.8, radius: 1.2, color: 0xff5522, emissive: 2.2 },
     ACID: { damage: 1, interval: 0.8, radius: 1.2, color: 0x88ff22, emissive: 2.2 },
   },
-  LAVA_DAMAGE: 1,      // legacy — consumed by Game until the A3 POOLS sweep
-  LAVA_INTERVAL: 0.8,
-  LAVA_RADIUS: 1.2,
   SARCOPHAGUS_WRAITH_CHANCE: 0.3,
   SARCOPHAGUS_TRIGGER: 2.5,
   PROPS_PER_ROOM: {

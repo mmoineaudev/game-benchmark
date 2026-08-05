@@ -61,13 +61,14 @@ export class LightingSystem {
     const gs = dungeonData.gridSize;
     const spacing = 16;   // doubled from 8 — torches cut 50% for level-start perf
     const torchY = 2.5;
-    // Fungal cavern: torches only in VAULT rooms (mushrooms light the rest)
-    const fungalVaultOnly = this.biomePalette?.torchColor === 0x44ff88;
+    // torchMode: 'standard' = every exposed edge | 'vaultOnly' = torches only
+    // inside VAULT rooms (fungal cavern + poison swamp — lit by their own glow).
+    const vaultOnly = this.biomePalette?.torchMode === 'vaultOnly';
 
     for (let cz = 0; cz < gs; cz++) {
       for (let cx = 0; cx < gs; cx++) {
         if (dungeonData.grid[cz][cx] === 'empty') continue;
-        if (fungalVaultOnly) {
+        if (vaultOnly) {
           const meta = dungeonData.metadata[cz][cx];
           if (meta.type !== 'room' || meta.roomType !== 'VAULT') continue;
         }
@@ -337,8 +338,13 @@ export class LightingSystem {
       color: 0x2a2a30, roughness: 0.6, metalness: 0.7,
     });
 
-    // One brazier per HALL room, at the room's top-left cell center
-    const halls = this._collectRoomTops(dungeonData, 'HALL');
+    // Braziers: one per HALL room (all biomes), plus TEMPLE rooms in the
+    // golden temple (data-driven via palette.brazierRooms — §4.1).
+    const brazierTypes = this.biomePalette?.brazierRooms || ['HALL'];
+    const halls = new Set();
+    for (const t of brazierTypes) {
+      for (const k of this._collectRoomTops(dungeonData, t)) halls.add(k);
+    }
     for (const key of halls) {
       const [rx, rz] = key.split(',').map(Number);
       const x = (rx + 0.5) * cs;

@@ -274,9 +274,13 @@ export class Game {
   _lavaDamage(x, z) {
     if (this._gameOverActive) return;
     if (this.state.invulnTimer > 0 || this.state.health <= 0) return;
-    if (!this._lastLavaHit || performance.now() - this._lastLavaHit > PROPS.LAVA_INTERVAL * 1000) {
+    // Pool hazard config from PROPS.POOLS (BIOME_EXPANSION_PLAN §6.2) — LAVA
+    // and ACID share identical damage/interval numbers, so the callback needs
+    // no pool-type payload (signature unchanged).
+    const pool = PROPS.POOLS.LAVA;
+    if (!this._lastLavaHit || performance.now() - this._lastLavaHit > pool.interval * 1000) {
       this._lastLavaHit = performance.now();
-      this.state.health -= PROPS.LAVA_DAMAGE;
+      this.state.health -= pool.damage;
       this.state.invulnTimer = PLAYER.INVULN_TIME;
       this._flashDamage();
       if (this.state.health <= 0) this._gameOver('dead');

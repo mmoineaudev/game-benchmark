@@ -247,6 +247,22 @@ export class LightingSystem {
     this._assignStaticShadows(this._shadowBudget);
   }
 
+  // Cache BOTH shadow program variants (torches on/off) up front. Shadow
+  // state is part of three's program cache key, so a mid-game castShadow
+  // toggle (degraded tier 2) would otherwise recompile every shader — a
+  // multi-hundred-ms hitch exactly when the game is struggling. Two throwaway
+  // renders at level build make the runtime toggle instant. The loading
+  // screen / title hold covers the one-time cost.
+  prewarmShadowVariants(renderer, camera) {
+    const prevTarget = renderer.getRenderTarget();
+    renderer.setRenderTarget(null);
+    for (const t of this.torches) t.light.castShadow = false;
+    renderer.render(this.scene, camera);
+    this._assignStaticShadows(this._shadowBudget ?? LIGHTING.TORCH_SHADOW_COUNT);
+    renderer.render(this.scene, camera);
+    renderer.setRenderTarget(prevTarget);
+  }
+
   _placeGodRays(dungeonData) {
     for (const t of this.torches) {
       const cx = Math.floor(t.x / dungeonData.cellSize);

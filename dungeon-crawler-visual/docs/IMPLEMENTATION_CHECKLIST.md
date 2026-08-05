@@ -290,6 +290,34 @@ is `docs/PERFORMANCE_PLAN.md`.
       recovery), browser-smoke PASS, level-regen check PASS (1 → 2)
 - [x] **Commit** (perf overhaul — one commit)
 
+### B4''''. Kill-path fix — orb/fire-patch light churn, drop pooling, shadow prewarm (user report: "first enemy kill made the lag come back") — SHIPPED 2026-08-05
+
+Root cause of the first-kill lag: three's program cache key includes the
+point-light count (WebGLPrograms.js numPointLights/numPointLightShadows), so
+ANY visible-light-count change force-recompiles every material's shader.
+Orb impacts spawned a fire patch whose PointLight lived in a group that was
+toggled `visible` — each activation/expiry recompiled ~30 programs (the
+"orbs cause lag" report). Degraded tier 2's castShadow toggle had the same
+effect (recompiling right when the game was struggling).
+
+- [x] Fire patches: the 6 pooled patch lights stay VISIBLE for the whole
+      level — the glow sprite + light intensity carry the FX; light count is
+      now constant per level → zero recompiles on orb kill/impact/expiry
+      (verified: programs 36 → 36 across kill + patch + pickup)
+- [x] OrbSystem drop pooling: kill drops, health pickups and buff pickups
+      reuse pooled meshes/groups (round-robin, recycled on pickup) — kills no
+      longer allocate or scene.add/remove (recurring per-kill GC source)
+- [x] LightingSystem.prewarmShadowVariants: two throwaway renders at level
+      build cache BOTH shadow program variants, so the degraded tier-2
+      castShadow toggle is free instead of a mid-game recompile storm
+      (verified: tier-2 fire 36 → 36; later toggles ≤ +10 stragglers)
+- [x] _regenerateDungeon now applies degraded tier 2's shadow budget too
+      (boot's _initLighting already did; the regen path had missed it)
+- [x] Verified headless: kill-spike PASS (kill/patch/pickup zero recompiles,
+      no frame > 500 ms, pool recycling, tier toggles), perf-probe PASS,
+      browser-smoke PASS
+- [x] **Commit** (0fc4de7 was the perf overhaul; this is the follow-up)
+
 ### B4''. T5 lightsaber finalization (shipped with B2/B3 — plan §4/§5/§12 P4)
 
 - [x] Tier 5: blade 0x88ffff + white core, length 1.00, TIP_LOCAL.y = 0.79 (§4)

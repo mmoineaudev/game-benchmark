@@ -136,6 +136,9 @@ export class Game {
     this._initCombat();
     this._placeWaterPuddles();
     this._setupPlayerStart();
+    // Prewarm BOTH shadow program variants (see LightingSystem.prewarmShadowVariants)
+    // so a degraded tier-2 castShadow toggle never recompiles every shader.
+    this.lighting.prewarmShadowVariants(this.renderer, this.camera);
     this._showMessage('Skeletons hunt you — reach the golden exit!', 'goal');
     this._showMessage('Slay them for orbs — shoot or swing', 'goal');
     this._bindEventToasts();
@@ -415,7 +418,12 @@ export class Game {
       light.position.y = 1.2;
       const group = new THREE.Group();
       group.add(glow, light);
-      group.visible = false;
+      // The group (and its light) stays VISIBLE for the whole level: hiding it
+      // changes the scene's point-light count, and three's program cache key
+      // includes numPointLights — every light-count change force-recompiles
+      // all shaders (the original "lag on first orb kill"). The FX is carried
+      // by the glow sprite + light intensity instead.
+      glow.visible = false;
       this.scene.add(group);
       this._firePatches.push({
         group, glow, light, active: false, start: 0, ttl: 5, x: 0, z: 0,
@@ -440,7 +448,7 @@ export class Game {
     p.start = performance.now() * 0.001;
     p.ttl = 10; // magic fire lingers 10s
     p.x = x; p.z = z;
-    p.group.visible = true;
+    p.glow.visible = true;
     p.group.position.set(x, 0.4, z);
     p.glow.scale.setScalar(0.5);
     p.glow.material.opacity = 0.6;
@@ -456,7 +464,7 @@ export class Game {
       if (elapsed >= p.ttl) {
         this._spawnPatchSmoke(p.x, p.z);
         p.active = false;
-        p.group.visible = false;
+        p.glow.visible = false;
         p.light.intensity = 0;
         continue;
       }
@@ -1615,6 +1623,8 @@ export class Game {
 
     this.lighting = new LightingSystem(this.scene, this.biomes.current.palette);
     this.lighting.init(this.dungeonData);
+    // Degraded tier 2 persists across level regens (shadows stay off).
+    if (this._degradedTier >= 2) this.lighting.setShadowBudget(0);
     await this._nextFrame();
 
     this._initProps();
@@ -1644,6 +1654,8 @@ export class Game {
     this._initCombat();
     this._placeWaterPuddles();
     this._setupPlayerStart();
+    // Prewarm both shadow variants — a mid-level tier-2 toggle is then ~free.
+    this.lighting.prewarmShadowVariants(this.renderer, this.camera);
     await this._nextFrame();
 
     // ---- STEP 3: display the finished level (title screen holds it) ----

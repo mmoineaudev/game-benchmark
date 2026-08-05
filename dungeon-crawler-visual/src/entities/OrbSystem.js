@@ -20,6 +20,10 @@ export class OrbSystem {
     this._dropGlowGeo = null;
     this._dropMat = null;
     this._dropGlowMat = null;
+    this._orbPool = [];   // pooled drop-orbs { mesh, glow, active } — kills
+    this._orbIdx = 0;     // no longer allocate (the recurring per-kill GC)
+    this._groupPool = []; // pooled health/buff pickups { group, kind, active }
+    this._groupIdx = 0;
   }
 
   init() {
@@ -127,13 +131,14 @@ export class OrbSystem {
     // Skeleton drops: bob + auto-collect on proximity
     for (let i = this.drops.length - 1; i >= 0; i--) {
       const drop = this.drops[i];
+      const rec = drop.rec;
       if (drop.kind === 'health' || drop.kind === 'buff') {
-        drop.group.position.y = drop.y + Math.sin(time * 2.5 + drop.phase) * 0.12;
-        drop.group.rotation.y += 0.02;
+        rec.group.position.y = drop.y + Math.sin(time * 2.5 + drop.phase) * 0.12;
+        rec.group.rotation.y += 0.02;
       } else {
-        drop.mesh.position.y = drop.y + Math.sin(time * 2.5 + drop.phase) * 0.1;
-        drop.mesh.rotation.y += 0.03;
-        drop.glow.position.copy(drop.mesh.position);
+        rec.mesh.position.y = drop.y + Math.sin(time * 2.5 + drop.phase) * 0.1;
+        rec.mesh.rotation.y += 0.03;
+        rec.glow.position.copy(rec.mesh.position);
       }
       const dx = p.x - drop.x;
       const dz = p.z - drop.z;
@@ -142,59 +147,48 @@ export class OrbSystem {
           // Health pickup: fills ALL empty hearts (full restore)
           this.state.health = this.state.maxHealth || PLAYER.MAX_HEALTH;
           this._spawnPickupRing(drop.x, drop.y, drop.z, time);
-          this.scene.remove(drop.group);
         } else if (drop.kind === 'buff') {
           // Temporary buff: Game picks the random effect
           this.onBuffCollected?.(drop.x, drop.z);
           this._spawnPickupRing(drop.x, drop.y, drop.z, time);
-          this.scene.remove(drop.group);
         } else {
           this.state.collectedOrbs++;
           // Lifetime souls counter (monotonic — the weapon-evolution tier
           // source). Incremented ONLY on orb pickups, never health/buff drops.
           this.state.soulsEarned = (this.state.soulsEarned || 0) + 1;
           this._spawnPickupRing(drop.x, drop.y, drop.z, time);
-          this.scene.remove(drop.mesh);
-          this.scene.remove(drop.glow);
         }
+        this._releaseDrop(drop);
         this.drops.splice(i, 1);
       }
     }
   }
 
   // Spawn one or more auto-collect orbs at a kill position (drop-on-kill).
-  // Uses shared geometry/material — no allocation per drop.
+  // Uses shared geometry/material + a mesh pool — no allocation per kill.
   spawnDrop(x, z, count = 1) {
     const y = DROP.Y;
     for (let i = 0; i < count; i++) {
-      const mesh = new THREE.Mesh(this._dropGeo, this._dropMat);
+      const rec = this._acquireOrb();
       const ox = (Math.random() - 0.5) * 0.8;
       const oz = (Math.random() - 0.5) * 0.8;
-      mesh.position.set(x + ox, y, z + oz);
-      this.scene.add(mesh);
-      const glow = new THREE.Mesh(this._dropGlowGeo, this._dropGlowMat);
-      glow.position.copy(mesh.position);
-      this.scene.add(glow);
-      this.drops.push({ mesh, glow, x: x + ox, z: z + oz, y, phase: Math.random() * Math.PI * 2 });
+      rec.mesh.position.set(x + ox, y, z + oz);
+      rec.glow.position.copy(rec.mesh.position);
+      this.drops.push({ rec, kind: 'orb', x: x + ox, z: z + oz, y, phase: Math.random() * Math.PI * 2 });
     }
   }
 
   // Spawn a health-reset pickup (red medical cross) at a kill position.
-  // Auto-collect on proximity -> full heal. Shared geometry/material.
+  // Auto-collect on proximity -> full heal. Shared geometry/material + pool.
   spawnHealth(x, z) {
     const y = DROP.HEALTH_Y;
-    const group = new THREE.Group();
-    const barA = new THREE.Mesh(this._healthGeoA, this._healthMat);
-    const barB = new THREE.Mesh(this._healthGeoB, this._healthMat);
-    const glow = new THREE.Mesh(this._dropGlowGeo, this._healthGlowMat);
-    group.add(barA, barB, glow);
+    const rec = this._acquireGroup('health');
     const ox = (Math.random() - 0.5) * 0.8;
     const oz = (Math.random() - 0.5) * 0.8;
-    group.position.set(x + ox, y, z + oz);
-    this.scene.add(group);
+    rec.group.position.set(x + ox, y, z + oz);
     this.drops.push({
-      group, x: x + ox, z: z + oz, y,
-      phase: Math.random() * Math.PI * 2, kind: 'health',
+      rec, kind: 'health', x: x + ox, z: z + oz, y,
+      phase: Math.random() * Math.PI * 2,
     });
   }
 
@@ -202,18 +196,91 @@ export class OrbSystem {
   // position. Auto-collect -> Game applies a random 15s effect.
   spawnBuff(x, z) {
     const y = DROP.HEALTH_Y;
-    const group = new THREE.Group();
-    const gem = new THREE.Mesh(this._buffGeo, this._buffMat);
-    const glow = new THREE.Mesh(this._dropGlowGeo, this._buffGlowMat);
-    group.add(gem, glow);
+    const rec = this._acquireGroup('buff');
     const ox = (Math.random() - 0.5) * 0.8;
     const oz = (Math.random() - 0.5) * 0.8;
-    group.position.set(x + ox, y, z + oz);
-    this.scene.add(group);
+    rec.group.position.set(x + ox, y, z + oz);
     this.drops.push({
-      group, x: x + ox, z: z + oz, y,
-      phase: Math.random() * Math.PI * 2, kind: 'buff',
+      rec, kind: 'buff', x: x + ox, z: z + oz, y,
+      phase: Math.random() * Math.PI * 2,
     });
+  }
+
+  // Reuse a pooled drop-orb (round-robin). If the pool is exhausted the
+  // oldest live orb is recycled (dropped from the live list first).
+  _acquireOrb() {
+    let rec = this._orbPool[this._orbIdx];
+    this._orbIdx = (this._orbIdx + 1) % Math.max(1, this._orbPool.length);
+    if (!rec) {
+      rec = {
+        active: false,
+        mesh: new THREE.Mesh(this._dropGeo, this._dropMat),
+        glow: new THREE.Mesh(this._dropGlowGeo, this._dropGlowMat),
+      };
+      rec.mesh.visible = false;
+      rec.glow.visible = false;
+      this.scene.add(rec.mesh);
+      this.scene.add(rec.glow);
+      this._orbPool.push(rec);
+    } else if (rec.active) {
+      const i = this.drops.findIndex((d) => d.rec === rec);
+      if (i >= 0) this.drops.splice(i, 1);
+    }
+    rec.active = true;
+    rec.mesh.visible = true;
+    rec.glow.visible = true;
+    return rec;
+  }
+
+  // Reuse a pooled health/buff pickup group. Children are built once per
+  // kind; a rare kind switch (health <-> buff) rebuilds them.
+  _acquireGroup(kind) {
+    let rec = this._groupPool[this._groupIdx];
+    this._groupIdx = (this._groupIdx + 1) % Math.max(1, this._groupPool.length);
+    if (!rec) {
+      rec = { active: false, kind, group: new THREE.Group() };
+      this._buildGroupChildren(rec, kind);
+      rec.group.visible = false;
+      this.scene.add(rec.group);
+      this._groupPool.push(rec);
+    } else if (rec.active) {
+      const i = this.drops.findIndex((d) => d.rec === rec);
+      if (i >= 0) this.drops.splice(i, 1);
+    } else if (rec.kind !== kind) {
+      this._buildGroupChildren(rec, kind);
+    }
+    rec.kind = kind;
+    rec.active = true;
+    rec.group.visible = true;
+    return rec;
+  }
+
+  _buildGroupChildren(rec, kind) {
+    while (rec.group.children.length) rec.group.remove(rec.group.children[0]);
+    if (kind === 'health') {
+      rec.group.add(
+        new THREE.Mesh(this._healthGeoA, this._healthMat),
+        new THREE.Mesh(this._healthGeoB, this._healthMat),
+        new THREE.Mesh(this._dropGlowGeo, this._healthGlowMat),
+      );
+    } else {
+      rec.group.add(
+        new THREE.Mesh(this._buffGeo, this._buffMat),
+        new THREE.Mesh(this._dropGlowGeo, this._buffGlowMat),
+      );
+    }
+  }
+
+  // Return a drop's visuals to its pool — no scene add/remove churn, no GC.
+  _releaseDrop(drop) {
+    const rec = drop.rec;
+    rec.active = false;
+    if (drop.kind === 'orb') {
+      rec.mesh.visible = false;
+      rec.glow.visible = false;
+    } else {
+      rec.group.visible = false;
+    }
   }
 
   // Purple burst when an enemy dies: particles fly outward and shrink away
@@ -278,6 +345,13 @@ export class OrbSystem {
     for (const b of this._bursts) this.scene.remove(b.mesh);
     this._bursts = [];
     this._ringPool = [];
+    for (const r of this._orbPool) {
+      this.scene.remove(r.mesh);
+      this.scene.remove(r.glow);
+    }
+    for (const r of this._groupPool) this.scene.remove(r.group);
+    this._orbPool = [];
+    this._groupPool = [];
     this.drops = [];
     this.orbs = [];
   }

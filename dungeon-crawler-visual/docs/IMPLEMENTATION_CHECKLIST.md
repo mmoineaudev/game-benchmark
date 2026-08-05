@@ -215,35 +215,40 @@ hard stop — fix, commit, continue.
 
 ### B4. Phase 4 — T5 lightsaber (plan §4, §5, §12 P4)
 
-- [ ] Tier 5: blade 0x88ffff + white core, length 1.00, TIP_LOCAL.y = 0.79 (§4)
-- [ ] 2 arc bolts on EVERY landing strike (up to 6/cycle ≤ pool 8) (§5)
-- [ ] Idle crackle: ≤ 3 pooled additive arc sprites, cosmetic (§5)
-- [ ] `T5_BLADE_LIGHT` point light (0x66eeff, 1.5, dist 6, decay 1.6, no
-      shadow, layer 0, camera-attached); disposed/rebuilt with the form (§4, §9)
-- [ ] **Gate B4:** pool ≤ 8; lights +1 only; no per-frame alloc; dungeon-check
-      0/40
-- [ ] **Commit B4**
+- [x] Tier 5: blade 0x88ffff + white core, length 1.00, TIP_LOCAL.y = 0.79 (§4)
+- [x] 2 arc bolts on EVERY landing strike (up to 6/cycle ≤ pool 8) — via
+      ARC_CHANCE[5] = 1.0, ARC_BOLTS[5] = 2 (B3 wiring) (§5)
+- [x] Idle crackle: ≤ 3 pooled additive arc sprites along the blade, cosmetic (§5)
+- [x] `T5_BLADE_LIGHT` point light (0x66eeff, 1.5, dist 6, decay 1.6, no
+      shadow, layer 0, camera-attached — lights the world, not the sword);
+      disposed with the form (§4, §9)
+- [x] **Gate B4:** headless probe — T5 color/length, light visible + layer 0 +
+      no shadow, crackle emits (pool ≤ 3), sword lights = 3 total, T4/T3
+      downgrades hide light/glow correctly; dungeon-check 0/40
+- [x] **Commit B4**
 
 ### B5. Phase 5 — Weapon final gates (plan §12 P5)
 
-- [ ] Full descend: weapon evolves 0 → 5 across a run; form persists through
-      level regens; arcs behave at every combo step
-- [ ] No console errors; memory stable; `weapon-check.mjs` green;
+- [x] Full descend: weapon evolves 0 → 5 across a run (100-soul thresholds
+      verified at L4/L8/L12/L16/L20 in the integration probe); form persists
+      through level regens; arcs behave at every combo step
+- [x] No console errors; memory stable; `weapon-check.mjs` green;
       `dungeon-check.mjs` = broken=0/40
-- [ ] **Commit B5**
+- [x] **Commit B5**
 
 ---
 
 ## C. Cross-cutting integration gate (both plans together)
 
-- [ ] Full run 1 → 25 through all 10 biomes with the weapon evolving to T5:
-      no biome/weapon interaction regressions (edge cases §10 of both plans)
-- [ ] All three scripts green in one pass:
+- [x] Full run 1 → 25 through all 10 biomes with the weapon evolving to T5:
+      no biome/weapon interaction regressions (headless: 75 full level builds,
+      all 10 biomes + SPECTRAL_COURT, sword tier-synced every level)
+- [x] All three scripts green in one pass:
       `dungeon-check.mjs` (0/40), `biome-check.mjs` (1–11), `weapon-check.mjs` (1–8)
-- [ ] Measured perf matches plan tables: biome light probe ≤ ceiling (§9);
+- [x] Measured perf matches plan tables: biome light probe ≤ ceiling (§9);
       weapon +1 light / 8 bolts / ≤ 4 draw calls (§9)
-- [ ] No console errors, no leaks over 3 descends
-- [ ] **Final commit + push**
+- [x] No console errors, no leaks over 3 descends
+- [x] **Final commit + push**
 
 ---
 

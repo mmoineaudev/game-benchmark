@@ -185,27 +185,38 @@ hard stop — fix, commit, continue.
       green; dungeon-check 0/40
 - [x] **Commit B1**
 
-### B2. Phase 2 — Distinct models T1–T2 (plan §4 "Arsenal of Ascension", §12 P2)
+### B2. Phase 2 — Distinct models (plan §4 "Arsenal of Ascension", §12 P2–P3) — SHIPPED 2026-08-05
 
 NOTE (2026-08-05): the OLD B2 trims (bronze fuller recolor, blue stripe
-planes, torus hilt band) ARE in the code today — they are REPLACED by the
-distinct-model redesign. Do not "finish" the old items; delete them.
+planes, torus hilt band) were in the code and are REPLACED by the distinct-
+model redesign — the torus band is deleted (gate 10 enforces).
 
-- [ ] §4.3 rewrite: `_applyForm` dispatch + per-tier builders
+- [x] §4.3 rewrite: `_applyForm` dispatch + per-tier builders
       (`_formCleaver` … `_formLightsaber`), `_formMeshes[tier]` registry,
       one-form-visible rule, `TIP_LOCAL = BLADE_LENGTH[tier] × 0.79` (§4.2/§4.3)
-- [ ] `_formArmingSword` (T1): steel blade Box(0.05, 0.40, 0.012) + cone tip +
+- [x] `_formArmingSword` (T1): steel blade Box(0.05, 0.40, 0.012) + cone tip +
       fuller + brass crossguard Box(0.16, 0.03, 0.05) + grip + brass pommel
       (§4.2 T1)
-- [ ] `_formRunicGreatsword` (T2): wide steel blade + 3 runes Box(0.004, 0.09,
-      0.002) MeshBasic 0x4ac8ff + long grip + rectangular guard; DELETE the
-      old stripe planes + torus hilt band (weapon-check gate 10 enforces)
-      (§4.2 T2)
-- [ ] **Gate B2:** weapon-check gates 9–10 green; visual probe — crossguard +
-      runes visible, torus gone, straight geometry, layer-2 self-lit
-- [ ] **Commit B2**
+- [x] `_formRunicGreatsword` (T2): wide steel blade + 3 runes Box(0.004, 0.09,
+      0.002) MeshBasic 0x4ac8ff + long grip + rectangular guard; old stripe
+      planes + torus hilt band DELETED (§4.2 T2)
+- [x] `_formCrystalSoulblade` (T3): spine + 4 faceted cones on a white core,
+      crystalMat (0xcc88ff/0xcc66ff) (§4.2 T3)
+- [x] `_formSoulfireGreatblade` (T4): energy cylinder 0xddddff + core + 2 vent
+      fins; hum pulse retargeted to the T4 core (§4.2 T4)
+- [x] `_formLightsaber` (T5): unchanged cylinder 0x88ffff + core + bladeLight +
+      crackle; `flashBlade()` form-aware (§4.2 T5)
+- [x] **Gate B2/B3:** weapon-check gates 9–10 green; straight geometry (no
+      Torus), layer-2 self-lit; browser-smoke builds all six forms in-browser
+      with 0 JS exceptions
+- [x] **Commit B2/B3** (f8aa0da)
 
 ### B3. Phase 3 — T3–T4 energy blade + arc ladder + proc fix (plan §5, §6, §12 P3)
+
+NOTE (2026-08-05): the "steel hidden, ONE straight additive cylinder" items
+below are the OLD T3–T4 design — SUPERSEDED by the distinct models
+`_formCrystalSoulblade`/`_formSoulfireGreatblade` (shipped with B2). The arc
+ladder + proc fix items remain accurate and are SHIPPED.
 
 - [x] Tier 3: steel blade/tip hidden; ONE straight additive cylinder
       (0.045 × 0.92, 0x66eeff, opacity 0.85, depthWrite false) + white-hot
@@ -223,7 +234,27 @@ distinct-model redesign. Do not "finish" the old items; delete them.
       1–8 green; dungeon-check 0/40
 - [x] **Commit B3**
 
-### B4. Phase 4 — T5 lightsaber (plan §4, §5, §12 P4)
+### B4. Phase 4 — HUD total-only (plan §7, §7.1) — SHIPPED 2026-08-05
+
+- [x] index.html: `#souls-line` default exactly `Souls 0`; `#tier-pips` div +
+      CSS removed (§7.1)
+- [x] Game.js: `_tierPipsEl` binding removed; `_updateHUD` writes
+      `Souls ${soulsEarned}` only (no tier/progress/MAX) (§7.1)
+- [x] weapon-check gate 7 inverted (asserts `#tier-pips` ABSENT + `Souls 0`)
+      and gate 11 (Game.js total-only grep) (§11)
+- [x] browser-smoke asserts `Souls 0` + `#perf-warning` present/hidden
+- [x] **Commit B4** (d9b8162)
+
+### B4'. Phase 4' — Perf safeguard / degraded mode (user feature, §16) — SHIPPED 2026-08-05
+
+- [x] Game._updatePerfMonitor: EMA fps; <30 fps for >10 s → `_degraded`
+- [x] PropSystem.reduceDecorations(0.5): halves cosmetic props + instanced
+      tail; hazards/breakables/structure/biome lights untouched
+- [x] New levels build at 50% density while degraded; `#perf-warning`
+      bottom-right label + CSS
+- [x] **Commit** (b7e6da1)
+
+### B4''. T5 lightsaber finalization (shipped with B2/B3 — plan §4/§5/§12 P4)
 
 - [x] Tier 5: blade 0x88ffff + white core, length 1.00, TIP_LOCAL.y = 0.79 (§4)
 - [x] 2 arc bolts on EVERY landing strike (up to 6/cycle ≤ pool 8) — via
@@ -286,14 +317,15 @@ distinct-model redesign. Do not "finish" the old items; delete them.
 
 ## Open Issues
 
-Biome plan: SHIPPED and green (verified 2026-08-05) — biome-check 11/11,
-dungeon-check 0/40, biome-light-probe reproduces §9. §14 = 35 rows. Only
-optional item: biome-check Gate 2b (hardcode §3 palette values) (§11).
-Weapon plan: phases 0–1 + arcs + toast + electric fix SHIPPED (weapon-check
-8/8 green); §14 = 36 rows. REMAINING: B2/B3 distinct weapon models (Arsenal
-of Ascension, §4.2), B4 HUD total-only (§7.1), B5 gate updates (gates
-7/9/10/11) + full-descend. If a phase gate surfaces a contradiction, fix the
-plan first (commit), then the code.
+Biome plan: SHIPPED and green (verified 2026-08-05) — biome-check ALL GATES
+PASS incl. Gate 2b (palette VALUES asserted verbatim), dungeon-check 0/40,
+biome-light-probe reproduces §9. §14 = 35 rows.
+Weapon plan: FULLY SHIPPED (2026-08-05) — Arsenal of Ascension distinct
+models (T1–T4), HUD total-only, gates 1–12 green; weapon-check ALL GATES
+PASS, dungeon-check 0/40, browser-smoke PASS (0 JS exceptions). §14 = 39
+rows. Perf safeguard (§16): sustained <30 fps for >10 s halves decorative
+props + shows the bottom-right warning; run stays degraded. If a phase gate
+surfaces a contradiction, fix the plan first (commit), then the code.
 
 ## Testing Items
 
@@ -303,7 +335,8 @@ plan first (commit), then the code.
 - Light probe (10 seeds/biome): avg ≤ 154, max ≤ 199, vaultOnly torches
   avg ≤ 10 / max ≤ 50 (calibrated to existing fungal)
   (A3, then every biome phase)
-- Headless DOM probes for `#souls-line`, `#tier-pips`, biome label
+- Headless DOM probes for `#souls-line` (total-only), `#perf-warning`,
+  biome label (browser-smoke.mjs)
 - `renderer.info`: draw calls ≤ 120, prop instances ≤ 400, lights ≤ ceiling,
   shadow-casters = 8
 - Memory: stable over 3 descends (no texture/light/geometry leaks)

@@ -44,8 +44,8 @@ Shipped (file → what):
 - `src/core/Game.js`: `_lavaDamage` reads `PROPS.POOLS.LAVA` (§6.2 — numbers
   identical to the old LAVA_* keys).
 
-Remaining work: none structural. Optional hardening = biome-check Gate 2b
-(§11) — assert the §3 palette VALUES for the 5 new biomes verbatim.
+Remaining work: none — Gate 2b shipped 2026-08-05 (the 5 new biomes' §3
+palette VALUES are now asserted verbatim by biome-check).
 
 ---
 
@@ -435,7 +435,7 @@ is Gate 2b.
 1. `BIOMES.SEQUENCE.length === 10`; every id exists as a `BIOMES` key.
 2. Every SEQUENCE biome palette has **all 9 keys** (wall, floor, ceiling, fog,
    fogDensity, ambient, ambientIntensity, torchColor, label).
-2b. **(PLANNED hardening)** Every SEQUENCE biome's palette VALUES match the
+2b. **(SHIPPED 2026-08-05)** Every SEQUENCE biome's palette VALUES match the
     tables verbatim — for the 5 NEW biomes hardcode the §3 hex values in the
     script (CRYSTAL_DEPTHS wall 0x3a2a4a, floor 0x2a1e35, ceiling 0x1a1425,
     fog 0x120a20, fogDensity 0.011, ambient 0x1c1030, ambientIntensity 0.34,
@@ -548,17 +548,17 @@ hostile consistency review, with the arbitration applied.
 | 32 | Texture-cache wording ("grows to 11" vs "11 at run start") | Corrected to the CODE reality: the cache is LAZY — `BiomeSystem.texturesFor` builds each set on first use (11 sets max), `biomeCached` markers keep regen from disposing it (§3, §8, §10 #7). |
 | 33 | Status was unverifiable by a fresh model | §0 status map (verified 2026-08-05): all biome phases shipped; biome-check 11/11 green; doc converted to contract + verification mode (§0). |
 | 34 | Gate calibration drift — plan said "vaultOnly torches ≤ 2 avg" but the shipped gate uses 10/50 | §11 corrected to the shipped `LIGHT_CEILING.VAULT_ONLY_TORCH_AVG 10 / MAX 50` (calibrated to the existing fungal biome, measured avg ~9); the "≤ 2" text was superseded (§11). |
-| 35 | New-biome palette VALUES never asserted (only key presence) | Planned Gate 2b: hardcode the §3 hex values for the 5 new biomes in biome-check.mjs (§11). |
+| 35 | New-biome palette VALUES never asserted (only key presence) | SHIPPED (2026-08-05): biome-check Gate 2b hardcodes the §3 hex values for the 5 new biomes; all gates pass (§11). |
 
 ---
 
 ## 15. Verification summary for implementer
 
-Status (verified 2026-08-05): all phases shipped. Verify, don't rebuild:
+Status (verified 2026-08-05): all phases shipped, incl. Gate 2b (palette
+values asserted verbatim). Verify, don't rebuild:
 `node scripts/dungeon-check.mjs 40` → broken=0/40; `node scripts/biome-check.mjs`
-→ ALL GATES PASS (1–11; default 10 seeds); `node scripts/biome-light-probe.mjs`
-→ §9 measured table reproduced. The single optional hardening is biome-check
-Gate 2b (§11) — assert the §3 palette values verbatim. Any future lighting
+→ ALL GATES PASS (1–11 + 2b; default 10 seeds); `node scripts/biome-light-probe.mjs`
+→ §9 measured table reproduced. Any future lighting
 change must keep every biome's light probe ≤ the current heaviest biome
 (LIGHT_CEILING.AVG 154 / MAX 199; vaultOnly torchAvg ≤ 10, torchMax ≤ 50).
 Commits go in the consolidated games-benchmarks parent repo, plan file at

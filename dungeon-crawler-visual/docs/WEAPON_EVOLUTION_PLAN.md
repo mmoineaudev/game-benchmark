@@ -6,7 +6,7 @@ Implementation plan for a weapon-evolution system in the dungeon crawler at
 Status: **CLOSED** — every open point from the draft arbitrated and embedded
 inline; a latent electric-proc bug found and owned (§6). Resolution priority:
 ease of development, maintainability, internal consistency, fun. Gap-closure log
-in §12 (36 rows).
+in §12 (39 rows).
 
 ---
 
@@ -42,11 +42,12 @@ Shipped (file → what, do not touch unless §4.3/§7.1 says so):
 - `scripts/weapon-check.mjs`: gates 1–6 + 8 pass; gate 7 asserts `#tier-pips`
   EXISTS — updated by §11 (must assert its ABSENCE after §7.1).
 
-Remaining work (the implementable delta):
-1. §4.2/4.3 — six distinct weapon models (T1–T4 are new; T0/T5 unchanged).
-2. §7.1 — HUD souls line = total only; delete tier text + pips.
-3. §11 — gates 7 (inverted), 9 (distinct silhouettes), 10 (straightness),
-   11 (HUD grep). Phases in §12 (B2–B5).
+IMPLEMENTATION COMPLETE (2026-08-05): the delta below shipped and verified —
+`node scripts/weapon-check.mjs` ALL GATES PASS (1–12), `node scripts/dungeon-check.mjs 40`
+broken=0/40, and `node scripts/browser-smoke.mjs` PASS (headless boot: WebGL2
+renderer, total-only HUD, perf warning present + hidden, zero JS exceptions;
+level start builds all six forms in-browser). See also the degraded-mode perf
+safeguard (§16) added the same day.
 
 ---
 
@@ -404,24 +405,22 @@ Blade light only exists at tier 5 and is disposed/rebuilt with the form.
 6. Scale/size cap: max group scale (150 orbs × EMPOWERED) ≤ 5.0; `BLADE_LENGTH`
    monotonic (0.76 → 1.0); `TIP_LOCAL.y = BLADE_LENGTH[tier] × 0.79` for all tiers.
    — SHIPPED
-7. HUD (total-only ruling — §7.1, NOT yet applied): `#souls-line` exists in
+7. HUD (total-only ruling — §7.1): `#souls-line` exists in
    index.html AND its default content is exactly `Souls 0`; `#tier-pips` must
    NOT be present. Implementation: `html.includes('id="souls-line"')`,
-   `html.includes('>Souls 0<')`, `!html.includes('tier-pips')`.
+   `html.includes('>Souls 0<')`, `!html.includes('tier-pips')`. — SHIPPED
 8. Existing gate: `node scripts/dungeon-check.mjs` → broken=0/40. — SHIPPED
-9. **Distinct silhouettes (NEW)**: PlayerSword.js source contains all six
+9. **Distinct silhouettes** (§4.3): PlayerSword.js source contains all six
    builder names from §4.3 (`_formCleaver`, `_formArmingSword`,
    `_formRunicGreatsword`, `_formCrystalSoulblade`, `_formSoulfireGreatblade`,
    `_formLightsaber`) and `_applyForm` dispatches on tier. Proxy assertion:
-   source includes `_formMeshes` and `_applyForm` contains the six names.
-10. **Straightness (NEW)**: PlayerSword.js contains no curved/hollow blade
+   source includes `_formMeshes` and the six builder names. — SHIPPED
+10. **Straightness** (§4): PlayerSword.js contains no curved/hollow blade
     primitives — grep asserts the file does NOT construct `TorusGeometry`/
-    `TorusKnotGeometry` (the legacy T2 hilt band must be gone after §4.3) and
-    that `ConeGeometry`/`CylinderGeometry` are the only blade-building
-    primitives besides `BoxGeometry` (pommel spheres allowed on guards/pommels).
-11. **HUD grep (NEW)**: Game.js `_updateHUD` writes the total only — source
-    assertion: `_updateHUD` block contains `Souls ${` and does NOT contain
-    `weaponTier` or `tier-pips` within the souls-line block (§7.1).
+    `TorusKnotGeometry` (the legacy T2 hilt band is gone after §4.3). — SHIPPED
+11. **HUD grep** (§7.1): Game.js `_updateHUD` writes the total only — source
+    assertion: Game.js contains `Souls ${this.state.soulsEarned` and does NOT
+    contain `tier-pips`. — SHIPPED
 12. Existing gate: dungeon-check broken=0/40 (same as 8 — kept for parity with
     biome-check's numbering).
 
@@ -433,10 +432,10 @@ Blade light only exists at tier 5 and is disposed/rebuilt with the form.
 |---|---|---|
 | 0 | `EVOLUTION` constants, `SWORD.ELECTRIC_*` hoist, GameState fields, OrbSystem `soulsEarned`, `weapon-check.mjs` | weapon-check 1–8 green; dungeon-check 0/40 — **SHIPPED** |
 | 1 | Damage ladder (pure function in Game) + HUD (souls line, toasts) | headless tier-math probe; `#souls-line` id present — **SHIPPED** (toast + arcs also shipped) |
-| 2 | **Distinct models T1–T2** (§4.2: `_formArmingSword`, `_formRunicGreatsword`; delete stripes/torus) | weapon-check 9–10 green; visual probe: crossguard/runes visible, torus gone |
-| 3 | **Distinct models T3–T4** (§4.2: `_formCrystalSoulblade`, `_formSoulfireGreatblade`) | weapon-check 9–10 green; hum pulse targets T4 core; T3 faceted silhouette headless-verified (mesh count per tier) |
-| 4 | **HUD total-only** (§7.1: index.html + `Game._updateHUD` + delete `#tier-pips`) | weapon-check gates 7 + 11 green; `#souls-line` default `Souls 0`; no `tier-pips` anywhere |
-| 5 | Final gates: full descend through all tiers, no console errors, dungeon-check 0/40, weapon-check clean (1–12), perf probe (draw calls, lights) | all gates |
+| 2 | **Distinct models T1–T2** (§4.2: `_formArmingSword`, `_formRunicGreatsword`; delete stripes/torus) | weapon-check 9–10 green; visual probe: crossguard/runes visible, torus gone — **SHIPPED** |
+| 3 | **Distinct models T3–T4** (§4.2: `_formCrystalSoulblade`, `_formSoulfireGreatblade`) | weapon-check 9–10 green; hum pulse targets T4 core; T3 faceted silhouette headless-verified (mesh count per tier) — **SHIPPED** |
+| 4 | **HUD total-only** (§7.1: index.html + `Game._updateHUD` + delete `#tier-pips`) | weapon-check gates 7 + 11 green; `#souls-line` default `Souls 0`; no `tier-pips` anywhere — **SHIPPED** |
+| 5 | Final gates: full descend through all tiers, no console errors, dungeon-check 0/40, weapon-check clean (1–12), perf probe (draw calls, lights) | all gates — **SHIPPED** (browser-smoke PASS: 0 JS exceptions) |
 
 ---
 
@@ -491,16 +490,42 @@ Blade light only exists at tier 5 and is disposed/rebuilt with the form.
 | 34 | Implementation status unverifiable by a fresh model | §0 status map (verified 2026-08-05): phases 0–1 + arcs + toast + electric fix SHIPPED and green; the remaining delta is §4 models (B2–B3), §7.1 HUD (B4), gate updates (B5) (§0, §12). |
 | 35 | Straightness / no-bends taste needed a guard | Gate 10 greps PlayerSword for Torus/TorusKnot geometry — the legacy T2 hilt band is the only offender and §4.3 deletes it (§11). |
 | 36 | Silhouette-distinctness needed a guard | Gate 9 asserts the six named builders exist and `_applyForm` dispatches on tier — prevents the redesign degrading back into trims (§11). |
+| 37 | Arsenal of Ascension implementation | All six forms shipped (B2/B3, 2026-08-05): `_ensureForms` + per-tier builders + `_formMeshes` registry; T0/T5 byte-identical; gates 9–10 green (§4, §11). |
+| 38 | HUD total-only implementation | index.html + Game.js updated (B4, 2026-08-05); gates 7/11 green; browser-smoke asserts `Souls 0` + perf-warning (§7.1, §11). |
+| 39 | Degraded-mode perf safeguard (user feature) | Sustained <30 fps for >10 s flips the run into degraded mode: `PropSystem.reduceDecorations(0.5)` hides half the current level's cosmetic props (hazards/breakables/structure/biome lights untouched) + bottom-right warning label; run stays degraded; smoke-verified (§16). |
 
 ---
 
 ## 15. Verification summary for implementer
 
-Baseline (verified 2026-08-05): `node scripts/dungeon-check.mjs 40` = broken=0/40;
-`node scripts/weapon-check.mjs` = ALL GATES PASS (8 gates). The shipped phases
-(0–1, arcs, toast, electric fix) are done — do NOT re-implement them. Implement
-in order: B2 (§4.2 T1–T2 models + delete stripes/torus) → B3 (§4.2 T3–T4
-models) → B4 (§7.1 HUD total-only) → B5 (gates 7/9/10/11 in weapon-check,
-full-descend pass). Every phase ends with a commit in the consolidated
-games-benchmarks parent repo. The legendary proc now FIRES (bug fix shipped —
-weapon-check gate 5 guards it); nothing about §5/§6 remains open.
+STATUS: COMPLETE (2026-08-05). All phases shipped. Verification commands:
+`node scripts/dungeon-check.mjs 40` → broken=0/40; `node scripts/weapon-check.mjs`
+→ ALL GATES PASS (1–12); `node scripts/browser-smoke.mjs` → PASS (headless boot,
+WebGL2, total-only HUD, 0 JS exceptions — all six forms build in-browser on
+level start). The legendary proc FIRES (gate 5 guards it). No open items from
+§5/§6/§7; the degraded-mode perf safeguard (§16) landed with the same
+verification.
+
+---
+
+## 16. Perf safeguard — degraded mode (user feature, 2026-08-05)
+
+If sustained fps < 30 for more than 10 s, the run enters degraded mode:
+
+- `Game._updatePerfMonitor(dt)` (called every frame): EMA fps
+  (`_fpsEma = _fpsEma·0.95 + fps·0.05`), accumulates `_lowFpsTime` while
+  `_fpsEma < 30` (reset to 0 when ≥ 30). Frame hitches (dt > 0.25 s, e.g.
+  level regen) and the title screen (`_titleActive`) are excluded from the
+  measurement. When `_lowFpsTime > 10`: set `_degraded = true`, call
+  `props.reduceDecorations(0.5)`, unhide `#perf-warning`.
+- `PropSystem.reduceDecorations(0.5)`: hides a random 50% of purely cosmetic
+  props recorded in `_decoratives` (rubble, skull piles, blood decals, anvils,
+  chains, candles, ice crystals, mushrooms — their lights included) and sheds
+  the tail instances of the instanced water/stalactite meshes (count halved).
+  NEVER touches hazards, breakables, interactives, structural props, or biome
+  light props (crystal clusters, wisps, altars).
+- Once degraded, the run STAYS degraded: `_initProps` applies
+  `reduceDecorations(0.5)` to every new level so fluidity holds.
+- HUD: `#perf-warning` div + CSS in index.html ("⚠ DEGRADED MODE — decorations
+  reduced for performance", bottom-right, amber, hidden at start);
+  browser-smoke asserts its presence + hidden state.

@@ -2016,12 +2016,12 @@ export class Game {
     // Single souls counter — the ORBS/SOULS readout is the one notion, no
     // separate lifetime line (user ruling: souls = orbs).
     if (this.sword) this.sword.setOrbCount(this.state.collectedOrbs);
-    // Directional danger glow: additive 1/d per sector from SkeletonSystem
-    // (front -> top, back -> bottom, right, left). No nearest-enemy math.
-    // Alpha = min(1, sum / DANGER_MAX_SUM), smoothed so it doesn't pop.
+    // Directional danger glow: additive 1/d per sector from SkeletonSystem.
+    // Mapping (user ruling): enemies in FRONT light the BOTTOM border, behind
+    // the TOP, right -> right, left -> left. Alpha = min(1, sum / MAX_SUM).
     if (this._dangerEls.length && this.skeletons && this.skeletons.danger) {
       const d = this.skeletons.danger;
-      const vals = [d.front, d.back, d.left, d.right];
+      const vals = [d.back, d.front, d.left, d.right]; // [top, bottom, left, right]
       const k = Math.min(1, this._delta * 6);
       for (let i = 0; i < this._dangerEls.length; i++) {
         const el = this._dangerEls[i];

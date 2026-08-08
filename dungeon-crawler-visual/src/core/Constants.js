@@ -281,8 +281,6 @@ export const ENEMY = {
   ELITE_CHANCE: 0.1,  // 1-in-10 per non-rat spawn
   HP_LEVEL_INTERVAL: 5,  // mobs gain +HP_PER_STEP bonus HP every this many levels
   HP_PER_STEP: 0.1,      // +10% mob HP per 5 levels
-  SOULS_SPAWN_BONUS: 0.05, // +5% spawn rate per SOULS_SPAWN_PER souls held
-  SOULS_SPAWN_PER: 50,
 };
 
 export const ARMORED = {
@@ -439,7 +437,6 @@ export const BUFF = {
   ORB_DROP_MIN: 1,         // soul-orb drop range: 1-5 per break
   ORB_DROP_MAX: 5,
   ORB_BUFF_CHANCE: 0.0005, // +0.05% buff drop per orb ABOVE 100
-  SPAWN_EXCESS_PER: 100,   // each 100 excess orbs = +100% spawn multiplier
   FIREBALL_COOLDOWN: 0.35, // seconds between free fireballs
   BRIGHT_AMBIENT: 2.5,     // ambient intensity multiplier while BRIGHT
   BRIGHT_FOG: 0.35,        // fog density multiplier while BRIGHT (less fog)
@@ -478,10 +475,10 @@ export const ORB_WEAPON = {
   EXPLODE_DAMAGE: 2,      // last step: AOE damage dealt (same as a direct hit)
 };
 
-// The sword's size-bonus multiplier — ALSO scales the enemy spawn rate, so
-// ammo banked = more enemies = more drops (risk/reward loop).
+// The sword's size-bonus multiplier — the risk/reward core of the economy:
 // +20% per 10 orbs held, capped at +300% (4x at 150 orbs). Orbs ABOVE 100
-// additionally feed buff-drop rate and spawn rate via excessOrbs().
+// additionally feed buff-drop chance via excessOrbs(). (Enemy spawns are now
+// scaled by the separate (level + souls)/10 formula, NOT by this.)
 export function orbPowerMultiplier(orbs) {
   return 1 + Math.min(Math.floor(orbs / 10), 15) * 0.2;
 }
@@ -494,8 +491,7 @@ export function orbDamageMultiplier(orbs) {
   return 1 + orbs * 0.02;
 }
 
-// Orbs in excess of 100 (the 'power' threshold) funnel into buff drops
-// and enemy spawn rate rather than sword size.
+// Orbs in excess of 100 (the 'power' threshold) funnel into buff-drop chance.
 export function excessOrbs(orbs) {
   return Math.max(0, orbs - 100);
 }

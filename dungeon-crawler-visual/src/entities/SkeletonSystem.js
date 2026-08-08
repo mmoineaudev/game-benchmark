@@ -9,8 +9,8 @@ import { GhostBoss } from './enemies/GhostBoss.js';
 import { Burning } from './enemies/Burning.js';
 import {
   SKELETON, PLAYER, MAGICIAN, ENEMY, ENEMY_SPAWN_WEIGHTS, ENEMY_TYPES,
-  ROOM_ENEMY_MODIFIERS, ARCHER, BRUTE, BOSS, WRAITH, BUFF, BURN,
-  orbPowerMultiplier, enemyHpMultiplier, excessOrbs,
+  ROOM_ENEMY_MODIFIERS, ARCHER, BRUTE, BOSS, WRAITH, BURN,
+  enemyHpMultiplier,
 } from '../core/Constants.js';
 import { resolveCircleCollisions, circleHitsBox } from '../core/Collision.js';
 import { generateGlowTexture } from '../world/Textures.js';
@@ -147,14 +147,10 @@ export class SkeletonSystem {
     // New Game+: +100% enemy HP per NG+ cycle, plus +10% per 5 levels
     const hpMult = enemyHpMultiplier(state.ngPlus, state.level);
 
-    // Spawn rate: +10% per level, scaled by the sword/orb power bonus, plus
-    // +5% per 50 souls held. Banked ammo = more enemies = more drops
-    // (risk/reward loop). Hard-capped at MAX_ALIVE so the live-bodies budget
-    // holds.
-    const levelSpawnMult = Math.pow(1.1, state.level - 1);
-    const soulsSpawnMult = 1 + ENEMY.SOULS_SPAWN_BONUS * Math.floor(state.collectedOrbs / ENEMY.SOULS_SPAWN_PER);
-    const spawnMult = levelSpawnMult * orbPowerMultiplier(state.collectedOrbs) * soulsSpawnMult
-      + excessOrbs(state.collectedOrbs) / BUFF.SPAWN_EXCESS_PER;
+    // Spawn rate: ACCELERATED — ×(1 + (level + souls)/10). Level AND banked
+    // souls both push it up quickly (level 5 + 50 souls = x6.5). Hard-capped
+    // at MAX_ALIVE so the live-bodies budget holds.
+    const spawnMult = 1 + (state.level + state.collectedOrbs) / 10;
     let slots = Math.min(
       Math.round((ENEMY.BASE_SLOTS + (state.level - 1) * ENEMY.SLOTS_PER_LEVEL) * spawnMult),
       ENEMY.MAX_ALIVE,

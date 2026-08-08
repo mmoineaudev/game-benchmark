@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON, SWORD, PROPS, HIT_STOP, LIGHTING, DROP, BUFF, EVOLUTION, ENEMY, weaponTier, excessOrbs, orbDamageMultiplier, orbPowerMultiplier, enemyHpMultiplier } from './Constants.js';
+import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON, SWORD, PROPS, HIT_STOP, LIGHTING, DROP, BUFF, EVOLUTION, weaponTier, excessOrbs, orbDamageMultiplier, enemyHpMultiplier } from './Constants.js';
 import { GameState } from './GameState.js';
 import { Leaderboard } from './Leaderboard.js';
 import { EventBus } from './EventBus.js';
@@ -1953,11 +1953,8 @@ export class Game {
     const s = this.state;
     const sw = this.sword;
     const orbMult = orbDamageMultiplier(s.collectedOrbs);
-    // Mirrors the REAL spawn multiplier from SkeletonSystem: +10%/level x orb
-    // power x souls bonus (+5%/50), plus excess-orb scaling.
-    const spawnMult = Math.pow(1.1, s.level - 1) * orbPowerMultiplier(s.collectedOrbs)
-      * (1 + ENEMY.SOULS_SPAWN_BONUS * Math.floor(s.collectedOrbs / ENEMY.SOULS_SPAWN_PER))
-      + (s.collectedOrbs > 100 ? (s.collectedOrbs - 100) / BUFF.SPAWN_EXCESS_PER : 0);
+    // Spawn multiplier (SkeletonSystem's real formula): ×(1 + (level+souls)/10)
+    const spawnMult = 1 + (s.level + s.collectedOrbs) / 10;
     const mobSpeedMult = (1 + 0.05 * (s.level - 1)) * (1 + 0.1 * (s.bossKills || 0));
     return {
       orbMult,

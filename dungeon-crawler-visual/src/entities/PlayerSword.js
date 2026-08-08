@@ -691,8 +691,9 @@ export class PlayerSword {
   // orbs), extends melee range, shifts base color, intensifies the green
   // growth light.
   setOrbCount(count) {
-    // Same multiplier drives the enemy spawn rate (orbPowerMultiplier);
-    // lengthMult stacks on top (EMPOWERED buff: +50% longer). Clamped at
+    // Orb-power scale (sword size only — enemy spawns use their own
+    // (level + souls)/10 formula); lengthMult stacks on top (EMPOWERED buff:
+    // +50% longer). Clamped at
     // MAX_TOTAL_SCALE so the ready pose never covers the crosshair (§3, §10).
     this._rangeScale = Math.min(
       orbPowerMultiplier(count) * this.lengthMult,

@@ -361,11 +361,11 @@ export class Game {
     });
     for (let i = 0; i < 12; i++) {
       const a = (i / 12) * Math.PI * 2;
-      const r = 4.2 + (i % 3) * 1.3;
+      const r = 3.5 + (i % 3) * 1.1;
       const orb = new THREE.Mesh(orbGeo, orbMat);
       const x = Math.cos(a) * r;
-      const z = -7 + Math.sin(a) * 3.4;
-      const y = 1.1 + (i % 4) * 0.6;
+      const z = -9 + Math.sin(a) * 3.2; // all in front of the camera
+      const y = 1.0 + (i % 4) * 0.55;
       orb.position.set(x, y, z);
       const glow = new THREE.Sprite(glowMat);
       glow.scale.setScalar(1.6);
@@ -376,13 +376,14 @@ export class Game {
 
     // Spectral boss idling in front of the portal
     this._titleBoss = new GhostBoss(scene, 4, 'WRAITH');
-    this._titleBoss.group.position.set(0, 0, -13);
+    this._titleBoss.group.position.set(0, 0, -12);
     this._titleBoss.group.scale.setScalar(1.1);
 
-    // Frame the room (the first-person sword stays hidden until a run starts)
+    // Frame the room so it fills the whole viewport (camera INSIDE the court,
+    // the first-person sword stays hidden until a run starts)
     if (this.sword && this.sword.group) this.sword.group.visible = false;
-    this.camera.position.set(0, 3.6, 8.5);
-    this.camera.lookAt(0, 2.4, -13);
+    this.camera.position.set(0, 2.5, -4.5);
+    this.camera.lookAt(0, 1.9, -12);
     this._titleSceneActive = true; // arm the title animation loop
   }
 
@@ -411,7 +412,7 @@ export class Game {
     }
     // Slow lateral camera sway around the room
     this.camera.position.x = Math.sin(t * 0.12) * 1.6;
-    this.camera.lookAt(0, 2.4, -13);
+    this.camera.lookAt(0, 1.9, -12);
     this.post.render();
   }
 

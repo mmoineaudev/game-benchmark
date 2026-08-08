@@ -85,6 +85,25 @@ console.log('== GhostBoss ==');
   brute.dispose();
 }
 
+// REGRESSION: safe-spawn path — SkeletonSystem calls update(dt, time) with
+// NO player (title screen / spawn protection idle). The boss must idle in
+// place, not crash (was: TypeError reading 'x' of undefined at GhostBoss.update).
+{
+  const scene = { add() {}, remove() {} };
+  const b3 = new GhostBoss(scene, 4);
+  b3._chargeCd = 0;
+  let threw = null;
+  try {
+    for (let i = 0; i < 60; i++) b3.update(0.016, i * 0.016); // no player arg
+  } catch (e) {
+    threw = e;
+  }
+  ok(threw === null, `boss update without player idles (no throw${threw ? ': ' + threw.message : ''})`);
+  ok(b3.state !== 'CHARGING' && b3.group.position.x === 0 && b3.group.position.z === 0,
+    'boss stays put while safe-spawn is active');
+  b3.dispose();
+}
+
 console.log('== Burning enemy ==');
 {
   const scene = { add() {}, remove() {} };

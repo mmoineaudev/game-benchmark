@@ -243,8 +243,8 @@ Shared rules: props spawn only inside rooms (never corridors), ≥ 1 cell from a
 
 | # | Prop | Type | Collision | Light | Rooms | Biomes | Density / placement | Spec |
 |---|---|---|---|---|---|---|---|---|
-| 1 | Barrel | **Breakable** (HP 1) | circle r 0.5 | none | any room | all | 1–3 per CHAMBER/VAULT | Cylinder 0.4×0.9, 0x6a4a2a, 2 metal bands 0x3a3a3a. Any damage (orb/sword) breaks → 6 debris shards + smoke puff. Drop: 6% buff + 20% soul orb. |
-| 2 | Crate | **Breakable** (HP 1) | circle r 0.55 | none | any room | all | 1–2 per CHAMBER/HALL | Box 1.0×1.0×1.0, 0x7a5a3a, cross planks 0x5a3a2a. Same break rule, 8 shards. Drop: 6% buff + 20% soul orb. |
+| 1 | Barrel | **Breakable** (HP 1) | circle r 0.5 | none | any room | all | 1–3 per CHAMBER/VAULT | Cylinder 0.4×0.9, 0x6a4a2a, 2 metal bands 0x3a3a3a. Any damage (orb/sword) breaks → 6 debris shards + smoke puff. Drop: 6% buff + 20% chance of 1–5 soul orbs. |
+| 2 | Crate | **Breakable** (HP 1) | circle r 0.55 | none | any room | all | 1–2 per CHAMBER/HALL | Box 1.0×1.0×1.0, 0x7a5a3a, cross planks 0x5a3a2a. Same break rule, 8 shards. Drop: 6% buff + 20% chance of 1–5 soul orbs. |
 | 3 | Hanging chain | Decorative | none | none | HALL, VAULT, ARMORY | stone, crypt, volcanic | 1 per room, from ceiling | Cylinder 0.03×2.5, 0x4a4a52, metalness 0.8, + hook. Static (no physics). |
 | 4 | Banner | Decorative | none | none | HALL, VAULT, ARENA | all | 1–2 per room on walls | Plane 1.2×0.8, DoubleSide, biome-tinted color, gentle sine sway in update. |
 | 5 | Skull pile | Decorative | none | none | CRYPT, LIBRARY, fungal | crypt, fungal, stone | 1–3 per room, 8 skulls each | InstancedMesh: 8 × (Sphere 0.12 squashed + jaw box), bone 0xcfc6b0. |

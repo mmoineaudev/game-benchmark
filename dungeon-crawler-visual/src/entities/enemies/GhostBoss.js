@@ -189,6 +189,10 @@ export class GhostBoss {
       return;
     }
 
+    // Safe-spawn / title screen: SkeletonSystem calls update(dt, time) with
+    // NO player so mobs idle in place — bosses must idle too, not crash.
+    if (!player) return;
+
     const dx = player.x - this.group.position.x;
     const dz = player.z - this.group.position.z;
     const dist = Math.hypot(dx, dz);

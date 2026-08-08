@@ -418,7 +418,9 @@ export function swordHitDamage(step, tier) {
 export const BUFF = {
   DURATION: 60,            // initial non-boss buff duration (x2 from 30s)
   CHANCE: 0.06,            // base drop chance per broken breakable (+20% from 5%)
-  ORB_DROP_CHANCE: 0.2,    // 20% chance per broken breakable to drop a soul orb
+  ORB_DROP_CHANCE: 0.2,    // 20% chance per broken breakable to drop soul orbs
+  ORB_DROP_MIN: 1,         // soul-orb drop range: 1-5 per break
+  ORB_DROP_MAX: 5,
   ORB_BUFF_CHANCE: 0.0005, // +0.05% buff drop per orb ABOVE 100
   SPAWN_EXCESS_PER: 100,   // each 100 excess orbs = +100% spawn multiplier
   FIREBALL_COOLDOWN: 0.35, // seconds between free fireballs

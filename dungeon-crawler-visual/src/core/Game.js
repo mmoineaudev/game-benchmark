@@ -274,10 +274,13 @@ export class Game {
     // Merge prop AABBs into the collision list BEFORE enemies spawn
     this._collisionBoxes.push(...(result.collisionBoxes || []));
     this.props.lavaHazard = ({ x, z }) => this._lavaDamage(x, z);
-    // Breakables: 20% soul-orb drop, plus buff drop chance = base +
+    // Breakables: 20% soul-orb drop (1-5 orbs), plus buff drop chance = base +
     // orbs-above-100 bonus.
     this.props.onBreak = (x, z) => {
-      if (Math.random() < BUFF.ORB_DROP_CHANCE) this.orbs.spawnDrop(x, z, 1);
+      if (Math.random() < BUFF.ORB_DROP_CHANCE) {
+        const n = BUFF.ORB_DROP_MIN + Math.floor(Math.random() * (BUFF.ORB_DROP_MAX - BUFF.ORB_DROP_MIN + 1));
+        this.orbs.spawnDrop(x, z, n);
+      }
       const chance = BUFF.CHANCE + excessOrbs(this.state.collectedOrbs) * BUFF.ORB_BUFF_CHANCE;
       if (Math.random() < chance) this.orbs.spawnBuff(x, z);
     };

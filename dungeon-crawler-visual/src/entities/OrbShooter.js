@@ -40,7 +40,7 @@ export class OrbShooter {
     ctx.fillRect(0, 0, size, size);
     this._tex = new THREE.CanvasTexture(canvas);
 
-    const meshGeo = new THREE.SphereGeometry(0.2, 10, 8); // bigger orbs
+    const meshGeo = new THREE.SphereGeometry(0.13, 10, 8); // small orbs — keep the view clear
     const meshMat = new THREE.MeshStandardMaterial({
       color: 0x44aaff, emissive: 0x44aaff, emissiveIntensity: 3.5,
       roughness: 0.15, metalness: 0.4,
@@ -61,9 +61,9 @@ export class OrbShooter {
     for (let i = 0; i < POOL; i++) {
       const mesh = new THREE.Mesh(meshGeo, meshMat);
       const glow = new THREE.Sprite(glowMat);
-      glow.scale.set(1.6, 1.6, 1);
+      glow.scale.set(1.15, 1.15, 1);
       const smear = new THREE.Sprite(smearMat);
-      smear.scale.set(1.3, 1.3, 1);
+      smear.scale.set(0.9, 0.9, 1);
       mesh.visible = false;
       glow.visible = false;
       smear.visible = false;

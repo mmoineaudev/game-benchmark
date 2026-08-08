@@ -63,7 +63,6 @@ export class Game {
     this._lastBiomePal = null; // cache biome border color (HUD writes once per level)
     this._exitEl = document.getElementById('exit-prompt');
     this._messagesEl = document.getElementById('messages');
-    this._prevOrbCount = 0;
     this._prevInExit = false;
     this._welcomeShown = false;
     this._lastHintTime = 0;
@@ -1669,10 +1668,6 @@ export class Game {
   }
 
   _checkMessages() {
-    // Orb collected
-    if (this.state.collectedOrbs > this._prevOrbCount) {
-      this._showMessage('Orb collected! +1 ammo', 'success');
-    }
     // Entered exit room
     if (this.state.inExitRoom && !this._prevInExit) {
       this._showMessage('The depths await — press E to descend', 'goal');
@@ -1685,7 +1680,6 @@ export class Game {
       this._showDirectionalHint();
     }
 
-    this._prevOrbCount = this.state.collectedOrbs;
     this._prevInExit = this.state.inExitRoom;
   }
 
@@ -1900,7 +1894,6 @@ export class Game {
     }
     this.state.health = this._maxHealth;
 
-    this._prevOrbCount = 0;
     this._prevInExit = false;
     this._noAmmoWarned = false;
     const biomeChanged = this.biomes.applyLevel(this.state.level, this.state);

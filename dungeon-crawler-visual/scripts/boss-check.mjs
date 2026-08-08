@@ -47,6 +47,15 @@ console.log('== GhostBoss ==');
   ok(boss.hp === 90 && boss.state !== 'DEAD', 'boss alive at full HP');
   ok(boss.bar && boss.barMat && boss.barMat.opacity === 1, 'boss health bar sprite hovers above');
 
+  // Souls scaling: +25% boss HP per 50 souls held (0-49 souls = none)
+  const poor = new GhostBoss(scene, 4, 'WRAITH', 49);
+  ok(poor.maxHp === 90, `49 souls: no bonus (${poor.maxHp})`);
+  const rich = new GhostBoss(scene, 4, 'WRAITH', 100);
+  ok(rich.maxHp === 135, `100 souls: +50% -> ${rich.maxHp} (90 x 1.5)`);
+  const loaded = new GhostBoss(scene, 4, 'WRAITH', 300);
+  ok(loaded.maxHp === 225, `300 souls: +150% -> ${loaded.maxHp} (90 x 2.5)`);
+  poor.dispose(); rich.dispose(); loaded.dispose();
+
   // damage path -> onKill on death
   let killed = 0;
   boss.onKill = () => killed++;

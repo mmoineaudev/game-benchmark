@@ -23,13 +23,16 @@ const BOSS_VARIANTS = {
 };
 
 export class GhostBoss {
-  constructor(scene, baseHp, variant = 'WRAITH') {
+  constructor(scene, baseHp, variant = 'WRAITH', souls = 0) {
     this.scene = scene;
     this.type = 'BOSS';
     this.variant = BOSS_VARIANTS[variant] ? variant : 'WRAITH';
     const v = BOSS_VARIANTS[this.variant];
     this.variantLabel = v.label;
-    this.hp = Math.ceil(baseHp * BOSS.HP_MULT);
+    // HP = base x HP_MULT, scaled up by the player's wealth: +SOULS_HP_BONUS
+    // per SOULS_HP_PER souls held (a rich player faces a tougher lord).
+    this.hp = Math.ceil(baseHp * BOSS.HP_MULT
+      * (1 + BOSS.SOULS_HP_BONUS * Math.floor((souls || 0) / BOSS.SOULS_HP_PER)));
     this.maxHp = this.hp;
     this.state = 'CHASE'; // CHASE | CHARGING | DEAD
     this.animTime = Math.random() * 10;

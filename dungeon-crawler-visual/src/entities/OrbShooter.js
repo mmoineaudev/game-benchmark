@@ -78,35 +78,29 @@ export class OrbShooter {
 
     // Fireball slots (temporary buff weapon): same pool/loop, fiery visuals.
     // Fired via fireFireball() — always explodes on contact, no ammo cost.
+    // Perf cuts: 10 -> 6 slots (sustained 2.8/s x ~2s life), no shot-trace
+    // smear sprite, emissive 4.0 -> 2.2 and smaller glow — the buff was the
+    // laggiest one (3 additive draw calls per shot + bloom blowout on spam).
     const fireGeo = new THREE.SphereGeometry(0.24, 10, 8);
     const fireMat = new THREE.MeshStandardMaterial({
-      color: 0xff8830, emissive: 0xff5522, emissiveIntensity: 4.0,
+      color: 0xff8830, emissive: 0xff5522, emissiveIntensity: 2.2,
       roughness: 0.2, metalness: 0.1,
     });
     const fireGlowMat = new THREE.SpriteMaterial({
       map: this._tex, color: 0xff8844,
       blending: THREE.AdditiveBlending, depthWrite: false,
-      transparent: true, opacity: 1,
+      transparent: true, opacity: 0.75,
     });
-    const fireSmearMat = new THREE.SpriteMaterial({
-      map: this._tex, color: 0xff6622,
-      blending: THREE.AdditiveBlending, depthWrite: false,
-      transparent: true, opacity: 0.45,
-    });
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 6; i++) {
       const mesh = new THREE.Mesh(fireGeo, fireMat);
       const glow = new THREE.Sprite(fireGlowMat);
-      glow.scale.set(1.9, 1.9, 1);
-      const smear = new THREE.Sprite(fireSmearMat);
-      smear.scale.set(1.6, 1.6, 1);
+      glow.scale.set(1.5, 1.5, 1);
       mesh.visible = false;
       glow.visible = false;
-      smear.visible = false;
       this.scene.add(mesh);
       this.scene.add(glow);
-      this.scene.add(smear);
       this.projectiles.push({
-        mesh, glow, smear, dirX: 0, dirY: 0, dirZ: 0, life: 0,
+        mesh, glow, smear: null, dirX: 0, dirY: 0, dirZ: 0, life: 0,
         active: false, bounces: 0, explode: true, fireball: true,
         isFireballSlot: true,
       });
@@ -131,7 +125,7 @@ export class OrbShooter {
 
     // Fiery rings for fireball explosions
     this._boomFireMat = new THREE.MeshBasicMaterial({
-      color: 0xff8830, transparent: true, opacity: 0.8,
+      color: 0xff8830, transparent: true, opacity: 0.55,
       blending: THREE.AdditiveBlending, depthWrite: false,
     });
     this._boomFires = [];
@@ -162,7 +156,7 @@ export class OrbShooter {
     p.active = true;
     p.mesh.visible = true;
     p.glow.visible = true;
-    p.smear.visible = true;
+    if (p.smear) p.smear.visible = true;
     p.mesh.position.set(x, y, z);
     p.glow.position.set(x, y, z);
     // Camera look vector (matches Game._updateCamera)
@@ -186,7 +180,7 @@ export class OrbShooter {
     p.active = true;
     p.mesh.visible = true;
     p.glow.visible = true;
-    p.smear.visible = true;
+    if (p.smear) p.smear.visible = true;
     p.mesh.position.set(x, y, z);
     p.glow.position.set(x, y, z);
     p.dirX = -Math.sin(yaw) * Math.cos(pitch);
@@ -226,12 +220,15 @@ export class OrbShooter {
       p.mesh.position.y += p.dirY * speed * dt;
       p.mesh.position.z += p.dirZ * speed * dt;
       p.glow.position.copy(p.mesh.position);
-      // Shot trace: smear lags behind along the flight direction
-      p.smear.position.set(
-        p.mesh.position.x - p.dirX * 0.5,
-        p.mesh.position.y - p.dirY * 0.5,
-        p.mesh.position.z - p.dirZ * 0.5,
-      );
+      // Shot trace: smear lags behind along the flight direction (fireball
+      // slots carry no smear — perf cut, see the slot build above)
+      if (p.smear) {
+        p.smear.position.set(
+          p.mesh.position.x - p.dirX * 0.5,
+          p.mesh.position.y - p.dirY * 0.5,
+          p.mesh.position.z - p.dirZ * 0.5,
+        );
+      }
       p.life -= dt;
 
       // Floor contact
@@ -345,12 +342,14 @@ export class OrbShooter {
 
   _explode(p) {
     const { x, y, z } = p.mesh.position;
-    // AOE damage + visual ring, then the orb is gone
+    // AOE damage + visual ring, then the orb is gone. Fireball rings are
+    // shorter-lived (0.22s) so a sustained fireball barrage never stacks
+    // rings — the biggest part of the buff's frame cost.
     this.onExplode?.(x, y, z);
     const pool = p.fireball ? this._boomFires : this._booms;
     const b = pool.find((b) => !b.active) || pool[0];
     b.active = true;
-    b.life = 0.3;
+    b.life = p.fireball ? 0.22 : 0.3;
     b.mesh.visible = true;
     b.mesh.position.set(x, y + 0.1, z);
     b.mesh.scale.setScalar(0.4);
@@ -361,7 +360,7 @@ export class OrbShooter {
     p.active = false;
     p.mesh.visible = false;
     p.glow.visible = false;
-    p.smear.visible = false;
+    if (p.smear) p.smear.visible = false;
   }
 
   dispose() {
@@ -369,10 +368,10 @@ export class OrbShooter {
       p.mesh.geometry.dispose();
       p.mesh.material.dispose();
       p.glow.material.dispose();
-      p.smear.material.dispose();
+      if (p.smear) p.smear.material.dispose();
       this.scene.remove(p.mesh);
       this.scene.remove(p.glow);
-      this.scene.remove(p.smear);
+      if (p.smear) this.scene.remove(p.smear);
     }
     if (this._tex) this._tex.dispose();
     if (this._boomGeo) {

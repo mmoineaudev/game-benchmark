@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON, SWORD, PROPS, HIT_STOP, LIGHTING, DROP, BUFF, EVOLUTION, weaponTier, excessOrbs, orbDamageMultiplier, orbPowerMultiplier, enemyHpMultiplier } from './Constants.js';
+import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON, SWORD, PROPS, HIT_STOP, LIGHTING, DROP, BUFF, EVOLUTION, ENEMY, weaponTier, excessOrbs, orbDamageMultiplier, orbPowerMultiplier, enemyHpMultiplier } from './Constants.js';
 import { GameState } from './GameState.js';
 import { Leaderboard } from './Leaderboard.js';
 import { EventBus } from './EventBus.js';
@@ -1600,8 +1600,9 @@ export class Game {
       if (s) {
         const orbMult = orbDamageMultiplier(s.collectedOrbs);
         // Mirror the REAL spawn multiplier from SkeletonSystem: +10%/level x
-        // orb power, plus excess-orb scaling (was capped at x4 before).
+        // orb power x souls bonus (+5%/50), plus excess-orb scaling.
         const spawnMult = Math.pow(1.1, s.level - 1) * orbPowerMultiplier(s.collectedOrbs)
+          * (1 + ENEMY.SOULS_SPAWN_BONUS * Math.floor(s.collectedOrbs / ENEMY.SOULS_SPAWN_PER))
           + (s.collectedOrbs > 100 ? (s.collectedOrbs - 100) / BUFF.SPAWN_EXCESS_PER : 0);
         const mobSpeedMult = (1 + 0.05 * (s.level - 1)) * (1 + 0.1 * (s.bossKills || 0));
         const rows = [
@@ -1609,7 +1610,7 @@ export class Game {
           [`DMG ×`, `${(sw ? sw.damageMult : 1).toFixed(2)}`],
           [`Orb DMG`, `${Math.round(ORB_WEAPON.DAMAGE * orbMult)}`],
           [`Reach`, `${(sw ? sw.range : SWORD.RANGE).toFixed(1)}u`],
-          [`Enemy HP`, `×${enemyHpMultiplier(s.ngPlus).toFixed(1)}`],
+          [`Enemy HP`, `×${enemyHpMultiplier(s.ngPlus, s.level).toFixed(1)}`],
           [`Mob speed`, `×${mobSpeedMult.toFixed(1)}`],
           [`Spawns`, `×${spawnMult.toFixed(1)}`],
           [`Regen`, `+${PLAYER.REGEN_AMOUNT}/${PLAYER.REGEN_INTERVAL}s${PLAYER.REGEN_DELAY > 0 ? ` @${PLAYER.REGEN_DELAY}s` : ''}`],
@@ -1947,6 +1948,7 @@ export class Game {
     const sw = this.sword;
     const orbMult = orbDamageMultiplier(s.collectedOrbs);
     const spawnMult = Math.pow(1.1, s.level - 1) * orbPowerMultiplier(s.collectedOrbs)
+      * (1 + ENEMY.SOULS_SPAWN_BONUS * Math.floor(s.collectedOrbs / ENEMY.SOULS_SPAWN_PER))
       + (s.collectedOrbs > 100 ? (s.collectedOrbs - 100) / BUFF.SPAWN_EXCESS_PER : 0);
     const mobSpeedMult = (1 + 0.05 * (s.level - 1)) * (1 + 0.1 * (s.bossKills || 0));
     const atkSpeed = sw && sw.attackSpeedMult !== 1
@@ -1960,7 +1962,7 @@ export class Game {
       ['Sword size', `×${(sw ? sw.scale : 1).toFixed(2)}`],
       ['Atk speed', atkSpeed],
       ['Move speed', this.state.sprintSpeedMult > 1.001 ? `×${this.state.sprintSpeedMult.toFixed(2)}` : '×1.00'],
-      ['Enemy HP', `×${enemyHpMultiplier(s.ngPlus).toFixed(2)}`],
+      ['Enemy HP', `×${enemyHpMultiplier(s.ngPlus, s.level).toFixed(2)}`],
       ['Mob speed', `×${mobSpeedMult.toFixed(2)}`],
       ['Spawns', `×${spawnMult.toFixed(2)}`],
       ['Regen', `+${PLAYER.REGEN_AMOUNT}/${PLAYER.REGEN_INTERVAL}s${PLAYER.REGEN_DELAY > 0 ? ` @${PLAYER.REGEN_DELAY}s` : ''}`],

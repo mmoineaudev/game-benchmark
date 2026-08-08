@@ -144,14 +144,16 @@ export class SkeletonSystem {
     this.speedMult = (1 + 0.05 * (state.level - 1)) * bossMult;
     const attackMult = (1 + 0.05 * Math.floor((state.level - 1) / 3)) * bossMult;
 
-    // New Game+: +100% enemy HP per NG+ cycle
-    const hpMult = enemyHpMultiplier(state.ngPlus);
+    // New Game+: +100% enemy HP per NG+ cycle, plus +10% per 5 levels
+    const hpMult = enemyHpMultiplier(state.ngPlus, state.level);
 
-    // Spawn rate: +10% per level, then scaled by the sword/orb power bonus.
-    // Banked ammo = more enemies = more drops (risk/reward loop). Hard-capped
-    // at MAX_ALIVE so the live-bodies budget holds.
+    // Spawn rate: +10% per level, scaled by the sword/orb power bonus, plus
+    // +5% per 50 souls held. Banked ammo = more enemies = more drops
+    // (risk/reward loop). Hard-capped at MAX_ALIVE so the live-bodies budget
+    // holds.
     const levelSpawnMult = Math.pow(1.1, state.level - 1);
-    const spawnMult = levelSpawnMult * orbPowerMultiplier(state.collectedOrbs)
+    const soulsSpawnMult = 1 + ENEMY.SOULS_SPAWN_BONUS * Math.floor(state.collectedOrbs / ENEMY.SOULS_SPAWN_PER);
+    const spawnMult = levelSpawnMult * orbPowerMultiplier(state.collectedOrbs) * soulsSpawnMult
       + excessOrbs(state.collectedOrbs) / BUFF.SPAWN_EXCESS_PER;
     let slots = Math.min(
       Math.round((ENEMY.BASE_SLOTS + (state.level - 1) * ENEMY.SLOTS_PER_LEVEL) * spawnMult),
@@ -314,7 +316,8 @@ export class SkeletonSystem {
     const variants = ['SKELETON', 'ARMORED', 'ARCHER', 'BRUTE', 'WRAITH', 'RAT', 'MAGICIAN'];
     const variant = variants[Math.floor(Math.random() * variants.length)];
     const baseHp = 4; // base enemy HP; boss = 22.5x this (15x +50%)
-    const boss = new GhostBoss(this.scene, baseHp, variant);
+    // The boss scales with the player's wealth: +25% HP per 50 souls held.
+    const boss = new GhostBoss(this.scene, baseHp, variant, state.collectedOrbs);
     boss.group.position.set(bx, 0, bz);
     this._ground(boss.group);
     boss.onSummon = () => this._summonMinions(boss, candidates, dungeonData, state);

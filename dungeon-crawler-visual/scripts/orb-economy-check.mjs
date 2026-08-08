@@ -242,14 +242,14 @@ console.log('== Fireball (buff weapon) ==');
   const fb = shooter.fireFireball(0, 1, 0, 0, 0); // straight -z
   ok(fb && fb.explode && fb.fireball, 'fireball is explosive and fiery');
   ok(fb.active && fb.mesh.visible, 'fireball active on fire');
-  ok(fb.smear && fb.smear.visible, 'fireball carries a shot-trace smear');
+  ok(!fb.smear, 'fireball carries no shot-trace smear (perf cut)');
   // no sequence side effects: step/window untouched
   ok(shooter.step === 0 && shooter.window === 0, 'fireball does not advance the orb sequence');
-  // the smear trails BEHIND the projectile along its flight direction
+  // fireball still flies forward on its own
+  const z0 = fb.mesh.position.z;
   shooter.update(dt, [], []);
-  const expectedZ = fb.mesh.position.z - fb.dirZ * 0.5;
-  ok(Math.abs(fb.smear.position.z - expectedZ) < 0.001,
-    `smear sits 0.5u behind along the flight dir (z=${fb.smear.position.z.toFixed(2)} vs ${expectedZ.toFixed(2)})`);
+  ok(fb.mesh.position.z < z0,
+    `fireball flies forward (z ${z0.toFixed(2)} -> ${fb.mesh.position.z.toFixed(2)})`);
 
   // wall contact -> detonate -> onExplode + orange ring
   const wall = { minX: 1, maxX: 1.4, minZ: -10, maxZ: 10 };

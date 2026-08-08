@@ -17,7 +17,7 @@ export const PLAYER = {
                         // countdown shown, mobs only track once it hits 0
   MOUSE_SENSITIVITY: 0.002,
   PITCH_CLAMP: Math.PI / 2 - 0.1, // ±85°
-  SPRINT_ACCEL_WINDOW: 5,  // seconds of continuous sprinting per acceleration tier
+  SPRINT_ACCEL_WINDOW: 1,  // seconds of continuous sprinting per acceleration tier (was 5s)
   SPRINT_ACCEL_STEP: 0.05, // +5% sprint speed per tier, cumulative; resets when sprinting stops
   // Passive regen: +1 heart every REGEN_INTERVAL seconds once the player has
   // avoided damage for REGEN_DELAY seconds (0 = regen starts immediately).
@@ -195,6 +195,8 @@ export const BIOMES = {
 export const BOSS = {
   INTERVAL: 7,          // levels 7, 14, 21, ... are boss levels
   HP_MULT: 22.5,        // boss HP = 22.5x a base enemy's HP (15x +50%)
+  SOULS_HP_BONUS: 0.25, // +25% boss HP per SOULS_HP_PER souls the player holds
+  SOULS_HP_PER: 50,
   CHARGE_SPEED: 14,     // dash speed during the charge
   CHARGE_TIME: 0.9,     // seconds the charge lasts
   CHARGE_COOLDOWN: 3.2, // seconds between charges
@@ -277,6 +279,10 @@ export const ENEMY = {
   RAT_PACK_MAX: 3,    // was 6
   RAT_CAP: 6,         // was 12
   ELITE_CHANCE: 0.1,  // 1-in-10 per non-rat spawn
+  HP_LEVEL_INTERVAL: 5,  // mobs gain +HP_PER_STEP bonus HP every this many levels
+  HP_PER_STEP: 0.1,      // +10% mob HP per 5 levels
+  SOULS_SPAWN_BONUS: 0.05, // +5% spawn rate per SOULS_SPAWN_PER souls held
+  SOULS_SPAWN_PER: 50,
 };
 
 export const ARMORED = {
@@ -483,9 +489,11 @@ export function excessOrbs(orbs) {
   return Math.max(0, orbs - 100);
 }
 
-// New Game+ enemy HP: +100% per NG+ cycle (ngPlus = 0 on a fresh run).
-export function enemyHpMultiplier(ngPlus) {
-  return 1 + (ngPlus || 0);
+// Enemy HP: +100% per NG+ cycle (ngPlus = 0 on a fresh run), plus +10% bonus
+// HP every 5 levels (ENEMY.HP_LEVEL_INTERVAL). Level 5 -> x1.1, 10 -> x1.2...
+export function enemyHpMultiplier(ngPlus, level = 1) {
+  return (1 + (ngPlus || 0))
+    * (1 + ENEMY.HP_PER_STEP * Math.floor(level / ENEMY.HP_LEVEL_INTERVAL));
 }
 
 export const MAGICIAN = {

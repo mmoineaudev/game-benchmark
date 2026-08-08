@@ -22,7 +22,7 @@ All binds use `event.code` (physical key position, AZERTY-safe: `KeyW` is the ph
 | Move back | `KeyS` | hold | |
 | Strafe left | `KeyA` (Q on AZERTY) | hold | |
 | Strafe right | `KeyD` | hold | |
-| Sprint | `ShiftLeft` / `ShiftRight` | hold | ×1.55 speed, FOV kick +8 |
+| Sprint | `ShiftLeft` / `ShiftRight` | hold | ×1.55 speed, FOV kick +8, +5%/s acceleration tier (SPRINT_ACCEL_WINDOW 1s) |
 | Look | Mouse move | — | Pointer-locked; yaw/pitch, ±85° clamp, sens 0.002 |
 | Fire orb | Mouse 0 (LMB) | hold | 0.18s cooldown, consumes 1 orb |
 | Sword attack | Mouse 2 (RMB) | press | Combo: press again inside 0.35s window → hit 2 |
@@ -151,7 +151,7 @@ Unchanged structure (180 s/level, level timer, run timer, leaderboard by level/t
 ### 5.1 Shared mechanics (all enemies)
 
 - **Spawn**: BFS distance ≥ 6 cells from entrance, never in the exit room (existing rule). Count = `2 + (level - 1)` spawn slots, capped at 10 (+2 in ARENA). Type chosen per-slot by biome weights (§5.4). Elites: 1-in-10 roll per non-rat spawn. **Living-body cap: 16 total** (rats count individually); a rat pack clamps to fit the cap.
-- **Level scaling**: +5% move speed and +5% attack speed every 3 levels (existing `speedMult`/`attackMult` pattern), applied to ALL enemy types' speeds and attack-cycle durations/cooldowns.
+- **Level scaling**: +5% move speed per level and +5% attack speed every 3 levels (existing `speedMult`/`attackMult` pattern), applied to ALL enemy types' speeds and attack-cycle durations/cooldowns; **+10% enemy HP every 5 levels** (×(1 + 0.1·floor(level/5))) and **+5% spawn rate per 50 souls held**.
 - **Death**: drop orb(s) per §5.5, smoke puff, death animation (existing fade-out pattern), then removal + disposal.
 - **Projectile pools**: shared pooled geometry/materials per projectile type (no per-shot allocation).
 - **AI**: existing LOS raycast + greedy 4-neighbor grid pathing (re-evaluate 0.3 s). Wraith ignores pathing (§5.3).

@@ -209,14 +209,15 @@ export class Game {
     if (choice === 'load') {
       const save = this._readSave();
       if (save) {
-        this._clearSave(); // a save is consumed by loading it
-        // The death that produced the save was recorded in the ledger; the
-        // run continues now, so that entry is stale.
+        // The save is NOT consumed by loading: it stays on offer until a new
+        // death-save overwrites it, so "Load last save?" never disappears.
         if (save.deathEntry) this.leaderboard.remove(save.deathEntry);
         this._beginRun(GameState.fromJSON(save.state));
         return;
       }
     }
+    // Fresh run chosen — the old save remains available (the menu offers it
+    // again next startup); it is only replaced by saving again at death.
     this._beginRun(null);
   }
 
@@ -1439,7 +1440,8 @@ export class Game {
 
   // Start a new run after death: fresh (level 1, no carry, ngPlus 0) or
   // New Game+ (half level, orbs kept, ngPlus +1). Orb loss on death is a
-  // flat 10% in NG+ — you keep 90% of your banked orbs.
+  // flat 10% in NG+ — you keep 90% of your banked orbs. The death-save (if
+  // any) stays untouched — it is only replaced by saving again at death.
   _startNewRun(newGamePlus = false) {
     if (this._goKeyHandler) {
       window.removeEventListener('keydown', this._goKeyHandler);

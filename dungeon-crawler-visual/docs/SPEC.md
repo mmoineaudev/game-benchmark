@@ -33,7 +33,7 @@ All binds use `event.code` (physical key position, AZERTY-safe: `KeyW` is the ph
 | Load last save / New Game | `KeyL` / `KeyN` | press (edge) | Startup menu (only shown when a save exists) |
 | Pointer lock | Click on canvas | press | Also suppresses context menu (RMB) |
 
-**Save/load** (death → startup): `[S]` at the death screen snapshots the run-meta (level, runTime, orbs, souls, weapon tier, permanent hearts, NG+ cycle, boss kills) to localStorage. At startup a menu offers **Load last save [L]** / **New Game [N]**. Loading restarts the SAVED LEVEL from the beginning (fresh level, full health, spawn protection) with all meta-progression intact — no 10% orb penalty, no NG+ change, buff never carries. The save is consumed on load; the stale death entry is removed from the ledger.
+**Save/load** (death → startup): `[S]` at the death screen snapshots the run-meta (level, runTime, orbs, souls, weapon tier, permanent hearts, NG+ cycle, boss kills) to localStorage. At startup a menu offers **Load last save [L]** / **New Game [N]**. Loading restarts the SAVED LEVEL from the beginning (fresh level, full health, spawn protection) with all meta-progression intact — no 10% orb penalty, no NG+ change, buff never carries. The save persists after loading (only replaced by saving again at death), so the Load option never disappears; the stale death entry is removed from the ledger.
 
 **New actions this extension adds: zero new keys.** The sword combo reuses RMB (edge-triggered presses, not hold). No conflicts with existing binds. Rat swarm/brute/wraith introduce no player-side input.
 

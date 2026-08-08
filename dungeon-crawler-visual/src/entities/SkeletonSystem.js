@@ -41,8 +41,6 @@ export class SkeletonSystem {
     this._burnPending = false; // BURN awaits: appears once ALL enemies are dead
     this._burnSpawned = false;
     this.data = null;      // dungeon data (set in init) for burn spawn placement
-    this.spectralOrbs = []; // wraith + boss soul orbs
-    this._nextSpec = 0;
     this.danger = { front: 0, back: 0, left: 0, right: 0 }; // directional border glow
   }
 
@@ -94,31 +92,6 @@ export class SkeletonSystem {
       this.scene.add(mesh);
       this.scene.add(glow);
       this.arrows.push({ mesh, glow, dirX: 0, dirZ: 0, life: 0, active: false });
-    }
-
-    // Spectral orbs (Wraith + boss ranged cast): small blue-white souls.
-    // Per-orb speed/damage are set at fire time (Wraith vs boss differ).
-    // HIGH VISIBILITY: bright emissive, big pulsing glow.
-    const specGeo = new THREE.SphereGeometry(0.17, 10, 8);
-    const specMat = new THREE.MeshStandardMaterial({
-      color: 0xaaddff, emissive: 0xaaddff, emissiveIntensity: 4,
-      roughness: 0.15, metalness: 0.4,
-    });
-    const specGlowMat = new THREE.SpriteMaterial({
-      map: glowTex, color: 0xccf2ff,
-      blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.95,
-    });
-    this._specOrbMat = specMat;
-    this._specGlowMat = specGlowMat;
-    for (let i = 0; i < 14; i++) {
-      const mesh = new THREE.Mesh(specGeo, specMat);
-      const glow = new THREE.Sprite(specGlowMat);
-      glow.scale.setScalar(1.8);
-      mesh.visible = false;
-      glow.visible = false;
-      this.scene.add(mesh);
-      this.scene.add(glow);
-      this.spectralOrbs.push({ mesh, glow, dirX: 0, dirZ: 0, life: 0, speed: 7.5, dmg: 1, active: false });
     }
   }
 
@@ -374,7 +347,6 @@ export class SkeletonSystem {
     this._ground(boss.group);
     boss.onSummon = () => this._summonMinions(boss, candidates, dungeonData, state);
     boss.onChargeHit = () => this._damagePlayer(BOSS.CHARGE_DMG);
-    boss.onFireOrb = () => this._fireSpectralOrb(boss, BOSS.ORB_SPEED, BOSS.ORB_DAMAGE);
     boss.onKill = () => this._onBossKill();
     boss.onDeathComplete = () => this._removeSkeleton(boss);
     this.boss = boss;
@@ -436,7 +408,6 @@ export class SkeletonSystem {
     if (type === 'MAGICIAN') this._fireEnemyOrb(skel);
     else if (type === 'ARCHER') this._fireArrow(skel);
     else if (type === 'BRUTE') this._bruteSlam(skel);
-    else if (type === 'WRAITH') this._fireSpectralOrb(skel, WRAITH.ORB_SPEED, WRAITH.ORB_DAMAGE);
     else this._damagePlayer(SKELETON.ATTACK_DAMAGE);
   }
 
@@ -800,29 +771,6 @@ export class SkeletonSystem {
       if (orb.life <= 0) this._deactivateOrb(orb);
     }
 
-    // Spectral orbs (Wraith + boss cast)
-    for (const orb of this.spectralOrbs) {
-      if (!orb.active) continue;
-      orb.mesh.position.x += orb.dirX * orb.speed * dt;
-      orb.mesh.position.z += orb.dirZ * orb.speed * dt;
-      orb.glow.position.copy(orb.mesh.position);
-      // Pulsing glow so the orb reads as alive (and is easy to spot mid-flight)
-      orb.glow.scale.setScalar(1.8 + Math.sin(orb.life * 18) * 0.3);
-      orb.life -= dt;
-      if (circleHitsBox(collisionBoxes, orb.mesh.position.x, orb.mesh.position.z, 0.25)) {
-        this._deactivateOrb(orb);
-        continue;
-      }
-      const dx = player.x - orb.mesh.position.x;
-      const dz = player.z - orb.mesh.position.z;
-      if (dx * dx + dz * dz < 0.7) {
-        this._damagePlayer(orb.dmg);
-        this._deactivateOrb(orb);
-        continue;
-      }
-      if (orb.life <= 0) this._deactivateOrb(orb);
-    }
-
     // Archer arrows
     for (const a of this.arrows) {
       if (!a.active) continue;
@@ -863,27 +811,6 @@ export class SkeletonSystem {
     orb.dirX = dx / len;
     orb.dirZ = dz / len;
     orb.life = MAGICIAN.ORB_LIFETIME;
-  }
-
-  _fireSpectralOrb(skel, speed = WRAITH.ORB_SPEED, dmg = WRAITH.ORB_DAMAGE) {
-    const orb = this.spectralOrbs[this._nextSpec];
-    this._nextSpec = (this._nextSpec + 1) % this.spectralOrbs.length;
-    const p = this.state.player;
-    const sx = skel.group.position.x;
-    const sz = skel.group.position.z;
-    orb.active = true;
-    orb.mesh.visible = true;
-    orb.glow.visible = true;
-    orb.mesh.position.set(sx, 1.6, sz);
-    orb.glow.position.copy(orb.mesh.position);
-    const dx = p.x - sx;
-    const dz = p.z - sz;
-    const len = Math.hypot(dx, dz) || 1;
-    orb.dirX = dx / len;
-    orb.dirZ = dz / len;
-    orb.life = 2.5;
-    orb.speed = speed;
-    orb.dmg = dmg;
   }
 
   _fireArrow(skel) {
@@ -936,12 +863,6 @@ export class SkeletonSystem {
       return dot >= coneCos - 0.1;
     };
     for (const orb of this.enemyOrbs) {
-      if (!orb.active) continue;
-      if (hit(orb.mesh.position.x, orb.mesh.position.z)) {
-        this._deactivateOrb(orb);
-      }
-    }
-    for (const orb of this.spectralOrbs) {
       if (!orb.active) continue;
       if (hit(orb.mesh.position.x, orb.mesh.position.z)) {
         this._deactivateOrb(orb);
@@ -1139,19 +1060,12 @@ export class SkeletonSystem {
       this.scene.remove(a.mesh);
       if (a.glow) this.scene.remove(a.glow);
     }
-    for (const orb of this.spectralOrbs) {
-      orb.mesh.geometry.dispose();
-      this.scene.remove(orb.mesh);
-      this.scene.remove(orb.glow);
-    }
     if (this._orbMeshMat) this._orbMeshMat.dispose();
     if (this._orbGlowMat) this._orbGlowMat.dispose();
     if (this._orbTex) this._orbTex.dispose();
     if (this._arrowGeo) this._arrowGeo.dispose();
     if (this._arrowMat) this._arrowMat.dispose();
     if (this._arrowGlowMat) this._arrowGlowMat.dispose();
-    if (this._specOrbMat) this._specOrbMat.dispose();
-    if (this._specGlowMat) this._specGlowMat.dispose();
     if (this._shockGeo) {
       this._shockGeo.dispose();
       this._shockMat.dispose();

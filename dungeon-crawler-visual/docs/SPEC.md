@@ -201,7 +201,7 @@ Unchanged structure (180 s/level, level timer, run timer, leaderboard by level/t
 
 **Wraith** — phasing threat.
 - Appearance: no skeleton rig. Translucent hooded figure: cone body (ConeGeometry 0.45×1.1, MeshBasicMaterial 0x88ffcc, opacity 0.35, additive, depthWrite false), two bright eyes (spheres 0.03, 0xccffdd, emissive), trailing wisp particles (3 pooled glow sprites following at 0.3 s lag). Sine bob ±0.15 at 2 Hz. No shadow casting.
-- Behavior: **phases through walls** — skips wall collision entirely, flies straight at the player at 2.4 u/s (no pathing, no LOS check). Cannot be kited behind corners; counter = kill it fast. Touch damage 1, cooldown 1.0 s between touches, i-frames respected. **Ranged cast**: hurls a small soul orb at the player from LONG range (`ORB_RANGE 16`) — the wraith's attack triggers a spectral-orb projectile instead of a touch (7.5 u/s, damage 1, pooled 14 blue-white orbs, breakable by the sword swing).
+- Behavior: **phases through walls** — skips wall collision entirely, flies straight at the player at 2.4 u/s (no pathing, no LOS check). Cannot be kited behind corners; counter = kill it fast. Touch damage 1, cooldown 1.0 s between touches, i-frames respected.
 - Interactions: 1 sword hit kills (HP 2, sword dmg 2), 2 orb hits. **Phasing is both-way**: it cannot be body-blocked either. Drops 2 orbs (worth chasing down). Score 2.
 - Elite (1-in-10): **Banshee** — color 0xff88cc, HP 4, speed 3.4 (2.4 × 1.4), touch damage 1, drops 3 orbs.
 

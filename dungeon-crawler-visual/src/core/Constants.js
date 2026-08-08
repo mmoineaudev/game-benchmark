@@ -198,10 +198,6 @@ export const BOSS = {
   HP_MULT: 22.5,        // boss HP = 22.5x a base enemy's HP (15x +50%)
   SOULS_HP_BONUS: 0.25, // +25% boss HP per SOULS_HP_PER souls the player holds
   SOULS_HP_PER: 50,
-  ORB_MIN: 1,           // boss orb attack: a soul orb toward the player every
-  ORB_MAX: 3,           // random interval between ORB_MIN and ORB_MAX seconds
-  ORB_SPEED: 9,
-  ORB_DAMAGE: 1,
   CHARGE_SPEED: 14,     // dash speed during the charge
   CHARGE_TIME: 0.9,     // seconds the charge lasts
   CHARGE_COOLDOWN: 3.2, // seconds between charges
@@ -333,9 +329,6 @@ export const BRUTE = {
 
 export const WRAITH = {
   HP: 2, SPEED: 2.4, DMG: 1, RANGE: 0.9, COOLDOWN: 1.0,
-  ORB_RANGE: 16,      // phantoms cast small soul orbs from LONG range
-  ORB_SPEED: 7.5,
-  ORB_DAMAGE: 1,
   DROP: 2, SCORE: 2,
   BODY: 0x88ffcc, EYE: 0xccffdd, BOB_AMP: 0.15, BOB_FREQ: 2,
   DEATH_HOLD: 2.0, DEATH_FADE: 0.4,

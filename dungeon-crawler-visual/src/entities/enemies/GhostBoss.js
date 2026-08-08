@@ -58,6 +58,7 @@ export class GhostBoss {
       blending: THREE.AdditiveBlending, depthWrite: false,
     });
     this._mats = [this.bodyMat, this.coreMat];
+    this._buildHealthBar(v);
 
     // Large spectral apparition
     const body = new THREE.Mesh(new THREE.ConeGeometry(1.1, 3.0, 14, 1, true), this.bodyMat);
@@ -156,6 +157,43 @@ export class GhostBoss {
 
   setFacing(yaw) { this.facingYaw = yaw; }
 
+  // Hovering boss health bar: a small canvas drawn into a Sprite above the
+  // boss (Sprites always face the camera). Redrawn each frame from hp/maxHp.
+  _buildHealthBar(v) {
+    this._barCanvas = document.createElement('canvas');
+    this._barCanvas.width = 128;
+    this._barCanvas.height = 14;
+    this._barCtx = this._barCanvas.getContext('2d');
+    this._barTex = new THREE.CanvasTexture(this._barCanvas);
+    this.barMat = new THREE.SpriteMaterial({
+      map: this._barTex, transparent: true, depthTest: false, depthWrite: false,
+    });
+    this._mats.push(this.barMat);
+    this.bar = new THREE.Sprite(this.barMat);
+    this.bar.scale.set(2.6 * this._scale, 0.3 * this._scale, 1);
+    this.bar.position.y = 3.4 * this._scale;
+    this.group.add(this.bar);
+    this._drawBar();
+  }
+
+  _drawBar() {
+    const ctx = this._barCtx;
+    const w = this._barCanvas.width;
+    const h = this._barCanvas.height;
+    const frac = this.maxHp > 0 ? Math.max(0, Math.min(1, this.hp / this.maxHp)) : 0;
+    // Dark backing + border frame
+    ctx.fillStyle = 'rgba(8,6,4,0.82)';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#5a4a30';
+    ctx.fillRect(0, 0, w, 1); ctx.fillRect(0, h - 1, w, 1);
+    ctx.fillRect(0, 0, 1, h); ctx.fillRect(w - 1, 0, 1, h);
+    // Red fill
+    const fw = Math.max(0, Math.round((w - 4) * frac));
+    ctx.fillStyle = '#ee4433';
+    ctx.fillRect(2, 2, fw, h - 4);
+    this._barTex.needsUpdate = true;
+  }
+
   hit(damage) {
     if (this.state === 'DEAD') return false;
     this.hp -= damage;
@@ -184,10 +222,13 @@ export class GhostBoss {
       this.coreMat.opacity = 0.9 * f;
       this.eyeMat.opacity = 0.95 * f;
       this.glowMat.opacity = 0.4 * f;
+      this.barMat.opacity = f; // health bar fades out with the boss
       this.group.position.y += dt * 0.6 * f;
       if (this.animTime >= 2) this.onDeathComplete?.();
       return;
     }
+
+    this._drawBar(); // keep the hovering health bar in sync
 
     // Safe-spawn / title screen: SkeletonSystem calls update(dt, time) with
     // NO player so mobs idle in place — bosses must idle too, not crash.
@@ -253,6 +294,7 @@ export class GhostBoss {
     });
     for (const m of this._mats) m.dispose();
     if (this._glowTex) this._glowTex.dispose();
+    if (this._barTex) this._barTex.dispose();
     this.scene.remove(this.group);
   }
 }

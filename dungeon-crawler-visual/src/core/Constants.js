@@ -20,8 +20,8 @@ export const PLAYER = {
   SPRINT_ACCEL_WINDOW: 5,  // seconds of continuous sprinting per acceleration tier
   SPRINT_ACCEL_STEP: 0.05, // +5% sprint speed per tier, cumulative; resets when sprinting stops
   // Passive regen: +1 heart every REGEN_INTERVAL seconds once the player has
-  // avoided damage for REGEN_DELAY seconds.
-  REGEN_DELAY: 20,      // seconds without taking a hit before regen starts
+  // avoided damage for REGEN_DELAY seconds (0 = regen starts immediately).
+  REGEN_DELAY: 0,        // seconds without taking a hit before regen starts (delay removed)
   REGEN_INTERVAL: 5,    // seconds between each regen tick
   REGEN_AMOUNT: 1,      // hearts restored per tick
 };
@@ -194,7 +194,7 @@ export const BIOMES = {
 // Boss levels: every BOSS.INTERVAL-th level is a single-boss arena.
 export const BOSS = {
   INTERVAL: 7,          // levels 7, 14, 21, ... are boss levels
-  HP_MULT: 30,          // boss HP = 30x a base enemy's HP (2x the old 15x)
+  HP_MULT: 15,          // boss HP = 15x a base enemy's HP (halved from 30x)
   CHARGE_SPEED: 14,     // dash speed during the charge
   CHARGE_TIME: 0.9,     // seconds the charge lasts
   CHARGE_COOLDOWN: 3.2, // seconds between charges
@@ -451,14 +451,14 @@ export const HUNTER = {
 export const ORB_WEAPON = {
   SPEED: 2 * PLAYER.SPEED * PLAYER.SPRINT_MULTIPLIER, // 12.4 u/s — 2× sprint
   LIFETIME: 2.5,          // seconds before fizzle (~31 units max range)
-  DAMAGE: 1,
+  DAMAGE: 2,            // base orb damage (doubled from 1)
   RADIUS: 0.3,            // projectile collision radius (smaller orbs)
   VOLLEY: 3,              // orbs per SEQUENCE — 1 collected orb = 1 sequence of 3 steps
   STEP_INTERVAL: 0.22,    // min time between steps; also the held-fire repeat cadence
   SEQUENCE_WINDOW: 1.2,   // max pause between steps before the sequence resets
   BOUNCES: 3,             // the first VOLLEY-1 steps bounce this many times off walls/floor/ceiling
   EXPLODE_RADIUS: 1.5,    // last step: AOE damage radius around the explosion
-  EXPLODE_DAMAGE: 1,      // last step: AOE damage dealt (same as a direct hit)
+  EXPLODE_DAMAGE: 2,      // last step: AOE damage dealt (same as a direct hit)
 };
 
 // The sword's size-bonus multiplier — ALSO scales the enemy spawn rate, so

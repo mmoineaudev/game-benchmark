@@ -1476,7 +1476,7 @@ export class Game {
           [`Enemy HP`, `×${enemyHpMultiplier(s.ngPlus).toFixed(1)}`],
           [`Mob speed`, `×${mobSpeedMult.toFixed(1)}`],
           [`Spawns`, `×${spawnMult.toFixed(1)}`],
-          [`Regen`, `+1/5s @20s`],
+          [`Regen`, `+${PLAYER.REGEN_AMOUNT}/${PLAYER.REGEN_INTERVAL}s${PLAYER.REGEN_DELAY > 0 ? ` @${PLAYER.REGEN_DELAY}s` : ''}`],
         ];
         this._loadingStatsEl.innerHTML = rows
           .map(([k, v]) => `<span>${k} <b>${v}</b></span>`).join('');
@@ -1825,7 +1825,7 @@ export class Game {
       ['Enemy HP', `×${enemyHpMultiplier(s.ngPlus).toFixed(2)}`],
       ['Mob speed', `×${mobSpeedMult.toFixed(2)}`],
       ['Spawns', `×${spawnMult.toFixed(2)}`],
-      ['Regen', '+1/5s @20s'],
+      ['Regen', `+${PLAYER.REGEN_AMOUNT}/${PLAYER.REGEN_INTERVAL}s${PLAYER.REGEN_DELAY > 0 ? ` @${PLAYER.REGEN_DELAY}s` : ''}`],
     ];
     const html = rows
       .map(([k, v]) => `<div class="stat-row"><span>${k}</span><b>${v}</b></div>`)

@@ -226,8 +226,8 @@ console.log('== Orb damage multiplier ==');
   ok(Math.abs(orbDamageMultiplier(100) - 3) < 1e-9, `orb dmg x3 @100 orbs`);
   ok(Math.abs(orbDamageMultiplier(25) - 1.5) < 1e-9, `orb dmg x1.5 @25 orbs`);
   // Applied to base orb damage + explosive orb damage.
-  ok(Math.round(ORB_WEAPON.DAMAGE * orbDamageMultiplier(50)) === 2, `direct orb hits for 2 @50 orbs`);
-  ok(Math.round(ORB_WEAPON.EXPLODE_DAMAGE * orbDamageMultiplier(50)) === 2, `explosive orb hits for 2 @50 orbs`);
+  ok(Math.round(ORB_WEAPON.DAMAGE * orbDamageMultiplier(50)) === 4, `direct orb hits for 4 @50 orbs (base 2)`);
+  ok(Math.round(ORB_WEAPON.EXPLODE_DAMAGE * orbDamageMultiplier(50)) === 4, `explosive orb hits for 4 @50 orbs (base 2)`);
 }
 
 // ===========================================================================

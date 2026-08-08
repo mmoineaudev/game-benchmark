@@ -291,11 +291,20 @@ export class Game {
     const pal = BIOMES.SPECTRAL_COURT;
     const scene = this.scene;
     scene.background = new THREE.Color(pal.fog);
-    scene.fog = new THREE.FogExp2(pal.fog, pal.fogDensity);
-    scene.add(new THREE.AmbientLight(pal.ambient, pal.ambientIntensity));
+    scene.fog = new THREE.FogExp2(pal.fog, 0.006); // lighter than in-game: the showcase must read
+    // BRIGHT showcase lighting (not the dungeon's sparse budget): strong
+    // ambient + a cool rim fill, so the room, boss and portal are clearly
+    // visible through the menu overlay.
+    scene.add(new THREE.AmbientLight(pal.ambient, 1.25));
+    const fill = new THREE.PointLight(0x88aaff, 1.6, 40, 1.0);
+    fill.position.set(0, 6, 4);
+    scene.add(fill);
 
     // Room shell (open on the camera side)
-    const wallMat = new THREE.MeshStandardMaterial({ color: pal.wall, roughness: 0.9 });
+    const wallMat = new THREE.MeshStandardMaterial({
+      color: pal.wall, roughness: 0.85,
+      emissive: 0x1a2440, emissiveIntensity: 0.55, // cold spectral self-glow
+    });
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(26, 14), wallMat);
     floor.rotation.x = -Math.PI / 2;
     floor.position.set(0, 0, -6);

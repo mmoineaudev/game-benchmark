@@ -181,15 +181,23 @@ console.log('== New Game+ ==');
   ok(ng1.level === 3 && ng1.collectedOrbs === 42 && ng1.ngPlus === 1,
     'NG+1 starts at level 3 with orbs carried');
 
-  // Second NG+ cycle: +200% HP each (NG+ effects DOUBLED)
-  ok(enemyHpMultiplier(0) === 1, 'no NG+ -> 100% enemy HP');
-  ok(Math.abs(enemyHpMultiplier(1) - 3) < 1e-9, 'NG+1 -> 300% enemy HP (doubled: +200%/cycle)');
-  ok(Math.abs(enemyHpMultiplier(2) - 5) < 1e-9, 'NG+2 -> 500% enemy HP');
-  ok(Math.abs(enemyHpMultiplier(5) - 11) < 1e-9, 'NG+5 -> 1100% enemy HP');
-  // Level scaling: +10% bonus HP every 5 levels (level 1-4 = none)
-  ok(Math.abs(enemyHpMultiplier(0, 5) - 1.1) < 1e-9, 'level 5 -> 110% enemy HP');
-  ok(Math.abs(enemyHpMultiplier(0, 10) - 1.2) < 1e-9, 'level 10 -> 120% enemy HP');
-  ok(Math.abs(enemyHpMultiplier(1, 10) - 3.6) < 1e-9, 'NG+1 @ level 10 -> 360% enemy HP');
+  // HP scaling: +100% per 10 levels; NG+ +300% per cycle (100% base + 200%
+  // doubled-effect + 100% additional); spawn pressure beyond the ×100 cap
+  // converts to HP at +100% per 10 excess points.
+  ok(enemyHpMultiplier(0) === 1, 'no NG+, level 1, 0 souls -> 100% enemy HP');
+  ok(Math.abs(enemyHpMultiplier(1) - 4) < 1e-9, 'NG+1 -> 400% enemy HP (+300%/cycle)');
+  ok(Math.abs(enemyHpMultiplier(2) - 7) < 1e-9, 'NG+2 -> 700% enemy HP');
+  ok(Math.abs(enemyHpMultiplier(5) - 16) < 1e-9, 'NG+5 -> 1600% enemy HP');
+  // Level scaling: +100% per 10 levels (level 1-9 = none)
+  ok(Math.abs(enemyHpMultiplier(0, 5) - 1) < 1e-9, 'level 5 -> 100% enemy HP (no bonus before 10)');
+  ok(Math.abs(enemyHpMultiplier(0, 10) - 2) < 1e-9, 'level 10 -> 200% enemy HP');
+  ok(Math.abs(enemyHpMultiplier(0, 20) - 3) < 1e-9, 'level 20 -> 300% enemy HP');
+  ok(Math.abs(enemyHpMultiplier(1, 10) - 8) < 1e-9, 'NG+1 @ level 10 -> 800% enemy HP');
+  // Spawn-cap overflow: pressure = level + souls; spawnMult caps at ×100
+  // (pressure 990). Past it, +100% HP per 10 excess pressure points.
+  ok(Math.abs(enemyHpMultiplier(0, 1, 990) - 1) < 1e-9, 'pressure 991 (at the cap) -> no HP overflow');
+  ok(Math.abs(enemyHpMultiplier(0, 1, 1000) - 2) < 1e-9, 'pressure 1001 (10 past cap) -> +100% HP');
+  ok(Math.abs(enemyHpMultiplier(0, 10, 990) - 3) < 1e-9, 'level 10 + pressure 1000 (10 past cap) -> 300% HP');
 
   // Fresh restart resets everything
   const fresh2 = new GameState({ level: 1, collectedOrbs: 0, ngPlus: 0 });

@@ -198,6 +198,10 @@ export const BOSS = {
   HP_MULT: 22.5,        // boss HP = 22.5x a base enemy's HP (15x +50%)
   SOULS_HP_BONUS: 0.25, // +25% boss HP per SOULS_HP_PER souls the player holds
   SOULS_HP_PER: 50,
+  ORB_MIN: 1,           // boss orb attack: a soul orb toward the player every
+  ORB_MAX: 3,           // random interval between ORB_MIN and ORB_MAX seconds
+  ORB_SPEED: 9,
+  ORB_DAMAGE: 1,
   CHARGE_SPEED: 14,     // dash speed during the charge
   CHARGE_TIME: 0.9,     // seconds the charge lasts
   CHARGE_COOLDOWN: 3.2, // seconds between charges
@@ -281,12 +285,16 @@ export const ENEMY = {
   SPAWN_PLAYER_DIST: 30, // spawns only occur more than 30 m from the player; a
                          // queued spawn too close waits until the player moves away
   SPAWN_INTERVAL: 0.5, // seconds between individual mob reveals at level start
+  SPAWN_CAP: 100,      // spawn multiplier caps at ×100 — beyond it, pressure
+                       // feeds enemy HP instead (see enemyHpMultiplier)
+  HP_LEVEL_INTERVAL: 10, // +HP_PER_STEP bonus HP every 10 levels
+  HP_PER_STEP: 1.0,      // +100% mob HP per 10 levels (user ruling: enemies lacked HP)
+  HP_PER_NG: 3.0,        // +300% HP per NG+ cycle (100% base + 200% doubled-effect
+                         // ruling + 100% additional — user ruling)
   RAT_PACK_MIN: 2,    // was 4 — rat packs halved (harder enemy, cut 50%)
   RAT_PACK_MAX: 3,    // was 6
   RAT_CAP: 6,         // was 12
   ELITE_CHANCE: 0.1,  // 1-in-10 per non-rat spawn
-  HP_LEVEL_INTERVAL: 5,  // mobs gain +HP_PER_STEP bonus HP every this many levels
-  HP_PER_STEP: 0.1,      // +10% mob HP per 5 levels
 };
 
 export const ARMORED = {
@@ -322,6 +330,9 @@ export const BRUTE = {
 
 export const WRAITH = {
   HP: 2, SPEED: 2.4, DMG: 1, RANGE: 0.9, COOLDOWN: 1.0,
+  ORB_RANGE: 16,      // phantoms cast small soul orbs from LONG range
+  ORB_SPEED: 7.5,
+  ORB_DAMAGE: 1,
   DROP: 2, SCORE: 2,
   BODY: 0x88ffcc, EYE: 0xccffdd, BOB_AMP: 0.15, BOB_FREQ: 2,
   DEATH_HOLD: 2.0, DEATH_FADE: 0.4,
@@ -504,12 +515,17 @@ export function excessOrbs(orbs) {
   return Math.max(0, orbs - 100);
 }
 
-// Enemy HP: NG+ adds +200% HP per cycle (effects DOUBLED — user ruling), plus
-// +10% bonus HP every 5 levels (ENEMY.HP_LEVEL_INTERVAL). NG+1 -> x3, NG+2 ->
-// x5; level 5 -> x1.1, 10 -> x1.2...
-export function enemyHpMultiplier(ngPlus, level = 1) {
-  return (1 + 2 * (ngPlus || 0))
-    * (1 + ENEMY.HP_PER_STEP * Math.floor(level / ENEMY.HP_LEVEL_INTERVAL));
+// Enemy HP: +100% per 10 levels, +300% per NG+ cycle (HP_PER_NG — base 100%,
+// the doubled-effect ruling +200%, plus an additional +100%), and spawn
+// pressure ABOVE the ×100 spawn cap converts to HP at +100% per 10 excess
+// points — spawns cap, tankiness takes the overflow. The game is meant to be
+// SIGNIFICANTLY harder at depth.
+export function enemyHpMultiplier(ngPlus, level = 1, souls = 0) {
+  const capPressure = (ENEMY.SPAWN_CAP - 1) * 10; // pressure at which spawnMult = ×100
+  const excess = Math.max(0, (level || 1) + (souls || 0) - capPressure);
+  const levelBonus = Math.floor((level || 1) / ENEMY.HP_LEVEL_INTERVAL)
+    + Math.floor(excess / 10);
+  return (1 + ENEMY.HP_PER_NG * (ngPlus || 0)) * (1 + levelBonus);
 }
 
 export const MAGICIAN = {

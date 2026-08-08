@@ -151,7 +151,7 @@ Unchanged structure (180 s/level, level timer, run timer, leaderboard by level/t
 ### 5.1 Shared mechanics (all enemies)
 
 - **Spawn**: BFS distance ≥ 6 cells from entrance, never in the exit room (existing rule). Count = `2 + (level - 1)` spawn slots, capped at 200 (+2 in ARENA). Type chosen per-slot by biome weights (§5.4). Elites: 1-in-10 roll per non-rat spawn. **Living-body cap: 200 total** (rats count individually); a rat pack clamps to fit the cap. **Spawns only occur more than 30 m from the player** (`SPAWN_PLAYER_DIST`): a queued spawn whose spot is too close rotates to the back of the queue until the player moves away. **Far-frozen bodies**: mobs more than 40 m from the player are IMMOBILE (`FROZEN_DIST`) — idle in place, no AI/tracking/attacks — which is what makes the 200-body cap affordable.
-- **Level scaling**: +5% move speed per level and +5% attack speed every 3 levels (existing `speedMult`/`attackMult` pattern), applied to ALL enemy types' speeds and attack-cycle durations/cooldowns; **+10% enemy HP every 5 levels** (×(1 + 0.1·floor(level/5))). **Spawn multiplier = 1 + (level + souls)/10** — level and banked souls both accelerate spawns (capped by the 200 living bodies).
+- **Level scaling**: +5% move speed per level and +5% attack speed every 3 levels (existing `speedMult`/`attackMult` pattern), applied to ALL enemy types' speeds and attack-cycle durations/cooldowns; **+100% enemy HP every 10 levels** (×(1 + floor(level/10))). **Spawn multiplier = min(1 + (level + souls)/10, ×100)** — level and banked souls accelerate spawns up to a ×100 cap; past the cap, extra pressure converts to +100% enemy HP per 10 excess points (the overflow rule).
 - **Death**: drop orb(s) per §5.5, smoke puff, death animation (existing fade-out pattern), then removal + disposal.
 - **Projectile pools**: shared pooled geometry/materials per projectile type (no per-shot allocation).
 - **AI**: existing LOS raycast + greedy 4-neighbor grid pathing (re-evaluate 0.3 s). Wraith ignores pathing (§5.3).
@@ -201,7 +201,7 @@ Unchanged structure (180 s/level, level timer, run timer, leaderboard by level/t
 
 **Wraith** — phasing threat.
 - Appearance: no skeleton rig. Translucent hooded figure: cone body (ConeGeometry 0.45×1.1, MeshBasicMaterial 0x88ffcc, opacity 0.35, additive, depthWrite false), two bright eyes (spheres 0.03, 0xccffdd, emissive), trailing wisp particles (3 pooled glow sprites following at 0.3 s lag). Sine bob ±0.15 at 2 Hz. No shadow casting.
-- Behavior: **phases through walls** — skips wall collision entirely, flies straight at the player at 2.4 u/s (no pathing, no LOS check). Cannot be kited behind corners; counter = kill it fast. Touch damage 1, cooldown 1.0 s between touches, i-frames respected.
+- Behavior: **phases through walls** — skips wall collision entirely, flies straight at the player at 2.4 u/s (no pathing, no LOS check). Cannot be kited behind corners; counter = kill it fast. Touch damage 1, cooldown 1.0 s between touches, i-frames respected. **Ranged cast**: hurls a small soul orb at the player from LONG range (`ORB_RANGE 16`) — the wraith's attack triggers a spectral-orb projectile instead of a touch (7.5 u/s, damage 1, pooled 14 blue-white orbs, breakable by the sword swing).
 - Interactions: 1 sword hit kills (HP 2, sword dmg 2), 2 orb hits. **Phasing is both-way**: it cannot be body-blocked either. Drops 2 orbs (worth chasing down). Score 2.
 - Elite (1-in-10): **Banshee** — color 0xff88cc, HP 4, speed 3.4 (2.4 × 1.4), touch damage 1, drops 3 orbs.
 

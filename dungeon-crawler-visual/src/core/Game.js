@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON, SWORD, PROPS, HIT_STOP, LIGHTING, DROP, BUFF, EVOLUTION, BIOMES, weaponTier, excessOrbs, orbDamageMultiplier, enemyHpMultiplier } from './Constants.js';
+import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON, SWORD, PROPS, HIT_STOP, LIGHTING, DROP, BUFF, EVOLUTION, BIOMES, ENEMY, weaponTier, excessOrbs, orbDamageMultiplier, enemyHpMultiplier } from './Constants.js';
 import { GameState } from './GameState.js';
 import { Leaderboard } from './Leaderboard.js';
 import { EventBus } from './EventBus.js';
@@ -2097,13 +2097,14 @@ export class Game {
     const sw = this.sword;
     const orbMult = orbDamageMultiplier(s.collectedOrbs);
     // Spawn multiplier (SkeletonSystem's real formula): ×(1 + (level+souls)/10)
-    const spawnMult = 1 + (s.level + s.collectedOrbs) / 10;
+    // CAPPED at ×100 — past the cap, pressure feeds enemy HP instead.
+    const spawnMult = Math.min(1 + (s.level + s.collectedOrbs) / 10, ENEMY.SPAWN_CAP);
     const mobSpeedMult = (1 + 0.05 * (s.level - 1)) * (1 + 0.1 * (s.bossKills || 0));
     return {
       orbMult,
       spawnMult,
       mobSpeedMult,
-      enemyHpMult: enemyHpMultiplier(s.ngPlus, s.level),
+      enemyHpMult: enemyHpMultiplier(s.ngPlus, s.level, s.collectedOrbs),
       dmgMult: sw ? sw.damageMult : 1,
       reach: sw ? sw.range : SWORD.RANGE,
       swordScale: sw ? sw.scale : 1,

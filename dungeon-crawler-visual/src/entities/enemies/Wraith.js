@@ -16,7 +16,7 @@ export class Wraith {
     this.maxHp = this.hp;
     this.speed = WRAITH.SPEED * (this.elite ? ELITE.WRAITH.SPEED_MULT : 1);
     this.damage = WRAITH.DMG;
-    this.attackRange = WRAITH.RANGE;
+    this.attackRange = WRAITH.ORB_RANGE; // phantoms cast soul orbs from long range
     this.attackCooldown = 0;
     this.dropOrbs = this.elite ? ELITE.WRAITH.DROP : WRAITH.DROP;
     this.attackMult = opts.attackMult || 1;

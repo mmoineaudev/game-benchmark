@@ -39,6 +39,7 @@ export class GhostBoss {
     this.phase = Math.random() * Math.PI * 2;
     this._chargeCd = BOSS.CHARGE_COOLDOWN * 0.6; // first charge comes quickly
     this._summonCd = BOSS.SUMMON_COOLDOWN;
+    this._orbTimer = BOSS.ORB_MIN + Math.random() * (BOSS.ORB_MAX - BOSS.ORB_MIN); // 1-3 s
     this._chargeT = 0;
     this._chargeDirX = 0;
     this._chargeDirZ = 0;
@@ -280,6 +281,13 @@ export class GhostBoss {
         this._chargeDirX = dx / d;
         this._chargeDirZ = dz / d;
       }
+    }
+
+    // Orb volley: every 1-3 s (random), hurl a soul orb toward the player.
+    if (this._orbTimer > 0) this._orbTimer -= dt;
+    if (this.state === 'CHASE' && this._orbTimer <= 0) {
+      this._orbTimer = BOSS.ORB_MIN + Math.random() * (BOSS.ORB_MAX - BOSS.ORB_MIN);
+      this.onFireOrb?.();
     }
 
     // Summon wraith minions

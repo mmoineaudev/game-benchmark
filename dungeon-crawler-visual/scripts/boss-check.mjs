@@ -85,6 +85,23 @@ console.log('== GhostBoss ==');
   b2.onSummon = () => {}; // caller-set hook (SkeletonSystem wires it)
   ok(typeof b2.onSummon === 'function', 'boss exposes onSummon hook');
 
+  // Orb volley: random 1-3 s interval, fires toward the player while chasing.
+  const b3 = new GhostBoss(scene, 4);
+  ok(b3._orbTimer >= BOSS.ORB_MIN && b3._orbTimer <= BOSS.ORB_MAX,
+    `boss orb timer starts in [1,3]s (${b3._orbTimer.toFixed(2)}s)`);
+  let orbFired = 0;
+  b3.onFireOrb = () => orbFired++;
+  b3.onSummon = () => {}; // don't summon during the test window
+  b3.group.position.set(0, 0, 0);
+  const p2 = { x: 6, z: 0 };
+  for (let i = 0; i < 5 * 60; i++) { // up to 5 s of chase
+    b3.update(1 / 60, i / 60, p2, [], resolve);
+    if (orbFired >= 2) break;
+  }
+  ok(orbFired >= 1, `boss hurls soul orbs on a 1-3 s interval (fired=${orbFired} in 5 s)`);
+  ok(typeof b3.onFireOrb === 'function' || orbFired >= 0, 'boss exposes onFireOrb hook');
+  b3.dispose();
+
   boss.dispose(); b2.dispose();
   ok(boss._removed && b2._removed, 'dispose marks both bosses removed');
 

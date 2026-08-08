@@ -41,6 +41,8 @@ export class SkeletonSystem {
     this._burnPending = false; // BURN awaits: appears once ALL enemies are dead
     this._burnSpawned = false;
     this.data = null;      // dungeon data (set in init) for burn spawn placement
+    this.spectralOrbs = []; // wraith + boss soul orbs
+    this._nextSpec = 0;
   }
 
   _initProjectilePools() {
@@ -81,6 +83,30 @@ export class SkeletonSystem {
       mesh.visible = false;
       this.scene.add(mesh);
       this.arrows.push({ mesh, dirX: 0, dirZ: 0, life: 0, active: false });
+    }
+
+    // Spectral orbs (Wraith + boss ranged cast): small blue-white souls.
+    // Per-orb speed/damage are set at fire time (Wraith vs boss differ).
+    const specGeo = new THREE.SphereGeometry(0.13, 10, 8);
+    const specMat = new THREE.MeshStandardMaterial({
+      color: 0x88ccff, emissive: 0x88ccff, emissiveIntensity: 2.8,
+      roughness: 0.15, metalness: 0.4,
+    });
+    const specGlowMat = new THREE.SpriteMaterial({
+      map: glowTex, color: 0x99ddff,
+      blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.8,
+    });
+    this._specOrbMat = specMat;
+    this._specGlowMat = specGlowMat;
+    for (let i = 0; i < 14; i++) {
+      const mesh = new THREE.Mesh(specGeo, specMat);
+      const glow = new THREE.Sprite(specGlowMat);
+      glow.scale.setScalar(1.1);
+      mesh.visible = false;
+      glow.visible = false;
+      this.scene.add(mesh);
+      this.scene.add(glow);
+      this.spectralOrbs.push({ mesh, glow, dirX: 0, dirZ: 0, life: 0, speed: 7.5, dmg: 1, active: false });
     }
   }
 
@@ -144,13 +170,17 @@ export class SkeletonSystem {
     this.speedMult = (1 + 0.05 * (state.level - 1)) * bossMult;
     const attackMult = (1 + 0.05 * Math.floor((state.level - 1) / 3)) * bossMult;
 
-    // New Game+: +100% enemy HP per NG+ cycle, plus +10% per 5 levels
-    const hpMult = enemyHpMultiplier(state.ngPlus, state.level);
+    // New Game+: +300% enemy HP per NG+ cycle, +100% per 10 levels, and spawn
+    // pressure above the ×100 spawn cap converts to HP (the overflow rule).
+    const hpMult = enemyHpMultiplier(state.ngPlus, state.level, state.collectedOrbs);
 
-    // Spawn rate: ACCELERATED — ×(1 + (level + souls)/10). Level AND banked
-    // souls both push it up quickly (level 5 + 50 souls = x6.5). Hard-capped
-    // at MAX_ALIVE so the live-bodies budget holds.
-    const spawnMult = 1 + (state.level + state.collectedOrbs) / 10;
+    // Spawn rate: ACCELERATED — ×(1 + (level + souls)/10), CAPPED at ×100
+    // (ENEMY.SPAWN_CAP). Past the cap, pressure feeds enemy HP instead
+    // (enemyHpMultiplier's overflow rule). Slots are hard-capped at MAX_ALIVE.
+    const spawnMult = Math.min(
+      1 + (state.level + state.collectedOrbs) / 10,
+      ENEMY.SPAWN_CAP,
+    );
     let slots = Math.min(
       Math.round((ENEMY.BASE_SLOTS + (state.level - 1) * ENEMY.SLOTS_PER_LEVEL) * spawnMult),
       ENEMY.MAX_ALIVE,
@@ -324,14 +354,15 @@ export class SkeletonSystem {
     const variant = variants[Math.floor(Math.random() * variants.length)];
     const baseHp = 4; // base enemy HP; boss = 22.5x this (15x +50%)
     // The boss scales with the player's wealth: +25% HP per 50 souls held.
-    // NG+ doubles its effects on the boss too: base HP x (1 + 2 x ngPlus).
+    // NG+ hits the boss like every mob: base HP x (1 + HP_PER_NG x ngPlus).
     const boss = new GhostBoss(
-      this.scene, baseHp * (1 + 2 * (state.ngPlus || 0)), variant, state.collectedOrbs,
+      this.scene, baseHp * (1 + ENEMY.HP_PER_NG * (state.ngPlus || 0)), variant, state.collectedOrbs,
     );
     boss.group.position.set(bx, 0, bz);
     this._ground(boss.group);
     boss.onSummon = () => this._summonMinions(boss, candidates, dungeonData, state);
     boss.onChargeHit = () => this._damagePlayer(BOSS.CHARGE_DMG);
+    boss.onFireOrb = () => this._fireSpectralOrb(boss, BOSS.ORB_SPEED, BOSS.ORB_DAMAGE);
     boss.onKill = () => this._onBossKill();
     boss.onDeathComplete = () => this._removeSkeleton(boss);
     this.boss = boss;
@@ -393,6 +424,7 @@ export class SkeletonSystem {
     if (type === 'MAGICIAN') this._fireEnemyOrb(skel);
     else if (type === 'ARCHER') this._fireArrow(skel);
     else if (type === 'BRUTE') this._bruteSlam(skel);
+    else if (type === 'WRAITH') this._fireSpectralOrb(skel, WRAITH.ORB_SPEED, WRAITH.ORB_DAMAGE);
     else this._damagePlayer(SKELETON.ATTACK_DAMAGE);
   }
 
@@ -732,6 +764,27 @@ export class SkeletonSystem {
       if (orb.life <= 0) this._deactivateOrb(orb);
     }
 
+    // Spectral orbs (Wraith + boss cast)
+    for (const orb of this.spectralOrbs) {
+      if (!orb.active) continue;
+      orb.mesh.position.x += orb.dirX * orb.speed * dt;
+      orb.mesh.position.z += orb.dirZ * orb.speed * dt;
+      orb.glow.position.copy(orb.mesh.position);
+      orb.life -= dt;
+      if (circleHitsBox(collisionBoxes, orb.mesh.position.x, orb.mesh.position.z, 0.25)) {
+        this._deactivateOrb(orb);
+        continue;
+      }
+      const dx = player.x - orb.mesh.position.x;
+      const dz = player.z - orb.mesh.position.z;
+      if (dx * dx + dz * dz < 0.7) {
+        this._damagePlayer(orb.dmg);
+        this._deactivateOrb(orb);
+        continue;
+      }
+      if (orb.life <= 0) this._deactivateOrb(orb);
+    }
+
     // Archer arrows
     for (const a of this.arrows) {
       if (!a.active) continue;
@@ -771,6 +824,27 @@ export class SkeletonSystem {
     orb.dirX = dx / len;
     orb.dirZ = dz / len;
     orb.life = MAGICIAN.ORB_LIFETIME;
+  }
+
+  _fireSpectralOrb(skel, speed = WRAITH.ORB_SPEED, dmg = WRAITH.ORB_DAMAGE) {
+    const orb = this.spectralOrbs[this._nextSpec];
+    this._nextSpec = (this._nextSpec + 1) % this.spectralOrbs.length;
+    const p = this.state.player;
+    const sx = skel.group.position.x;
+    const sz = skel.group.position.z;
+    orb.active = true;
+    orb.mesh.visible = true;
+    orb.glow.visible = true;
+    orb.mesh.position.set(sx, 1.6, sz);
+    orb.glow.position.copy(orb.mesh.position);
+    const dx = p.x - sx;
+    const dz = p.z - sz;
+    const len = Math.hypot(dx, dz) || 1;
+    orb.dirX = dx / len;
+    orb.dirZ = dz / len;
+    orb.life = 2.5;
+    orb.speed = speed;
+    orb.dmg = dmg;
   }
 
   _fireArrow(skel) {
@@ -820,6 +894,12 @@ export class SkeletonSystem {
       return dot >= coneCos - 0.1;
     };
     for (const orb of this.enemyOrbs) {
+      if (!orb.active) continue;
+      if (hit(orb.mesh.position.x, orb.mesh.position.z)) {
+        this._deactivateOrb(orb);
+      }
+    }
+    for (const orb of this.spectralOrbs) {
       if (!orb.active) continue;
       if (hit(orb.mesh.position.x, orb.mesh.position.z)) {
         this._deactivateOrb(orb);

@@ -4,6 +4,8 @@ import { DROP, PLAYER } from '../core/Constants.js';
 // Shared resources created once at init — no per-pickup GPU allocations.
 const RING_POOL_SIZE = 8;
 const RING_TTL = 0.45;
+const ORB_POOL_CAP = 32;   // concurrent orb visuals (bursts from AOE kills)
+const GROUP_POOL_CAP = 8;  // concurrent health/buff pickups
 
 export class OrbSystem {
   constructor(scene, dungeonData, state) {
@@ -24,6 +26,7 @@ export class OrbSystem {
     this._orbIdx = 0;     // no longer allocate (the recurring per-kill GC)
     this._groupPool = []; // pooled health/buff pickups { group, kind, active }
     this._groupIdx = 0;
+    this._lastTime = null; // previous update() time — for dt (orb visual life)
   }
 
   init() {
@@ -128,7 +131,11 @@ export class OrbSystem {
       b.mesh.scale.setScalar(Math.max(0.05, 0.7 * (1 - e / b.dur)));
     }
 
-    // Skeleton drops: bob + auto-collect on proximity
+    // Drops: health/buff pickups bob + auto-collect on proximity; orb visuals
+    // bob, shrink away and vanish after DROP.VISUAL_LIFE s (their souls were
+    // credited INSTANTLY at spawn — the mesh is feedback only, never re-collected).
+    const dt = this._lastTime == null ? 0 : Math.min(0.1, Math.max(0, time - this._lastTime));
+    this._lastTime = time;
     for (let i = this.drops.length - 1; i >= 0; i--) {
       const drop = this.drops[i];
       const rec = drop.rec;
@@ -136,9 +143,20 @@ export class OrbSystem {
         rec.group.position.y = drop.y + Math.sin(time * 2.5 + drop.phase) * 0.12;
         rec.group.rotation.y += 0.02;
       } else {
+        // Orb visual: bob + shrink away in the last 0.25 s, then vanish.
+        drop.life += dt;
+        const remain = DROP.VISUAL_LIFE - drop.life;
+        const s = remain < 0.25 ? Math.max(0, remain / 0.25) : 1;
+        rec.mesh.scale.setScalar(s);
+        rec.glow.scale.setScalar(s);
         rec.mesh.position.y = drop.y + Math.sin(time * 2.5 + drop.phase) * 0.1;
         rec.mesh.rotation.y += 0.03;
         rec.glow.position.copy(rec.mesh.position);
+        if (drop.life >= DROP.VISUAL_LIFE) {
+          this._releaseDrop(drop);
+          this.drops.splice(i, 1);
+        }
+        continue; // already credited at spawn — never collected by proximity
       }
       const dx = p.x - drop.x;
       const dz = p.z - drop.z;
@@ -155,12 +173,6 @@ export class OrbSystem {
           // Temporary buff: Game picks the random effect
           this.onBuffCollected?.(drop.x, drop.z);
           this._spawnPickupRing(drop.x, drop.y, drop.z, time);
-        } else {
-          this.state.collectedOrbs++;
-          // Lifetime souls counter (monotonic — the weapon-evolution tier
-          // source). Incremented ONLY on orb pickups, never health/buff drops.
-          this.state.soulsEarned = (this.state.soulsEarned || 0) + 1;
-          this._spawnPickupRing(drop.x, drop.y, drop.z, time);
         }
         this._releaseDrop(drop);
         this.drops.splice(i, 1);
@@ -168,8 +180,10 @@ export class OrbSystem {
     }
   }
 
-  // Spawn one or more auto-collect orbs at a kill position (drop-on-kill).
-  // Uses shared geometry/material + a mesh pool — no allocation per kill.
+  // Spawn orb loot at a kill/break position. The souls are credited INSTANTLY
+  // (auto-added to collectedOrbs + soulsEarned); the orb visual stays in the
+  // scene ~DROP.VISUAL_LIFE seconds as feedback, then vanishes. Uses shared
+  // geometry/material + a mesh pool — no allocation per drop.
   spawnDrop(x, z, count = 1) {
     const y = DROP.Y;
     for (let i = 0; i < count; i++) {
@@ -178,7 +192,16 @@ export class OrbSystem {
       const oz = (Math.random() - 0.5) * 0.8;
       rec.mesh.position.set(x + ox, y, z + oz);
       rec.glow.position.copy(rec.mesh.position);
-      this.drops.push({ rec, kind: 'orb', x: x + ox, z: z + oz, y, phase: Math.random() * Math.PI * 2 });
+      rec.mesh.scale.setScalar(1); // pooled — clear any shrink from a past life
+      rec.glow.scale.setScalar(1);
+      // Instant credit: orbs are loot, not pickups.
+      this.state.collectedOrbs++;
+      // Lifetime souls counter (monotonic — the weapon-evolution tier source).
+      this.state.soulsEarned = (this.state.soulsEarned || 0) + 1;
+      this.drops.push({
+        rec, kind: 'orb', x: x + ox, z: z + oz, y,
+        phase: Math.random() * Math.PI * 2, life: 0,
+      });
     }
   }
 
@@ -211,12 +234,19 @@ export class OrbSystem {
     });
   }
 
-  // Reuse a pooled drop-orb (round-robin). If the pool is exhausted the
-  // oldest live orb is recycled (dropped from the live list first).
+  // Reuse a pooled drop-orb (round-robin). The pool grows up to ORB_POOL_CAP;
+  // if every slot is live (a huge same-frame burst), the oldest live visual is
+  // recycled — its souls were already credited at spawn, so only the feedback
+  // mesh is lost.
   _acquireOrb() {
-    let rec = this._orbPool[this._orbIdx];
-    this._orbIdx = (this._orbIdx + 1) % Math.max(1, this._orbPool.length);
-    if (!rec) {
+    let rec = null;
+    const size = Math.max(1, this._orbPool.length);
+    for (let tries = 0; tries < size; tries++) {
+      const cand = this._orbPool[this._orbIdx];
+      this._orbIdx = (this._orbIdx + 1) % size;
+      if (cand && !cand.active) { rec = cand; break; }
+    }
+    if (!rec && this._orbPool.length < ORB_POOL_CAP) {
       rec = {
         active: false,
         mesh: new THREE.Mesh(this._dropGeo, this._dropMat),
@@ -227,7 +257,10 @@ export class OrbSystem {
       this.scene.add(rec.mesh);
       this.scene.add(rec.glow);
       this._orbPool.push(rec);
-    } else if (rec.active) {
+    }
+    if (!rec) {
+      // Cap reached — recycle the oldest live orb (drop its live record).
+      rec = this._orbPool[0];
       const i = this.drops.findIndex((d) => d.rec === rec);
       if (i >= 0) this.drops.splice(i, 1);
     }
@@ -237,23 +270,31 @@ export class OrbSystem {
     return rec;
   }
 
-  // Reuse a pooled health/buff pickup group. Children are built once per
-  // kind; a rare kind switch (health <-> buff) rebuilds them.
+  // Reuse a pooled health/buff pickup group (round-robin, grows to
+  // GROUP_POOL_CAP). Children are built once per kind; a rare kind switch
+  // (health <-> buff) rebuilds them.
   _acquireGroup(kind) {
-    let rec = this._groupPool[this._groupIdx];
-    this._groupIdx = (this._groupIdx + 1) % Math.max(1, this._groupPool.length);
-    if (!rec) {
+    let rec = null;
+    const size = Math.max(1, this._groupPool.length);
+    for (let tries = 0; tries < size; tries++) {
+      const cand = this._groupPool[this._groupIdx];
+      this._groupIdx = (this._groupIdx + 1) % size;
+      if (cand && !cand.active) { rec = cand; break; }
+    }
+    if (!rec && this._groupPool.length < GROUP_POOL_CAP) {
       rec = { active: false, kind, group: new THREE.Group() };
       this._buildGroupChildren(rec, kind);
       rec.group.visible = false;
       this.scene.add(rec.group);
       this._groupPool.push(rec);
-    } else if (rec.active) {
+    }
+    if (!rec) {
+      // Cap reached — recycle the oldest live pickup (drop its live record).
+      rec = this._groupPool[0];
       const i = this.drops.findIndex((d) => d.rec === rec);
       if (i >= 0) this.drops.splice(i, 1);
-    } else if (rec.kind !== kind) {
-      this._buildGroupChildren(rec, kind);
     }
+    if (rec.kind !== kind) this._buildGroupChildren(rec, kind);
     rec.kind = kind;
     rec.active = true;
     rec.group.visible = true;

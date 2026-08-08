@@ -290,6 +290,32 @@ console.log('== Buff pickup ==');
 }
 
 // ===========================================================================
+// 4d) ORB DROP — souls credit INSTANTLY at spawn; visual expires after 1s
+// ===========================================================================
+console.log('== Orb drop (instant credit + 1s visual) ==');
+{
+  const scene = makeScene();
+  const state = { collectedOrbs: 0, totalOrbs: 0, soulsEarned: 0, health: 3 };
+  const orbs = new OrbSystem(scene, {}, state);
+  orbs.init();
+  orbs.spawnDrop(0, 0, 3); // 3 orbs at once
+  ok(state.collectedOrbs === 3 && state.soulsEarned === 3,
+    `3 orbs credited instantly on drop (collected=${state.collectedOrbs}, souls=${state.soulsEarned})`);
+  ok(orbs.drops.length === 3 && orbs.drops.every((d) => d.kind === 'orb'),
+    '3 orb visuals active in the scene');
+  // Player is FAR away: the visuals must still vanish after VISUAL_LIFE —
+  // no proximity walk-over is ever needed (and no double credit on expiry).
+  let t = 0;
+  for (let i = 0; i < Math.ceil((DROP.VISUAL_LIFE + 0.3) / dt); i++) {
+    t += dt;
+    orbs.update(t, { x: 999, z: 999 });
+  }
+  ok(orbs.drops.length === 0, `orb visuals expire after ${DROP.VISUAL_LIFE}s (no proximity needed)`);
+  ok(state.collectedOrbs === 3 && state.soulsEarned === 3, 'no double credit from expiry');
+  orbs.dispose();
+}
+
+// ===========================================================================
 // 4d) SPAWN CLEARANCE — no props within ~2u of the entrance cell center
 // ===========================================================================
 console.log('== Spawn clearance ==');

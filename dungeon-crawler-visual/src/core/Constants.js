@@ -514,11 +514,12 @@ export const BURN = {
 };
 
 export const DROP = {
-  RADIUS: 1.4,           // auto-collect distance for dropped orbs
+  RADIUS: 1.4,           // auto-collect distance for health/buff pickups
   Y: 0.8,
   HEALTH_CHANCE: 0.15,   // per kill: chance to also drop a health pickup
   HEALTH_RESTORE: 3,     // hearts ADDED by a health pickup (capped at max)
   HEALTH_Y: 0.8,
+  VISUAL_LIFE: 1,        // seconds an orb visual stays on screen (souls credit instantly on drop)
 };
 
 // --- Extended spec: props --------------------------------------------------

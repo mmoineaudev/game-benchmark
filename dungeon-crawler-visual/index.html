@@ -149,6 +149,7 @@
       }
       .slot-info { display: flex; flex-direction: column; color: #cfc6ae; }
       .slot-name { font-family: var(--ds-font); font-size: 22px; letter-spacing: 1px; color: #e6dcc2; }
+      .slot-effect { font-family: var(--ds-font-body); font-size: 12px; letter-spacing: 1px; color: #9a8a5c; margin-top: 2px; }
       .slot-count { font-family: var(--ds-font-body); font-size: 25px; color: #9a8a5c; }
       .icon-dagger::after {
         content: ''; position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%) rotate(45deg);
@@ -282,7 +283,7 @@
         padding: 10px 18px; font-family: var(--ds-font); letter-spacing: 1px;
       }
       #messages {
-        position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
+        position: absolute; top: 210px; left: 50%; transform: translateX(-50%);
         display: flex; flex-direction: column; align-items: center; gap: 8px;
       }
       .msg {
@@ -359,7 +360,8 @@
       <div id="weapon-slot">
         <div class="slot icon-dagger"></div>
         <div class="slot-info">
-          <span class="slot-name">Dagger</span>
+          <span class="slot-name" id="slot-name">Dagger</span>
+          <div class="slot-effect" id="slot-effect">Base blade</div>
           <div id="combo-pips"><span class="pip">▮</span><span class="pip">▮</span><span class="pip">▮</span></div>
         </div>
       </div>

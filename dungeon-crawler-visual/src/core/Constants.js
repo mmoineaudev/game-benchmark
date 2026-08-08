@@ -27,7 +27,7 @@ export const PLAYER = {
 };
 
 export const CAMERA = {
-  FOV: 75,
+  FOV: 90,              // +20% from 75 — wider view, still the DS-style look
   SPRINT_FOV_BOOST: 8,
   NEAR: 0.1,
   FAR: 160,           // raised so the 100m fog-of-war reads (not hard-clipped)
@@ -391,6 +391,17 @@ export const EVOLUTION = {
   MAX_TOTAL_SCALE: 5.0,   // group-scale safety clamp (orb ladder × EMPOWERED)
   ARC_CHANCE: [0, 0, 0, 0.10, 0.35, 1.0], // arc bolts per landing strike
   ARC_BOLTS: [0, 0, 0, 1, 1, 2],
+  // Weapon slot (HUD): per-tier display name + one-line effect.
+  TIER_NAMES: ['Dagger', "Knight's Arming Sword", 'Runic Greatsword',
+    'Crystal Soulblade', 'Soulfire Greatblade', 'Lightsaber'],
+  TIER_EFFECTS: [
+    'Base blade',
+    '+1 dmg · longer steel',
+    '+2 dmg · glowing runes',
+    '+3 dmg · arc bolts (10%)',
+    '+4 dmg · arc bolts (35%)',
+    '+5 dmg · electric arcs on every strike',
+  ],
   ARC_POOL: 8,
   ARC_SPEED: 24,
   ARC_LIFE: 1.2,

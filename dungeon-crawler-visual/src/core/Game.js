@@ -49,6 +49,9 @@ export class Game {
     this._pipEls = this._comboPipsEl
       ? Array.from(this._comboPipsEl.querySelectorAll('.pip'))
       : [];
+    this._slotNameEl = document.getElementById('slot-name');
+    this._slotEffectEl = document.getElementById('slot-effect');
+    this._slotTier = -1; // weapon-slot text cache (updates only on tier change)
     this._lastBiomePal = null; // cache biome border color (HUD writes once per level)
     this._exitEl = document.getElementById('exit-prompt');
     this._messagesEl = document.getElementById('messages');
@@ -1593,27 +1596,22 @@ export class Game {
         this._loadingBuffEl.innerHTML = `<span class="strong">${['', 'BRIGHT', 'FIREBALL', 'EMPOWERED', 'GODSPEED', 'HUNTER'][e]}</span> — ${DESCRIPTIONS[e].split(' — ')[1]}`;
       }
     }
-    // Statistics
+    // Statistics — single source of truth shared with the HUD stats panel
+    // (_liveStats): the loading screen and the in-game panel show the SAME
+    // computed values, no duplicated formulas.
     if (this._loadingStatsEl) {
       const s = this.state;
-      const sw = this.sword;
       if (s) {
-        const orbMult = orbDamageMultiplier(s.collectedOrbs);
-        // Mirror the REAL spawn multiplier from SkeletonSystem: +10%/level x
-        // orb power x souls bonus (+5%/50), plus excess-orb scaling.
-        const spawnMult = Math.pow(1.1, s.level - 1) * orbPowerMultiplier(s.collectedOrbs)
-          * (1 + ENEMY.SOULS_SPAWN_BONUS * Math.floor(s.collectedOrbs / ENEMY.SOULS_SPAWN_PER))
-          + (s.collectedOrbs > 100 ? (s.collectedOrbs - 100) / BUFF.SPAWN_EXCESS_PER : 0);
-        const mobSpeedMult = (1 + 0.05 * (s.level - 1)) * (1 + 0.1 * (s.bossKills || 0));
+        const st = this._liveStats();
         const rows = [
           [`Souls`, `${s.collectedOrbs}`],
-          [`DMG ×`, `${(sw ? sw.damageMult : 1).toFixed(2)}`],
-          [`Orb DMG`, `${Math.round(ORB_WEAPON.DAMAGE * orbMult)}`],
-          [`Reach`, `${(sw ? sw.range : SWORD.RANGE).toFixed(1)}u`],
-          [`Enemy HP`, `×${enemyHpMultiplier(s.ngPlus, s.level).toFixed(1)}`],
-          [`Mob speed`, `×${mobSpeedMult.toFixed(1)}`],
-          [`Spawns`, `×${spawnMult.toFixed(1)}`],
-          [`Regen`, `+${PLAYER.REGEN_AMOUNT}/${PLAYER.REGEN_INTERVAL}s${PLAYER.REGEN_DELAY > 0 ? ` @${PLAYER.REGEN_DELAY}s` : ''}`],
+          [`DMG ×`, `${st.dmgMult.toFixed(2)}`],
+          [`Orb DMG`, `${Math.round(ORB_WEAPON.DAMAGE * st.orbMult)}`],
+          [`Reach`, `${st.reach.toFixed(1)}u`],
+          [`Enemy HP`, `×${st.enemyHpMult.toFixed(1)}`],
+          [`Mob speed`, `×${st.mobSpeedMult.toFixed(1)}`],
+          [`Spawns`, `×${st.spawnMult.toFixed(1)}`],
+          [`Regen`, st.regen],
         ];
         this._loadingStatsEl.innerHTML = rows
           .map(([k, v]) => `<span>${k} <b>${v}</b></span>`).join('');
@@ -1843,6 +1841,14 @@ export class Game {
   }
 
   _updateHUD() {
+    // Weapon slot: current tier's weapon name + effect (cached — only writes
+    // when the tier actually changes).
+    const wtier = this.state.weaponTier || 0;
+    if (wtier !== this._slotTier) {
+      this._slotTier = wtier;
+      if (this._slotNameEl) this._slotNameEl.textContent = EVOLUTION.TIER_NAMES[wtier] || 'Dagger';
+      if (this._slotEffectEl) this._slotEffectEl.textContent = `TIER ${wtier} — ${EVOLUTION.TIER_EFFECTS[wtier] || ''}`;
+    }
     if (this._orbCountEl) {
       // Ammo counter (banked orbs) — labeled ORBS in the HUD.
       this._orbCountEl.textContent = String(this.state.collectedOrbs);
@@ -1941,31 +1947,50 @@ export class Game {
     this._updateStatsPanel();
   }
 
-  // Surface every live tuning coefficient in the HUD stats panel.
-  _updateStatsPanel() {
-    if (!this._statsEl) return;
+  // SINGLE source of truth for every live tuning coefficient displayed in the
+  // HUD stats panel and the loading/title stats (one formula set, two views).
+  _liveStats() {
     const s = this.state;
     const sw = this.sword;
     const orbMult = orbDamageMultiplier(s.collectedOrbs);
+    // Mirrors the REAL spawn multiplier from SkeletonSystem: +10%/level x orb
+    // power x souls bonus (+5%/50), plus excess-orb scaling.
     const spawnMult = Math.pow(1.1, s.level - 1) * orbPowerMultiplier(s.collectedOrbs)
       * (1 + ENEMY.SOULS_SPAWN_BONUS * Math.floor(s.collectedOrbs / ENEMY.SOULS_SPAWN_PER))
       + (s.collectedOrbs > 100 ? (s.collectedOrbs - 100) / BUFF.SPAWN_EXCESS_PER : 0);
     const mobSpeedMult = (1 + 0.05 * (s.level - 1)) * (1 + 0.1 * (s.bossKills || 0));
-    const atkSpeed = sw && sw.attackSpeedMult !== 1
-      ? `×${sw.attackSpeedMult.toFixed(2)}`
-      : '×1.00';
+    return {
+      orbMult,
+      spawnMult,
+      mobSpeedMult,
+      enemyHpMult: enemyHpMultiplier(s.ngPlus, s.level),
+      dmgMult: sw ? sw.damageMult : 1,
+      reach: sw ? sw.range : SWORD.RANGE,
+      swordScale: sw ? sw.scale : 1,
+      atkSpeed: sw && sw.attackSpeedMult !== 1
+        ? `×${sw.attackSpeedMult.toFixed(2)}`
+        : '×1.00',
+      moveSpeed: s.sprintSpeedMult > 1.001 ? `×${s.sprintSpeedMult.toFixed(2)}` : '×1.00',
+      regen: `+${PLAYER.REGEN_AMOUNT}/${PLAYER.REGEN_INTERVAL}s${PLAYER.REGEN_DELAY > 0 ? ` @${PLAYER.REGEN_DELAY}s` : ''}`,
+    };
+  }
+
+  // Surface every live tuning coefficient in the HUD stats panel.
+  _updateStatsPanel() {
+    if (!this._statsEl) return;
+    const st = this._liveStats();
     const rows = [
-      ['DMG ×', `×${(sw ? sw.damageMult : 1).toFixed(2)}`],
-      ['Orb DMG', `${Math.round(ORB_WEAPON.DAMAGE * orbMult)}`],
-      ['Orb AOE', `${Math.round(ORB_WEAPON.EXPLODE_DAMAGE * orbMult)}`],
-      ['Reach', `${(sw ? sw.range : SWORD.RANGE).toFixed(2)}u`],
-      ['Sword size', `×${(sw ? sw.scale : 1).toFixed(2)}`],
-      ['Atk speed', atkSpeed],
-      ['Move speed', this.state.sprintSpeedMult > 1.001 ? `×${this.state.sprintSpeedMult.toFixed(2)}` : '×1.00'],
-      ['Enemy HP', `×${enemyHpMultiplier(s.ngPlus, s.level).toFixed(2)}`],
-      ['Mob speed', `×${mobSpeedMult.toFixed(2)}`],
-      ['Spawns', `×${spawnMult.toFixed(2)}`],
-      ['Regen', `+${PLAYER.REGEN_AMOUNT}/${PLAYER.REGEN_INTERVAL}s${PLAYER.REGEN_DELAY > 0 ? ` @${PLAYER.REGEN_DELAY}s` : ''}`],
+      ['DMG ×', `×${st.dmgMult.toFixed(2)}`],
+      ['Orb DMG', `${Math.round(ORB_WEAPON.DAMAGE * st.orbMult)}`],
+      ['Orb AOE', `${Math.round(ORB_WEAPON.EXPLODE_DAMAGE * st.orbMult)}`],
+      ['Reach', `${st.reach.toFixed(2)}u`],
+      ['Sword size', `×${st.swordScale.toFixed(2)}`],
+      ['Atk speed', st.atkSpeed],
+      ['Move speed', st.moveSpeed],
+      ['Enemy HP', `×${st.enemyHpMult.toFixed(2)}`],
+      ['Mob speed', `×${st.mobSpeedMult.toFixed(2)}`],
+      ['Spawns', `×${st.spawnMult.toFixed(2)}`],
+      ['Regen', st.regen],
     ];
     const html = rows
       .map(([k, v]) => `<div class="stat-row"><span>${k}</span><b>${v}</b></div>`)

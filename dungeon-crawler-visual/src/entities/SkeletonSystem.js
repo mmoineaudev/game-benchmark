@@ -46,16 +46,16 @@ export class SkeletonSystem {
   }
 
   _initProjectilePools() {
-    // Magician red orbs (existing)
+    // Magician red orbs (existing) — HIGH VISIBILITY: bright emissive + big glow
     const orbGeo = new THREE.SphereGeometry(0.16, 10, 8);
     const orbMat = new THREE.MeshStandardMaterial({
-      color: 0xff3322, emissive: 0xff3322, emissiveIntensity: 2.5,
+      color: 0xff3322, emissive: 0xff3322, emissiveIntensity: 3.5,
       roughness: 0.15, metalness: 0.4,
     });
     const glowTex = generateGlowTexture();
     const glowMat = new THREE.SpriteMaterial({
       map: glowTex, color: 0xff4433,
-      blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.8,
+      blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.95,
     });
     this._orbTex = glowTex;
     this._orbMeshMat = orbMat;
@@ -63,7 +63,7 @@ export class SkeletonSystem {
     for (let i = 0; i < 12; i++) {
       const mesh = new THREE.Mesh(orbGeo, orbMat);
       const glow = new THREE.Sprite(glowMat);
-      glow.scale.setScalar(1.4);
+      glow.scale.setScalar(1.9);
       mesh.visible = false;
       glow.visible = false;
       this.scene.add(mesh);
@@ -71,37 +71,48 @@ export class SkeletonSystem {
       this.enemyOrbs.push({ mesh, glow, dirX: 0, dirZ: 0, life: 0, active: false });
     }
 
-    // Archer bone arrows (pool of 10)
-    const arrowGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.5, 6);
+    // Archer bone arrows (pool of 10) — each carries a bright additive glow
+    // sprite so the thin shaft reads at a glance against dark halls.
+    const arrowGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.5, 6);
     const arrowMat = new THREE.MeshStandardMaterial({
-      color: 0xd8d0c0, roughness: 0.6, metalness: 0.1,
+      color: 0xe8e0d0, emissive: 0x664422, emissiveIntensity: 0.6, roughness: 0.6, metalness: 0.1,
+    });
+    const arrowGlowMat = new THREE.SpriteMaterial({
+      map: glowTex, color: 0xffd8a0,
+      blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.9,
     });
     this._arrowGeo = arrowGeo;
     this._arrowMat = arrowMat;
+    this._arrowGlowMat = arrowGlowMat;
     for (let i = 0; i < 10; i++) {
       const mesh = new THREE.Mesh(arrowGeo, arrowMat);
+      const glow = new THREE.Sprite(arrowGlowMat);
+      glow.scale.setScalar(0.75);
       mesh.visible = false;
+      glow.visible = false;
       this.scene.add(mesh);
-      this.arrows.push({ mesh, dirX: 0, dirZ: 0, life: 0, active: false });
+      this.scene.add(glow);
+      this.arrows.push({ mesh, glow, dirX: 0, dirZ: 0, life: 0, active: false });
     }
 
     // Spectral orbs (Wraith + boss ranged cast): small blue-white souls.
     // Per-orb speed/damage are set at fire time (Wraith vs boss differ).
-    const specGeo = new THREE.SphereGeometry(0.13, 10, 8);
+    // HIGH VISIBILITY: bright emissive, big pulsing glow.
+    const specGeo = new THREE.SphereGeometry(0.17, 10, 8);
     const specMat = new THREE.MeshStandardMaterial({
-      color: 0x88ccff, emissive: 0x88ccff, emissiveIntensity: 2.8,
+      color: 0xaaddff, emissive: 0xaaddff, emissiveIntensity: 4,
       roughness: 0.15, metalness: 0.4,
     });
     const specGlowMat = new THREE.SpriteMaterial({
-      map: glowTex, color: 0x99ddff,
-      blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.8,
+      map: glowTex, color: 0xccf2ff,
+      blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.95,
     });
     this._specOrbMat = specMat;
     this._specGlowMat = specGlowMat;
     for (let i = 0; i < 14; i++) {
       const mesh = new THREE.Mesh(specGeo, specMat);
       const glow = new THREE.Sprite(specGlowMat);
-      glow.scale.setScalar(1.1);
+      glow.scale.setScalar(1.8);
       mesh.visible = false;
       glow.visible = false;
       this.scene.add(mesh);
@@ -770,6 +781,8 @@ export class SkeletonSystem {
       orb.mesh.position.x += orb.dirX * orb.speed * dt;
       orb.mesh.position.z += orb.dirZ * orb.speed * dt;
       orb.glow.position.copy(orb.mesh.position);
+      // Pulsing glow so the orb reads as alive (and is easy to spot mid-flight)
+      orb.glow.scale.setScalar(1.8 + Math.sin(orb.life * 18) * 0.3);
       orb.life -= dt;
       if (circleHitsBox(collisionBoxes, orb.mesh.position.x, orb.mesh.position.z, 0.25)) {
         this._deactivateOrb(orb);
@@ -791,6 +804,7 @@ export class SkeletonSystem {
       a.mesh.position.x += a.dirX * ARCHER.ARROW_SPEED * dt;
       a.mesh.position.z += a.dirZ * ARCHER.ARROW_SPEED * dt;
       a.mesh.rotation.x = Math.atan2(0.02, ARCHER.ARROW_SPEED * dt) + Math.PI / 2;
+      if (a.glow) a.glow.position.copy(a.mesh.position);
       a.life -= dt;
       if (circleHitsBox(collisionBoxes, a.mesh.position.x, a.mesh.position.z, ARCHER.ARROW_RADIUS)) {
         this._deactivateArrow(a);
@@ -857,7 +871,9 @@ export class SkeletonSystem {
       this._nextArrow = (this._nextArrow + 1) % this.arrows.length;
       a.active = true;
       a.mesh.visible = true;
+      a.glow.visible = true;
       a.mesh.position.set(sx, 1.5, sz);
+      a.glow.position.copy(a.mesh.position);
       const dx = p.x - sx;
       const dz = p.z - sz;
       const len = Math.hypot(dx, dz) || 1;
@@ -878,6 +894,7 @@ export class SkeletonSystem {
   _deactivateArrow(a) {
     a.active = false;
     a.mesh.visible = false;
+    if (a.glow) a.glow.visible = false;
   }
 
   // Sword swing clips mob projectiles out of the air. Any active magician
@@ -1095,12 +1112,21 @@ export class SkeletonSystem {
     for (const a of this.arrows) {
       a.mesh.geometry.dispose();
       this.scene.remove(a.mesh);
+      if (a.glow) this.scene.remove(a.glow);
+    }
+    for (const orb of this.spectralOrbs) {
+      orb.mesh.geometry.dispose();
+      this.scene.remove(orb.mesh);
+      this.scene.remove(orb.glow);
     }
     if (this._orbMeshMat) this._orbMeshMat.dispose();
     if (this._orbGlowMat) this._orbGlowMat.dispose();
     if (this._orbTex) this._orbTex.dispose();
     if (this._arrowGeo) this._arrowGeo.dispose();
     if (this._arrowMat) this._arrowMat.dispose();
+    if (this._arrowGlowMat) this._arrowGlowMat.dispose();
+    if (this._specOrbMat) this._specOrbMat.dispose();
+    if (this._specGlowMat) this._specGlowMat.dispose();
     if (this._shockGeo) {
       this._shockGeo.dispose();
       this._shockMat.dispose();

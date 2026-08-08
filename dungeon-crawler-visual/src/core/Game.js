@@ -64,6 +64,14 @@ export class Game {
     this._exitEl = document.getElementById('exit-prompt');
     this._messagesEl = document.getElementById('messages');
     this._prevInExit = false;
+    // Directional danger glow edges (red border, additive 1/d per sector)
+    this._dangerEls = [
+      document.getElementById('danger-top'),
+      document.getElementById('danger-bottom'),
+      document.getElementById('danger-left'),
+      document.getElementById('danger-right'),
+    ].filter(Boolean);
+    for (const el of this._dangerEls) el.dataset.a = '0'; // current lerped alpha
     this._welcomeShown = false;
     this._lastHintTime = 0;
     this._sprinting = false;
@@ -2008,6 +2016,22 @@ export class Game {
     // Single souls counter — the ORBS/SOULS readout is the one notion, no
     // separate lifetime line (user ruling: souls = orbs).
     if (this.sword) this.sword.setOrbCount(this.state.collectedOrbs);
+    // Directional danger glow: additive 1/d per sector from SkeletonSystem
+    // (front -> top, back -> bottom, right, left). No nearest-enemy math.
+    // Alpha = min(1, sum / DANGER_MAX_SUM), smoothed so it doesn't pop.
+    if (this._dangerEls.length && this.skeletons && this.skeletons.danger) {
+      const d = this.skeletons.danger;
+      const vals = [d.front, d.back, d.left, d.right];
+      const k = Math.min(1, this._delta * 6);
+      for (let i = 0; i < this._dangerEls.length; i++) {
+        const el = this._dangerEls[i];
+        const target = vals[i] > 0.02 ? Math.min(1, vals[i] / ENEMY.DANGER_MAX_SUM) : 0;
+        const cur = parseFloat(el.dataset.a || '0');
+        const next = cur + (target - cur) * k;
+        el.dataset.a = next.toFixed(3);
+        el.style.opacity = next.toFixed(3);
+      }
+    }
     if (this._biomeLabelEl) {
       const pal = this.biomes.current?.palette;
       const ng = this.state.ngPlus ? ` · NG+${this.state.ngPlus}` : '';

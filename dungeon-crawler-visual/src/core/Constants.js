@@ -287,6 +287,9 @@ export const ENEMY = {
   SPAWN_INTERVAL: 0.5, // seconds between individual mob reveals at level start
   SPAWN_CAP: 100,      // spawn multiplier caps at ×100 — beyond it, pressure
                        // feeds enemy HP instead (see enemyHpMultiplier)
+  DANGER_RANGE: 40,    // directional border glow: enemies within this range
+                       // contribute 1/distance to their sector's glow
+  DANGER_MAX_SUM: 2.0, // summed 1/d per sector maps to alpha = min(1, sum/2)
   HP_LEVEL_INTERVAL: 10, // +HP_PER_STEP bonus HP every 10 levels
   HP_PER_STEP: 1.0,      // +100% mob HP per 10 levels (user ruling: enemies lacked HP)
   HP_PER_NG: 3.0,        // +300% HP per NG+ cycle (100% base + 200% doubled-effect
@@ -398,7 +401,8 @@ export const HIT_STOP = 0.06; // seconds of world-freeze on sword hit
 // Every EVOLUTION.TIER_SOULS lifetime souls the sword gains +1 damage per hit
 // and a new form, stepping to a lightsaber that throws electric arcs (tier 5).
 export const EVOLUTION = {
-  TIER_SOULS: 100,
+  TIER_SOULS: 100,        // souls for tier 1 (the ladder below doubles each step)
+  TIER_THRESHOLDS: [100, 200, 400, 800, 1600], // souls for tiers 1..5 (exponential — user ruling)
   MAX_TIER: 5,
   DAMAGE_PER_TIER: 1,
   BLADE_LENGTH: [0.76, 0.81, 0.86, 0.92, 0.96, 1.0], // form blade length per tier (u)
@@ -428,9 +432,16 @@ export const EVOLUTION = {
   T5_BLADE_LIGHT: { color: 0x66eeff, intensity: 1.5, distance: 6, decay: 1.6 },
 };
 
-// Tier from lifetime souls (monotonic; capped at MAX_TIER).
+// Tier from souls held: thresholds DOUBLE per tier (100/200/400/800/1600) so
+// the ladder takes much longer to climb; capped at MAX_TIER. Evaluated as a
+// ceiling in Game._checkWeaponEvolution — once reached, never reverts.
 export function weaponTier(souls) {
-  return Math.min(Math.floor(souls / EVOLUTION.TIER_SOULS), EVOLUTION.MAX_TIER);
+  let t = 0;
+  for (let i = 0; i < EVOLUTION.TIER_THRESHOLDS.length; i++) {
+    if (souls >= EVOLUTION.TIER_THRESHOLDS[i]) t = i + 1;
+    else break;
+  }
+  return t;
 }
 
 // Base per-hit damage before the size multiplier: HIT{1,2,3} + tier.

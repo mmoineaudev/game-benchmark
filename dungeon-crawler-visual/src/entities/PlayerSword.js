@@ -391,8 +391,8 @@ export class PlayerSword {
   // guard never cover the aim point, even at maximum size.
   _setRest() {
     // Sword held clearly to the RIGHT of the crosshair (positive x = screen right)
-    this.group.position.set(0.68, -0.22, -0.70);
-    this.group.rotation.set(-0.15, 0, 0.35);
+    this.group.position.set(0.74, -0.22, -0.70);
+    this.group.rotation.set(-0.15, 0, 0.38);
   }
 
   // Effective melee reach — grows with the sword size bonus AND the evolution

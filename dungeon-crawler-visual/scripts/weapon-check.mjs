@@ -14,13 +14,13 @@ const ok = (msg) => console.log(`  ok: ${msg}`);
 
 // ---------------------------------------------------------------------------
 // Gate 1: EVOLUTION block complete, every value finite (guards NaN bugs)
-const EVO_KEYS = ['TIER_SOULS', 'MAX_TIER', 'DAMAGE_PER_TIER', 'BLADE_LENGTH',
+const EVO_KEYS = ['TIER_SOULS', 'TIER_THRESHOLDS', 'MAX_TIER', 'DAMAGE_PER_TIER', 'BLADE_LENGTH',
   'RANGE_PER_TIER', 'MAX_TOTAL_SCALE', 'ARC_CHANCE', 'ARC_BOLTS', 'ARC_POOL',
   'ARC_SPEED', 'ARC_LIFE', 'ARC_DAMAGE', 'ARC_RANGE', 'BOLT_COLOR', 'T5_BLADE_LIGHT'];
 for (const k of EVO_KEYS) {
   if (!(k in EVOLUTION)) fail(`EVOLUTION.${k} missing`);
 }
-for (const k of ['ARC_CHANCE', 'ARC_BOLTS', 'BLADE_LENGTH']) {
+for (const k of ['ARC_CHANCE', 'ARC_BOLTS', 'BLADE_LENGTH', 'TIER_THRESHOLDS']) {
   for (const v of EVOLUTION[k]) if (!Number.isFinite(v)) fail(`EVOLUTION.${k} has non-finite ${v}`);
 }
 for (const k of ['TIER_SOULS', 'MAX_TIER', 'DAMAGE_PER_TIER', 'RANGE_PER_TIER', 'MAX_TOTAL_SCALE', 'ARC_POOL', 'ARC_SPEED', 'ARC_LIFE', 'ARC_DAMAGE', 'ARC_RANGE']) {
@@ -29,13 +29,14 @@ for (const k of ['TIER_SOULS', 'MAX_TIER', 'DAMAGE_PER_TIER', 'RANGE_PER_TIER', 
 ok('EVOLUTION block complete and finite');
 
 // ---------------------------------------------------------------------------
-// Gate 2: tier math (0/99/100/199/200/500/999 → 0/0/1/1/2/5/5)
-const tierCases = [[0, 0], [99, 0], [100, 1], [199, 1], [200, 2], [500, 5], [999, 5]];
+// Gate 2: tier math — exponential ladder 100/200/400/800/1600 (user ruling b)
+const tierCases = [[0, 0], [99, 0], [100, 1], [199, 1], [200, 2], [399, 2],
+  [400, 3], [500, 3], [799, 3], [800, 4], [999, 4], [1599, 4], [1600, 5], [5000, 5]];
 for (const [souls, want] of tierCases) {
   const got = weaponTier(souls);
   if (got !== want) fail(`weaponTier(${souls}) = ${got} (want ${want})`);
 }
-ok('tier math: 0/99/100/199/200/500/999 → 0/0/1/1/2/5/5, capped at MAX_TIER');
+ok('tier math: exponential 100/200/400/800/1600, capped at MAX_TIER');
 
 // ---------------------------------------------------------------------------
 // Gate 3: damage ladder — (base + tier) × damageMult at size 1 = 2/2/3 + tier

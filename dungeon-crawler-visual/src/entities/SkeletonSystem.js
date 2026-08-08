@@ -43,6 +43,7 @@ export class SkeletonSystem {
     this.data = null;      // dungeon data (set in init) for burn spawn placement
     this.spectralOrbs = []; // wraith + boss soul orbs
     this._nextSpec = 0;
+    this.danger = { front: 0, back: 0, left: 0, right: 0 }; // directional border glow
   }
 
   _initProjectilePools() {
@@ -481,6 +482,9 @@ export class SkeletonSystem {
     // Frozen (title screen up): drain spawns so they exist, but keep all mobs
     // immobile until the title lifts (level-start stability trick).
     if (this.frozen) return;
+    // Reset the directional danger sums, then accumulate per living body below.
+    this.danger.front = 0; this.danger.back = 0;
+    this.danger.left = 0; this.danger.right = 0;
     // Safe spawn: mobs stay put and idle (no tracking/attacking) until the
     // player's spawn protection countdown reaches 0.
     const tracking = !(this.state && this.state.safeSpawn > 0);
@@ -489,6 +493,27 @@ export class SkeletonSystem {
       if (skel.state === 'DEAD') {
         skel.update(dt, time);
         continue;
+      }
+      // Directional danger glow (additive 1/d per sector, 0-40 m, no nearest
+      // computation): each living body in a sector adds 1/distance to that
+      // sector's sum. Sectors are 90° wedges around the player's facing.
+      if (player && player.yaw !== undefined) {
+        const rdx = s.x - player.x;
+        const rdz = s.z - player.z;
+        const d2 = rdx * rdx + rdz * rdz;
+        if (d2 <= ENEMY.DANGER_RANGE * ENEMY.DANGER_RANGE) {
+          const d = Math.sqrt(d2);
+          const sinYaw = Math.sin(player.yaw);
+          const cosYaw = Math.cos(player.yaw);
+          const fwd = rdx * sinYaw + rdz * cosYaw;
+          const rgt = rdx * cosYaw - rdz * sinYaw;
+          const contrib = 1 / Math.max(0.5, d);
+          if (Math.abs(fwd) >= Math.abs(rgt)) {
+            if (fwd >= 0) this.danger.front += contrib;
+            else this.danger.back += contrib;
+          } else if (rgt >= 0) this.danger.right += contrib;
+          else this.danger.left += contrib;
+        }
       }
       // Safe spawn: mobs idle in place (no tracking/attacking). Bosses also
       // wait — their charge/summon AI is gated the same way.

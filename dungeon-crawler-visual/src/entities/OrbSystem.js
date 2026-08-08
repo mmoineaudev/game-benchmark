@@ -144,8 +144,12 @@ export class OrbSystem {
       const dz = p.z - drop.z;
       if (dx * dx + dz * dz < DROP.RADIUS * DROP.RADIUS) {
         if (drop.kind === 'health') {
-          // Health pickup: fills ALL empty hearts (full restore)
-          this.state.health = this.state.maxHealth || PLAYER.MAX_HEALTH;
+          // Health pickup: ADDS DROP.HEALTH_RESTORE hearts, capped at max
+          // (never a flat set — permanent hearts from boss kills are kept).
+          this.state.health = Math.min(
+            this.state.maxHealth || PLAYER.MAX_HEALTH,
+            this.state.health + DROP.HEALTH_RESTORE,
+          );
           this._spawnPickupRing(drop.x, drop.y, drop.z, time);
         } else if (drop.kind === 'buff') {
           // Temporary buff: Game picks the random effect
@@ -178,8 +182,9 @@ export class OrbSystem {
     }
   }
 
-  // Spawn a health-reset pickup (red medical cross) at a kill position.
-  // Auto-collect on proximity -> full heal. Shared geometry/material + pool.
+  // Spawn a health pickup (red medical cross) at a kill position.
+  // Auto-collect on proximity -> +DROP.HEALTH_RESTORE hearts (capped at max).
+  // Shared geometry/material + pool.
   spawnHealth(x, z) {
     const y = DROP.HEALTH_Y;
     const rec = this._acquireGroup('health');

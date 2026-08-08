@@ -313,7 +313,7 @@ export class SkeletonSystem {
     const bz = exit.z * cs + cs / 2;
     const variants = ['SKELETON', 'ARMORED', 'ARCHER', 'BRUTE', 'WRAITH', 'RAT', 'MAGICIAN'];
     const variant = variants[Math.floor(Math.random() * variants.length)];
-    const baseHp = 4; // base enemy HP; boss = 15x this
+    const baseHp = 4; // base enemy HP; boss = 22.5x this (15x +50%)
     const boss = new GhostBoss(this.scene, baseHp, variant);
     boss.group.position.set(bx, 0, bz);
     this._ground(boss.group);

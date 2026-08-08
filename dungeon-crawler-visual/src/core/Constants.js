@@ -194,7 +194,7 @@ export const BIOMES = {
 // Boss levels: every BOSS.INTERVAL-th level is a single-boss arena.
 export const BOSS = {
   INTERVAL: 7,          // levels 7, 14, 21, ... are boss levels
-  HP_MULT: 15,          // boss HP = 15x a base enemy's HP (halved from 30x)
+  HP_MULT: 22.5,        // boss HP = 22.5x a base enemy's HP (15x +50%)
   CHARGE_SPEED: 14,     // dash speed during the charge
   CHARGE_TIME: 0.9,     // seconds the charge lasts
   CHARGE_COOLDOWN: 3.2, // seconds between charges
@@ -517,7 +517,7 @@ export const DROP = {
   RADIUS: 1.4,           // auto-collect distance for dropped orbs
   Y: 0.8,
   HEALTH_CHANCE: 0.15,   // per kill: chance to also drop a health pickup
-  HEALTH_RESTORE: 5,     // hearts restored by a health pickup (capped at max)
+  HEALTH_RESTORE: 3,     // hearts ADDED by a health pickup (capped at max)
   HEALTH_Y: 0.8,
 };
 

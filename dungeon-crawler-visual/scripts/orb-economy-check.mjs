@@ -309,10 +309,11 @@ console.log('== Spawn clearance ==');
 }
 
 // ===========================================================================
-// 5) HEALTH RESET DROP — red cross pickup, full heal on collect
+// 5) HEALTH DROP — red cross pickup, +3 hearts added (capped at max)
 // ===========================================================================
 console.log('== Health drop ==');
 {
+  // base max 3: 1 + 3 lands at 3 (capped)
   const scene = makeScene();
   const state = { collectedOrbs: 0, totalOrbs: 0, health: 1 };
   const orbs = new OrbSystem(scene, {}, state);
@@ -321,10 +322,28 @@ console.log('== Health drop ==');
   ok(orbs.drops.length === 1 && orbs.drops[0].kind === 'health', 'health pickup spawned');
   ok(scene.children.some((c) => c.type === 'Group'), 'health cross group in scene');
   orbs.update(0, { x: 0.05, z: 0.05 }); // player on top of the drop
-  ok(state.health === PLAYER.MAX_HEALTH, `health reset to max (${state.health}/${PLAYER.MAX_HEALTH})`);
+  ok(state.health === PLAYER.MAX_HEALTH, `1 + 3 capped at base max (${state.health}/${PLAYER.MAX_HEALTH})`);
   ok(state.collectedOrbs === 0, 'health pickup does not grant orbs');
   ok(orbs.drops.length === 0, 'drop consumed after collect');
   orbs.dispose();
+
+  // permanent hearts: 2 + 3 = 5 (adds, not a flat set to max)
+  const s2 = { collectedOrbs: 0, totalOrbs: 0, health: 2, maxHealth: 6 };
+  const orbs2 = new OrbSystem(makeScene(), {}, s2);
+  orbs2.init();
+  orbs2.spawnHealth(0, 0);
+  orbs2.update(0, { x: 0.05, z: 0.05 });
+  ok(s2.health === 5, `adds 3 to current health (2 -> ${s2.health}, max 6)`);
+  orbs2.dispose();
+
+  // capped at max: 5 + 3 -> 6, never above
+  const s3 = { collectedOrbs: 0, totalOrbs: 0, health: 5, maxHealth: 6 };
+  const orbs3 = new OrbSystem(makeScene(), {}, s3);
+  orbs3.init();
+  orbs3.spawnHealth(0, 0);
+  orbs3.update(0, { x: 0.05, z: 0.05 });
+  ok(s3.health === 6, `capped at max (5 + 3 -> ${s3.health}/6)`);
+  orbs3.dispose();
 }
 
 // ===========================================================================

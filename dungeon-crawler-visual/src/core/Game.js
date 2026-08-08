@@ -444,7 +444,7 @@ export class Game {
     this.skeletons.init(this.dungeonData, this.state);
     this.skeletons.onKill = (x, z, orbs = 1, skel) => {
       if (orbs > 0) this.orbs.spawnDrop(x, z, orbs);
-      // 15% chance the kill also drops a full health reset
+      // 15% chance the kill also drops a health pickup (+3 hearts)
       if (Math.random() < DROP.HEALTH_CHANCE) this.orbs.spawnHealth(x, z);
       this.smoke.addTransient(x, 0.6, z, 10, 0.4);
       // Purple death: tint the fading corpse purple and pop into particles

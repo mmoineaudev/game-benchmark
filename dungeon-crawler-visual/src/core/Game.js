@@ -628,6 +628,26 @@ export class Game {
     this.orbs.onBuffCollected = () => this._applyBuff();
   }
 
+  // One warm render with the FIREBALL buff's visuals visible: the held
+  // fireball (camera child), the fireball projectile slots and the fire
+  // rings. THREE compiles GPU programs lazily on first render, so without
+  // this the buff's FIRST activation mid-fight would hitch (shader compile
+  // storm). Called at every level build; the loading screen hides the flash.
+  _warmFireballShaders() {
+    const fbActive = this.state && this.state.buffEffect === 2;
+    try {
+      if (this.shooter && this.shooter.warmFireball) {
+        const p = this.state.player;
+        this.shooter.warmFireball(true, p ? p.x : 0, WORLD.PLAYER_EYE_HEIGHT - 0.1, p ? p.z : 0);
+      }
+      if (this._heldFireball && !fbActive) this._heldFireball.visible = true;
+      this.post.render();
+    } finally {
+      if (this.shooter && this.shooter.warmFireball) this.shooter.warmFireball(false);
+      if (this._heldFireball && !fbActive) this._heldFireball.visible = false;
+    }
+  }
+
   _initCombat() {
     this.shooter = new OrbShooter(this.scene);
     this.shooter.init();
@@ -1951,6 +1971,10 @@ export class Game {
     this._setupPlayerStart();
     // Prewarm both shadow variants — a mid-level tier-2 toggle is then ~free.
     this.lighting.prewarmShadowVariants(this.renderer, this.camera);
+    // Pre-warm the FIREBALL buff (held fireball + fireball slots + fire rings):
+    // one render with them visible compiles their GPU programs NOW, so
+    // switching to the fireball buff mid-fight never hitches (user ruling).
+    this._warmFireballShaders();
     await this._nextFrame();
 
     // ---- STEP 3: display the finished level (title screen holds it) ----

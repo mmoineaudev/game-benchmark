@@ -138,6 +138,27 @@ export class OrbShooter {
     }
   }
 
+  // Pre-warm the FIREBALL buff's materials (fireball slots + fire rings):
+  // toggling them visible and rendering once compiles their GPU programs NOW
+  // (at level start) instead of mid-fight when the buff activates — switching
+  // to the fireball buff then causes zero shader hitches. Positions are moved
+  // to the given point during the warm so the frustum can't cull them.
+  warmFireball(show, x = 0, y = 1.6, z = 0) {
+    for (const p of this.projectiles) {
+      if (!p.fireball) continue;
+      p.mesh.visible = show;
+      p.glow.visible = show;
+      if (show) {
+        p.mesh.position.set(x, y, z);
+        p.glow.position.set(x, y, z);
+      }
+    }
+    for (const b of this._boomFires) {
+      b.mesh.visible = show;
+      if (show) b.mesh.position.set(x, y + 0.2, z);
+    }
+  }
+
   // Fire ONE STEP along the current camera look direction (yaw + pitch).
   // Advances the open sequence (or starts a new one). Returns the step
   // result so Game can charge the orb only for the first step of a sequence.

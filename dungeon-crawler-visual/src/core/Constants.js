@@ -268,12 +268,17 @@ export const SKELETON = {
 
 // --- Extended spec: enemy roster ------------------------------------------
 export const ENEMY = {
-  SPAWN_MIN_DIST: 6,
+  SPAWN_MIN_DIST: 6,    // candidate cells: >= 6 BFS cells from the ENTRANCE (36 m)
   BASE_SLOTS: 2,
   SLOTS_PER_LEVEL: 1,
-  MAX_SLOTS: 10,
+  MAX_SLOTS: 100,
   ARENA_EXTRA_SLOTS: 2,
-  MAX_ALIVE: 16,      // total living bodies (rats counted individually)
+  MAX_ALIVE: 100,       // living-body cap (rats counted individually). Affordable
+                        // because distant bodies freeze: see FROZEN_DIST.
+  FROZEN_DIST: 40,      // mobs farther than this from the player are IMMOBILE —
+                        // idle in place, no AI/tracking/attacks (perf: 100-body budget)
+  SPAWN_PLAYER_DIST: 30, // spawns only occur more than 30 m from the player; a
+                         // queued spawn too close waits until the player moves away
   SPAWN_INTERVAL: 0.5, // seconds between individual mob reveals at level start
   RAT_PACK_MIN: 2,    // was 4 — rat packs halved (harder enemy, cut 50%)
   RAT_PACK_MAX: 3,    // was 6

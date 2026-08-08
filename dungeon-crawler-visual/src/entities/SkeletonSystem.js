@@ -220,6 +220,17 @@ export class SkeletonSystem {
   _revealNextSpawn() {
     const job = this._spawnQueue.shift();
     if (!job) return;
+    // Spawns only occur more than SPAWN_PLAYER_DIST (30 m) from the player: a
+    // queued mob whose spot is currently too close rotates to the back of the
+    // queue and waits until the player moves away — nothing materializes
+    // right next to you.
+    const p = this.state.player;
+    const ddx = job.x - p.x;
+    const ddz = job.z - p.z;
+    if (ddx * ddx + ddz * ddz < ENEMY.SPAWN_PLAYER_DIST * ENEMY.SPAWN_PLAYER_DIST) {
+      this._spawnQueue.push(job);
+      return;
+    }
     const { attackMult, hpMult } = job;
     const scaleHp = (skel) => {
       skel.hp = Math.ceil(skel.hp * hpMult);
@@ -445,6 +456,14 @@ export class SkeletonSystem {
       const dx = player.x - s.x;
       const dz = player.z - s.z;
       const dist = Math.hypot(dx, dz);
+      // Far-frozen bodies: mobs > FROZEN_DIST (40 m) from the player are
+      // IMMOBILE — idle in place, no AI, no tracking, no attacks. This is
+      // what makes the 100-body cap affordable (distant mobs cost almost
+      // nothing per frame).
+      if (s.type !== 'BOSS' && dist > ENEMY.FROZEN_DIST) {
+        skel.update(dt, time);
+        continue;
+      }
       if (s.type === 'BOSS') {
         s.skel.update(dt, time, player, collisionBoxes, resolveCircleCollisions);
         s.x = s.skel.group.position.x;

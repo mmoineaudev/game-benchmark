@@ -393,6 +393,7 @@ console.log('== Fluorescent rats ==');
 
 console.log('== Fireball materials are shared singletons (no switch lag) ==');
 {
+  const scene = makeScene();
   const a = new OrbShooter(scene);
   a.init();
   const b = new OrbShooter(scene);

@@ -391,5 +391,17 @@ console.log('== Fluorescent rats ==');
   ok(scene.children.length === 0, 'rat dispose cleans scene');
 }
 
+console.log('== Fireball materials are shared singletons (no switch lag) ==');
+{
+  const a = new OrbShooter(scene);
+  a.init();
+  const b = new OrbShooter(scene);
+  b.init();
+  ok(a._fireMat === b._fireMat && a._fireGlowMat === b._fireGlowMat
+    && a._boomFireMat === b._boomFireMat,
+    'fireball materials keep the same identity across levels (instantiated like the weapon)');
+  a.dispose(); b.dispose();
+}
+
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
 process.exit(failures === 0 ? 0 : 1);

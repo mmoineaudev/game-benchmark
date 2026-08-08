@@ -14,6 +14,46 @@ import { circleHitsBox } from '../core/Collision.js';
 // The sequence stays open for SEQUENCE_WINDOW after the last step; the first
 // step of a new sequence costs an orb (Game charges it via the startingNew
 // flag), steps 2-3 of an open sequence are free.
+// Fireball buff materials + glow texture: module-level singletons, built ONCE
+// (the same way the weapon's materials are) and reused by EVERY level's
+// OrbShooter. Because the material objects never change identity, their GPU
+// programs compile once at the first level's pre-warm and stay compiled across
+// every level change — switching to the fireball buff and spamming it never
+// hitches (user ruling).
+let FIREBALL_SHARED = null;
+function getFireballShared() {
+  if (FIREBALL_SHARED) return FIREBALL_SHARED;
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  grad.addColorStop(0, 'rgba(255,200,120,1)');
+  grad.addColorStop(0.4, 'rgba(255,140,60,0.5)');
+  grad.addColorStop(1, 'rgba(255,120,40,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+  const tex = new THREE.CanvasTexture(canvas);
+  FIREBALL_SHARED = {
+    tex,
+    fireMat: new THREE.MeshStandardMaterial({
+      color: 0xff8830, emissive: 0xff5522, emissiveIntensity: 2.2,
+      roughness: 0.2, metalness: 0.1,
+    }),
+    fireGlowMat: new THREE.SpriteMaterial({
+      map: tex, color: 0xff8844,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+      transparent: true, opacity: 0.75,
+    }),
+    boomFireMat: new THREE.MeshBasicMaterial({
+      color: 0xff8830, transparent: true, opacity: 0.55,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }),
+  };
+  return FIREBALL_SHARED;
+}
+
 export class OrbShooter {
   constructor(scene) {
     this.scene = scene;
@@ -81,19 +121,14 @@ export class OrbShooter {
     // Perf cuts: 10 -> 6 slots (sustained 2.8/s x ~2s life), no shot-trace
     // smear sprite, emissive 4.0 -> 2.2 and smaller glow — the buff was the
     // laggiest one (3 additive draw calls per shot + bloom blowout on spam).
+    // MATERIALS ARE SHARED SINGLETONS (getFireballShared) — built once like the
+    // weapon, reused every level, never disposed: their GPU programs stay
+    // compiled, so the buff never hitches when it activates or fires.
+    const fb = getFireballShared();
     const fireGeo = new THREE.SphereGeometry(0.24, 10, 8);
-    const fireMat = new THREE.MeshStandardMaterial({
-      color: 0xff8830, emissive: 0xff5522, emissiveIntensity: 2.2,
-      roughness: 0.2, metalness: 0.1,
-    });
-    const fireGlowMat = new THREE.SpriteMaterial({
-      map: this._tex, color: 0xff8844,
-      blending: THREE.AdditiveBlending, depthWrite: false,
-      transparent: true, opacity: 0.75,
-    });
     for (let i = 0; i < 6; i++) {
-      const mesh = new THREE.Mesh(fireGeo, fireMat);
-      const glow = new THREE.Sprite(fireGlowMat);
+      const mesh = new THREE.Mesh(fireGeo, fb.fireMat);
+      const glow = new THREE.Sprite(fb.fireGlowMat);
       glow.scale.set(1.5, 1.5, 1);
       mesh.visible = false;
       glow.visible = false;
@@ -105,8 +140,8 @@ export class OrbShooter {
         isFireballSlot: true,
       });
     }
-    this._fireMat = fireMat;
-    this._fireGlowMat = fireGlowMat;
+    this._fireMat = fb.fireMat;
+    this._fireGlowMat = fb.fireGlowMat;
 
     // Pooled explosion rings (additive) — no per-event allocation
     this._boomGeo = new THREE.TorusGeometry(0.5, 0.06, 6, 20);
@@ -123,11 +158,8 @@ export class OrbShooter {
       this._booms.push({ mesh: m, life: 0, active: false });
     }
 
-    // Fiery rings for fireball explosions
-    this._boomFireMat = new THREE.MeshBasicMaterial({
-      color: 0xff8830, transparent: true, opacity: 0.55,
-      blending: THREE.AdditiveBlending, depthWrite: false,
-    });
+    // Fiery rings for fireball explosions (shared singleton material)
+    this._boomFireMat = fb.boomFireMat;
     this._boomFires = [];
     for (let i = 0; i < 6; i++) {
       const m = new THREE.Mesh(this._boomGeo, this._boomFireMat);
@@ -387,8 +419,12 @@ export class OrbShooter {
   dispose() {
     for (const p of this.projectiles) {
       p.mesh.geometry.dispose();
-      p.mesh.material.dispose();
-      p.glow.material.dispose();
+      // Fireball materials are SHARED module singletons — never disposed here
+      // (they must stay compiled across level changes).
+      if (!p.fireball) {
+        p.mesh.material.dispose();
+        p.glow.material.dispose();
+      }
       if (p.smear) p.smear.material.dispose();
       this.scene.remove(p.mesh);
       this.scene.remove(p.glow);
@@ -398,7 +434,7 @@ export class OrbShooter {
     if (this._boomGeo) {
       this._boomGeo.dispose();
       this._boomMat.dispose();
-      this._boomFireMat.dispose();
+      // this._boomFireMat is shared — not disposed.
       for (const b of this._booms) this.scene.remove(b.mesh);
       for (const b of this._boomFires) this.scene.remove(b.mesh);
     }

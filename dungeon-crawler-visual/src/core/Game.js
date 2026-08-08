@@ -1621,7 +1621,9 @@ export class Game {
     if (this._goNgPlusBtn) {
       const ng = (this.state.ngPlus || 0) + 1;
       // NG+ effects are doubled: +200% enemy HP per cycle (real multiplier).
-      this._goNgPlusBtn.textContent = `New Game+ [Y] — Level ${ngLevel} (keep ${this.state.collectedOrbs} Souls · mobs +${200 * ng}% HP)`;
+      // The soul toll is 75% — the button shows exactly what you'd keep.
+      const kept = Math.floor(this.state.collectedOrbs * 0.25);
+      this._goNgPlusBtn.textContent = `New Game+ [Y] — Level ${ngLevel} (keep ${kept} of ${this.state.collectedOrbs} Souls · mobs +${200 * ng}% HP)`;
     }
     if (this._goRestartBtn) this._goRestartBtn.onclick = () => this._startNewRun(false);
     if (this._goNgPlusBtn) this._goNgPlusBtn.onclick = () => this._startNewRun(true);
@@ -1666,11 +1668,12 @@ export class Game {
     this._clearBuffEffects(); // no lingering buff side effects across runs
     const nextState = new GameState({
       level: newGamePlus ? Math.max(1, Math.floor(this.state.level / 2)) : 1,
-      collectedOrbs: newGamePlus ? Math.floor(this.state.collectedOrbs * 0.9) : 0,
+      // NG+ toll raised to 75% (user ruling): you keep a quarter of your souls.
+      collectedOrbs: newGamePlus ? Math.floor(this.state.collectedOrbs * 0.25) : 0,
       ngPlus: newGamePlus ? (this.state.ngPlus || 0) + 1 : 0,
       bossKills: newGamePlus ? (this.state.bossKills || 0) : 0,
-      // NG+ takes a flat 10% toll on souls but NEVER resets the ladder: the
-      // weapon tier is kept (no downgrade to Dagger on NG+).
+      // NG+ NEVER resets the ladder: the weapon tier is kept (no downgrade to
+      // Dagger on NG+).
       weaponTier: newGamePlus ? (this.state.weaponTier || 0) : 0,
     });
     const msg = newGamePlus

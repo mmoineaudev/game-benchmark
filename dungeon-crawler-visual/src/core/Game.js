@@ -1,11 +1,12 @@
 import * as THREE from 'three';
-import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON, SWORD, PROPS, HIT_STOP, LIGHTING, DROP, BUFF, EVOLUTION, weaponTier, excessOrbs, orbDamageMultiplier, enemyHpMultiplier } from './Constants.js';
+import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON, SWORD, PROPS, HIT_STOP, LIGHTING, DROP, BUFF, EVOLUTION, BIOMES, weaponTier, excessOrbs, orbDamageMultiplier, enemyHpMultiplier } from './Constants.js';
 import { GameState } from './GameState.js';
 import { Leaderboard } from './Leaderboard.js';
 import { EventBus } from './EventBus.js';
 import { DungeonGenerator } from '../world/DungeonGenerator.js';
 import { WorldBuilder } from '../world/WorldBuilder.js';
 import { BiomeSystem } from '../world/BiomeSystem.js';
+import { GhostBoss } from '../entities/enemies/GhostBoss.js';
 import { PropSystem } from '../world/PropSystem.js';
 import { LightingSystem } from '../systems/LightingSystem.js';
 import { InputSystem } from '../systems/InputSystem.js';
@@ -52,6 +53,13 @@ export class Game {
     this._slotEffectEl = document.getElementById('slot-effect');
     this._slotIconEl = document.querySelector('#weapon-slot .slot');
     this._slotTier = -1; // weapon-slot cache (icon + text, updates on tier change)
+    // Title showcase scene (spectral room + portal + orbs + boss behind the
+    // start menu). Torn down by the first run's _disposeScene.
+    this._titleSceneActive = false;
+    this._titleRaf = 0;
+    this._titleOrbs = [];
+    this._titlePortal = null;
+    this._titleBoss = null;
     this._lastBiomePal = null; // cache biome border color (HUD writes once per level)
     this._exitEl = document.getElementById('exit-prompt');
     this._messagesEl = document.getElementById('messages');
@@ -136,18 +144,15 @@ export class Game {
     this._initPostProcessing();
     this._initInput();
     this._bindEventToasts();
-    // Startup: a "Load last save?" menu appears when a death-save exists;
-    // otherwise the descent begins immediately. A corrupt local save is
-    // dropped and the file-backed server copy (if any) pulled instead — the
-    // save persists across browser storage wipes / origin switches between
-    // server runs.
+    // Startup: a corrupt local save is dropped and the file-backed server copy
+    // (if any) pulled instead. The TITLE SCREEN always shows first — a living
+    // spectral showcase + menu — whether or not a save exists, so the game
+    // sells itself before the player descends.
     if (this._hasSave() && !this._readSave()) this._clearSave();
     if (!this._hasSave()) await this._pullRemoteSave();
-    if (this._hasSave() && this._readSave()) {
-      this._showStartMenu();
-      return;
-    }
-    this._beginRun(null);
+    this._initTitleScene();
+    this._showStartMenu();
+    this._animateTitleScene();
   }
 
   // -------------------------------------------------------------------------
@@ -261,8 +266,10 @@ export class Game {
   // First run of the session: a fresh descent, or a loaded save (restarts the
   // saved level with all meta-progression intact).
   _beginRun(savedState = null) {
+    this._stopTitleScene();
     this._regenClock = 0;
     this._regenTickAcc = 0;
+    if (this.sword && this.sword.group) this.sword.group.visible = true; // back in view
     if (savedState) {
       this.state = savedState;
       this._maxHealth = savedState.maxHealth;
@@ -273,6 +280,136 @@ export class Game {
     } else {
       this._regenerateDungeon({ newRun: true, startMessage: 'A new descent begins' });
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Title showcase: a living spectral-court scene behind the start menu —
+  // golden exit portal, hovering soul orbs and an idling spectral boss — so
+  // the game sells itself before the player descends. Torn down by the first
+  // run's _disposeScene (every geometry/material is disposed there).
+  _initTitleScene() {
+    const pal = BIOMES.SPECTRAL_COURT;
+    const scene = this.scene;
+    scene.background = new THREE.Color(pal.fog);
+    scene.fog = new THREE.FogExp2(pal.fog, pal.fogDensity);
+    scene.add(new THREE.AmbientLight(pal.ambient, pal.ambientIntensity));
+
+    // Room shell (open on the camera side)
+    const wallMat = new THREE.MeshStandardMaterial({ color: pal.wall, roughness: 0.9 });
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(26, 14), wallMat);
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.set(0, 0, -6);
+    scene.add(floor);
+    const back = new THREE.Mesh(new THREE.PlaneGeometry(26, 10), wallMat);
+    back.position.set(0, 5, -19);
+    scene.add(back);
+    for (const sx of [-1, 1]) {
+      const side = new THREE.Mesh(new THREE.PlaneGeometry(14, 10), wallMat);
+      side.rotation.y = Math.PI / 2;
+      side.position.set(sx * 13, 5, -6);
+      scene.add(side);
+    }
+    // Pillars with cold spectral flames
+    for (const px of [-7, 7]) {
+      const pillar = new THREE.Mesh(new THREE.BoxGeometry(1, 9, 1), wallMat);
+      pillar.position.set(px, 4.5, -14);
+      scene.add(pillar);
+      const flame = new THREE.PointLight(0x66e0ff, 2.4, 20, 1.4);
+      flame.position.set(px, 8, -14);
+      scene.add(flame);
+    }
+
+    // Golden exit portal (same build as the in-game portal)
+    const portal = new THREE.Group();
+    const portalMat = new THREE.MeshStandardMaterial({
+      color: 0xffcc44, emissive: 0xffaa22, emissiveIntensity: 1.6, roughness: 0.3, metalness: 0.7,
+    });
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(1.5, 0.14, 10, 24), portalMat);
+    ring.position.y = 1.7;
+    const disc = new THREE.Mesh(
+      new THREE.CircleGeometry(1.4, 24),
+      new THREE.MeshBasicMaterial({
+        color: 0xffe6a0, transparent: true, opacity: 0.4, side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      }),
+    );
+    disc.position.y = 1.7;
+    portal.add(ring, disc);
+    portal.position.set(0, 0, -17);
+    scene.add(portal);
+    this._titlePortal = { group: portal, ring, disc };
+
+    // Hovering soul orbs (bob + spin — pure feedback)
+    this._titleOrbs = [];
+    const orbGeo = new THREE.SphereGeometry(0.22, 10, 8);
+    const orbMat = new THREE.MeshStandardMaterial({
+      color: 0x44aaff, emissive: 0x44aaff, emissiveIntensity: 3,
+      roughness: 0.15, metalness: 0.4,
+    });
+    const glowMat = new THREE.SpriteMaterial({
+      map: generateGlowTexture(), blending: THREE.AdditiveBlending,
+      depthWrite: false, transparent: true, opacity: 0.85,
+    });
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      const r = 4.2 + (i % 3) * 1.3;
+      const orb = new THREE.Mesh(orbGeo, orbMat);
+      const x = Math.cos(a) * r;
+      const z = -7 + Math.sin(a) * 3.4;
+      const y = 1.1 + (i % 4) * 0.6;
+      orb.position.set(x, y, z);
+      const glow = new THREE.Sprite(glowMat);
+      glow.scale.setScalar(1.6);
+      glow.position.copy(orb.position);
+      scene.add(orb, glow);
+      this._titleOrbs.push({ orb, glow, y0: y, phase: i * 1.7 });
+    }
+
+    // Spectral boss idling in front of the portal
+    this._titleBoss = new GhostBoss(scene, 4, 'WRAITH');
+    this._titleBoss.group.position.set(0, 0, -13);
+    this._titleBoss.group.scale.setScalar(1.1);
+
+    // Frame the room (the first-person sword stays hidden until a run starts)
+    if (this.sword && this.sword.group) this.sword.group.visible = false;
+    this.camera.position.set(0, 3.6, 8.5);
+    this.camera.lookAt(0, 2.4, -13);
+    this._titleSceneActive = true; // arm the title animation loop
+  }
+
+  // Lightweight title loop: bobs the orbs, spins the portal ring, drifts the
+  // boss and sways the camera — a living showcase until the run starts.
+  _animateTitleScene() {
+    if (!this._titleSceneActive) return;
+    this._titleRaf = requestAnimationFrame(() => this._animateTitleScene());
+    const t = performance.now() * 0.001;
+    for (const o of this._titleOrbs) {
+      const y = o.y0 + Math.sin(t * 1.4 + o.phase) * 0.25;
+      o.orb.position.y = y;
+      o.glow.position.y = y;
+      o.orb.rotation.y += 0.02;
+      o.orb.rotation.x += 0.008;
+    }
+    if (this._titlePortal) {
+      this._titlePortal.ring.rotation.z += 0.008;
+      const s = 1 + Math.sin(t * 2.2) * 0.05;
+      this._titlePortal.disc.scale.set(s, s, 1);
+      this._titlePortal.disc.material.opacity = 0.3 + Math.sin(t * 2.2) * 0.12;
+    }
+    if (this._titleBoss) {
+      this._titleBoss.group.position.y = Math.sin(t * 0.8) * 0.12;
+      this._titleBoss.group.rotation.y = Math.sin(t * 0.25) * 0.35;
+    }
+    // Slow lateral camera sway around the room
+    this.camera.position.x = Math.sin(t * 0.12) * 1.6;
+    this.camera.lookAt(0, 2.4, -13);
+    this.post.render();
+  }
+
+  _stopTitleScene() {
+    this._titleSceneActive = false;
+    if (this._titleRaf) cancelAnimationFrame(this._titleRaf);
+    this._titleRaf = 0;
   }
 
   _showMessage(text, className) {

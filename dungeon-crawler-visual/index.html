@@ -293,28 +293,38 @@
       #go-ngplus { border-color: #7a6a3c !important; }
       #go-save { border-color: #5a6a3c !important; }
 
-      /* ---- Startup menu: "Load last save?" (shown only when a save exists) ---- */
+      /* ---- Startup menu: full title screen over the spectral showcase scene ---- */
       #start-menu {
         position: fixed; inset: 0; z-index: 60;
         display: flex; align-items: center; justify-content: center;
-        background: radial-gradient(ellipse at center, rgba(12,9,6,0.93), rgba(4,3,2,0.98));
+        background: radial-gradient(ellipse at center, rgba(5,3,2,0.30) 0%, rgba(6,4,8,0.45) 48%, rgba(3,2,5,0.88) 100%);
+        pointer-events: none;
       }
       #start-menu.hidden { display: none; }
+      #start-menu > div { pointer-events: auto; text-align: center; }
       #start-menu h2 {
-        color: var(--ds-gold); font-family: var(--ds-font); font-size: 40px;
-        letter-spacing: 3px; margin: 0 0 6px; text-shadow: 0 0 30px rgba(201,176,120,0.35);
+        color: var(--ds-gold); font-family: var(--ds-font); font-size: 88px;
+        letter-spacing: 5px; margin: 0 0 10px; line-height: 1.05;
+        text-shadow: 0 0 16px rgba(201,176,120,0.55), 0 0 64px rgba(201,176,120,0.35), 0 5px 14px #000;
       }
-      .sm-sub { color: #8a7f66; font-size: 14px; letter-spacing: 3px; margin-bottom: 30px; font-family: var(--ds-font-body); }
-      #start-actions { display: flex; gap: 14px; justify-content: center; }
+      .sm-sub {
+        color: #c4b892; font-size: 24px; letter-spacing: 5px; margin-bottom: 40px;
+        font-family: var(--ds-font-body); text-shadow: 0 2px 8px #000;
+      }
+      #start-actions { display: flex; gap: 20px; justify-content: center; }
       #start-actions button {
-        background: linear-gradient(180deg, #241d12, #150f08);
+        background: linear-gradient(180deg, rgba(36,29,18,0.94), rgba(21,15,8,0.94));
         color: #d9cfa8; border: 1px solid var(--ds-gold-dim);
-        padding: 10px 22px; font-size: 13px; cursor: pointer;
-        font-family: var(--ds-font); letter-spacing: 1px;
+        padding: 15px 32px; font-size: 17px; cursor: pointer;
+        font-family: var(--ds-font); letter-spacing: 2px; text-shadow: 0 1px 3px #000;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.55);
       }
-      #start-actions button:hover { background: linear-gradient(180deg, #33291a, #1d150b); border-color: var(--ds-gold); color: #fff; }
+      #start-actions button:hover { background: linear-gradient(180deg, rgba(51,41,26,0.96), rgba(29,21,11,0.96)); border-color: var(--ds-gold); color: #fff; }
       #start-load { border-color: #7a6a3c !important; }
-      .sm-hint { margin-top: 26px; color: #5c5340; font-size: 12px; letter-spacing: 2px; font-family: var(--ds-font-body); }
+      .sm-hint {
+        margin-top: 30px; color: #8a8068; font-size: 14px; letter-spacing: 2px;
+        font-family: var(--ds-font-body); text-shadow: 0 1px 4px #000;
+      }
 
       #prompt {
         position: absolute; bottom: 22%; left: 50%; transform: translateX(-50%);
@@ -369,7 +379,7 @@
           <button id="start-load" class="hidden">Load last save [L]</button>
           <button id="start-new">New Game [N]</button>
         </div>
-        <div class="sm-hint">Runs are saved at death — continue anytime</div>
+        <div class="sm-hint">A living showcase — the Spectral Court awaits below. Descend when ready.</div>
       </div>
     </div>
     <div id="damage-flash"></div>

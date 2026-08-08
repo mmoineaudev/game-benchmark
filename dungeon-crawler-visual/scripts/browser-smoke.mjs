@@ -40,8 +40,24 @@ const evalExpr = async (expr, awaitPromise = false) =>
 await send('Page.enable');
 await send('Runtime.enable');
 await send('Page.navigate', { url: GAME_URL });
-console.log('navigated, waiting for level build…');
-await new Promise((r) => setTimeout(r, 12000));
+console.log('navigated, waiting for the title screen…');
+await new Promise((r) => setTimeout(r, 6000));
+// The title screen always shows first (spectral showcase + menu): pick
+// "New Game" to start level 1, then wait for the level build.
+const menu = await evalExpr(`(() => {
+  if (!window.game) return { game: false };
+  return {
+    game: true,
+    menuVisible: !document.getElementById('start-menu')?.classList.contains('hidden'),
+    title: document.getElementById('start-menu')?.querySelector('h2')?.textContent,
+  };
+})()`);
+assert(menu.game, 'window.game exposed');
+assert(menu.menuVisible, 'title screen visible at startup');
+assert(menu.title && menu.title.includes('Deep Souls 4'), `title = "${menu.title}"`);
+await evalExpr(`window.game._startFromMenu('new'); true`);
+console.log('new game chosen, waiting for level build…');
+await new Promise((r) => setTimeout(r, 8000));
 
 const gl = await evalExpr(`(() => {
   const c = document.querySelector('canvas');

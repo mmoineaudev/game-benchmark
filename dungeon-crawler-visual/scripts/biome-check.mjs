@@ -182,7 +182,9 @@ function lightsFor(biome, data) {
   if (biome === 'HAUNTED_CRYPT') base += Math.round(CRYPT * 1.5);       // 1-2 wisps per CRYPT
   if (biome === 'FLOODED_RUINS') base += allRooms;                      // 1 wisp per room
   if (biome === 'FUNGAL_CAVERN' || biome === 'POISON_SWAMP') {
-    base += MUSHROOM_GROVE * 3 + (allRooms - MUSHROOM_GROVE);            // mushrooms
+    // Mushrooms: weight-5 pool -> ~6-7 clusters per MUSHROOM_GROVE (12 props),
+    // ~2 per other room; each cluster carries one point light.
+    base += MUSHROOM_GROVE * 6.5 + (allRooms - MUSHROOM_GROVE) * 2;            // mushrooms
   }
   const poolBiomes = ['VOLCANIC_DEPTHS', 'POISON_SWAMP', 'EMBER_FORGE'];
   const poolsAvg = poolBiomes.includes(biome) ? allRooms * 1.5 : 0;      // 1-2 pools/room

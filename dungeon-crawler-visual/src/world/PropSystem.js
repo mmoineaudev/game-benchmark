@@ -233,7 +233,7 @@ export class PropSystem {
       add('RUBBLE', 1);
     }
     if (biome === 'FROZEN_HALLS') add('ICE_CRYSTAL', 2);
-    if (biome === 'FUNGAL_CAVERN') add('GLOWING_MUSHROOM', 3);
+    if (biome === 'FUNGAL_CAVERN') add('GLOWING_MUSHROOM', 5); // more present — the caverns' light sources
     if (biome === 'VOLCANIC_DEPTHS') add('LAVA_POOL', 2);
     if (room.type === 'LIBRARY' || room.type === 'CRYPT' || room.type === 'HALL') {
       add('CANDLE', room.type === 'LIBRARY' ? 4 : 2);
@@ -249,7 +249,7 @@ export class PropSystem {
       add('ACID_POOL', 2);       // hazard pool (POOLS.ACID)
       add('STALACTITE', 2);      // toxic-green tint
       add('RUBBLE', 1);
-      add('GLOWING_MUSHROOM', 3); // toxic recolors (cap 0xccff44)
+      add('GLOWING_MUSHROOM', 4); // toxic recolors (cap 0xccff44)
     }
     if (biome === 'GOLDEN_TEMPLE') {
       add('RUBBLE', 1);
@@ -589,9 +589,9 @@ export class PropSystem {
     const toxic = this.biome === 'POISON_SWAMP';
     const capColor = toxic ? 0xccff44 : 0x44ff88;
     const capMat = new THREE.MeshStandardMaterial({
-      color: capColor, emissive: capColor, emissiveIntensity: 2.0, roughness: 0.6,
+      color: capColor, emissive: capColor, emissiveIntensity: 2.6, roughness: 0.6,
     });
-    const cluster = Math.floor(Math.random() * 3) + 3; // 3-5
+    const cluster = Math.floor(Math.random() * 3) + 4; // 4-6
     const meshes = [];
     for (let i = 0; i < cluster; i++) {
       const h = 0.2 + Math.random() * 0.15;
@@ -603,7 +603,14 @@ export class PropSystem {
       this._add(cap);
       meshes.push(stem, cap);
     }
-    // No point light (perf plan §4): emissive cap material already glows.
+    // One point light per cluster: the fungal caverns are torchless
+    // (vaultOnly) — the glow fungi ARE the light sources here.
+    const light = new THREE.PointLight(
+      LIGHT_SOURCES.MUSHROOM.color, LIGHT_SOURCES.MUSHROOM.intensity,
+      LIGHT_SOURCES.MUSHROOM.distance, LIGHT_SOURCES.MUSHROOM.decay,
+    );
+    light.position.set(x, 0.7, z);
+    this._add(light);
     this._decoratives.push({ objs: meshes });
     this._mats.push(stemMat, capMat);
     return true;

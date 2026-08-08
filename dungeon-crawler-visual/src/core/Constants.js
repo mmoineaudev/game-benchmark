@@ -280,7 +280,7 @@ export const ENEMY = {
 };
 
 export const ARMORED = {
-  HP: 5, SPEED: 1.8, DMG: 2, RANGE: 1.7,
+  HP: 5, SPEED: 1.8, DMG: 2, RANGE: 0.85, // reach halved (÷2 from 1.7)
   WINDUP: 0.5, SWING: 0.3, RECOVER: 0.5, COOLDOWN: 1.6,
   DROP: 2, SCORE: 2,
   BONE: 0x9a9282, PLATE: 0x5a5a66, SHIELD: 0x4a4a55, EYE: 0xff5533,
@@ -544,7 +544,7 @@ export const LIGHT_SOURCES = {
   CANDLE: { color: 0xffaa55, intensity: 1.4, distance: 9, decay: 1.2 },       // 11 -20%
   CHANDELIER: { color: 0xff9944, intensity: 1.4, distance: 11, decay: 1.2 },  // 14 -20%
   LAVA: { color: 0xff5522, intensity: 4.5, distance: 16, decay: 1.2 },        // 20 -20%
-  MUSHROOM: { color: 0x44ff88, intensity: 2.5, distance: 10, decay: 1.2 },    // 13 -20%
+  MUSHROOM: { color: 0x44ff88, intensity: 3.2, distance: 12, decay: 1.2 }, // fungal caverns: brighter + wider
   WISP: { color: 0x88ffcc, intensity: 2.2, distance: 11, decay: 1.2 },        // 14 -20%
   ICE: { color: 0x66ccff, intensity: 3.0, distance: 11, decay: 1.2 },         // 14 -20%
   // --- Biome expansion (BIOME_EXPANSION_PLAN §6.1) ---

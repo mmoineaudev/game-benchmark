@@ -75,7 +75,7 @@ All weights are relative; total pool weight = 144. A room's type is picked with 
 | ARMORY | 10 | 3 × 3 | Weapon racks (4), breakable barrels (2–3) | 2 candles + 1 torch | medium (8 props) | Armored +30%, Archer +20% | Stone, Volcanic |
 | LIBRARY | 10 | 3 × 3 | Bookshelves (6–8), candle clusters | 6 candles | very high (12 props) | Skeleton only (others ×0) | Stone, Haunted Crypt |
 | CRYPT | 10 | 2–3 × 2–3 | Sarcophagi (2–3), skull piles, webs | 2 will-o'-wisps + 4 candles | high (10 props) | Wraith +40%, Skeleton +20% | Haunted Crypt |
-| MUSHROOM_GROVE | 8 | 2–3 × 2–3 | Glowing mushroom clusters (3), roots | 3 mushroom lights | very high (12 props) | Rat +50% | Fungal Cavern |
+| MUSHROOM_GROVE | 8 | 2–3 × 2–3 | Glowing mushroom clusters (4–6), roots | ~6 mushroom lights | very high (12 props) | Rat +50% | Fungal Cavern |
 | ARENA | 6 | 4 × 4 | Pillars (4), banners, blood stains | 4 torches + 1 chandelier | low (6 props) | Elite guaranteed (first spawn forced to an elite-eligible type — Armored/Archer/Brute/Wraith — with elite=true); count +2 | All (combat setpiece) |
 
 Room-type weight modifiers per biome (multiplier applied after base weight, before normalization):
@@ -118,7 +118,7 @@ Stone keeps its existing procedural textures. Other biomes get **tinted variants
 |---|---|
 | STONE | Torches (existing), braziers (HALL), crystals (CHAMBER + VAULT), god rays (VAULT), start/exit markers |
 | HAUNTED_CRYPT | Cold torches (color 0x88ddff), candles, will-o'-wisps (1–2 per CRYPT), exit marker |
-| FUNGAL_CAVERN | Glowing mushrooms (3 per MUSHROOM_GROVE, 1 per other room), 1 torch per VAULT only |
+| FUNGAL_CAVERN | Glowing mushrooms (~6 per MUSHROOM_GROVE, ~2 per other room; each cluster = 1 green point light 3.2/dist 12), 1 torch per VAULT only |
 | VOLCANIC_DEPTHS | Lava pools (1–2 per room), torches (0xff5522 tint), exit marker |
 | FROZEN_HALLS | Ice crystal lamps (2 per room), 1 chandelier per HALL/VAULT, exit marker |
 
@@ -159,7 +159,7 @@ Unchanged structure (180 s/level, level timer, run timer, leaderboard by level/t
 |---|---|---|---|---|---|---|---|---|
 | Skeleton | 2 | 2.6 | melee | 1 | 1.6 | 0.35 / 0.25 / 0.4 / 1.2 | sword raise | No (existing, unchanged) |
 | Magician | 2 | 2.6 | ranged orb | 1 | 9 (cast) | 0.35 / 0.25 / 0.4 / 1.2 (≈2.2 cycle) | staff glow charge | No (existing, unchanged) |
-| Armored Skeleton | 5 | 1.8 | melee | 2 | 1.7 | 0.5 / 0.3 / 0.5 / 1.6 | shield raise | Yes |
+| Armored Skeleton | 5 | 1.8 | melee | 2 | 0.85 | 0.5 / 0.3 / 0.5 / 1.6 | shield raise | Yes |
 | Archer Skeleton | 2 | 2.4 | ranged arrow | 1 | 10 (pref. 8) | 0.5 / 0.1 / 0.4 / 1.8 | bow draw | Yes |
 | Rat Swarm | 1 | 4.2 | contact | 1 | 0.9 | 0.0 / 0.0 / 0.0 / 0.8 | none (instant) | **No** |
 | Brute | 8 | 1.2 | melee slam | 3 | 2.4 | 1.2 / 0.3 / 1.2 / 2.5 | club raise + flash | Yes |
@@ -258,7 +258,7 @@ Shared rules: props spawn only inside rooms (never corridors), ≥ 1 cell from a
 | 13 | Sarcophagus | **Interactive** | AABB 1.0×1.6 | none | CRYPT | crypt | 2–3 per CRYPT | Box 1.0×0.8×1.6, 0x6a6a5a + lid box 1.1×0.15×1.7. **On first proximity (< 2.5 u)**: lid slides open (0.6 s), emits smoke, and a 30% chance to spawn a Wraith at the sarcophagus (level-scaled); guaranteed 1 orb drop inside. One-time. |
 | 14 | Blood stain | Decorative (floor decal) | none | none | ARENA, CRYPT | crypt, volcanic | 2–3 per room | Plane 0.8–1.6 random scale, 0x3a0a0a, opacity 0.5, CanvasTexture splatter, slightly darker than floor, y=0.015. |
 | 15 | Ice crystal | **Light prop** | none | PointLight (§8) | any room | frozen | 2 clusters per room, 3–5 crystals | Cluster: Cone 0.1–0.2 × 0.5–1.2, 0x9ad8ff translucent (opacity 0.8), emissive 0x66ccff 1.4. Light 0x66ccff, 1.4, dist 7, decay 1.5, no shadow. |
-| 16 | Glowing mushroom | **Light prop** | none | PointLight (§8) | MUSHROOM_GROVE, any fungal room | fungal | 3 clusters per grove, 1 per other room | Cluster: stem Cylinder 0.05×0.25 (0x8a7a5a), cap Cone 0.18×0.1 (0x44ff88 emissive 2.0), 3–5 per cluster. Light 0x44ff88, 1.2, dist 6, decay 1.7, no shadow. Cap pulses ±10%. |
+| 16 | Glowing mushroom | **Light prop** | none | PointLight (§8) | MUSHROOM_GROVE, any fungal room | fungal | ~6 clusters per grove, ~2 per other room | Cluster: stem Cylinder 0.05×0.25 (0x8a7a5a), cap Cone 0.18×0.1 (0x44ff88 emissive 2.6), 4–6 per cluster. Light 0x44ff88, 3.2, dist 12, decay 1.2, no shadow. Cap pulses ±10%. |
 | 17 | Lava pool | **Hazard + light** | none (visual only) | PointLight (§8) | any volcanic room | volcanic | 1–2 per room, never on exit cell | Plane 1.5–2.5 random ellipse scale, emissive 0xff5522 2.2, top y=0.02, + glow sprite. **Hazard**: standing within 1.2 u of center deals 1 damage per 0.8 s (respects i-frames). Light 0xff5522, 2.2, dist 9, decay 1.5, no shadow, flickers ±10%. |
 
 (17 entries; the catalog exceeds the required 10.)

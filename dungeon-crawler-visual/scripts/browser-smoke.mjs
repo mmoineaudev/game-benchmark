@@ -53,21 +53,21 @@ assert(gl.webgl2, 'WebGL2 context created (renderer up)');
 
 const d = await evalExpr(`(() => {
   const out = {};
-  for (const id of ['orb-count','orb-scale','souls-line','perf-warning','biome-label','timer','hp-fill','combo-pips','weapon-slot','stats-panel','loading']) {
+  for (const id of ['orb-count','orb-scale','perf-warning','biome-label','timer','hp-fill','combo-pips','weapon-slot','stats-panel','loading']) {
     out[id] = !!document.getElementById(id);
   }
   out.biomeText = document.getElementById('biome-label')?.textContent;
-  out.soulsLine = document.getElementById('souls-line')?.textContent;
+  out.soulsLabel = document.querySelector('#vp-souls .lbl')?.textContent;
   out.loadingHidden = document.getElementById('loading')?.classList.contains('hidden');
   out.perfHidden = document.getElementById('perf-warning')?.classList.contains('hidden');
   out.tier = window.game ? window.game._degradedTier : 0;
   return out;
 })()`);
-for (const id of ['orb-count', 'souls-line', 'perf-warning', 'biome-label', 'timer', 'hp-fill', 'combo-pips', 'weapon-slot', 'stats-panel']) {
+for (const id of ['orb-count', 'perf-warning', 'biome-label', 'timer', 'hp-fill', 'combo-pips', 'weapon-slot', 'stats-panel']) {
   assert(d[id], `HUD #${id} present`);
 }
 assert(d.biomeText && d.biomeText.includes('LEVEL 1'), `biome label = "${d.biomeText}"`);
-assert(d.soulsLine === 'Souls 0', `souls line = "${d.soulsLine}" (total-only §7.1)`);
+assert(d.soulsLabel === 'SOULS', `single souls counter label = "${d.soulsLabel}" (souls = orbs)`);
 // Warning visibility must match the degraded tier: hidden at tier 0, shown
 // otherwise (the spike detector may legitimately degrade on slow machines).
 assert(d.perfHidden === (d.tier === 0), `perf warning matches degraded tier (hidden=${d.perfHidden}, tier=${d.tier})`);

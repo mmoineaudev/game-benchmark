@@ -33,7 +33,6 @@ export class Game {
     this._promptEl = document.getElementById('prompt');
     this._orbCountEl = document.getElementById('orb-count');
     this._orbScaleEl = document.getElementById('orb-scale');
-    this._soulsLineEl = document.getElementById('souls-line');
     this._perfWarningEl = document.getElementById('perf-warning');
     // Perf safeguard (degraded mode): spike-aware tiers — bad frames
     // (dt > 50 ms) in a rolling ~3 s window escalate; a clean 10 s window
@@ -51,7 +50,8 @@ export class Game {
       : [];
     this._slotNameEl = document.getElementById('slot-name');
     this._slotEffectEl = document.getElementById('slot-effect');
-    this._slotTier = -1; // weapon-slot text cache (updates only on tier change)
+    this._slotIconEl = document.querySelector('#weapon-slot .slot');
+    this._slotTier = -1; // weapon-slot cache (icon + text, updates on tier change)
     this._lastBiomePal = null; // cache biome border color (HUD writes once per level)
     this._exitEl = document.getElementById('exit-prompt');
     this._messagesEl = document.getElementById('messages');
@@ -684,13 +684,15 @@ export class Game {
     });
   }
 
-  // Weapon evolution: tier derives from lifetime souls (monotonic). On a tier
-  // increase: rebuild the sword form, toast, blade flash, brief hit-stop.
+  // Weapon evolution: tier derives from the souls counter (collectedOrbs —
+  // orbs ARE souls, one notion). The tier LOCKS at the max reached: spending
+  // ammo never downgrades the blade (only-upgrade guard). On a tier increase:
+  // rebuild the sword form, toast, blade flash, brief hit-stop.
   // (WEAPON_EVOLUTION_PLAN §3, §7)
   _checkWeaponEvolution() {
     if (!this.sword) return;
-    const t = weaponTier(this.state.soulsEarned || 0);
-    if (t === (this.state.weaponTier || 0)) return;
+    const t = weaponTier(this.state.collectedOrbs || 0);
+    if (t <= (this.state.weaponTier || 0)) return; // never downgrade
     this.state.weaponTier = t;
     this.sword.setTier(t);
     if (t >= 1) {
@@ -1444,7 +1446,8 @@ export class Game {
     const ngLevel = Math.max(1, Math.floor(this.state.level / 2));
     if (this._goNgPlusBtn) {
       const ng = (this.state.ngPlus || 0) + 1;
-      this._goNgPlusBtn.textContent = `New Game+ [Y] — Level ${ngLevel} (keep ${this.state.collectedOrbs} Souls · mobs +${10 * ng}% HP)`;
+      // NG+ effects are doubled: +200% enemy HP per cycle (real multiplier).
+      this._goNgPlusBtn.textContent = `New Game+ [Y] — Level ${ngLevel} (keep ${this.state.collectedOrbs} Souls · mobs +${200 * ng}% HP)`;
     }
     if (this._goRestartBtn) this._goRestartBtn.onclick = () => this._startNewRun(false);
     if (this._goNgPlusBtn) this._goNgPlusBtn.onclick = () => this._startNewRun(true);
@@ -1492,6 +1495,9 @@ export class Game {
       collectedOrbs: newGamePlus ? Math.floor(this.state.collectedOrbs * 0.9) : 0,
       ngPlus: newGamePlus ? (this.state.ngPlus || 0) + 1 : 0,
       bossKills: newGamePlus ? (this.state.bossKills || 0) : 0,
+      // NG+ takes a flat 10% toll on souls but NEVER resets the ladder: the
+      // weapon tier is kept (no downgrade to Dagger on NG+).
+      weaponTier: newGamePlus ? (this.state.weaponTier || 0) : 0,
     });
     const msg = newGamePlus
       ? `New Game+ ${nextState.ngPlus} — the depths grow stronger`
@@ -1723,7 +1729,6 @@ export class Game {
           collectedOrbs: this.state.collectedOrbs,
           ngPlus: this.state.ngPlus || 0,
           bossKills: this.state.bossKills || 0,
-          soulsEarned: this.state.soulsEarned || 0,
           weaponTier: this.state.weaponTier || 0,
         }));
 
@@ -1841,11 +1846,13 @@ export class Game {
   }
 
   _updateHUD() {
-    // Weapon slot: current tier's weapon name + effect (cached — only writes
-    // when the tier actually changes).
+    // Weapon slot: current tier's icon, name and effect (cached — only writes
+    // when the tier actually changes, so icon + label stay in sync).
     const wtier = this.state.weaponTier || 0;
     if (wtier !== this._slotTier) {
       this._slotTier = wtier;
+      const icon = EVOLUTION.TIER_ICONS[wtier] || 'icon-dagger';
+      if (this._slotIconEl) this._slotIconEl.className = `slot ${icon}`;
       if (this._slotNameEl) this._slotNameEl.textContent = EVOLUTION.TIER_NAMES[wtier] || 'Dagger';
       if (this._slotEffectEl) this._slotEffectEl.textContent = `TIER ${wtier} — ${EVOLUTION.TIER_EFFECTS[wtier] || ''}`;
     }
@@ -1858,12 +1865,8 @@ export class Game {
         this._orbScaleEl.textContent = scale > 1.01 ? `+${pct}% power` : '';
       }
     }
-    // Weapon evolution line: lifetime souls, TOTAL ONLY (user ruling §7.1).
-    // No tier number, no progress, no MAX readout — the blade form + the
-    // evolution toast convey the tier.
-    if (this._soulsLineEl) {
-      this._soulsLineEl.textContent = `Souls ${this.state.soulsEarned || 0}`;
-    }
+    // Single souls counter — the ORBS/SOULS readout is the one notion, no
+    // separate lifetime line (user ruling: souls = orbs).
     if (this.sword) this.sword.setOrbCount(this.state.collectedOrbs);
     if (this._biomeLabelEl) {
       const pal = this.biomes.current?.palette;

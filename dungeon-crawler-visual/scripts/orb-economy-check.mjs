@@ -295,12 +295,12 @@ console.log('== Buff pickup ==');
 console.log('== Orb drop (instant credit + 1s visual) ==');
 {
   const scene = makeScene();
-  const state = { collectedOrbs: 0, totalOrbs: 0, soulsEarned: 0, health: 3 };
+  const state = { collectedOrbs: 0, totalOrbs: 0, health: 3 };
   const orbs = new OrbSystem(scene, {}, state);
   orbs.init();
   orbs.spawnDrop(0, 0, 3); // 3 orbs at once
-  ok(state.collectedOrbs === 3 && state.soulsEarned === 3,
-    `3 orbs credited instantly on drop (collected=${state.collectedOrbs}, souls=${state.soulsEarned})`);
+  ok(state.collectedOrbs === 3,
+    `3 orbs credited instantly on drop (collected=${state.collectedOrbs} — the single souls counter)`);
   ok(orbs.drops.length === 3 && orbs.drops.every((d) => d.kind === 'orb'),
     '3 orb visuals active in the scene');
   // Player is FAR away: the visuals must still vanish after VISUAL_LIFE —
@@ -311,7 +311,7 @@ console.log('== Orb drop (instant credit + 1s visual) ==');
     orbs.update(t, { x: 999, z: 999 });
   }
   ok(orbs.drops.length === 0, `orb visuals expire after ${DROP.VISUAL_LIFE}s (no proximity needed)`);
-  ok(state.collectedOrbs === 3 && state.soulsEarned === 3, 'no double credit from expiry');
+  ok(state.collectedOrbs === 3, 'no double credit from expiry');
   orbs.dispose();
 }
 

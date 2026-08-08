@@ -313,7 +313,10 @@ export class SkeletonSystem {
     const variant = variants[Math.floor(Math.random() * variants.length)];
     const baseHp = 4; // base enemy HP; boss = 22.5x this (15x +50%)
     // The boss scales with the player's wealth: +25% HP per 50 souls held.
-    const boss = new GhostBoss(this.scene, baseHp, variant, state.collectedOrbs);
+    // NG+ doubles its effects on the boss too: base HP x (1 + 2 x ngPlus).
+    const boss = new GhostBoss(
+      this.scene, baseHp * (1 + 2 * (state.ngPlus || 0)), variant, state.collectedOrbs,
+    );
     boss.group.position.set(bx, 0, bz);
     this._ground(boss.group);
     boss.onSummon = () => this._summonMinions(boss, candidates, dungeonData, state);

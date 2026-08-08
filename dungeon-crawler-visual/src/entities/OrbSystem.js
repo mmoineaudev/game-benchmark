@@ -180,8 +180,8 @@ export class OrbSystem {
     }
   }
 
-  // Spawn orb loot at a kill/break position. The souls are credited INSTANTLY
-  // (auto-added to collectedOrbs + soulsEarned); the orb visual stays in the
+  // Spawn orb loot at a kill/break position. The soul is credited INSTANTLY
+  // (collectedOrbs++ — the single souls counter); the orb visual stays in the
   // scene ~DROP.VISUAL_LIFE seconds as feedback, then vanishes. Uses shared
   // geometry/material + a mesh pool — no allocation per drop.
   spawnDrop(x, z, count = 1) {
@@ -196,8 +196,6 @@ export class OrbSystem {
       rec.glow.scale.setScalar(1);
       // Instant credit: orbs are loot, not pickups.
       this.state.collectedOrbs++;
-      // Lifetime souls counter (monotonic — the weapon-evolution tier source).
-      this.state.soulsEarned = (this.state.soulsEarned || 0) + 1;
       this.drops.push({
         rec, kind: 'orb', x: x + ox, z: z + oz, y,
         phase: Math.random() * Math.PI * 2, life: 0,

@@ -389,7 +389,7 @@ export const EVOLUTION = {
   MAX_TOTAL_SCALE: 5.0,   // group-scale safety clamp (orb ladder × EMPOWERED)
   ARC_CHANCE: [0, 0, 0, 0.10, 0.35, 1.0], // arc bolts per landing strike
   ARC_BOLTS: [0, 0, 0, 1, 1, 2],
-  // Weapon slot (HUD): per-tier display name + one-line effect.
+  // Weapon slot (HUD): per-tier display name + one-line effect + icon class.
   TIER_NAMES: ['Dagger', "Knight's Arming Sword", 'Runic Greatsword',
     'Crystal Soulblade', 'Soulfire Greatblade', 'Lightsaber'],
   TIER_EFFECTS: [
@@ -400,6 +400,8 @@ export const EVOLUTION = {
     '+4 dmg · arc bolts (35%)',
     '+5 dmg · electric arcs on every strike',
   ],
+  TIER_ICONS: ['icon-dagger', 'icon-armingsword', 'icon-runic',
+    'icon-crystal', 'icon-soulfire', 'icon-lightsaber'],
   ARC_POOL: 8,
   ARC_SPEED: 24,
   ARC_LIFE: 1.2,
@@ -496,10 +498,11 @@ export function excessOrbs(orbs) {
   return Math.max(0, orbs - 100);
 }
 
-// Enemy HP: +100% per NG+ cycle (ngPlus = 0 on a fresh run), plus +10% bonus
-// HP every 5 levels (ENEMY.HP_LEVEL_INTERVAL). Level 5 -> x1.1, 10 -> x1.2...
+// Enemy HP: NG+ adds +200% HP per cycle (effects DOUBLED — user ruling), plus
+// +10% bonus HP every 5 levels (ENEMY.HP_LEVEL_INTERVAL). NG+1 -> x3, NG+2 ->
+// x5; level 5 -> x1.1, 10 -> x1.2...
 export function enemyHpMultiplier(ngPlus, level = 1) {
-  return (1 + (ngPlus || 0))
+  return (1 + 2 * (ngPlus || 0))
     * (1 + ENEMY.HP_PER_STEP * Math.floor(level / ENEMY.HP_LEVEL_INTERVAL));
 }
 

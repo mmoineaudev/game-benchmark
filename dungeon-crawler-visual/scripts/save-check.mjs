@@ -14,7 +14,7 @@ console.log('== Save/load roundtrip ==');
 {
   const s = new GameState({
     runTime: 234.5, level: 7, collectedOrbs: 42, ngPlus: 2,
-    bossKills: 3, soulsEarned: 187, weaponTier: 4,
+    bossKills: 3, weaponTier: 4,
   });
   s.maxHealth = 6; // permanent hearts from 3 boss kills
   // level-internal noise that must NOT survive a load
@@ -24,11 +24,10 @@ console.log('== Save/load roundtrip ==');
   const back = GameState.fromJSON(json);
 
   eq(back.level, 7, 'level preserved');
-  eq(back.collectedOrbs, 42, 'orbs preserved (no 10% penalty on load)');
+  eq(back.collectedOrbs, 42, 'souls preserved (no 10% penalty on load)');
   eq(back.ngPlus, 2, 'NG+ cycle preserved (no change on load)');
   eq(back.bossKills, 3, 'boss kills preserved');
-  eq(back.soulsEarned, 187, 'souls preserved (sword ladder intact)');
-  eq(back.weaponTier, 4, 'weapon tier preserved');
+  eq(back.weaponTier, 4, 'weapon tier preserved (ladder locks at max)');
   eq(back.runTime, 234.5, 'total run time preserved');
   eq(back.maxHealth, 6, 'permanent hearts preserved');
   eq(back.health, 6, 'loaded level starts at FULL health');
@@ -36,6 +35,7 @@ console.log('== Save/load roundtrip ==');
   eq(back.buffEffect, 0, 'buff does not carry across a save-load');
   eq(back.safeSpawn, 0, 'spawn protection is re-armed by the level loader');
   ok(back.visitedCells.size === 0, 'level-internal state (visited cells) reset');
+  ok(!('soulsEarned' in back), 'no separate soulsEarned notion (souls = orbs, one counter)');
 }
 
 console.log('== Defaults ==');
@@ -51,8 +51,8 @@ console.log('== Run-meta fields are the ONLY persisted fields ==');
 {
   const s = new GameState({ level: 3, collectedOrbs: 9 });
   const keys = Object.keys(s.toJSON()).sort();
-  ok(keys.join(',') === 'bossKills,collectedOrbs,level,maxHealth,ngPlus,runTime,soulsEarned,weaponTier',
-    `toJSON exposes exactly the 8 run-meta fields (got: ${keys.join(',')})`);
+  ok(keys.join(',') === 'bossKills,collectedOrbs,level,maxHealth,ngPlus,runTime,weaponTier',
+    `toJSON exposes exactly the 7 run-meta fields (got: ${keys.join(',')})`);
 }
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);

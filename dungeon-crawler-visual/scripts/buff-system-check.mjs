@@ -181,15 +181,15 @@ console.log('== New Game+ ==');
   ok(ng1.level === 3 && ng1.collectedOrbs === 42 && ng1.ngPlus === 1,
     'NG+1 starts at level 3 with orbs carried');
 
-  // Second NG+ cycle: +100% HP each
+  // Second NG+ cycle: +200% HP each (NG+ effects DOUBLED)
   ok(enemyHpMultiplier(0) === 1, 'no NG+ -> 100% enemy HP');
-  ok(Math.abs(enemyHpMultiplier(1) - 2) < 1e-9, 'NG+1 -> 200% enemy HP');
-  ok(Math.abs(enemyHpMultiplier(2) - 3) < 1e-9, 'NG+2 -> 300% enemy HP');
-  ok(Math.abs(enemyHpMultiplier(5) - 6) < 1e-9, 'NG+5 -> 600% enemy HP');
+  ok(Math.abs(enemyHpMultiplier(1) - 3) < 1e-9, 'NG+1 -> 300% enemy HP (doubled: +200%/cycle)');
+  ok(Math.abs(enemyHpMultiplier(2) - 5) < 1e-9, 'NG+2 -> 500% enemy HP');
+  ok(Math.abs(enemyHpMultiplier(5) - 11) < 1e-9, 'NG+5 -> 1100% enemy HP');
   // Level scaling: +10% bonus HP every 5 levels (level 1-4 = none)
   ok(Math.abs(enemyHpMultiplier(0, 5) - 1.1) < 1e-9, 'level 5 -> 110% enemy HP');
   ok(Math.abs(enemyHpMultiplier(0, 10) - 1.2) < 1e-9, 'level 10 -> 120% enemy HP');
-  ok(Math.abs(enemyHpMultiplier(1, 10) - 2.4) < 1e-9, 'NG+1 @ level 10 -> 240% enemy HP');
+  ok(Math.abs(enemyHpMultiplier(1, 10) - 3.6) < 1e-9, 'NG+1 @ level 10 -> 360% enemy HP');
 
   // Fresh restart resets everything
   const fresh2 = new GameState({ level: 1, collectedOrbs: 0, ngPlus: 0 });

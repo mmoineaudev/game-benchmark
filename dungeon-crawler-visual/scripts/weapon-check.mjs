@@ -83,19 +83,24 @@ if (!(EVOLUTION.MAX_TOTAL_SCALE >= 4)) fail('MAX_TOTAL_SCALE < 4 (orb ladder alo
 ok(`blade length 0.76→1.0 monotonic; TIP_LOCAL = length × 0.79; scale clamp ${EVOLUTION.MAX_TOTAL_SCALE}`);
 
 // ---------------------------------------------------------------------------
-// Gate 7: HUD total-only ruling (§7.1) — #souls-line with default "Souls 0",
-// and NO #tier-pips anywhere (removed with the tier readout).
+// Gate 7: ONE souls notion (user ruling: souls = orbs) — the separate
+// #souls-line lifetime readout is REMOVED; the HUD shows a single SOULS
+// counter, and no #tier-pips anywhere.
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
-if (!html.includes('id="souls-line"')) fail('index.html missing #souls-line');
-if (!html.includes('>Souls 0<')) fail('#souls-line default content is not exactly "Souls 0"');
-if (html.includes('tier-pips')) fail('#tier-pips must be REMOVED (total-only HUD ruling §7)');
-ok('HUD: #souls-line default "Souls 0"; #tier-pips absent');
+if (html.includes('souls-line')) fail('#souls-line must be REMOVED (single SOULS counter — souls = orbs)');
+if (!html.includes('>SOULS<')) fail('HUD is missing the single SOULS counter label');
+if (html.includes('tier-pips')) fail('#tier-pips must be REMOVED (single-counter HUD ruling)');
+for (const ic of EVOLUTION.TIER_ICONS) {
+  if (!html.includes(`.${ic}::`)) fail(`weapon slot icon class ${ic} missing from index.html`);
+}
+ok('HUD: single SOULS counter (no #souls-line, no #tier-pips); all 6 tier icons present');
 
 // ---------------------------------------------------------------------------
-// Gate 11: Game.js writes the total only (no tier/progress/pips references).
-if (!gameSrc.includes('Souls ${this.state.soulsEarned')) fail('Game.js souls line is not total-only (§7.1)');
-if (gameSrc.includes('tier-pips')) fail('Game.js still references tier-pips (§7.1)');
-ok('Game.js _updateHUD writes "Souls <total>" only; no tier-pips references');
+// Gate 11: Game.js no longer references the removed soulsEarned field; the
+// weapon tier derives from the souls counter and only ever upgrades.
+if (gameSrc.includes('soulsEarned')) fail('Game.js still references the removed soulsEarned field');
+if (gameSrc.includes('tier-pips')) fail('Game.js still references tier-pips');
+ok('Game.js: no soulsEarned, no tier-pips — tier from the single souls counter');
 
 // ---------------------------------------------------------------------------
 // Gate 9: distinct silhouettes — every tier has its own builder (Arsenal of

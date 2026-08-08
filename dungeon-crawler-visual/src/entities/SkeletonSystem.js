@@ -504,7 +504,15 @@ export class SkeletonSystem {
         continue;
       }
       if (s.type === 'BOSS') {
-        s.skel.update(dt, time, player, collisionBoxes, resolveCircleCollisions);
+        // Boss pathing (stuck-boss fix): when a wall/pillar blocks the
+        // straight line to the player, steer the boss with the same greedy
+        // grid pathing as every other mob — it used to drift/charge in a
+        // straight line with push-out collision only, so geometry between it
+        // and the player made it grind into the wall forever.
+        const dir = this._hasLOS(s.skel, player, collisionBoxes)
+          ? null
+          : this._greedyStep(s, player, collisionBoxes);
+        s.skel.update(dt, time, player, collisionBoxes, resolveCircleCollisions, dir);
         s.x = s.skel.group.position.x;
         s.z = s.skel.group.position.z;
         continue;

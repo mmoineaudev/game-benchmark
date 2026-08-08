@@ -85,6 +85,20 @@ console.log('== GhostBoss ==');
   b2.onSummon = () => {}; // caller-set hook (SkeletonSystem wires it)
   ok(typeof b2.onSummon === 'function', 'boss exposes onSummon hook');
 
+  // Stuck-boss regression: when a wall blocks the straight line (SkeletonSystem
+  // passes a grid-pathing stepDir), the boss follows it instead of charging
+  // into the geometry and grinding against it forever.
+  const b4 = new GhostBoss(scene, 4);
+  b4.onSummon = () => {};
+  b4.group.position.set(0, 0, 0);
+  const p4 = { x: 6, z: 0 };
+  b4._chargeCd = 0;
+  b4.update(1 / 60, 0, p4, [], resolve, { x: 0, z: 1 }); // blocked: pathing dir +z
+  ok(b4.state !== 'CHARGING', 'boss does NOT charge through a blocked path (stuck-boss fix)');
+  ok(b4.group.position.z > 0.001,
+    `boss drifts along the pathing direction when blocked (z=${b4.group.position.z.toFixed(4)})`);
+  b4.dispose();
+
   boss.dispose(); b2.dispose();
   ok(boss._removed && b2._removed, 'dispose marks both bosses removed');
 

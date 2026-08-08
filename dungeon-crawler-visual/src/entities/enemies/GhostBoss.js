@@ -210,9 +210,12 @@ export class GhostBoss {
     return false;
   }
 
-  // dt-driven AI. player = {x,z}; collisionBoxes for movement. Returns nothing;
-  // fires onSummon / onChargeHit hooks managed by SkeletonSystem.
-  update(dt, time, player, collisionBoxes, resolveCircleCollisions) {
+  // dt-driven AI. player = {x,z}; collisionBoxes for movement. stepDir = a
+  // unit direction from the caller's grid pathing when a wall blocks the
+  // straight line to the player (null when it's clear) — the stuck-boss fix.
+  // Returns nothing; fires onSummon / onChargeHit hooks managed by
+  // SkeletonSystem.
+  update(dt, time, player, collisionBoxes, resolveCircleCollisions, stepDir = null) {
     if (this._removed) return;
     this.animTime += dt;
     if (this._chargeCd > 0) this._chargeCd -= dt;
@@ -264,15 +267,20 @@ export class GhostBoss {
         this._chargeCd = BOSS.CHARGE_COOLDOWN;
       }
     } else {
-      // Drift toward the player (slow hover)
+      // Drift toward the player (slow hover), following the caller's grid
+      // pathing when the straight line is blocked — no more grinding into
+      // walls/pillars (stuck-boss fix).
       const speed = 2.2 * dt;
       if (dist > 2.5) {
-        this.group.position.x += (dx / dist) * speed;
-        this.group.position.z += (dz / dist) * speed;
+        let mx = dx / dist, mz = dz / dist;
+        if (stepDir) { mx = stepDir.x; mz = stepDir.z; }
+        this.group.position.x += mx * speed;
+        this.group.position.z += mz * speed;
         resolveCircleCollisions(collisionBoxes, this.group.position, 0.9);
       }
-      // Telegraph + charge
-      if (this._chargeCd <= 0 && dist < 14) {
+      // Telegraph + charge — ONLY when the dash path is wall-free. A charge
+      // through a wall/pillar is exactly what wedged the boss into geometry.
+      if (this._chargeCd <= 0 && dist < 14 && !stepDir) {
         this.state = 'CHARGING';
         this._chargeT = BOSS.CHARGE_TIME;
         this._chargeHitDone = false;

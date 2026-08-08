@@ -29,7 +29,11 @@ All binds use `event.code` (physical key position, AZERTY-safe: `KeyW` is the ph
 | Descend at exit | `KeyE` | press (edge) | Only when `inExitRoom` |
 | Toggle bloom | `KeyP` | press (edge) | Post-processing on/off |
 | Leaderboard | `Tab` | press (edge) | Toggle panel |
+| Save for later | `KeyS` | press (edge) | Death screen only; writes the run to localStorage (`dungeonCrawlerSave`) |
+| Load last save / New Game | `KeyL` / `KeyN` | press (edge) | Startup menu (only shown when a save exists) |
 | Pointer lock | Click on canvas | press | Also suppresses context menu (RMB) |
+
+**Save/load** (death → startup): `[S]` at the death screen snapshots the run-meta (level, runTime, orbs, souls, weapon tier, permanent hearts, NG+ cycle, boss kills) to localStorage. At startup a menu offers **Load last save [L]** / **New Game [N]**. Loading restarts the SAVED LEVEL from the beginning (fresh level, full health, spawn protection) with all meta-progression intact — no 10% orb penalty, no NG+ change, buff never carries. The save is consumed on load; the stale death entry is removed from the ledger.
 
 **New actions this extension adds: zero new keys.** The sword combo reuses RMB (edge-triggered presses, not hold). No conflicts with existing binds. Rat swarm/brute/wraith introduce no player-side input.
 

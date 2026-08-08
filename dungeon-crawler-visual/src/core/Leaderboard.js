@@ -39,4 +39,17 @@ export class Leaderboard {
   clear() {
     try { localStorage.removeItem(STORAGE_KEY); } catch { /* storage blocked */ }
   }
+
+  // Remove the FIRST entry matching level/time/orbs/ngPlus. Used when a saved
+  // run is loaded and continues — the death entry recorded for it is stale.
+  remove({ level, time, orbs, ngPlus }) {
+    const list = this.load();
+    const idx = list.findIndex(e =>
+      e.level === level && e.time === Math.round(time) && e.orbs === orbs
+      && (e.ngPlus || 0) === (ngPlus || 0));
+    if (idx === -1) return false;
+    list.splice(idx, 1);
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(list)); } catch { /* storage blocked */ }
+    return true;
+  }
 }

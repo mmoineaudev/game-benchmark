@@ -81,4 +81,36 @@ export class GameState {
   get sprintSpeedMult() {
     return 1 + PLAYER.SPRINT_ACCEL_STEP * this.sprintTier;
   }
+
+  // Save/load: the run-meta fields that must survive a death-save. Everything
+  // else (position, timers, buff, level-internal state) resets on load — the
+  // player restarts the CURRENT level from the beginning.
+  toJSON() {
+    return {
+      runTime: this.runTime,
+      level: this.level,
+      collectedOrbs: this.collectedOrbs,
+      ngPlus: this.ngPlus,
+      bossKills: this.bossKills,
+      soulsEarned: this.soulsEarned,
+      weaponTier: this.weaponTier,
+      maxHealth: this.maxHealth,
+    };
+  }
+
+  static fromJSON(data = {}) {
+    const s = new GameState({
+      runTime: data.runTime || 0,
+      level: data.level || 1,
+      collectedOrbs: data.collectedOrbs || 0,
+      ngPlus: data.ngPlus || 0,
+      bossKills: data.bossKills || 0,
+      soulsEarned: data.soulsEarned || 0,
+      weaponTier: data.weaponTier || 0,
+    });
+    // Permanent hearts carry; health always starts a (re)loaded level full.
+    s.maxHealth = data.maxHealth || PLAYER.MAX_HEALTH;
+    s.health = s.maxHealth;
+    return s;
+  }
 }

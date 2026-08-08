@@ -88,7 +88,14 @@ export class Game {
     this._goList = document.getElementById('go-leaderboard-list');
     this._goRestartBtn = document.getElementById('go-restart');
     this._goNgPlusBtn = document.getElementById('go-ngplus');
-    this._goKeyHandler = null; // Y/N keyboard choice on the death screen
+    this._goSaveBtn = document.getElementById('go-save');
+    this._goKeyHandler = null; // Y/N/S keyboard choice on the death screen
+    // Startup "Load last save?" menu (only appears when a save exists)
+    this._startMenuEl = document.getElementById('start-menu');
+    this._startLoadBtn = document.getElementById('start-load');
+    this._startNewBtn = document.getElementById('start-new');
+    this._menuKeyHandler = null; // L/N keyboard choice on the start menu
+    this._saveKey = 'dungeonCrawlerSave'; // localStorage key for death-saves
     this._heartsEl = document.getElementById('hp-fill');
     this._hpTextEl = document.getElementById('hp-text');
     this._staminaFillEl = document.getElementById('stamina-fill');
@@ -124,32 +131,110 @@ export class Game {
     this._initCamera();
     this._initPostProcessing();
     this._initInput();
-    this.biomes.applyLevel(this.state.level, this.state);
-    this._generateDungeon();
-    this._buildWorld();
-    this._initLighting();
-    this._initProps();
-    this._initSmoke();
-    this._initParticles();
-    this._initRunes();
-    this._initOrbs();
-    this._initCombat();
-    this._placeWaterPuddles();
-    this._setupPlayerStart();
-    // Prewarm BOTH shadow program variants (see LightingSystem.prewarmShadowVariants)
-    // so a degraded tier-2 castShadow toggle never recompiles every shader.
-    this.lighting.prewarmShadowVariants(this.renderer, this.camera);
-    this._showMessage('Skeletons hunt you — reach the golden exit!', 'goal');
-    this._showMessage('Slay them for orbs — shoot or swing', 'goal');
     this._bindEventToasts();
-    this._emitLevelStart();
-    this._updateHUD();
-    this._isRunning = true;
-    this._lastTime = performance.now();
-    this._regenClock = 0; // time since last player hit (for passive regen)
-    this._regenTickAcc = 0; // seconds accumulated inside the regen window
-    this._showTitle();
-    this._animate();
+    // Startup: a "Load last save?" menu appears when a death-save exists;
+    // otherwise the descent begins immediately.
+    if (this._hasSave() && this._readSave()) {
+      this._showStartMenu();
+      return;
+    }
+    if (this._hasSave()) this._clearSave(); // corrupt/legacy save — drop it
+    this._beginRun(null);
+  }
+
+  // -------------------------------------------------------------------------
+  // Save / load (localStorage): save at death [S], load at startup [L].
+  // Loading restarts the CURRENT level from the beginning with all run-meta
+  // kept (orbs, souls, weapon tier, permanent hearts, NG+ cycle, boss kills —
+  // no orb penalty, no NG+ change).
+  _hasSave() {
+    try { return !!localStorage.getItem(this._saveKey); } catch { return false; }
+  }
+
+  _readSave() {
+    try {
+      const raw = localStorage.getItem(this._saveKey);
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  }
+
+  _saveRun() {
+    try {
+      localStorage.setItem(this._saveKey, JSON.stringify({
+        v: 1,
+        savedAt: Date.now(),
+        deathEntry: this._lastEntry || null,
+        state: this.state.toJSON(),
+      }));
+      return true;
+    } catch { return false; }
+  }
+
+  _clearSave() {
+    try { localStorage.removeItem(this._saveKey); } catch { /* blocked */ }
+  }
+
+  _showStartMenu() {
+    if (!this._startMenuEl) return;
+    const save = this._readSave();
+    if (this._startLoadBtn) {
+      if (save) {
+        this._startLoadBtn.classList.remove('hidden');
+        this._startLoadBtn.textContent =
+          `Load last save — Level ${save.state.level} · ${save.state.collectedOrbs} Souls [L]`;
+        this._startLoadBtn.onclick = () => this._startFromMenu('load');
+      } else {
+        this._startLoadBtn.classList.add('hidden');
+      }
+    }
+    if (this._startNewBtn) this._startNewBtn.onclick = () => this._startFromMenu('new');
+    this._startMenuEl.classList.remove('hidden');
+    if (!this._menuKeyHandler) {
+      this._menuKeyHandler = (e) => {
+        if (!this._startMenuEl.classList.contains('hidden') && !e.repeat) {
+          if (e.code === 'KeyL') this._startFromMenu('load');
+          else if (e.code === 'KeyN') this._startFromMenu('new');
+        }
+      };
+      window.addEventListener('keydown', this._menuKeyHandler);
+    }
+  }
+
+  _startFromMenu(choice) {
+    if (this._startMenuEl) this._startMenuEl.classList.add('hidden');
+    if (this._menuKeyHandler) {
+      window.removeEventListener('keydown', this._menuKeyHandler);
+      this._menuKeyHandler = null;
+    }
+    if (choice === 'load') {
+      const save = this._readSave();
+      if (save) {
+        this._clearSave(); // a save is consumed by loading it
+        // The death that produced the save was recorded in the ledger; the
+        // run continues now, so that entry is stale.
+        if (save.deathEntry) this.leaderboard.remove(save.deathEntry);
+        this._beginRun(GameState.fromJSON(save.state));
+        return;
+      }
+    }
+    this._beginRun(null);
+  }
+
+  // First run of the session: a fresh descent, or a loaded save (restarts the
+  // saved level with all meta-progression intact).
+  _beginRun(savedState = null) {
+    this._regenClock = 0;
+    this._regenTickAcc = 0;
+    if (savedState) {
+      this.state = savedState;
+      this._maxHealth = savedState.maxHealth;
+      this._regenerateDungeon({
+        nextState: savedState,
+        startMessage: `The descent continues — Level ${savedState.level}`,
+      });
+    } else {
+      this._regenerateDungeon({ newRun: true, startMessage: 'A new descent begins' });
+    }
   }
 
   _showMessage(text, className) {
@@ -1325,16 +1410,31 @@ export class Game {
     }
     if (this._goRestartBtn) this._goRestartBtn.onclick = () => this._startNewRun(false);
     if (this._goNgPlusBtn) this._goNgPlusBtn.onclick = () => this._startNewRun(true);
-    // Y/N keyboard choice — reliable regardless of button focus/click issues
+    if (this._goSaveBtn) {
+      this._goSaveBtn.disabled = false;
+      this._goSaveBtn.textContent = 'Save for later [S]';
+      this._goSaveBtn.onclick = () => this._saveAtDeath();
+    }
+    // Y/N/S keyboard choice — reliable regardless of button focus/click issues
     if (!this._goKeyHandler) {
       this._goKeyHandler = (e) => {
         if (this._gameOverActive && !e.repeat) {
           if (e.code === 'KeyY') this._startNewRun(true);
           else if (e.code === 'KeyN') this._startNewRun(false);
+          else if (e.code === 'KeyS') this._saveAtDeath();
         }
       };
       window.addEventListener('keydown', this._goKeyHandler);
     }
+  }
+
+  // Write the current run to localStorage so the startup menu can offer
+  // "Load last save". One save per death screen.
+  _saveAtDeath() {
+    if (!this._goSaveBtn || this._goSaveBtn.disabled) return;
+    const ok = this._saveRun();
+    this._goSaveBtn.textContent = ok ? 'Saved ✓ — loadable at startup' : 'Save failed (storage blocked)';
+    this._goSaveBtn.disabled = true;
   }
 
   // Start a new run after death: fresh (level 1, no carry, ngPlus 0) or
@@ -1603,11 +1703,13 @@ export class Game {
     }
     this._carriedBuff = carriedBuff;
 
-    // A new run starts with the base max heart count; a level advance keeps
-    // whatever permanent hearts were earned. Either way the player ALWAYS
-    // begins the level at full health.
-    if (newRun || nextState) {
+    // A new run starts with the base max heart count; a loaded save carries
+    // its own permanent hearts; a level advance keeps whatever was earned.
+    // Either way the player ALWAYS begins the level at full health.
+    if (newRun) {
       this._maxHealth = PLAYER.MAX_HEALTH;
+    } else if (nextState) {
+      this._maxHealth = nextState.maxHealth || PLAYER.MAX_HEALTH;
     }
     this.state.health = this._maxHealth;
 

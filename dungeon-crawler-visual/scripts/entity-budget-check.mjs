@@ -46,7 +46,7 @@ const ok = (cond, msg) => { if (!cond) { failures++; console.log(`  FAIL: ${msg}
 // Budgets. Measured pre-redesign (commit 9b80d4e) originals:
 //   Skeleton 1472, Rat 228, Wraith 130, Burn 224, Boss 490.
 // Caps = original x headroom for the realism pass (accessories/detail) while
-// keeping the live-bodies budget (100 enemies — far bodies freeze at 40 m)
+// keeping the live-bodies budget (200 enemies — far bodies freeze at 40 m)
 // well within the 30fps floor.
 const TRI_CAPS = {
   SKELETON: 2100, MAGICIAN: 2400, ARMORED: 2700, ARCHER: 2600, BRUTE: 2600,

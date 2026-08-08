@@ -66,10 +66,21 @@ console.log('== Sprint acceleration ==');
   ok(s.sprintTier === 3, `fresh 3s sprint rebuilds 3 tiers, no carry (tier=${s.sprintTier})`);
 }
 
+// --- Endless sprint is CAPPED at SPRINT_ACCEL_MAX (×3) ---
+{
+  const s = new GameState();
+  for (let i = 0; i < 5 * SEC * 60; i++) s.updateSprint(dt, true, true); // 5 min sprint
+  ok(s.sprintSpeedMult === PLAYER.SPRINT_ACCEL_MAX,
+    `sprint accel caps at ×${PLAYER.SPRINT_ACCEL_MAX} after 5 min (got ×${s.sprintSpeedMult.toFixed(2)})`);
+  ok(s.sprintSpeedMult <= PLAYER.SPRINT_ACCEL_MAX, 'sprintSpeedMult never exceeds the cap');
+}
+
 // --- Constants sanity ---
 {
   ok(PLAYER.SPRINT_ACCEL_WINDOW === 1 && PLAYER.SPRINT_ACCEL_STEP === 0.05,
     `constants: window=${PLAYER.SPRINT_ACCEL_WINDOW}s, step=${PLAYER.SPRINT_ACCEL_STEP}`);
+  ok(PLAYER.SPRINT_ACCEL_MAX === 3.0,
+    `constants: accel cap = ×${PLAYER.SPRINT_ACCEL_MAX}`);
 }
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);

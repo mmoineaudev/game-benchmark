@@ -19,6 +19,7 @@ export const PLAYER = {
   PITCH_CLAMP: Math.PI / 2 - 0.1, // ±85°
   SPRINT_ACCEL_WINDOW: 1,  // seconds of continuous sprinting per acceleration tier (was 5s)
   SPRINT_ACCEL_STEP: 0.05, // +5% sprint speed per tier, cumulative; resets when sprinting stops
+  SPRINT_ACCEL_MAX: 3.0,   // sprint-accel readout caps at ×3 (total sprint = 1.55 × up to 3)
   // Passive regen: +1 heart every REGEN_INTERVAL seconds once the player has
   // avoided damage for REGEN_DELAY seconds (0 = regen starts immediately).
   REGEN_DELAY: 0,        // seconds without taking a hit before regen starts (delay removed)
@@ -271,12 +272,12 @@ export const ENEMY = {
   SPAWN_MIN_DIST: 6,    // candidate cells: >= 6 BFS cells from the ENTRANCE (36 m)
   BASE_SLOTS: 2,
   SLOTS_PER_LEVEL: 1,
-  MAX_SLOTS: 100,
+  MAX_SLOTS: 200,
   ARENA_EXTRA_SLOTS: 2,
-  MAX_ALIVE: 100,       // living-body cap (rats counted individually). Affordable
+  MAX_ALIVE: 200,       // living-body cap (rats counted individually). Affordable
                         // because distant bodies freeze: see FROZEN_DIST.
   FROZEN_DIST: 40,      // mobs farther than this from the player are IMMOBILE —
-                        // idle in place, no AI/tracking/attacks (perf: 100-body budget)
+                        // idle in place, no AI/tracking/attacks (perf: 200-body budget)
   SPAWN_PLAYER_DIST: 30, // spawns only occur more than 30 m from the player; a
                          // queued spawn too close waits until the player moves away
   SPAWN_INTERVAL: 0.5, // seconds between individual mob reveals at level start

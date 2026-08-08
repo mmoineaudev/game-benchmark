@@ -80,9 +80,11 @@ export class GameState {
     if (tier > this.sprintTier) this.sprintTier = tier;
   }
 
-  // Current sprint speed multiplier: 1 + 5% per completed 5s tier.
+  // Current sprint acceleration multiplier: 1 + 5% per completed 1s tier,
+  // CAPPED at SPRINT_ACCEL_MAX (×3) so an endless sprint can't break the
+  // game (user ruling).
   get sprintSpeedMult() {
-    return 1 + PLAYER.SPRINT_ACCEL_STEP * this.sprintTier;
+    return Math.min(PLAYER.SPRINT_ACCEL_MAX, 1 + PLAYER.SPRINT_ACCEL_STEP * this.sprintTier);
   }
 
   // Save/load: the run-meta fields that must survive a death-save. Everything

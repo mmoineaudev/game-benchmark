@@ -96,6 +96,7 @@ export class Game {
     this._startNewBtn = document.getElementById('start-new');
     this._menuKeyHandler = null; // L/N keyboard choice on the start menu
     this._saveKey = 'dungeonCrawlerSave'; // localStorage key for death-saves
+    this._saveUrl = 'http://127.0.0.1:5174/save'; // file-backed mirror (launch.sh)
     this._heartsEl = document.getElementById('hp-fill');
     this._hpTextEl = document.getElementById('hp-text');
     this._staminaFillEl = document.getElementById('stamina-fill');
@@ -126,19 +127,23 @@ export class Game {
     this.hunter = null;        // HUNTER buff: spectral boss companion
   }
 
-  init() {
+  async init() {
     this._initRenderer();
     this._initCamera();
     this._initPostProcessing();
     this._initInput();
     this._bindEventToasts();
     // Startup: a "Load last save?" menu appears when a death-save exists;
-    // otherwise the descent begins immediately.
+    // otherwise the descent begins immediately. A corrupt local save is
+    // dropped and the file-backed server copy (if any) pulled instead — the
+    // save persists across browser storage wipes / origin switches between
+    // server runs.
+    if (this._hasSave() && !this._readSave()) this._clearSave();
+    if (!this._hasSave()) await this._pullRemoteSave();
     if (this._hasSave() && this._readSave()) {
       this._showStartMenu();
       return;
     }
-    if (this._hasSave()) this._clearSave(); // corrupt/legacy save — drop it
     this._beginRun(null);
   }
 
@@ -159,15 +164,44 @@ export class Game {
   }
 
   _saveRun() {
+    let data;
     try {
-      localStorage.setItem(this._saveKey, JSON.stringify({
+      data = JSON.stringify({
         v: 1,
         savedAt: Date.now(),
         deathEntry: this._lastEntry || null,
         state: this.state.toJSON(),
-      }));
-      return true;
+      });
+      localStorage.setItem(this._saveKey, data);
     } catch { return false; }
+    this._pushRemoteSave(data);
+    return true;
+  }
+
+  // Mirror the save to the file-backed companion server (launch.sh). Optional:
+  // when the save-server isn't running (plain `npx vite`), localStorage alone
+  // is used and this silently no-ops.
+  _pushRemoteSave(data) {
+    if (!this._saveUrl) return;
+    fetch(this._saveUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: data,
+    }).catch(() => {});
+  }
+
+  // Pull the file-backed copy into localStorage (startup, when nothing is
+  // stored locally). Never throws — remote absence or failure means
+  // localStorage-only mode.
+  _pullRemoteSave() {
+    if (!this._saveUrl) return Promise.resolve();
+    return fetch(this._saveUrl, { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data || !data.state) return;
+        try { localStorage.setItem(this._saveKey, JSON.stringify(data)); } catch { /* blocked */ }
+      })
+      .catch(() => {});
   }
 
   _clearSave() {

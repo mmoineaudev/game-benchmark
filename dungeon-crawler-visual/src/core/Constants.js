@@ -408,15 +408,17 @@ export function swordHitDamage(step, tier) {
 }
 
 // Temporary buffs looted from breakables (6% per break). One random effect
-// lasts BUFF.DURATION seconds. Effects:
+// lasts BUFF.DURATION seconds. Breakables also drop a soul orb 20% of the
+// time (ORB_DROP_CHANCE). Effects:
 //   1 = BRIGHT: level lights up (ambient up, fog down), mobs flee the player
 //   2 = FIREBALL: dagger replaced by a free explosive fireball on right click
 //   3 = EMPOWERED: dagger +50% longer, move speed +20%, attack speed +20%
 //   4 = GODSPEED: +50% attack speed AND +50% move speed
 //   5 = HUNTER: a spectral boss companion follows the player and attacks mobs
 export const BUFF = {
-  DURATION: 30,
+  DURATION: 60,            // initial non-boss buff duration (x2 from 30s)
   CHANCE: 0.06,            // base drop chance per broken breakable (+20% from 5%)
+  ORB_DROP_CHANCE: 0.2,    // 20% chance per broken breakable to drop a soul orb
   ORB_BUFF_CHANCE: 0.0005, // +0.05% buff drop per orb ABOVE 100
   SPAWN_EXCESS_PER: 100,   // each 100 excess orbs = +100% spawn multiplier
   FIREBALL_COOLDOWN: 0.35, // seconds between free fireballs

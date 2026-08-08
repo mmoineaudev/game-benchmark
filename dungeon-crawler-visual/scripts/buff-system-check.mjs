@@ -54,8 +54,8 @@ console.log('== Buff system (GameState timer) ==');
 
 // --- Constants sanity ---
 {
-  ok(BUFF.DURATION === 30 && BUFF.CHANCE === 0.06,
-    `constants: duration=${BUFF.DURATION}s, chance=${BUFF.CHANCE} (was 5%, now 6%)`);
+  ok(BUFF.DURATION === 60 && BUFF.CHANCE === 0.06 && BUFF.ORB_DROP_CHANCE === 0.2,
+    `constants: duration=${BUFF.DURATION}s (x2 from 30s), buff chance=${BUFF.CHANCE}, orb drop chance=${BUFF.ORB_DROP_CHANCE}`);
   ok(BUFF.EMPOWER_LENGTH === 1.5 && BUFF.EMPOWER_SPEED === 1.2 && BUFF.EMPOWER_ATTACK === 1.2,
     'empowered constants (length 1.5, move 1.2, attack 1.2)');
   ok(BUFF.BOSS_DURATION === 300 && BUFF.MAX_DURATION === 90,
@@ -72,7 +72,7 @@ console.log('== Buff system (GameState timer) ==');
 {
   const s = new GameState();
   s.applyBuff(4);
-  ok(s.buffEffect === 4 && Math.abs(s.buffTime - BUFF.DURATION) < 1e-9, 'applyBuff(4) = GODSPEED, 30s');
+  ok(s.buffEffect === 4 && Math.abs(s.buffTime - BUFF.DURATION) < 1e-9, 'applyBuff(4) = GODSPEED, 60s');
   // Buffer buff stays fully capped at MAX_DURATION (1:30 = 90s)
   s.applyBuff(1, BUFF.BOSS_DURATION);
   ok(s.buffEffect === 1 && Math.abs(s.buffTime - 90) < 1e-9,

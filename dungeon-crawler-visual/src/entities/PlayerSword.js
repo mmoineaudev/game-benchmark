@@ -391,7 +391,7 @@ export class PlayerSword {
   // guard never cover the aim point, even at maximum size.
   _setRest() {
     // Sword held clearly to the RIGHT of the crosshair (positive x = screen right)
-    this.group.position.set(0.74, -0.22, -0.70);
+    this.group.position.set(0.80, -0.22, -0.80);
     this.group.rotation.set(-0.15, 0, 0.38);
   }
 
@@ -498,10 +498,28 @@ export class PlayerSword {
     meshes.push(tip);
     const runeMat = new THREE.MeshBasicMaterial({ color: 0x4ac8ff });
     this._mats.push(runeMat);
-    for (const ry of [0.16, 0.28, 0.40]) {
-      const rune = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.09, 0.002), runeMat);
-      rune.position.set(0, ry, 0.026);
-      meshes.push(rune);
+    // Real runic glyphs: angular shapes built from thin luminous segments
+    // lying flat on the blade face (no curved primitives — straight blades).
+    // Each glyph is a list of [x1, y1, x2, y2] segments in blade-local space.
+    const glyphs = [
+      // ᚠ fehu: vertical + two descending branches
+      [[0, -0.045, 0, 0.045], [0, 0.045, 0.034, 0.02], [0.034, 0.02, 0, -0.012]],
+      // ᚢ uruz: vertical + long descending branch from the top
+      [[0, -0.045, 0, 0.045], [0, 0.045, -0.03, -0.02]],
+      // ᚦ thurisaz: vertical + two angled spurs at the top
+      [[0, -0.045, 0, 0.045], [0, 0.045, 0.028, 0.028], [0.028, 0.028, 0.028, 0.0]],
+    ];
+    const runeYs = [0.16, 0.28, 0.40];
+    for (let g = 0; g < glyphs.length; g++) {
+      for (const [x1, y1, x2, y2] of glyphs[g]) {
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const len = Math.hypot(dx, dy) || 0.001;
+        const seg = new THREE.Mesh(new THREE.BoxGeometry(len, 0.0055, 0.002), runeMat);
+        seg.position.set((x1 + x2) / 2, runeYs[g] + (y1 + y2) / 2, 0.026);
+        seg.rotation.z = Math.atan2(dy, dx);
+        meshes.push(seg);
+      }
     }
     const guard = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.035, 0.06), this.bladeMat);
     guard.position.y = 0;
@@ -597,6 +615,13 @@ export class PlayerSword {
     core.position.y = 0.46;
     meshes.push(core);
     this._energyCore = core;
+    // Emitter collar + pommel at the base of the energy blade
+    const emitter = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.04, 0.07, 8), this._darkMat);
+    emitter.position.y = -0.035;
+    meshes.push(emitter);
+    const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 6), this.brassMat);
+    pommel.position.y = -0.095;
+    meshes.push(pommel);
     this._tagFormMeshes(5, meshes);
     // Blade point light — layer 0, camera-attached: lights the WORLD around
     // the player in cyan (the sword itself stays layer-2 self-lit, §4).

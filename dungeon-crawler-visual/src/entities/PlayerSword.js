@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { SWORD, EVOLUTION, swordHitDamage, orbPowerMultiplier } from '../core/Constants.js';
+import { SWORD, EVOLUTION, swordHitDamage, swordSizeScale, attackSpeedFromSouls } from '../core/Constants.js';
 import { generateGlowTexture } from '../world/Textures.js';
 
 // First-person DAGGER attached to the camera: a short, tapered double-edged
@@ -63,7 +63,9 @@ export class PlayerSword {
     this._formMeshes = [[], [], [], [], [], []]; // per-tier mesh sets (§4.3 Arsenal of Ascension)
     this._tipLocal = new THREE.Vector3(0, 0.60, 0.02); // blade tip (tier-scaled by _applyForm)
     this.lengthMult = 1;   // temporary length boost (EMPOWERED buff)
-    this.attackSpeedMult = 1; // temporary attack-speed boost (EMPOWERED buff)
+    this.attackSpeedMult = 1; // temporary attack-speed boost (EMPOWERED/GODSPEED)
+    this.soulsAttackMult = 1; // souls-driven attack speed (1 + 0.001·souls)
+    this.level = 1;        // current dungeon level (damageMult level term)
     this._flashTimer = 0;
     this._orbSmokeFactor = 0; // 0..1, ~ shared with orb count (capped at 500)
     this._smokeAcc = 0;
@@ -405,12 +407,31 @@ export class PlayerSword {
     return this._rangeScale;
   }
 
-  // Set the evolution tier: +1 damage per hit, +4% reach per tier, and a new
-  // visual form (built in _applyForm — B2/B3/B4). Called by Game on threshold
-  // crossing and level start.
+  // Set the evolution tier: +1 damage per hit, +4% reach per tier, a new
+  // visual form (built in _applyForm — B2/B3/B4), and the tier size ladder
+  // (×1 + 0.8/tier, ×5 at T5). Called by Game on threshold crossing and
+  // level start.
   setTier(tier) {
     this.tier = Math.max(0, Math.min(EVOLUTION.MAX_TIER, tier | 0));
     if (this._applyForm) this._applyForm(this.tier);
+    this._recomputeScale();
+  }
+
+  // Current dungeon level — drives the damageMult level term (×1.1 per 5
+  // levels). Game calls this at every level start alongside setOrbCount.
+  setLevel(level) {
+    this.level = Math.max(1, level | 0);
+  }
+
+  // Single source for the group-scale clamp: tier size ladder × EMPOWERED
+  // lengthMult, clamped at MAX_TOTAL_SCALE (5.0) so the ready pose never
+  // covers the crosshair. Orbs held no longer affect size (user ruling).
+  _recomputeScale() {
+    this._rangeScale = Math.min(
+      swordSizeScale(this.tier) * this.lengthMult,
+      EVOLUTION.MAX_TOTAL_SCALE,
+    );
+    this.group.scale.setScalar(this._rangeScale);
   }
 
   // ----------------------------------------------------------------------
@@ -712,19 +733,13 @@ export class PlayerSword {
     }
   }
 
-  // Grows the dagger +20% per 10 orbs held (capped at +200% = 3x at 100
-  // orbs), extends melee range, shifts base color, intensifies the green
-  // growth light.
+  // Souls feed the sword's ATTACK SPEED (1 + 0.001·souls, +100% at 1000) and
+  // the cosmetic growth visuals. Size is NOT orb-driven anymore (user ruling:
+  // the blade keeps its starting size vs orbs — it grows with the tier only).
   setOrbCount(count) {
-    // Orb-power scale (sword size only — enemy spawns use their own
-    // (level + souls)/10 formula); lengthMult stacks on top (EMPOWERED buff:
-    // +50% longer). Clamped at
-    // MAX_TOTAL_SCALE so the ready pose never covers the crosshair (§3, §10).
-    this._rangeScale = Math.min(
-      orbPowerMultiplier(count) * this.lengthMult,
-      EVOLUTION.MAX_TOTAL_SCALE,
-    );
-    this.group.scale.setScalar(this._rangeScale);
+    // Attack speed from souls; buffs (EMPOWERED/GODSPEED) multiply on top in
+    // update() via attackSpeedMult.
+    this.soulsAttackMult = attackSpeedFromSouls(count);
     // Blue smoke bleeds off the blade proportional to orbs (capped at 500)
     this._orbSmokeFactor = Math.min(count, 500) / 500;
     const capped = Math.min(Math.floor(count / 10), 10);
@@ -778,10 +793,15 @@ export class PlayerSword {
     return SWORD.COMBO.ARC1;
   }
 
-  // Sword damage scales with the size bonus: +50% of the size-buff amount.
-  // At 3x size (buff +200%) damage is doubled; at 4.5x (EMPOWERED) ×2.75.
+  // Sword damage scales with the size bonus (half of the size-buff amount),
+  // the evolution tier (×1.1 each) and the dungeon level (×1.1 per 5 levels —
+  // user ruling: "necessary for surviving NG+"). At T5 size ×5 the size part
+  // alone is ×3; tier ×1.61 and level ×1.1^floor(L/5) stack on top.
   get damageMult() {
-    return 1 + (this._rangeScale - 1) * 0.5;
+    const sizePart = 1 + (this._rangeScale - 1) * 0.5;
+    const tierPart = Math.pow(1.1, this.tier);
+    const levelPart = Math.pow(1.1, Math.floor((this.level || 1) / 5));
+    return sizePart * tierPart * levelPart;
   }
 
   // Sword damage = (base per-hit + evolution tier) × size multiplier.
@@ -828,13 +848,17 @@ export class PlayerSword {
     if (this.state === 'idle') return;
     this.time += dt;
     // Attack speed: scale the duration fields (windups/slashes/recoveries/
-    // windows/cooldown) by 1/attackSpeedMult; arcs and damage stay as-is.
+    // windows/cooldown) by 1/totalAttackMult — arcs and damage stay as-is.
+    // Total = souls-driven multiplier (1 + 0.001·souls) × buff multiplier
+    // (EMPOWERED/GODSPEED), per the composition ruling: buffs apply ON TOP of
+    // the souls rule.
+    const totalAtkMult = this.attackSpeedMult * this.soulsAttackMult;
     let C = SWORD.COMBO;
-    if (this.attackSpeedMult !== 1) {
+    if (totalAtkMult !== 1) {
       const scaled = {};
       for (const k of Object.keys(C)) {
         scaled[k] = /^(WINDUP|SLASH|RECOVER|COMBO_WINDOW|COOLDOWN)/.test(k)
-          ? C[k] / this.attackSpeedMult : C[k];
+          ? C[k] / totalAtkMult : C[k];
       }
       C = scaled;
     }

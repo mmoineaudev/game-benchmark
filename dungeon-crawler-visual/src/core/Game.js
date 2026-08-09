@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON, SWORD, PROPS, HIT_STOP, LIGHTING, DROP, BUFF, EVOLUTION, BIOMES, ENEMY, weaponTier, excessOrbs, orbDamageMultiplier, enemyHpMultiplier } from './Constants.js';
+import { WORLD, PLAYER, CAMERA, RENDERER, TIMED_RUN, ORB_WEAPON, SWORD, PROPS, HIT_STOP, LIGHTING, DROP, BUFF, EVOLUTION, BIOMES, ENEMY, weaponTier, excessOrbs, orbDamageMultiplier, orbDamage, enemyHpMultiplier } from './Constants.js';
 import { GameState } from './GameState.js';
 import { Leaderboard } from './Leaderboard.js';
 import { EventBus } from './EventBus.js';
@@ -1201,18 +1201,26 @@ export class Game {
     );
   }
 
-  // Boss defeated: 5-minute buff + a permanent extra heart, and the exit
-  // portal (closed during the fight) opens. Every boss kill also permanently
-  // buffs all mobs: +10% movement AND attack speed.
+  // Boss defeated: 5-minute buff + a permanent extra heart + a soul reward
+  // (level × max(1, ngPlus) — user ruling; the souls loop back into spawn
+  // pressure AND the weapon ladder, intended), then the exit portal opens.
+  // Every boss kill also permanently buffs all mobs: +10% movement AND
+  // attack speed.
   _onBossDefeated() {
     this.state.bossKills = (this.state.bossKills || 0) + 1;
+    const reward = this.state.level * Math.max(1, this.state.ngPlus || 0);
+    this.state.collectedOrbs += reward;
     this._applyBuff(BUFF.BOSS_DURATION, { cap: false }); // 5-minute buff
     this._maxHealth += 1;
     this.state.maxHealth = this._maxHealth;
     this.state.health = Math.min(this._maxHealth, this.state.health + 1);
     this._bossPortalOpen = true;
     if (this._exitPortal) this._exitPortal.visible = true;
-    this._showMessage('The Spectral Lord falls — a heart and a blessing are yours. The portal opens!', 'success');
+    this._checkWeaponEvolution(); // the reward may cross a tier threshold
+    this._showMessage(
+      `The Spectral Lord falls — +${reward} souls, a heart and a blessing are yours. The portal opens!`,
+      'success',
+    );
     this._updateHUD();
   }
 
@@ -1261,6 +1269,9 @@ export class Game {
       bolt.z = p.z;
       bolt.target = target;
       bolt.life = EVOLUTION.ARC_LIFE;
+      // Arcs deal ORB damage at fire time (user ruling: "bolts from T3 =>
+      // should do Orb damage") — souls can change mid-flight, so freeze it.
+      bolt.dmg = Math.round(orbDamage(this.state.collectedOrbs));
       bolt.mesh.visible = true;
       bolt.mesh.position.set(bolt.x, bolt.y, bolt.z);
       bolt.mesh.lookAt(target.x, 1.0, target.z);
@@ -1285,8 +1296,8 @@ export class Game {
       const dist = Math.hypot(dx, dz);
       const step = EVOLUTION.ARC_SPEED * dt;
       if (dist <= step + 0.4) {
-        // Impact: arc damage + sparks at the target
-        this.skeletons.hitSkeleton(b.target.skel, EVOLUTION.ARC_DAMAGE);
+        // Impact: arc damage (orb damage, frozen at fire time) + sparks
+        this.skeletons.hitSkeleton(b.target.skel, b.dmg || 1);
         b.active = false;
         b.mesh.visible = false;
         this.sword?.burstSparks(new THREE.Vector3(b.target.x, 1.2, b.target.z));
@@ -1299,25 +1310,28 @@ export class Game {
     }
   }
 
-  // Rare (1%) electric chain on a landing strike: a blue blast that kills
-  // every enemy within ELECTRIC_RANGE of the player.
+  // Electric chain on a landing strike (5% at T5 — user ruling): a blue blast
+  // dealing ELECTRIC_DAMAGE_MULT × orb damage to every enemy within
+  // ELECTRIC_RANGE of the player. Damage-based now, not an instant kill —
+  // elites and bosses survive, mobs don't.
   _electricChain(x, z) {
     if (!this.skeletons) return;
     const r2 = SWORD.ELECTRIC_RANGE * SWORD.ELECTRIC_RANGE;
-    let killed = 0;
+    const dmg = Math.round(SWORD.ELECTRIC_DAMAGE_MULT * orbDamage(this.state.collectedOrbs));
+    let hit = 0;
     for (const s of this.skeletons.skeletons) {
       if (s.skel.state === 'DEAD') continue;
       const dx = s.x - x;
       const dz = s.z - z;
       if (dx * dx + dz * dz <= r2) {
-        if (this.skeletons.hitSkeleton(s.skel, 99999)) killed++;
+        if (this.skeletons.hitSkeleton(s.skel, dmg)) hit++;
       }
     }
     // blue explosion flash + screen shake + arrival message
     this._spawnFirePatch(x, z);
     this.state.hitStop = HIT_STOP * 2;
     this._shakeTime = Math.max(this._shakeTime, 0.4);
-    if (killed > 0) this._showMessage(`ELECTRIC CHAIN — ${killed} foes vaporized!`, 'success');
+    if (hit > 0) this._showMessage(`ELECTRIC CHAIN — ${hit} foes blasted!`, 'success');
     this._updateHUD();
   }
 
@@ -1472,6 +1486,7 @@ export class Game {
       case 3: // EMPOWERED: longer dagger, +20% move & attack speed
         this.sword.lengthMult = BUFF.EMPOWER_LENGTH;
         this.sword.attackSpeedMult = BUFF.EMPOWER_ATTACK;
+        this.sword._recomputeScale(); // lengthMult changed -> re-clamp scale
         this._moveSpeedMult = BUFF.EMPOWER_SPEED;
         break;
       case 4: // GODSPEED: +50% attack speed AND +50% move speed
@@ -1492,6 +1507,7 @@ export class Game {
     if (this._heldFireball) this._heldFireball.visible = false;
     this.sword.lengthMult = 1;
     this.sword.attackSpeedMult = 1;
+    this.sword._recomputeScale(); // lengthMult reset -> re-clamp scale
     this._moveSpeedMult = 1;
     if (this.hunter) this._removeHunter();
   }
@@ -2050,7 +2066,10 @@ export class Game {
     }
     // Single souls counter — the ORBS/SOULS readout is the one notion, no
     // separate lifetime line (user ruling: souls = orbs).
-    if (this.sword) this.sword.setOrbCount(this.state.collectedOrbs);
+    if (this.sword) {
+      this.sword.setOrbCount(this.state.collectedOrbs);
+      this.sword.setLevel(this.state.level);
+    }
     // Directional danger glow: additive 1/d per sector from SkeletonSystem.
     // Mapping (user ruling): enemies in FRONT light the BOTTOM border, behind
     // the TOP, right -> right, left -> left. Alpha = min(1, sum / MAX_SUM).
@@ -2158,7 +2177,7 @@ export class Game {
     // Spawn multiplier (SkeletonSystem's real formula): ×(1 + (level+souls)/10)
     // CAPPED at ×100 — past the cap, pressure feeds enemy HP instead.
     const spawnMult = Math.min(1 + (s.level + s.collectedOrbs) / 10, ENEMY.SPAWN_CAP);
-    const mobSpeedMult = (1 + 0.05 * (s.level - 1)) * (1 + 0.1 * (s.bossKills || 0));
+    const mobSpeedMult = (1 + ENEMY.SPEED_PER_LEVEL * (s.level - 1)) * (1 + 0.1 * (s.bossKills || 0));
     return {
       orbMult,
       spawnMult,
@@ -2167,8 +2186,8 @@ export class Game {
       dmgMult: sw ? sw.damageMult : 1,
       reach: sw ? sw.range : SWORD.RANGE,
       swordScale: sw ? sw.scale : 1,
-      atkSpeed: sw && sw.attackSpeedMult !== 1
-        ? `×${sw.attackSpeedMult.toFixed(2)}`
+      atkSpeed: sw
+        ? `×${(sw.attackSpeedMult * sw.soulsAttackMult).toFixed(2)}`
         : '×1.00',
       moveSpeed: s.sprintSpeedMult > 1.001 ? `×${s.sprintSpeedMult.toFixed(2)}` : '×1.00',
       regen: `+${PLAYER.REGEN_AMOUNT}/${PLAYER.REGEN_INTERVAL}s${PLAYER.REGEN_DELAY > 0 ? ` @${PLAYER.REGEN_DELAY}s` : ''}`,

@@ -198,13 +198,18 @@ export const BOSS = {
   HP_MULT: 22.5,        // boss HP = 22.5x a base enemy's HP (15x +50%)
   SOULS_HP_BONUS: 0.25, // +25% boss HP per SOULS_HP_PER souls the player holds
   SOULS_HP_PER: 50,
+  // Permanent hearts past the base 3 stack with the souls bonus (×1.1 each),
+  // the combined excess of the stack is then halved (user ruling — see
+  // GhostBoss: hp = base × HP_MULT × (1 + ((1+soulsBonus)·1.1^hearts − 1)/2)).
+  HEARTS_HP_BONUS: 0.1, // +10% boss HP per permanent heart past 3
   CHARGE_SPEED: 14,     // dash speed during the charge
   CHARGE_TIME: 0.9,     // seconds the charge lasts
   CHARGE_COOLDOWN: 3.2, // seconds between charges
-  CHARGE_DMG: 1,        // damage on charge contact
+  CHARGE_DMG: 2,        // damage on charge contact (fixed at 2 — user ruling)
   SUMMON_COOLDOWN: 6,   // seconds between wraith summons
-  SUMMON_COUNT: 3,      // wraiths per summon
-  MAX_MINIONS: 6,       // cap on live summoned wraiths
+  SUMMON_COUNT: 3,      // wraiths per summon (base)
+  SUMMON_HEARTS_MULT: 1.5, // summons ×1.5 per permanent heart past 3 (user ruling)
+  MAX_MINIONS: 25,      // cap on live summoned wraiths (raised 6 -> 25)
 };
 
 // Biome id for a given level (cyclic, 2 levels per biome)
@@ -290,6 +295,8 @@ export const ENEMY = {
   HP_PER_STEP: 1.0,      // +100% mob HP per 10 levels (user ruling: enemies lacked HP)
   HP_PER_NG: 3.0,        // +300% HP per NG+ cycle (100% base + 200% doubled-effect
                          // ruling + 100% additional — user ruling)
+  SPEED_PER_LEVEL: 0.02, // +2% mob MOVE speed per level (user ruling: was +5%,
+                         // too fast — the "corrected" value from the balance pass)
   RAT_PACK_MIN: 2,    // was 4 — rat packs halved (harder enemy, cut 50%)
   RAT_PACK_MAX: 3,    // was 6
   RAT_CAP: 6,         // was 12
@@ -368,12 +375,15 @@ export const ROOM_ENEMY_MODIFIERS = {
 };
 
 export const SWORD = {
-  RANGE: 2.2,             // melee reach (base; scales with orb growth)
+  RANGE: 2.2,             // melee reach (base; scales with evolution tier)
   // Electric legendary proc (WEAPON_EVOLUTION_PLAN §6): hoisted from COMBO —
   // Game reads SWORD.ELECTRIC_*; the old nested location made both undefined
-  // and the 1% chain blast dead code.
-  ELECTRIC_CHANCE: 0.01,  // 1% per landing strike: chain an electric blast
-  ELECTRIC_RANGE: 20,     // ...that kills every enemy within this distance
+  // and the 1% chain blast dead code. Now damage-based (user ruling): 5% per
+  // landing strike, deals ELECTRIC_DAMAGE_MULT × orb damage to everything
+  // within ELECTRIC_RANGE — no more instant-kill binary.
+  ELECTRIC_CHANCE: 0.05,  // 5% per landing strike: chain an electric blast
+  ELECTRIC_DAMAGE_MULT: 5, // ...dealing 5x orb damage (2·(1+0.02·souls)) in range
+  ELECTRIC_RANGE: 20,     // blast radius around the player
   COMBO: {
     WINDUP1: 0.10, SLASH1: 0.16, RECOVER1: 0.14,
     WINDUP2: 0.08, SLASH2: 0.15, RECOVER2: 0.14,
@@ -394,13 +404,18 @@ export const HIT_STOP = 0.06; // seconds of world-freeze on sword hit
 // Every EVOLUTION.TIER_SOULS lifetime souls the sword gains +1 damage per hit
 // and a new form, stepping to a lightsaber that throws electric arcs (tier 5).
 export const EVOLUTION = {
-  TIER_SOULS: 100,        // souls for tier 1 (the ladder below doubles each step)
-  TIER_THRESHOLDS: [100, 200, 400, 800, 1600], // souls for tiers 1..5 (exponential — user ruling)
+  TIER_SOULS: 50,         // souls for tier 1 (the ladder below doubles each step)
+  TIER_THRESHOLDS: [50, 100, 200, 400, 800], // souls for tiers 1..5 (exponential, HALVED from 100/200/400/800/1600 — user ruling)
   MAX_TIER: 5,
   DAMAGE_PER_TIER: 1,
+  // Sword SIZE no longer scales with orbs held (user ruling: "orb should
+  // always be the same size as the beginning"): it now scales with the
+  // evolution tier only, +80% per tier, reaching exactly ×5 at tier 5.
+  SIZE_PER_TIER: 0.8,     // +0.8 per tier -> size = 1 + 0.8·tier (T0 ×1 … T5 ×5)
+  ATTACK_SPEED_PER_SOUL: 0.001, // sword attack speed = 1 + 0.001·souls (+100% at 1000 souls — user ruling)
   BLADE_LENGTH: [0.76, 0.81, 0.86, 0.92, 0.96, 1.0], // form blade length per tier (u)
   RANGE_PER_TIER: 0.04,   // +4% melee reach per tier
-  MAX_TOTAL_SCALE: 5.0,   // group-scale safety clamp (orb ladder × EMPOWERED)
+  MAX_TOTAL_SCALE: 5.0,   // group-scale safety clamp (tier ladder × EMPOWERED)
   ARC_CHANCE: [0, 0, 0, 0.10, 0.35, 1.0], // arc bolts per landing strike
   ARC_BOLTS: [0, 0, 0, 1, 1, 2],
   // Weapon slot (HUD): per-tier display name + one-line effect + icon class.
@@ -410,24 +425,25 @@ export const EVOLUTION = {
     'Base blade',
     '+1 dmg · longer steel',
     '+2 dmg · glowing runes',
-    '+3 dmg · arc bolts (10%)',
-    '+4 dmg · arc bolts (35%)',
-    '+5 dmg · electric arcs on every strike',
+    '+3 dmg · arc bolts deal orb damage (10%)',
+    '+4 dmg · arc bolts deal orb damage (35%)',
+    '+5 dmg · orb-damage arcs on every strike · 5% blast ×5 orb dmg',
   ],
   TIER_ICONS: ['icon-dagger', 'icon-armingsword', 'icon-runic',
     'icon-crystal', 'icon-soulfire', 'icon-lightsaber'],
   ARC_POOL: 8,
   ARC_SPEED: 24,
   ARC_LIFE: 1.2,
-  ARC_DAMAGE: 1,
   ARC_RANGE: 20,
   BOLT_COLOR: 0x66eeff,
   T5_BLADE_LIGHT: { color: 0x66eeff, intensity: 1.5, distance: 6, decay: 1.6 },
 };
 
-// Tier from souls held: thresholds DOUBLE per tier (100/200/400/800/1600) so
-// the ladder takes much longer to climb; capped at MAX_TIER. Evaluated as a
-// ceiling in Game._checkWeaponEvolution — once reached, never reverts.
+// Tier from souls held: thresholds DOUBLE per tier (50/100/200/400/800 —
+// halved from the original 100/200/400/800/1600 by user ruling) so the
+// ladder still grows exponentially but tiers arrive sooner; capped at
+// MAX_TIER. Evaluated as a ceiling in Game._checkWeaponEvolution — once
+// reached, never reverts.
 export function weaponTier(souls) {
   let t = 0;
   for (let i = 0; i < EVOLUTION.TIER_THRESHOLDS.length; i++) {
@@ -488,22 +504,36 @@ export const HUNTER = {
 export const ORB_WEAPON = {
   SPEED: 2 * PLAYER.SPEED * PLAYER.SPRINT_MULTIPLIER, // 12.4 u/s — 2× sprint
   LIFETIME: 2.5,          // seconds before fizzle (~31 units max range)
-  DAMAGE: 2,            // base orb damage (doubled from 1)
+  DAMAGE: 2,            // base orb damage (direct hit)
   RADIUS: 0.3,            // projectile collision radius (smaller orbs)
   VOLLEY: 3,              // orbs per SEQUENCE — 1 collected orb = 1 sequence of 3 steps
   STEP_INTERVAL: 0.22,    // min time between steps; also the held-fire repeat cadence
   SEQUENCE_WINDOW: 1.2,   // max pause between steps before the sequence resets
   BOUNCES: 3,             // the first VOLLEY-1 steps bounce this many times off walls/floor/ceiling
-  EXPLODE_RADIUS: 1.5,    // last step: AOE damage radius around the explosion
-  EXPLODE_DAMAGE: 2,      // last step: AOE damage dealt (same as a direct hit)
+  EXPLODE_RADIUS: 2,      // last step: AOE damage radius (5u was too much — user ruling, 2u)
+  EXPLODE_DAMAGE: 5,      // last step: AOE damage dealt (raised 2 -> 5 — user ruling;
+                          // blasts through walls, accepted by the user)
 };
 
-// The sword's size-bonus multiplier — the risk/reward core of the economy:
-// +20% per 10 orbs held, capped at +300% (4x at 150 orbs). Orbs ABOVE 100
-// additionally feed buff-drop chance via excessOrbs(). (Enemy spawns are now
-// scaled by the separate (level + souls)/10 formula, NOT by this.)
+// Historical orb-size multiplier — NO LONGER used for sword size (user
+// ruling: the blade always keeps its starting size vs orbs; size now comes
+// from the evolution tier, see swordSizeScale). Kept for the orb-economy
+// reference scripts; orbs above 100 still feed buff-drop chance (excessOrbs).
 export function orbPowerMultiplier(orbs) {
   return 1 + Math.min(Math.floor(orbs / 10), 15) * 0.2;
+}
+
+// Sword SIZE ladder (user ruling): the blade grows with the EVOLUTION tier
+// only — +80% per tier — reaching exactly ×5 at tier 5. Orbs held no longer
+// affect size (EMPOWERED's lengthMult still stacks on top, clamped).
+export function swordSizeScale(tier) {
+  return 1 + EVOLUTION.SIZE_PER_TIER * (tier || 0);
+}
+
+// Sword ATTACK SPEED from souls (user ruling): 1 + 0.001·souls — +100% at
+// 1000 souls. Buffs (EMPOWERED ×1.2 / GODSPEED ×1.5) multiply on top.
+export function attackSpeedFromSouls(souls) {
+  return 1 + EVOLUTION.ATTACK_SPEED_PER_SOUL * (souls || 0);
 }
 
 // Orb-weapon damage buff: each held orb adds 2% damage
@@ -512,6 +542,13 @@ export function orbPowerMultiplier(orbs) {
 // matching the risk/reward of holding orbs (which also raises enemy spawns).
 export function orbDamageMultiplier(orbs) {
   return 1 + orbs * 0.02;
+}
+
+// Current orb damage in absolute points (direct hit): base × souls scaling.
+// ALSO the damage of evolution arc bolts and the T5 electric blast base —
+// arcs deal 1x, the chain blast 5x (SWORD.ELECTRIC_DAMAGE_MULT).
+export function orbDamage(souls) {
+  return ORB_WEAPON.DAMAGE * orbDamageMultiplier(souls || 0);
 }
 
 // Orbs in excess of 100 (the 'power' threshold) funnel into buff-drop chance.

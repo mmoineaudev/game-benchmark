@@ -148,11 +148,12 @@ export class SkeletonSystem {
       return;
     }
 
-    // Level scaling: +5% move speed PER LEVEL; attack speed still +5% per
-    // 3 levels (attackMult — swing cadence, not movement).
-    // Every boss kill adds +10% to BOTH movement and attack speed (permanent).
+    // Level scaling: +2% move speed PER LEVEL (user ruling — was +5%);
+    // attack speed still +5% per 3 levels (attackMult — swing cadence, not
+    // movement). Every boss kill adds +10% to BOTH movement and attack speed
+    // (permanent).
     const bossMult = 1 + 0.1 * (state.bossKills || 0);
-    this.speedMult = (1 + 0.05 * (state.level - 1)) * bossMult;
+    this.speedMult = (1 + ENEMY.SPEED_PER_LEVEL * (state.level - 1)) * bossMult;
     const attackMult = (1 + 0.05 * Math.floor((state.level - 1) / 3)) * bossMult;
 
     // New Game+: +300% enemy HP per NG+ cycle, +100% per 10 levels, and spawn
@@ -338,10 +339,15 @@ export class SkeletonSystem {
     const variants = ['SKELETON', 'ARMORED', 'ARCHER', 'BRUTE', 'WRAITH', 'RAT', 'MAGICIAN'];
     const variant = variants[Math.floor(Math.random() * variants.length)];
     const baseHp = 4; // base enemy HP; boss = 22.5x this (15x +50%)
-    // The boss scales with the player's wealth: +25% HP per 50 souls held.
-    // NG+ hits the boss like every mob: base HP x (1 + HP_PER_NG x ngPlus).
+    // The boss scales like every mob with NG+ AND now the level term
+    // (+100% per 10 levels — user ruling: bosses had no level scaling, so
+    // deep-level lords were relatively weak). The wealth/hearts stack is
+    // applied inside GhostBoss (souls × hearts, combined excess halved).
+    const ngMult = 1 + ENEMY.HP_PER_NG * (state.ngPlus || 0);
+    const levelMult = 1 + Math.floor((state.level || 1) / ENEMY.HP_LEVEL_INTERVAL);
+    const heartsExtra = Math.max(0, (state.maxHealth || PLAYER.MAX_HEALTH) - PLAYER.MAX_HEALTH);
     const boss = new GhostBoss(
-      this.scene, baseHp * (1 + ENEMY.HP_PER_NG * (state.ngPlus || 0)), variant, state.collectedOrbs,
+      this.scene, baseHp * ngMult * levelMult, variant, state.collectedOrbs, heartsExtra,
     );
     boss.group.position.set(bx, 0, bz);
     this._ground(boss.group);
@@ -356,10 +362,15 @@ export class SkeletonSystem {
     });
   }
 
-  // Boss summons a pack of small wraiths that shoot projectiles.
+  // Boss summons a pack of small wraiths that shoot projectiles. The pack
+  // grows ×1.5 per permanent heart the player has past the base 3 (user
+  // ruling — a hearty lord-slayer faces a bigger court), capped at the live
+  // minion budget MAX_MINIONS (raised to 25 for this rule to matter).
   _summonMinions(boss, candidates, dungeonData, state) {
     const liveMinions = this.skeletons.filter((s) => s.type === 'WRAITH' && s.skel.state !== 'DEAD').length;
-    const room = Math.max(0, Math.min(BOSS.SUMMON_COUNT, BOSS.MAX_MINIONS - liveMinions));
+    const heartsExtra = Math.max(0, (state.maxHealth || PLAYER.MAX_HEALTH) - PLAYER.MAX_HEALTH);
+    const pack = Math.floor(BOSS.SUMMON_COUNT * Math.pow(BOSS.SUMMON_HEARTS_MULT, heartsExtra));
+    const room = Math.max(0, Math.min(pack, BOSS.MAX_MINIONS - liveMinions));
     if (room <= 0) return;
     const cs = dungeonData.cellSize;
     for (let i = 0; i < room; i++) {

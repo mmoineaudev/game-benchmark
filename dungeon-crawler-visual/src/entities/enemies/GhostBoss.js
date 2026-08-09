@@ -23,16 +23,24 @@ const BOSS_VARIANTS = {
 };
 
 export class GhostBoss {
-  constructor(scene, baseHp, variant = 'WRAITH', souls = 0) {
+  constructor(scene, baseHp, variant = 'WRAITH', souls = 0, heartsExtra = 0) {
     this.scene = scene;
     this.type = 'BOSS';
     this.variant = BOSS_VARIANTS[variant] ? variant : 'WRAITH';
     const v = BOSS_VARIANTS[this.variant];
     this.variantLabel = v.label;
-    // HP = base x HP_MULT, scaled up by the player's wealth: +SOULS_HP_BONUS
-    // per SOULS_HP_PER souls held (a rich player faces a tougher lord).
-    this.hp = Math.ceil(baseHp * BOSS.HP_MULT
-      * (1 + BOSS.SOULS_HP_BONUS * Math.floor((souls || 0) / BOSS.SOULS_HP_PER)));
+    // HP = base x HP_MULT, scaled by the player's wealth AND permanent hearts
+    // (user ruling): the souls bonus (+SOULS_HP_BONUS per SOULS_HP_PER souls
+    // held) stacks with +HEARTS_HP_BONUS per permanent heart past 3, and the
+    // combined excess of the stack is HALVED — a rich, heart-heavy player
+    // faces a tougher lord, but not double-dipped to absurdity:
+    //   mult = 1 + ((1 + soulsBonus) · (1 + heartsBonus)^hearts − 1) / 2
+    const soulsBonus = BOSS.SOULS_HP_BONUS * Math.floor((souls || 0) / BOSS.SOULS_HP_PER);
+    // ×1.1 per permanent heart past 3 (multiplicative, per the ruling) —
+    // (1 + HEARTS_HP_BONUS)^hearts.
+    const stack = (1 + soulsBonus)
+      * Math.pow(1 + BOSS.HEARTS_HP_BONUS, Math.max(0, heartsExtra || 0));
+    this.hp = Math.ceil(baseHp * BOSS.HP_MULT * (1 + (stack - 1) / 2));
     this.maxHp = this.hp;
     this.state = 'CHASE'; // CHASE | CHARGING | DEAD
     this.animTime = Math.random() * 10;

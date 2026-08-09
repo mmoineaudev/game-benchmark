@@ -1675,6 +1675,9 @@ export class Game {
       // NG+ NEVER resets the ladder: the weapon tier is kept (no downgrade to
       // Dagger on NG+).
       weaponTier: newGamePlus ? (this.state.weaponTier || 0) : 0,
+      // Permanent hearts carry into NG+ too — the run only dies, the body
+      // doesn't forget. A fresh run resets to the base count (constructor).
+      maxHealth: newGamePlus ? (this._maxHealth || this.state.maxHealth || PLAYER.MAX_HEALTH) : PLAYER.MAX_HEALTH,
     });
     const msg = newGamePlus
       ? `New Game+ ${nextState.ngPlus} — the depths grow stronger`
@@ -1902,6 +1905,7 @@ export class Game {
           ngPlus: this.state.ngPlus || 0,
           bossKills: this.state.bossKills || 0,
           weaponTier: this.state.weaponTier || 0,
+          maxHealth: this._maxHealth, // permanent hearts never reset on level-up
         }));
 
     // Carry the buff over (x5 remaining) so the HUD and level systems see it.
@@ -1923,6 +1927,10 @@ export class Game {
     } else if (nextState) {
       this._maxHealth = nextState.maxHealth || PLAYER.MAX_HEALTH;
     }
+    // Invariant: state.maxHealth mirrors the real count. This is the line the
+    // death-save serializes, so a desync here used to wipe the player's
+    // permanent hearts from the save while the HUD still showed them.
+    this.state.maxHealth = this._maxHealth;
     this.state.health = this._maxHealth;
 
     this._prevInExit = false;

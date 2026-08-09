@@ -47,6 +47,28 @@ console.log('== Defaults ==');
   eq(fresh.ngPlus, 0, 'missing data -> ngPlus 0');
 }
 
+console.log('== Hearts invariant: maxHealth = base + bossKills (never below) ==');
+{
+  // Stale save produced by the old level-advance desync: bossKills kept but
+  // state.maxHealth silently reset to base. Loading must self-heal to the
+  // real count (base + bossKills), not reset the player's permanent hearts.
+  const stale = GameState.fromJSON({ level: 31, bossKills: 5, maxHealth: 3 });
+  eq(stale.maxHealth, PLAYER.MAX_HEALTH + 5, 'stale desynced save self-heals to base + bossKills');
+
+  // Healthy save keeps its recorded (higher) count untouched.
+  const healthy = GameState.fromJSON({ level: 4, bossKills: 3, maxHealth: 9 });
+  eq(healthy.maxHealth, 9, 'recorded hearts above base+bossKills are preserved');
+
+  // NG+ propagation: the nextState constructor must carry permanent hearts
+  // (Game._startNewRun passes maxHealth explicitly now). Simulate it.
+  const ngNext = new GameState({
+    level: 2, collectedOrbs: 25, ngPlus: 1, bossKills: 5, weaponTier: 4,
+    maxHealth: PLAYER.MAX_HEALTH + 5,
+  });
+  eq(ngNext.maxHealth, PLAYER.MAX_HEALTH + 5, 'NG+ state keeps permanent hearts (bossKills carried)');
+  eq(ngNext.health, ngNext.maxHealth, 'NG+ run starts at full hearts');
+}
+
 console.log('== Run-meta fields are the ONLY persisted fields ==');
 {
   const s = new GameState({ level: 3, collectedOrbs: 9 });

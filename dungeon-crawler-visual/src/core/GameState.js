@@ -1,7 +1,7 @@
 import { PLAYER, BUFF } from './Constants.js';
 
 export class GameState {
-  constructor({ runTime = 0, level = 1, collectedOrbs = 0, ngPlus = 0, bossKills = 0, weaponTier = 0 } = {}) {
+  constructor({ runTime = 0, level = 1, collectedOrbs = 0, ngPlus = 0, bossKills = 0, weaponTier = 0, maxHealth = PLAYER.MAX_HEALTH } = {}) {
     this.player = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 };
     // The ONE souls counter (orbs = souls): banked ammo, score, spawn driver
     // AND the weapon-ladder source. No separate "lifetime" notion — spending
@@ -12,8 +12,8 @@ export class GameState {
     this.ngPlus = ngPlus;   // New Game+ cycle: enemies have +100% HP per cycle
     this.bossKills = bossKills; // permanent: mobs +10% move/attack speed per boss kill
     this.totalOrbs = 0;   // pickups present on the current level
-    this.health = PLAYER.MAX_HEALTH;
-    this.maxHealth = PLAYER.MAX_HEALTH; // permanent max (grows with boss hearts)
+    this.health = maxHealth;
+    this.maxHealth = maxHealth; // permanent max (grows with boss hearts)
     this.invulnTimer = 0;
     this.safeSpawn = 0;   // level-start protection: player immobile + invincible
                           // while >0 (counts down), mobs don't track until 0
@@ -112,7 +112,14 @@ export class GameState {
       weaponTier: data.weaponTier || 0,
     });
     // Permanent hearts carry; health always starts a (re)loaded level full.
-    s.maxHealth = data.maxHealth || PLAYER.MAX_HEALTH;
+    // Self-heal stale saves: hearts only ever grow (+1 per boss kill, kept on
+    // NG+/load), so maxHealth can never be below base + bossKills — old saves
+    // made while state.maxHealth was desynced (level-advance bug) get bumped
+    // back up instead of silently resetting the player's hearts.
+    s.maxHealth = Math.max(
+      data.maxHealth || PLAYER.MAX_HEALTH,
+      PLAYER.MAX_HEALTH + (data.bossKills || 0),
+    );
     s.health = s.maxHealth;
     return s;
   }

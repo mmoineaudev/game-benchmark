@@ -237,6 +237,15 @@ Elites drop `base + 1` (Warlord 3, Sharpshooter 2, Ogre 4, Banshee 3). All drops
 
 `speedMult = (1 + ENEMY.SPEED_PER_LEVEL * (level-1)) * (1 + 0.1 * bossKills)` — move speed +2%/level (balance pass) and +10%/boss kill; `attackMult = (1 + 0.05 * floor((level-1)/3)) * (1 + 0.1 * bossKills)` applied to windup/swing/recover/cooldown of all enemies. Applies to new enemies identically.
 
+### 5.7 Boss attacks (four, on independent cooldowns)
+
+All boss variants (GhostBoss) share the same attack kit; the player is the only damageable entity on a boss level (its wraiths are the boss's own minions):
+
+- **Charge** — telegraphs, then dashes at the player (2 hearts on contact, once per charge). Only when the dash path is wall-free.
+- **Summon** — calls a wraith pack (×1.5 per permanent heart past 3, cap 25 live).
+- **Teleport-nova (BLINK)** — teleports ONTO the player, charges a spell with spark effects (ground ring + orbiting sparks; ring scale = blast radius) for 1 s, then detonates: **3 hearts to anything within 3 u** (user ruling). Counterplay: sprint out of the ring during the 1 s spark window.
+- **Smoke** — hurls a smoke cloud that homes to the player in flight (0.7 s), then lingers 4 s; standing inside costs **1 heart per second** (user ruling, per-cloud dt accumulator gated by the global invuln window).
+
 ---
 
 ## 6. Elements & Decoration

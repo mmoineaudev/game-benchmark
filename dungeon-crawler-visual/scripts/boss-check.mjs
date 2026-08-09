@@ -142,6 +142,77 @@ console.log('== GhostBoss ==');
   b3.dispose();
 }
 
+console.log('== Boss attacks: teleport-nova + smoke ==');
+{
+  const scene = { add() {}, remove() {} };
+  const resolve = () => {};
+  ok(BOSS.BLINK_DMG === 3 && BOSS.BLINK_RADIUS === 3
+    && Math.abs(BOSS.BLINK_TELEGRAPH - 1) < 1e-9 && BOSS.SMOKE_DMG === 1,
+    'blink (3 hearts @ 3 u, 1 s spark) + smoke (1 heart/s) constants (user rulings)');
+
+  // BLINK AI: off cooldown -> teleports ONTO the player, sparks for the
+  // telegraph window, then detonates (onBlinkHit) and returns to CHASE.
+  const b5 = new GhostBoss(scene, 4);
+  b5.onSummon = () => {};
+  b5._blinkCd = 0;
+  b5.group.position.set(0, 0, 0);
+  const p5 = { x: 8, z: 3 };
+  let blinks = 0;
+  b5.onBlinkHit = () => blinks++;
+  b5.update(1 / 60, 0, p5, [], resolve);
+  ok(b5.state === 'BLINKING', 'boss enters BLINKING (teleport-nova) when off cooldown');
+  ok(Math.hypot(b5.group.position.x - p5.x, b5.group.position.z - p5.z) < 1e-6,
+    'boss teleported ONTO the player');
+  // Let the spark telegraph animate a few frames, then check it's live.
+  for (let i = 0; i < 3; i++) b5.update(1 / 60, 0, p5, [], resolve);
+  ok(b5._ring.visible === true && b5._sparks.length === 12, 'spark telegraph (ring + 12 sparks) is live');
+  for (let i = 0; i < Math.ceil(1.1 / (1 / 60)); i++) b5.update(1 / 60, 0, p5, [], resolve);
+  ok(b5.state === 'CHASE' && blinks === 1, 'nova detonates after the 1 s spark (onBlinkHit fired)');
+  ok(b5._blinkCd > 0, 'blink goes on cooldown after the detonation');
+  b5.dispose();
+
+  // SMOKE AI: off cooldown -> cloud thrown, homes to the player, lingers,
+  // then fades out and is removed.
+  const b6 = new GhostBoss(scene, 4);
+  b6.onSummon = () => {};
+  b6._smokeCd = 0;
+  b6.group.position.set(0, 0, 0);
+  const p6 = { x: 6, z: 0 };
+  b6.update(1 / 60, 0, p6, [], resolve);
+  ok(b6.smokeClouds.length === 1 && b6.smokeClouds[0].phase === 'FLY',
+    'smoke cloud thrown toward the player');
+  for (let i = 0; i < Math.ceil(1.5 / (1 / 60)); i++) b6.update(1 / 60, 0, p6, [], resolve);
+  const c6 = b6.smokeClouds[0];
+  ok(c6 && c6.phase === 'LINGER', 'cloud settles and lingers after the flight');
+  ok(Math.hypot(c6.group.position.x - p6.x, c6.group.position.z - p6.z) < 1.5,
+    'cloud homed to the player');
+  // Fade loop: fly (0.7) + linger (4) + fade (0.8) = 5.5 s from the throw;
+  // the first loop already covered 1.5 s + the FLY check frame. Keep the
+  // total under the 6 s smoke cooldown so the SECOND cloud can't spawn yet.
+  const fadeFrames = Math.ceil(
+    (BOSS.SMOKE_FLIGHT + BOSS.SMOKE_DURATION + 0.8 - 1.5) / (1 / 60),
+  ) + 10;
+  for (let i = 0; i < fadeFrames; i++) {
+    b6.update(1 / 60, 0, p6, [], resolve);
+  }
+  ok(b6.smokeClouds.length === 0, 'cloud fades out and is removed (before the next throw)');
+  b6.dispose();
+
+  // Safe spawn: no player -> no blink, no smoke (boss idles).
+  const b7 = new GhostBoss(scene, 4);
+  b7._blinkCd = 0;
+  b7._smokeCd = 0;
+  b7.update(1 / 60, 0);
+  ok(b7.state !== 'BLINKING' && b7.smokeClouds.length === 0,
+    'no blink/smoke without a player (safe-spawn idle)');
+  b7.dispose();
+
+  // SkeletonSystem wiring gate: the hooks + DoT ticker must be connected.
+  const ssSrc = readFileSync(new URL('../src/entities/SkeletonSystem.js', import.meta.url), 'utf8');
+  ok(ssSrc.includes('onBlinkHit') && ssSrc.includes('_tickBossSmoke') && ssSrc.includes('BLINK_DMG'),
+    'SkeletonSystem wires onBlinkHit + smoke DoT ticker');
+}
+
 console.log('== Burning enemy ==');
 {
   const scene = { add() {}, remove() {} };

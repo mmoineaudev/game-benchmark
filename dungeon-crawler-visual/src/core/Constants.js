@@ -206,6 +206,23 @@ export const BOSS = {
   CHARGE_TIME: 0.9,     // seconds the charge lasts
   CHARGE_COOLDOWN: 3.2, // seconds between charges
   CHARGE_DMG: 2,        // damage on charge contact (fixed at 2 — user ruling)
+  // Teleport-nova: blinks ONTO the player, charges a sparking spell for
+  // BLINK_TELEGRAPH s, then detonates — BLINK_DMG hearts to anything within
+  // BLINK_RADIUS u (user ruling). The player is the only damageable entity on
+  // a boss level (its wraiths are the boss's own minions), so the nova hits
+  // the player; the 1 s spark window is the dodge (sprint out of 3 u).
+  BLINK_COOLDOWN: 8,    // seconds between teleport-nova attacks
+  BLINK_TELEGRAPH: 1.0, // spark charge-up before the nova detonates (user ruling)
+  BLINK_RADIUS: 3,      // nova blast radius in units (user ruling)
+  BLINK_DMG: 3,         // hearts of damage on detonation (user ruling)
+  // Smoke cloud: hurled toward the player, homes in flight, then lingers —
+  // standing inside the cloud costs SMOKE_DMG heart per second (user ruling).
+  SMOKE_COOLDOWN: 6,    // seconds between smoke throws
+  SMOKE_RADIUS: 2.2,    // cloud radius in units
+  SMOKE_DURATION: 4,    // seconds the cloud lingers after landing
+  SMOKE_FLIGHT: 0.7,    // seconds the cloud takes to reach the player
+  SMOKE_SPEED: 10,      // homing speed during the flight (u/s)
+  SMOKE_DMG: 1,         // hearts per second while inside (user ruling)
   SUMMON_COOLDOWN: 6,   // seconds between wraith summons
   SUMMON_COUNT: 3,      // wraiths per summon (base)
   SUMMON_HEARTS_MULT: 1.5, // summons ×1.5 per permanent heart past 3 (user ruling)

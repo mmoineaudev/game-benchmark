@@ -2,16 +2,22 @@ import * as THREE from 'three';
 import { BOSS } from '../../core/Constants.js';
 import { generateGlowTexture } from '../../world/Textures.js';
 
-// Ghost Boss — a huge spectral apparition. Two attacks on a timer:
+// Ghost Boss — a huge spectral apparition. Four attacks on timers:
 //  - CHARGE: telegraphs (flares bright) then dashes at the player.
 //  - SUMMON: calls a pack of small wraiths that shoot projectiles (the
 //    wraiths themselves are managed by SkeletonSystem; the boss only emits
 //    a summon request via onSummon).
+//  - BLINK (teleport-nova): teleports ONTO the player, charges a spell with
+//    spark effects for 1 s (BLINK_TELEGRAPH), then detonates — 3 hearts of
+//    damage to anything within 3 u (BLINK_DMG / BLINK_RADIUS, user ruling).
+//  - SMOKE: hurls a smoke cloud toward the player that homes in flight and
+//    lingers; standing inside costs 1 heart per second (SMOKE_DMG, user
+//    ruling). DoT is ticked by SkeletonSystem._tickBossSmoke.
 // HP is BOSS.HP_MULT x a base enemy. The AI is fully self-contained in
-// update(); movement + collision run here, combat contact via onChargeHit.
-// One boss per enemy type — all share the charge+summon AI but look and
-// size differently, so each reads as its own boss. On a boss level one
-// random variant spawns.
+// update(); movement + collision run here, combat contact via onChargeHit /
+// onBlinkHit / onSummon hooks. One boss per enemy type — all share the
+// charge+summon+blink+smoke AI but look and size differently, so each reads
+// as its own boss. On a boss level one random variant spawns.
 const BOSS_VARIANTS = {
   SKELETON:  { color: 0xcfd6e6, accent: 0x66e0ff, scale: 1.0, label: 'BONE LORD', deco: 'HORNS' },
   ARMORED:   { color: 0x8aa8cc, accent: 0x66ccff, scale: 1.25, label: 'IRON GHOUL', deco: 'CROWN' },
@@ -42,15 +48,21 @@ export class GhostBoss {
       * Math.pow(1 + BOSS.HEARTS_HP_BONUS, Math.max(0, heartsExtra || 0));
     this.hp = Math.ceil(baseHp * BOSS.HP_MULT * (1 + (stack - 1) / 2));
     this.maxHp = this.hp;
-    this.state = 'CHASE'; // CHASE | CHARGING | DEAD
+    this.state = 'CHASE'; // CHASE | CHARGING | BLINKING | DEAD
     this.animTime = Math.random() * 10;
     this.phase = Math.random() * Math.PI * 2;
     this._chargeCd = BOSS.CHARGE_COOLDOWN * 0.6; // first charge comes quickly
     this._summonCd = BOSS.SUMMON_COOLDOWN;
+    this._blinkCd = BOSS.BLINK_COOLDOWN * 0.5;   // first nova comes quickly
+    this._smokeCd = BOSS.SMOKE_COOLDOWN * 0.7;   // first smoke comes early
     this._chargeT = 0;
     this._chargeDirX = 0;
     this._chargeDirZ = 0;
     this._chargeHitDone = false;
+    this._blinkT = 0;
+    this._sparkT = 0;
+    this._burstT = 0;
+    this.smokeClouds = []; // live smoke clouds ({phase: FLY|LINGER|FADE, ...})
     this._removed = false;
     this._scale = v.scale;
 
@@ -106,6 +118,66 @@ export class GhostBoss {
 
     // Per-variant silhouette decoration so each boss reads as its own entity.
     this._addDeco(v);
+    this._buildBlinkFX(v);
+    this._buildSmokeBase();
+  }
+
+  // Teleport-nova telegraph: a ground ring + orbiting spark sprites that
+  // charge up over the 1 s blink window. Hidden while idle (the ring is the
+  // blast radius read — scale = world radius, so the player sees exactly
+  // where the nova will pop).
+  _buildBlinkFX(v) {
+    this._ringMat = new THREE.MeshBasicMaterial({
+      color: v.accent, transparent: true, opacity: 0,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    });
+    this._mats.push(this._ringMat);
+    this._ring = new THREE.Mesh(new THREE.RingGeometry(0.9, 1.0, 40), this._ringMat);
+    this._ring.rotation.x = -Math.PI / 2;
+    this._ring.position.y = 0.06;
+    this._ring.visible = false;
+    this.group.add(this._ring);
+
+    this._sparkMat = new THREE.SpriteMaterial({
+      map: this._glowTex, color: v.accent, blending: THREE.AdditiveBlending,
+      depthWrite: false, transparent: true, opacity: 0,
+    });
+    this._mats.push(this._sparkMat);
+    this._sparks = [];
+    for (let i = 0; i < 12; i++) {
+      const sp = new THREE.Sprite(this._sparkMat);
+      sp.userData = {
+        a: (i / 12) * Math.PI * 2 + Math.random() * 0.4,
+        r: 0.7 + Math.random() * 0.5,
+        h: 0.4 + Math.random() * 1.4,
+        ph: Math.random() * Math.PI * 2,
+      };
+      sp.visible = false;
+      this.group.add(sp);
+      this._sparks.push(sp);
+    }
+  }
+
+  // Smoke cloud base: a soft-edged dark puff texture + material. Each thrown
+  // cloud CLONES this material (so clouds fade independently); the texture is
+  // shared and disposed with the boss.
+  _buildSmokeBase() {
+    const c = document.createElement('canvas');
+    c.width = 64;
+    c.height = 64;
+    const g = c.getContext('2d');
+    const grad = g.createRadialGradient(32, 32, 2, 32, 32, 30);
+    grad.addColorStop(0, 'rgba(255,255,255,1)');
+    grad.addColorStop(0.7, 'rgba(255,255,255,0.55)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 64, 64);
+    this._smokeTex = new THREE.CanvasTexture(c);
+    this._smokeMat = new THREE.SpriteMaterial({
+      map: this._smokeTex, color: 0x4a4a5a, transparent: true,
+      opacity: 0.5, depthWrite: false,
+    });
+    this._mats.push(this._smokeMat);
   }
 
   // One distinct head/crown accent per boss variant (all reuse the bodyMat so
@@ -168,6 +240,115 @@ export class GhostBoss {
 
   setFacing(yaw) { this.facingYaw = yaw; }
 
+  // Throw a smoke cloud toward the player. It homes in flight (FLY), settles
+  // and lingers (LINGER — SkeletonSystem ticks 1 heart/s while the player
+  // stands inside), then fades out (FADE) and is removed.
+  _throwSmoke(player) {
+    const cloud = {
+      phase: 'FLY', t: 0, tickAcc: 0,
+      x: this.group.position.x, z: this.group.position.z,
+      radius: BOSS.SMOKE_RADIUS,
+    };
+    const mat = this._smokeMat.clone();
+    cloud.mats = [mat];
+    const group = new THREE.Group();
+    group.position.set(cloud.x, 0, cloud.z);
+    cloud.group = group;
+    for (let i = 0; i < 6; i++) {
+      const p = new THREE.Sprite(mat);
+      p.userData = {
+        ox: (Math.random() - 0.5) * 1.6,
+        oz: (Math.random() - 0.5) * 1.6,
+        oh: 0.4 + Math.random() * 1.2,
+        s: 0.8 + Math.random() * 1.0,
+        ph: Math.random() * Math.PI * 2,
+        bob: 0.3 + Math.random() * 0.5,
+      };
+      p.position.set(p.userData.ox, p.userData.oh, p.userData.oz);
+      p.scale.setScalar(p.userData.s);
+      group.add(p);
+    }
+    this.scene.add(group);
+    this.smokeClouds.push(cloud);
+  }
+
+  _updateClouds(dt, player) {
+    for (let i = this.smokeClouds.length - 1; i >= 0; i--) {
+      const c = this.smokeClouds[i];
+      c.t += dt;
+      if (c.phase === 'FLY') {
+        // Home toward the player while airborne, then settle.
+        if (player) {
+          const dx = player.x - c.group.position.x;
+          const dz = player.z - c.group.position.z;
+          const d = Math.hypot(dx, dz);
+          if (d > 0.5) {
+            c.group.position.x += (dx / d) * BOSS.SMOKE_SPEED * dt;
+            c.group.position.z += (dz / d) * BOSS.SMOKE_SPEED * dt;
+          }
+        }
+        if (c.t >= BOSS.SMOKE_FLIGHT) {
+          c.phase = 'LINGER';
+          c.t = 0;
+        }
+      } else if (c.phase === 'LINGER') {
+        // Slow roll + gentle expansion while the cloud sits.
+        c.group.rotation.y += dt * 0.25;
+        c.group.scale.setScalar(1 + 0.12 * Math.min(1, c.t / 2));
+        if (c.t >= BOSS.SMOKE_DURATION) c.phase = 'FADE';
+      } else if (c.phase === 'FADE') {
+        for (const m of c.mats) m.opacity = Math.max(0, m.opacity - dt / 0.8);
+        if (c.t >= BOSS.SMOKE_DURATION + 0.8) this._removeCloud(i);
+      }
+    }
+  }
+
+  _removeCloud(i) {
+    const c = this.smokeClouds[i];
+    this.scene.remove(c.group);
+    for (const m of c.mats) m.dispose();
+    this.smokeClouds.splice(i, 1);
+  }
+
+  // Spark charge-up: ring (scale = blast radius) + orbiting sparks intensify
+  // over the telegraph window, accelerating into the detonation.
+  _animateBlink(dt) {
+    const p = Math.min(1, this._sparkT / BOSS.BLINK_TELEGRAPH);
+    const ease = p * p;
+    const rad = 0.6 + ease * (BOSS.BLINK_RADIUS - 0.6);
+    this._ring.visible = true;
+    this._ring.scale.setScalar(rad);
+    this._ringMat.opacity = 0.25 + 0.6 * p;
+    const flick = 0.5 + 0.5 * Math.sin(this._sparkT * 24 + this.phase);
+    this._sparkMat.opacity = (0.4 + 0.6 * p) * flick;
+    for (const sp of this._sparks) {
+      sp.visible = true;
+      sp.userData.a += dt * (4 + 8 * p);
+      const sr = rad * sp.userData.r;
+      sp.position.set(Math.cos(sp.userData.a) * sr, sp.userData.h, Math.sin(sp.userData.a) * sr);
+      sp.scale.setScalar((0.25 + 0.2 * Math.sin(this._sparkT * 16 + sp.userData.ph)) * (0.6 + p));
+    }
+    this.core.scale.setScalar(1 + 0.6 * p + 0.3 * Math.sin(this._sparkT * 20));
+  }
+
+  _hideBlinkFX() {
+    this._ring.visible = false;
+    this._ringMat.opacity = 0;
+    this._sparkMat.opacity = 0;
+    for (const sp of this._sparks) sp.visible = false;
+  }
+
+  // Expanding ring flash right after the nova pops.
+  _burst(dt) {
+    this._burstT -= dt;
+    const f = Math.max(0, this._burstT / 0.4);
+    this._ring.visible = true;
+    this._ring.scale.setScalar(BOSS.BLINK_RADIUS + (1 - f) * 4);
+    this._ringMat.opacity = 0.9 * f;
+    this._sparkMat.opacity = 0.6 * f;
+    if (this._burstT <= 0) this._hideBlinkFX();
+  }
+
   // Hovering boss health bar: a small canvas drawn into a Sprite above the
   // boss (Sprites always face the camera). Redrawn each frame from hp/maxHp.
   _buildHealthBar(v) {
@@ -228,6 +409,8 @@ export class GhostBoss {
     this.animTime += dt;
     if (this._chargeCd > 0) this._chargeCd -= dt;
     if (this._summonCd > 0) this._summonCd -= dt;
+    if (this._blinkCd > 0) this._blinkCd -= dt;
+    if (this._smokeCd > 0) this._smokeCd -= dt;
 
     if (this.state === 'DEAD') {
       // Dissipate upward
@@ -259,6 +442,11 @@ export class GhostBoss {
     const pulse = 0.8 + Math.sin(time * 5 + this.phase) * 0.2;
     this.core.scale.setScalar(pulse);
 
+    // Smoke clouds animate every frame (they outlive the state machine);
+    // the nova's post-detonation ring flash too.
+    this._updateClouds(dt, player);
+    if (this._burstT > 0) this._burst(dt);
+
     if (this.state === 'CHARGING') {
       // Dash straight along the locked direction
       this._chargeT -= dt;
@@ -274,6 +462,20 @@ export class GhostBoss {
         this.state = 'CHASE';
         this._chargeCd = BOSS.CHARGE_COOLDOWN;
       }
+    } else if (this.state === 'BLINKING') {
+      // Teleport-nova: frozen in place while sparks charge up over the
+      // telegraph window, then detonate — 3 hearts to anything within 3 u
+      // (the onBlinkHit hook; SkeletonSystem checks the player's distance).
+      this._blinkT -= dt;
+      this._sparkT += dt;
+      this._animateBlink(dt);
+      if (this._blinkT <= 0) {
+        this.onBlinkHit?.();
+        this.state = 'CHASE';
+        this._blinkCd = BOSS.BLINK_COOLDOWN;
+        this._burstT = 0.4;
+        this._burst(dt);
+      }
     } else {
       // Drift toward the player (slow hover), following the caller's grid
       // pathing when the straight line is blocked — no more grinding into
@@ -286,15 +488,30 @@ export class GhostBoss {
         this.group.position.z += mz * speed;
         resolveCircleCollisions(collisionBoxes, this.group.position, 0.9);
       }
-      // Telegraph + charge — ONLY when the dash path is wall-free. A charge
-      // through a wall/pillar is exactly what wedged the boss into geometry.
-      if (this._chargeCd <= 0 && dist < 14 && !stepDir) {
+      // Teleport-nova FIRST: blinks straight onto the player through walls —
+      // the anti-kiting tool. The 1 s spark window is the dodge (sprint out
+      // of the 3 u blast ring).
+      if (this._blinkCd <= 0) {
+        this.group.position.x = player.x;
+        this.group.position.z = player.z;
+        resolveCircleCollisions(collisionBoxes, this.group.position, 0.9);
+        this.state = 'BLINKING';
+        this._blinkT = BOSS.BLINK_TELEGRAPH;
+        this._sparkT = 0;
+      } else if (this._chargeCd <= 0 && dist < 14 && !stepDir) {
+        // Telegraph + charge — ONLY when the dash path is wall-free. A charge
+        // through a wall/pillar is exactly what wedged the boss into geometry.
         this.state = 'CHARGING';
         this._chargeT = BOSS.CHARGE_TIME;
         this._chargeHitDone = false;
         const d = dist || 1;
         this._chargeDirX = dx / d;
         this._chargeDirZ = dz / d;
+      }
+      // Smoke throw: fires alongside any other attack (doesn't change state).
+      if (this._smokeCd <= 0) {
+        this._smokeCd = BOSS.SMOKE_COOLDOWN;
+        this._throwSmoke(player);
       }
     }
 
@@ -308,12 +525,16 @@ export class GhostBoss {
   dispose() {
     if (this._removed) return;
     this._removed = true;
+    // Clear any lingering smoke clouds (their groups live in the scene,
+    // separate from the boss group).
+    for (let i = this.smokeClouds.length - 1; i >= 0; i--) this._removeCloud(i);
     this.group.traverse((o) => {
       if (o.isMesh && o.geometry) o.geometry.dispose();
     });
     for (const m of this._mats) m.dispose();
     if (this._glowTex) this._glowTex.dispose();
     if (this._barTex) this._barTex.dispose();
+    if (this._smokeTex) this._smokeTex.dispose();
     this.scene.remove(this.group);
   }
 }

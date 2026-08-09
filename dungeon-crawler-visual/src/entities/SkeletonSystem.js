@@ -353,6 +353,7 @@ export class SkeletonSystem {
     this._ground(boss.group);
     boss.onSummon = () => this._summonMinions(boss, candidates, dungeonData, state);
     boss.onChargeHit = () => this._damagePlayer(BOSS.CHARGE_DMG);
+    boss.onBlinkHit = () => this._bossBlinkHit();
     boss.onKill = () => this._onBossKill();
     boss.onDeathComplete = () => this._removeSkeleton(boss);
     this.boss = boss;
@@ -526,6 +527,9 @@ export class SkeletonSystem {
         s.skel.update(dt, time, player, collisionBoxes, resolveCircleCollisions, dir);
         s.x = s.skel.group.position.x;
         s.z = s.skel.group.position.z;
+        // Smoke cloud DoT: 1 heart/s while the player stands inside a settled
+        // cloud (no-op when there are none).
+        this._tickBossSmoke(s.skel, player, dt);
         continue;
       }
 
@@ -902,6 +906,41 @@ export class SkeletonSystem {
     this.onPlayerDamaged?.();
     if (this.state.health <= 0) {
       this.onPlayerDeath?.();
+    }
+  }
+
+  // Teleport-nova detonation: 3 hearts to anything within 3 u of the boss.
+  // The player is the only damageable entity on a boss level (the wraiths
+  // are the boss's own minions), so the radius check is against the player.
+  _bossBlinkHit() {
+    const b = this.boss;
+    const p = this.state.player;
+    if (!b || !p || b.state === 'DEAD') return;
+    if (this.state.invulnTimer > 0 || this.state.health <= 0) return;
+    const dx = p.x - b.group.position.x;
+    const dz = p.z - b.group.position.z;
+    if (dx * dx + dz * dz <= BOSS.BLINK_RADIUS * BOSS.BLINK_RADIUS) {
+      this._damagePlayer(BOSS.BLINK_DMG);
+    }
+  }
+
+  // Smoke cloud DoT: 1 heart per second while the player stands inside a
+  // settled cloud. Per-cloud dt accumulator; the tick lands only when the
+  // global invuln window is clear, so the single damage channel stays
+  // consistent (a charge hit just before just delays the next smoke tick).
+  _tickBossSmoke(boss, player, dt) {
+    if (boss.state === 'DEAD' || !boss.smokeClouds || !player) return;
+    if (this.state.health <= 0) return;
+    for (const c of boss.smokeClouds) {
+      if (c.phase !== 'LINGER') continue;
+      const dx = player.x - c.group.position.x;
+      const dz = player.z - c.group.position.z;
+      if (dx * dx + dz * dz > c.radius * c.radius) continue;
+      c.tickAcc += dt;
+      if (c.tickAcc >= 1 && this.state.invulnTimer <= 0) {
+        c.tickAcc = 0;
+        this._damagePlayer(BOSS.SMOKE_DMG);
+      }
     }
   }
 

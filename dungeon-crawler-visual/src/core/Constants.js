@@ -293,10 +293,10 @@ export const ENEMY = {
   DANGER_MAX_SUM: 2.0, // summed 1/d per sector maps to alpha = min(1, sum/2)
   HP_LEVEL_INTERVAL: 10, // +HP_PER_STEP bonus HP every 10 levels
   HP_PER_STEP: 1.0,      // +100% mob HP per 10 levels (user ruling: enemies lacked HP)
-  HP_OVERFLOW_PER_STEP: 2.0, // +200% mob HP per 10 excess pressure points past the
-                         // ×100 spawn cap (user ruling: ×3 per 10 — must outscale
-                         // the player's damage growth, which compounds per level
-                         // and per orb; ×2 was falling behind late game)
+  HP_OVERFLOW_PER_STEP: 2.0, // ×2 (DOUBLING) mob HP per 10 excess pressure points
+                         // past the ×100 spawn cap — COMPOUNDING (2^steps), user
+                         // ruling: linear ×3/10 was still not enough; doubling
+                         // outscales the player's damage (linear in souls)
   HP_PER_NG: 3.0,        // +300% HP per NG+ cycle (100% base + 200% doubled-effect
                          // ruling + 100% additional — user ruling)
   SPEED_PER_LEVEL: 0.02, // +2% mob MOVE speed per level (user ruling: was +5%,
@@ -562,16 +562,17 @@ export function excessOrbs(orbs) {
 
 // Enemy HP: +100% per 10 levels, +300% per NG+ cycle (HP_PER_NG — base 100%,
 // the doubled-effect ruling +200%, plus an additional +100%), and spawn
-// pressure ABOVE the ×100 spawn cap converts to HP at +200% per 10 excess
-// points (×3 per 10 — HP_OVERFLOW_PER_STEP — so post-cap tankiness outscales
-// the player's compounding damage). Spawns cap, tankiness takes the overflow.
-// The game is meant to be SIGNIFICANTLY harder at depth.
+// pressure ABOVE the ×100 spawn cap converts to HP by DOUBLING per 10 excess
+// points (×2 per 10, compounding — HP_OVERFLOW_PER_STEP — so post-cap
+// tankiness outscales the player's damage, which only grows linearly with
+// souls). Spawns cap, tankiness takes the overflow. The game is meant to be
+// SIGNIFICANTLY harder at depth.
 export function enemyHpMultiplier(ngPlus, level = 1, souls = 0) {
   const capPressure = (ENEMY.SPAWN_CAP - 1) * 10; // pressure at which spawnMult = ×100
   const excess = Math.max(0, (level || 1) + (souls || 0) - capPressure);
-  const levelBonus = Math.floor((level || 1) / ENEMY.HP_LEVEL_INTERVAL)
-    + ENEMY.HP_OVERFLOW_PER_STEP * Math.floor(excess / 10);
-  return (1 + ENEMY.HP_PER_NG * (ngPlus || 0)) * (1 + levelBonus);
+  const levelBonus = 1 + Math.floor((level || 1) / ENEMY.HP_LEVEL_INTERVAL);
+  const overflowMult = Math.pow(ENEMY.HP_OVERFLOW_PER_STEP, Math.floor(excess / 10));
+  return (1 + ENEMY.HP_PER_NG * (ngPlus || 0)) * levelBonus * overflowMult;
 }
 
 export const MAGICIAN = {

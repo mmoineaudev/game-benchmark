@@ -194,11 +194,13 @@ console.log('== New Game+ ==');
   ok(Math.abs(enemyHpMultiplier(0, 20) - 3) < 1e-9, 'level 20 -> 300% enemy HP');
   ok(Math.abs(enemyHpMultiplier(1, 10) - 8) < 1e-9, 'NG+1 @ level 10 -> 800% enemy HP');
   // Spawn-cap overflow: pressure = level + souls; spawnMult caps at ×100
-  // (pressure 990). Past it, +200% HP per 10 excess pressure points (×3 per
-  // 10 — HP_OVERFLOW_PER_STEP — outscales the player's damage growth).
+  // (pressure 990). Past it, enemy HP DOUBLES every 10 excess pressure points
+  // (2^steps — HP_OVERFLOW_PER_STEP — outscales the player's linear damage).
   ok(Math.abs(enemyHpMultiplier(0, 1, 990) - 1) < 1e-9, 'pressure 991 (at the cap) -> no HP overflow');
-  ok(Math.abs(enemyHpMultiplier(0, 1, 1000) - 3) < 1e-9, 'pressure 1001 (10 past cap) -> +200% HP (x3)');
-  ok(Math.abs(enemyHpMultiplier(0, 10, 990) - 4) < 1e-9, 'level 10 + pressure 1000 (10 past cap) -> 400% HP');
+  ok(Math.abs(enemyHpMultiplier(0, 1, 1000) - 2) < 1e-9, 'pressure 1001 (10 past cap) -> x2 HP');
+  ok(Math.abs(enemyHpMultiplier(0, 1, 1010) - 4) < 1e-9, 'pressure 1011 (20 past cap) -> x4 HP');
+  ok(Math.abs(enemyHpMultiplier(0, 1, 1030) - 16) < 1e-9, 'pressure 1031 (40 past cap) -> x16 HP');
+  ok(Math.abs(enemyHpMultiplier(0, 10, 990) - 4) < 1e-9, 'level 10 (x2) + 10 past cap (x2) -> 400% HP');
 
   // Fresh restart resets everything
   const fresh2 = new GameState({ level: 1, collectedOrbs: 0, ngPlus: 0 });

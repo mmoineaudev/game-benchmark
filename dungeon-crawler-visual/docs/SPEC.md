@@ -151,7 +151,7 @@ Unchanged structure (180 s/level, level timer, run timer, leaderboard by level/t
 ### 5.1 Shared mechanics (all enemies)
 
 - **Spawn**: BFS distance ≥ 6 cells from entrance, never in the exit room (existing rule). Count = `2 + (level - 1)` spawn slots, capped at 200 (+2 in ARENA). Type chosen per-slot by biome weights (§5.4). Elites: 1-in-10 roll per non-rat spawn. **Living-body cap: 200 total** (rats count individually); a rat pack clamps to fit the cap. **Spawns only occur more than 30 m from the player** (`SPAWN_PLAYER_DIST`): a queued spawn whose spot is too close rotates to the back of the queue until the player moves away. **Far-frozen bodies**: mobs more than 40 m from the player are IMMOBILE (`FROZEN_DIST`) — idle in place, no AI/tracking/attacks — which is what makes the 200-body cap affordable.
-- **Level scaling**: +5% move speed per level and +5% attack speed every 3 levels (existing `speedMult`/`attackMult` pattern), applied to ALL enemy types' speeds and attack-cycle durations/cooldowns; **+100% enemy HP every 10 levels** (×(1 + floor(level/10))). **Spawn multiplier = min(1 + (level + souls)/10, ×100)** — level and banked souls accelerate spawns up to a ×100 cap; past the cap, extra pressure converts to +100% enemy HP per 10 excess points (the overflow rule).
+- **Level scaling**: +2% move speed per level (balance pass — was +5%) and +5% attack speed every 3 levels (`speedMult`/`attackMult` pattern), applied to ALL enemy types' speeds and attack-cycle durations/cooldowns; **+100% enemy HP every 10 levels** (×(1 + floor(level/10))). **Spawn multiplier = min(1 + (level + souls)/10, ×100)** — level and banked souls accelerate spawns up to a ×100 cap; past the cap, extra pressure converts to +100% enemy HP per 10 excess points (the overflow rule).
 - **Death**: drop orb(s) per §5.5, smoke puff, death animation (existing fade-out pattern), then removal + disposal.
 - **Projectile pools**: shared pooled geometry/materials per projectile type (no per-shot allocation).
 - **AI**: existing LOS raycast + greedy 4-neighbor grid pathing (re-evaluate 0.3 s). Wraith ignores pathing (§5.3).
@@ -235,7 +235,7 @@ Elites drop `base + 1` (Warlord 3, Sharpshooter 2, Ogre 4, Banshee 3). All drops
 
 ### 5.6 Enemy level scaling recap
 
-`speedMult = 1 + 0.05 * floor((level-1)/3)`; `attackMult = 1 + 0.05 * floor((level-1)/3)` applied to windup/swing/recover/cooldown of all enemies. Applies to new enemies identically.
+`speedMult = (1 + ENEMY.SPEED_PER_LEVEL * (level-1)) * (1 + 0.1 * bossKills)` — move speed +2%/level (balance pass) and +10%/boss kill; `attackMult = (1 + 0.05 * floor((level-1)/3)) * (1 + 0.1 * bossKills)` applied to windup/swing/recover/cooldown of all enemies. Applies to new enemies identically.
 
 ---
 

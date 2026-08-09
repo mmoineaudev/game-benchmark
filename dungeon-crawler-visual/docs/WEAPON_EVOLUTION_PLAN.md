@@ -53,56 +53,62 @@ safeguard (§16) added the same day.
 
 ## 1. Overview
 
-Every 100 souls the sword evolves: **+1 base damage per evolution** and a new
-aesthetic, stepping from the default blade up to **a lightsaber that throws
-electric arcs**. Progression is strictly cumulative — damage and effect both
-grow, the form never reverts.
+Every 50 souls the sword evolves (ladder 50/100/200/400/800 — halved from the
+original 100/200/400/800/1600 by user ruling): **+1 base damage per evolution**
+and a new aesthetic, stepping from the default blade up to **a lightsaber that
+throws electric arcs**. Progression is strictly cumulative — damage and effect
+both grow, the form never reverts.
 
 Final design constraints:
 
 1. **Souls = lifetime orb pickups.** The game's currency is orbs: picked up from
    kills, spent as ammo (`Game._handleShooting` decrements `collectedOrbs` on the
-   first step of each sequence). "Every 100 souls" therefore uses a
-   NEW monotonic counter, `soulsEarned`, because the banked count fluctuates and
-   a tier based on it could regress mid-fire. `totalOrbs` is not usable either —
-   it is the per-level pickup count (reset to 0 on level build).
+   first step of each sequence). The tier derives from the SINGLE souls counter
+   (`collectedOrbs` — souls = orbs, one notion) and only ever upgrades (the
+   max-reached tier is locked in `state.weaponTier`), so spending ammo never
+   downgrades the blade.
 2. **Sword only.** The melee weapon (floating executioner-style dagger, 3-hit
    combo) evolves. The ranged orb weapon is untouched — `orbDamageMultiplier`
    (already +2% per held orb) keeps its own scaling.
 3. **Progressive in damage AND effect.** +1 per hit per tier; electric arcs ramp
-   from a rare proc to guaranteed bolts at the final tier.
+   from a rare proc to guaranteed bolts at the final tier. Arc bolts deal ORB
+   damage (user ruling); the T5 chain blast is damage-based (5% × 5 orb damage).
 4. **No new mechanics.** Reuses the existing combo, hit, projectile-pool, and
    HUD patterns. No new keys, no new enemy logic, no new systems.
 5. **Established taste holds.** Blade stays STRAIGHT (no bends — energy blade is
    a straight cylinder), weapon stays FLOATING (no hands), materials stay
    self-lit on layer 2 (never lit by the headlight), no shadow casting.
+6. **Size is tier-driven** (user ruling): the blade no longer grows with orbs
+   held — size = 1 + 0.8·tier (×5 at T5), EMPOWERED lengthMult stacks on top,
+   clamped at MAX_TOTAL_SCALE 5.0. Attack speed = 1 + 0.001·souls (+100% at
+   1000 souls), with buff multipliers applying on top.
 
 ---
 
 ## 2. Soul economy (FINAL)
 
-- New `GameState` fields: `soulsEarned: 0` (monotonic, lifetime), `weaponTier: 0`
-  (derived, stored for persistence/form rebuild — the HUD shows the lifetime
-  total only). Both constructor params with default 0
-  (mirrors `collectedOrbs`/`bossKills` pattern).
-- `OrbSystem` increments `state.soulsEarned++` in the SAME branch that
-  increments `collectedOrbs` (the orb-pickup path). Buff pickups and health
-  pickups do NOT count.
-- Tier = `Math.min(Math.floor(soulsEarned / EVOLUTION.TIER_SOULS), EVOLUTION.MAX_TIER)`.
-  Recompute on every pickup; store in `state.weaponTier`; persists across level
-  regens (state field, like `collectedOrbs`).
-- New run (incl. NG+) = fresh `soulsEarned: 0`. NG+ enemy HP ×2 keeps high-tier
-  damage in check without touching the ladder.
+- **ONE souls counter** (user ruling: souls = orbs): `state.collectedOrbs` is the
+  banked ammo, score, spawn driver AND the weapon-ladder source. There is no
+  separate `soulsEarned` field — spending ammo never downgrades the blade
+  because `state.weaponTier` locks at the max reached (only-upgrade guard in
+  `Game._checkWeaponEvolution`).
+- Tier = `weaponTier(collectedOrbs)` — thresholds 50/100/200/400/800 (halved
+  from 100/200/400/800/1600, user ruling), capped at `MAX_TIER`. Recompute on
+  every pickup (and on boss-kill soul rewards); store in `state.weaponTier`;
+  persists across level regens AND NG+ (the ladder is never reset).
+- NG+ keeps the tier (no downgrade to Dagger); the 75% soul toll still shapes
+  how fast the ladder re-climbs after a death.
 
 ---
 
 ## 3. Evolution ladder (FINAL)
 
-`EVOLUTION = { TIER_SOULS: 100, MAX_TIER: 5, DAMAGE_PER_TIER: 1,
+`EVOLUTION = { TIER_SOULS: 50, TIER_THRESHOLDS: [50,100,200,400,800], MAX_TIER: 5,
+DAMAGE_PER_TIER: 1, SIZE_PER_TIER: 0.8, ATTACK_SPEED_PER_SOUL: 0.001,
 BLADE_LENGTH: [0.76, 0.81, 0.86, 0.92, 0.96, 1.0],  // form length per tier (u)
 RANGE_PER_TIER: 0.04, MAX_TOTAL_SCALE: 5.0,
 ARC_CHANCE: [0, 0, 0, 0.10, 0.35, 1.0], ARC_BOLTS: [0, 0, 0, 1, 1, 2],
-ARC_POOL: 8, ARC_SPEED: 24, ARC_LIFE: 1.2, ARC_DAMAGE: 1, ARC_RANGE: 20,
+ARC_POOL: 8, ARC_SPEED: 24, ARC_LIFE: 1.2, ARC_RANGE: 20,
 BOLT_COLOR: 0x66eeff, T5_BLADE_LIGHT: { color: 0x66eeff, intensity: 1.5,
 distance: 6, decay: 1.6 } }`
 
@@ -256,9 +262,9 @@ one form visible at a time; all new materials pooled into `_mats`.
 - **Arc bolt**: pooled projectile (thin cylinder 0.02 × 0.5 + glow sprite,
   additive, `ARC_POOL: 8` — arrow-pool pattern). On spawn it homes to the
   nearest ALIVE enemy within `ARC_RANGE` (20 u); speed 24 u/s, life 1.2 s
-  (fizzles at life end), damage `ARC_DAMAGE: 1` (flat — bolts are effect/utility;
-  the sword hits carry the damage). Impact: burstSparks + short arc line VFX
-  (pooled, 0.12 s).
+  (fizzles at life end). Damage = **orb damage at fire time** (user ruling:
+  `orbDamage(souls)` = 2·(1+0.02·souls), frozen per-bolt — arcs are no longer
+  a flat 1). Impact: burstSparks + short arc line VFX (pooled, 0.12 s).
 - **Proc table (per landing strike):** T0–T2 = legendary proc only (§6); T3 =
   10% → 1 bolt; T4 = 35% → 1 bolt; T5 = **100% → 2 bolts** (combo of 3 hits =
   up to 6 bolts per cycle, fits the pool of 8).
@@ -266,9 +272,10 @@ one form visible at a time; all new materials pooled into `_mats`.
   nearest alive enemy within 20 u; else fizzles (pool slot returns).
 - **Idle crackle (T5):** ≤ 3 pooled additive arc sprites, random along the
   blade, 0.15–0.3 s life, cosmetic only.
-- **Legendary proc** (all tiers): the existing screen-clear electric blast —
-  with the bug fixed (§6) it actually fires at 1% per landing strike. It and the
-  arc bolts can both trigger on the same strike; no conflict (blast = AOE kill,
+- **Legendary blast** (T5, 5% per landing strike — user ruling): damage-based
+  electric chain dealing `ELECTRIC_DAMAGE_MULT` (5) × orb damage to every enemy
+  within 20 u. No longer an instant kill — elites and bosses survive. It and the
+  arc bolts can both trigger on the same strike; no conflict (blast = AOE,
   bolts = single-target).
 
 ---

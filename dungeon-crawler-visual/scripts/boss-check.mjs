@@ -24,6 +24,7 @@ globalThis.document = {
 
 const { GhostBoss } = await import('../src/entities/enemies/GhostBoss.js');
 const { Burning } = await import('../src/entities/enemies/Burning.js');
+const { readFileSync } = await import('node:fs');
 const {
   BOSS, BIOMES, biomeForLevel, BURN,
 } = await import('../src/core/Constants.js');
@@ -37,7 +38,8 @@ for (const lvl of [7, 14, 21]) ok(biomeForLevel(lvl) === 'SPECTRAL_COURT', `leve
 ok(biomeForLevel(1) === 'STONE', 'level 1 is stone (not boss)');
 ok(biomeForLevel(6) !== 'SPECTRAL_COURT' && biomeForLevel(8) !== 'SPECTRAL_COURT', 'levels 6/8 are not boss');
 ok(BIOMES.SPECTRAL_COURT && BIOMES.SPECTRAL_COURT.label === 'SPECTRAL COURT', 'spectral biome defined');
-ok(BOSS.INTERVAL === 7 && BOSS.HP_MULT === 22.5 && BOSS.MAX_MINIONS === 6, 'boss constants');
+ok(BOSS.INTERVAL === 7 && BOSS.HP_MULT === 22.5 && BOSS.MAX_MINIONS === 25 && BOSS.CHARGE_DMG === 2,
+  'boss constants (interval 7, HP_MULT 22.5, MAX_MINIONS 25, charge dmg 2)');
 
 console.log('== GhostBoss ==');
 {
@@ -47,14 +49,26 @@ console.log('== GhostBoss ==');
   ok(boss.hp === 90 && boss.state !== 'DEAD', 'boss alive at full HP');
   ok(boss.bar && boss.barMat && boss.barMat.opacity === 1, 'boss health bar sprite hovers above');
 
-  // Souls scaling: +25% boss HP per 50 souls held (0-49 souls = none)
+  // Wealth/hearts stack (user ruling): souls bonus +25%/50 souls stacks with
+  // ×1.1 per permanent heart past 3; the combined excess is HALVED:
+  //   mult = 1 + ((1+soulsBonus)·1.1^hearts − 1)/2
   const poor = new GhostBoss(scene, 4, 'WRAITH', 49);
   ok(poor.maxHp === 90, `49 souls: no bonus (${poor.maxHp})`);
   const rich = new GhostBoss(scene, 4, 'WRAITH', 100);
-  ok(rich.maxHp === 135, `100 souls: +50% -> ${rich.maxHp} (90 x 1.5)`);
+  ok(rich.maxHp === 113, `100 souls: +25% stack halved -> ${rich.maxHp} (90 x 1.25)`);
   const loaded = new GhostBoss(scene, 4, 'WRAITH', 300);
-  ok(loaded.maxHp === 225, `300 souls: +150% -> ${loaded.maxHp} (90 x 2.5)`);
-  poor.dispose(); rich.dispose(); loaded.dispose();
+  ok(loaded.maxHp === 158, `300 souls: +150% stack halved -> ${loaded.maxHp} (90 x 1.75)`);
+  const hearty = new GhostBoss(scene, 4, 'WRAITH', 0, 5);
+  ok(hearty.maxHp === 118, `5 hearts: x1.1^5 halved -> ${hearty.maxHp} (90 x 1.3053)`);
+  const both = new GhostBoss(scene, 4, 'WRAITH', 100, 5);
+  ok(both.maxHp === 154, `100 souls + 5 hearts stack halved -> ${both.maxHp} (90 x 1.7079)`);
+  poor.dispose(); rich.dispose(); loaded.dispose(); hearty.dispose(); both.dispose();
+
+  // The boss now gets the mob level term too: SkeletonSystem._spawnBoss must
+  // fold +100%/10 levels into baseHp and pass heartsExtra (regression guard —
+  // deep-level lords were previously level-agnostic).
+  const ssSrc = readFileSync(new URL('../src/entities/SkeletonSystem.js', import.meta.url), 'utf8');
+  ok(ssSrc.includes('HP_LEVEL_INTERVAL') && ssSrc.includes('heartsExtra'), 'boss spawn folds level term + heartsExtra');
 
   // damage path -> onKill on death
   let killed = 0;

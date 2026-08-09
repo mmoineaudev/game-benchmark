@@ -5,7 +5,8 @@
 import { readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import {
-  EVOLUTION, SWORD, weaponTier, swordHitDamage,
+  EVOLUTION, SWORD, ORB_WEAPON, weaponTier, swordHitDamage, swordSizeScale,
+  attackSpeedFromSouls, orbDamage,
 } from '../src/core/Constants.js';
 
 let failures = 0;
@@ -15,28 +16,29 @@ const ok = (msg) => console.log(`  ok: ${msg}`);
 // ---------------------------------------------------------------------------
 // Gate 1: EVOLUTION block complete, every value finite (guards NaN bugs)
 const EVO_KEYS = ['TIER_SOULS', 'TIER_THRESHOLDS', 'MAX_TIER', 'DAMAGE_PER_TIER', 'BLADE_LENGTH',
-  'RANGE_PER_TIER', 'MAX_TOTAL_SCALE', 'ARC_CHANCE', 'ARC_BOLTS', 'ARC_POOL',
-  'ARC_SPEED', 'ARC_LIFE', 'ARC_DAMAGE', 'ARC_RANGE', 'BOLT_COLOR', 'T5_BLADE_LIGHT'];
+  'RANGE_PER_TIER', 'SIZE_PER_TIER', 'ATTACK_SPEED_PER_SOUL', 'MAX_TOTAL_SCALE', 'ARC_CHANCE', 'ARC_BOLTS', 'ARC_POOL',
+  'ARC_SPEED', 'ARC_LIFE', 'ARC_RANGE', 'BOLT_COLOR', 'T5_BLADE_LIGHT'];
 for (const k of EVO_KEYS) {
   if (!(k in EVOLUTION)) fail(`EVOLUTION.${k} missing`);
 }
 for (const k of ['ARC_CHANCE', 'ARC_BOLTS', 'BLADE_LENGTH', 'TIER_THRESHOLDS']) {
   for (const v of EVOLUTION[k]) if (!Number.isFinite(v)) fail(`EVOLUTION.${k} has non-finite ${v}`);
 }
-for (const k of ['TIER_SOULS', 'MAX_TIER', 'DAMAGE_PER_TIER', 'RANGE_PER_TIER', 'MAX_TOTAL_SCALE', 'ARC_POOL', 'ARC_SPEED', 'ARC_LIFE', 'ARC_DAMAGE', 'ARC_RANGE']) {
+for (const k of ['TIER_SOULS', 'MAX_TIER', 'DAMAGE_PER_TIER', 'RANGE_PER_TIER', 'SIZE_PER_TIER', 'ATTACK_SPEED_PER_SOUL', 'MAX_TOTAL_SCALE', 'ARC_POOL', 'ARC_SPEED', 'ARC_LIFE', 'ARC_RANGE']) {
   if (!Number.isFinite(EVOLUTION[k])) fail(`EVOLUTION.${k} = ${EVOLUTION[k]} not finite`);
 }
 ok('EVOLUTION block complete and finite');
 
 // ---------------------------------------------------------------------------
-// Gate 2: tier math — exponential ladder 100/200/400/800/1600 (user ruling b)
-const tierCases = [[0, 0], [99, 0], [100, 1], [199, 1], [200, 2], [399, 2],
-  [400, 3], [500, 3], [799, 3], [800, 4], [999, 4], [1599, 4], [1600, 5], [5000, 5]];
+// Gate 2: tier math — exponential ladder 50/100/200/400/800 (user ruling,
+// HALVED from 100/200/400/800/1600)
+const tierCases = [[0, 0], [49, 0], [50, 1], [99, 1], [100, 2], [199, 2],
+  [200, 3], [399, 3], [400, 4], [799, 4], [800, 5], [5000, 5]];
 for (const [souls, want] of tierCases) {
   const got = weaponTier(souls);
   if (got !== want) fail(`weaponTier(${souls}) = ${got} (want ${want})`);
 }
-ok('tier math: exponential 100/200/400/800/1600, capped at MAX_TIER');
+ok('tier math: exponential 50/100/200/400/800, capped at MAX_TIER');
 
 // ---------------------------------------------------------------------------
 // Gate 3: damage ladder — (base + tier) × damageMult at size 1 = 2/2/3 + tier
@@ -80,8 +82,34 @@ if (Math.abs(lens[0] - 0.76) > 0.001 || Math.abs(lens[lens.length - 1] - 1.0) > 
 }
 const tip = (t) => lens[t] * 0.79;
 if (tip(5) > lens[5]) fail('TIP_LOCAL beyond blade tip');
-if (!(EVOLUTION.MAX_TOTAL_SCALE >= 4)) fail('MAX_TOTAL_SCALE < 4 (orb ladder alone reaches 4×)');
+if (!(EVOLUTION.MAX_TOTAL_SCALE >= 5)) fail('MAX_TOTAL_SCALE < 5 (tier size ladder reaches exactly 5× at T5)');
 ok(`blade length 0.76→1.0 monotonic; TIP_LOCAL = length × 0.79; scale clamp ${EVOLUTION.MAX_TOTAL_SCALE}`);
+
+// ---------------------------------------------------------------------------
+// Gate 5b: balance-pass formulas (user rulings, remarks.md/2) — sword size is
+// tier-driven (×5 at T5, orbs no longer grow the blade), attack speed is
+// souls-driven (×2 at 1000) and arcs/blast deal orb damage.
+if (swordSizeScale(0) !== 1 || Math.abs(swordSizeScale(5) - 5) > 1e-9) {
+  fail(`swordSizeScale ladder broken: T0=${swordSizeScale(0)} T5=${swordSizeScale(5)} (want 1 and 5)`);
+}
+if (Math.abs(attackSpeedFromSouls(1000) - 2) > 1e-9) {
+  fail(`attackSpeedFromSouls(1000) = ${attackSpeedFromSouls(1000)} (want 2 — +100% at 1000 souls)`);
+}
+if (orbDamage(100) !== 6 || orbDamage(1000) !== 42) {
+  fail(`orbDamage wrong: 100→${orbDamage(100)}, 1000→${orbDamage(1000)} (want 6, 42)`);
+}
+if (SWORD.ELECTRIC_CHANCE !== 0.05 || SWORD.ELECTRIC_DAMAGE_MULT !== 5) {
+  fail('T5 electric blast must be 5% × 5 orb damage (user ruling)');
+}
+if (ORB_WEAPON.EXPLODE_DAMAGE !== 5 || ORB_WEAPON.EXPLODE_RADIUS !== 2) {
+  fail('orb weapon explosion must be 5 dmg @ 2u (user ruling)');
+}
+const gameSrc2 = readFileSync(new URL('../src/core/Game.js', import.meta.url), 'utf8');
+if (!gameSrc2.includes('b.dmg') || gameSrc2.includes('EVOLUTION.ARC_DAMAGE')) {
+  fail('arc bolts must deal orb damage (b.dmg), not the removed ARC_DAMAGE');
+}
+if (gameSrc2.includes('99999')) fail('electric chain must be damage-based, not the old insta-kill');
+ok('balance pass: size ladder ×5@T5, atk speed ×2@1000 souls, arcs/blast = orb damage, explosion 5@2u');
 
 // ---------------------------------------------------------------------------
 // Gate 7: ONE souls notion (user ruling: souls = orbs) — the separate

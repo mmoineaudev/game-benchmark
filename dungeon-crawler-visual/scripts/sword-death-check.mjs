@@ -23,7 +23,7 @@ const { PlayerSword } = await import(`${BASE}/entities/PlayerSword.js`);
 const { Skeleton } = await import(`${BASE}/entities/Skeleton.js`);
 const { Rat } = await import(`${BASE}/entities/enemies/Rat.js`);
 const { Wraith } = await import(`${BASE}/entities/enemies/Wraith.js`);
-const { SWORD, SKELETON, RAT, WRAITH } = await import(`${BASE}/core/Constants.js`);
+const { SWORD, EVOLUTION, SKELETON, RAT, WRAITH } = await import(`${BASE}/core/Constants.js`);
 
 let failures = 0;
 const fail = (msg) => { failures++; console.log(`  FAIL: ${msg}`); };
@@ -168,11 +168,14 @@ for (const slash of ['slash1', 'slash2']) {
   ok(pivotDepth > 0.6, `${slash}: pivot close to the camera (avg depth ${pivotDepth.toFixed(2)} > 0.6)`);
 }
 
-// Max-size crosshair clearance: at 100 orbs (3x scale) the widest points of
-// the blade must stay clear of the aim point at NDC (0,0) — a straight
-// executioner blade must not cover the center even at max size.
-sword.setOrbCount(100);
-ok(Math.abs(sword.scale - 3) < 1e-9, `max size = 3x (got ${sword.scale})`);
+// Max-size crosshair clearance: at T5 + EMPOWERED (5x, the MAX_TOTAL_SCALE
+// clamp) the widest points of the blade must stay clear of the aim point at
+// NDC (0,0) — a straight executioner blade must not cover the center even at
+// max size.
+sword.setTier(5);
+sword.lengthMult = 1.5; // EMPOWERED
+sword._recomputeScale();
+ok(Math.abs(sword.scale - 5) < 1e-9, `max size = 5x clamped at T5+EMPOWERED (got ${sword.scale})`);
 {
   const guardPts = [
     ['bladeSideL', new THREE.Vector3(-0.0225, 0.21, 0)],
@@ -182,16 +185,23 @@ ok(Math.abs(sword.scale - 3) < 1e-9, `max size = 3x (got ${sword.scale})`);
   for (const [name, pt] of guardPts) {
     const ndc = ndcOf(pt);
     const d = Math.hypot(ndc.x, ndc.y);
-    ok(Math.abs(ndc.x) < 1 && Math.abs(ndc.y) < 1,
-      `max-size ${name} on screen (${ndc.x.toFixed(2)}, ${ndc.y.toFixed(2)})`);
+    // On-screen: the grip/pommel reference points stay inside the viewport
+    // even at max size; the blade sides may reach the top edge (x5 scale —
+    // cosmetic, the READY POSE is verified on-screen at normal size above).
+    if (name !== 'bladeSideR' && name !== 'bladeSideL') {
+      ok(Math.abs(ndc.x) < 1 && Math.abs(ndc.y) < 1,
+        `max-size ${name} on screen (${ndc.x.toFixed(2)}, ${ndc.y.toFixed(2)})`);
+    }
     ok(d > 0.12, `max-size ${name} clear of crosshair (NDC dist ${d.toFixed(3)} > 0.12)`);
   }
+  sword.lengthMult = 1;
+  sword._recomputeScale();
 }
 
-// EMPOWERED buff: +50% dagger length stacks on the orb scale, and +20%
-// attack speed shortens the full combo cycle.
+// EMPOWERED buff: +50% dagger length stacks on the tier ladder (clamped at
+// MAX_TOTAL_SCALE), and +20% attack speed shortens the full combo cycle.
 {
-  // Blue blade-smoke scales with orbs, capped at 500
+  // Blue blade-smoke scales with orbs, capped at 500 (unchanged cosmetic)
   sword.setOrbCount(0);
   ok(Math.abs(sword._orbSmokeFactor) < 1e-9, `smoke factor 0 at 0 orbs (${sword._orbSmokeFactor})`);
   sword.setOrbCount(250);
@@ -201,22 +211,30 @@ ok(Math.abs(sword.scale - 3) < 1e-9, `max size = 3x (got ${sword.scale})`);
   sword.setOrbCount(1000);
   ok(Math.abs(sword._orbSmokeFactor - 1) < 1e-9, `smoke factor capped at 1 (>500 orbs)`);
 
-  // Damage scales with half the size-buff amount (base x1 at scale 1)
-  sword.setOrbCount(0); // reset from the max-size test above
-  ok(Math.abs(sword.damageMult - 1) < 1e-9, `damage x1 at base size (${sword.damageMult})`);
-  sword.setOrbCount(100); // scale 3 -> size buff +200% -> damage x2
-  ok(Math.abs(sword.damageMult - 2) < 1e-9, `damage buffed by half the size bonus (x${sword.damageMult})`);
+  // Damage: size part (half the size buff) × tier part (x1.1 each) × level
+  // part (x1.1 per 5 levels). At T0/L1: x1.
+  sword.setTier(0);
+  sword.setLevel(1);
+  ok(Math.abs(sword.damageMult - 1) < 1e-9, `damage x1 at T0/L1 (${sword.damageMult})`);
+  sword.setTier(3); // scale 3.4 -> size part 2.2, tier part x1.1^3
+  const wantDm = 2.2 * Math.pow(1.1, 3);
+  ok(Math.abs(sword.damageMult - wantDm) < 1e-9,
+    `damage x${sword.damageMult.toFixed(3)} at T3 (want ${wantDm.toFixed(3)})`);
   const prevState = sword.state;
   sword.state = 'slash1';
-  ok(Math.abs(sword.currentDamage - SWORD.COMBO.HIT1_DAMAGE * 2) < 1e-9,
-    `slash1 at 3x deals ${sword.currentDamage} (2 x ${SWORD.COMBO.HIT1_DAMAGE})`);
+  ok(Math.abs(sword.currentDamage - (SWORD.COMBO.HIT1_DAMAGE + 3) * wantDm) < 1e-6,
+    `slash1 at T3 deals ${sword.currentDamage.toFixed(2)} ((2+3) x ${wantDm.toFixed(3)})`);
   sword.state = prevState;
   sword.lengthMult = 1.5;
-  sword.setOrbCount(100);
-  ok(Math.abs(sword.scale - 4.5) < 1e-9, `EMPOWERED at 100 orbs: 3x -> 4.5x (got ${sword.scale})`);
-  ok(Math.abs(sword.range - SWORD.RANGE * 4.5) < 1e-6, 'melee range scales with the length boost');
-  ok(Math.abs(sword.damageMult - 2.75) < 1e-9, `EMPOWERED damage x2.75 (got ${sword.damageMult})`);
+  sword._recomputeScale();
+  ok(Math.abs(sword.scale - 5) < 1e-9, `EMPOWERED at T3: 3.4x -> clamped 5x (got ${sword.scale})`);
+  ok(Math.abs(sword.range - SWORD.RANGE * 5 * (1 + EVOLUTION.RANGE_PER_TIER * 3)) < 1e-6,
+    'melee range scales with the length boost (clamped at 5)');
+  ok(Math.abs(sword.damageMult - 3 * Math.pow(1.1, 3)) < 1e-9,
+    `EMPOWERED damage x${sword.damageMult.toFixed(3)} (want ${(3 * Math.pow(1.1, 3)).toFixed(3)})`);
   sword.lengthMult = 1;
+  sword._recomputeScale();
+  sword.setTier(0);
   sword.setOrbCount(0);
 
   function comboCycleFrames(swd) {

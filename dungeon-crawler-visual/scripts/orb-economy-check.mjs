@@ -24,7 +24,7 @@ const { OrbSystem } = await import(`${BASE}/entities/OrbSystem.js`);
 const { Rat } = await import(`${BASE}/entities/enemies/Rat.js`);
 const { PlayerSword } = await import(`${BASE}/entities/PlayerSword.js`);
 const { PropSystem } = await import(`${BASE}/world/PropSystem.js`);
-const { ORB_WEAPON, DROP, PLAYER, RAT, orbPowerMultiplier, orbDamageMultiplier } = await import(`${BASE}/core/Constants.js`);
+const { ORB_WEAPON, DROP, PLAYER, RAT, swordSizeScale, orbDamageMultiplier } = await import(`${BASE}/core/Constants.js`);
 
 let failures = 0;
 const fail = (msg) => { failures++; console.log(`  FAIL: ${msg}`); };
@@ -198,21 +198,24 @@ console.log('== Orb explosion ==');
 }
 
 // ===========================================================================
-// 4) SHARED POWER MULTIPLIER — sword scale === enemy spawn-rate multiplier
+// 4) SWORD SIZE — tier-driven ladder (×5 at T5), orbs no longer grow the blade
 // ===========================================================================
-console.log('== Shared power multiplier ==');
+console.log('== Sword size (tier ladder, orb-independent) ==');
 {
   const cam = new THREE.PerspectiveCamera(75, 16 / 9, 0.1, 50);
   const sword = new PlayerSword(cam);
-  ok(orbPowerMultiplier(0) === 1 && orbPowerMultiplier(10) === 1.2
-    && orbPowerMultiplier(100) === 3 && orbPowerMultiplier(150) === 4
-    && orbPowerMultiplier(999) === 4,
-    `multiplier bounds (1 @0, 1.2 @10, 3 @100, 4 @150, capped at 4x)`);
-  for (const n of [0, 10, 50, 100, 150]) {
-    sword.setOrbCount(n);
-    ok(Math.abs(sword.scale - orbPowerMultiplier(n)) < 1e-9,
-      `sword scale === orbPowerMultiplier(${n}) (${sword.scale.toFixed(2)})`);
-  }
+  ok(swordSizeScale(0) === 1 && Math.abs(swordSizeScale(1) - 1.8) < 1e-9 && Math.abs(swordSizeScale(3) - 3.4) < 1e-9
+    && Math.abs(swordSizeScale(5) - 5) < 1e-9,
+    'size ladder 1 / 1.8 / 2.6 / 3.4 / 4.2 / 5 (×5 at T5)');
+  // Orbs held do NOT change the blade size anymore (user ruling)
+  sword.setOrbCount(0);
+  const baseScale = sword.scale;
+  sword.setOrbCount(999);
+  ok(Math.abs(sword.scale - baseScale) < 1e-9, `orb count does not affect size (${sword.scale.toFixed(2)})`);
+  // The tier ladder does
+  sword.setTier(5);
+  ok(Math.abs(sword.scale - 5) < 1e-9, `T5 blade is exactly ×5 (${sword.scale.toFixed(2)})`);
+  sword.setTier(0);
   sword.dispose();
 }
 
@@ -225,9 +228,9 @@ console.log('== Orb damage multiplier ==');
   ok(Math.abs(orbDamageMultiplier(50) - 2) < 1e-9, `orb dmg x2 @50 orbs ([50]%*2)`);
   ok(Math.abs(orbDamageMultiplier(100) - 3) < 1e-9, `orb dmg x3 @100 orbs`);
   ok(Math.abs(orbDamageMultiplier(25) - 1.5) < 1e-9, `orb dmg x1.5 @25 orbs`);
-  // Applied to base orb damage + explosive orb damage.
+  // Applied to base orb damage + explosive orb damage (explosion base 5 — user ruling).
   ok(Math.round(ORB_WEAPON.DAMAGE * orbDamageMultiplier(50)) === 4, `direct orb hits for 4 @50 orbs (base 2)`);
-  ok(Math.round(ORB_WEAPON.EXPLODE_DAMAGE * orbDamageMultiplier(50)) === 4, `explosive orb hits for 4 @50 orbs (base 2)`);
+  ok(Math.round(ORB_WEAPON.EXPLODE_DAMAGE * orbDamageMultiplier(50)) === 10, `explosive orb hits for 10 @50 orbs (base 5)`);
 }
 
 // ===========================================================================

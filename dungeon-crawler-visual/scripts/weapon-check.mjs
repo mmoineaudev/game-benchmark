@@ -109,7 +109,15 @@ if (!gameSrc2.includes('b.dmg') || gameSrc2.includes('EVOLUTION.ARC_DAMAGE')) {
   fail('arc bolts must deal orb damage (b.dmg), not the removed ARC_DAMAGE');
 }
 if (gameSrc2.includes('99999')) fail('electric chain must be damage-based, not the old insta-kill');
-ok('balance pass: size ladder ×5@T5, atk speed ×2@1000 souls, arcs/blast = orb damage, explosion 5@2u');
+// NG+ recalculates the ladder from the kept souls (user ruling): a maxed
+// blade is never free across a cycle — the old "tier kept on NG+" is gone.
+if (!gameSrc2.includes('weaponTier(Math.floor(this.state.collectedOrbs * 0.25))')) {
+  fail('NG+ must recalculate weaponTier from the kept (25%) souls');
+}
+if (gameSrc2.includes('weaponTier: newGamePlus ? (this.state.weaponTier || 0)')) {
+  fail('NG+ still keeps the old weaponTier (must recalculate from kept souls)');
+}
+ok('balance pass: size ladder ×5@T5, atk speed ×2@1000 souls, arcs/blast = orb damage, explosion 5@2u, NG+ tier recalculated');
 
 // ---------------------------------------------------------------------------
 // Gate 7: ONE souls notion (user ruling: souls = orbs) — the separate

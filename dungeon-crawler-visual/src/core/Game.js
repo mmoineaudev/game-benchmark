@@ -1637,9 +1637,12 @@ export class Game {
     if (this._goNgPlusBtn) {
       const ng = (this.state.ngPlus || 0) + 1;
       // NG+ effects are doubled: +200% enemy HP per cycle (real multiplier).
-      // The soul toll is 75% — the button shows exactly what you'd keep.
+      // The soul toll is 75% — the button shows exactly what you'd keep AND
+      // the weapon tier that bank buys (the ladder recalculates on NG+).
       const kept = Math.floor(this.state.collectedOrbs * 0.25);
-      this._goNgPlusBtn.textContent = `New Game+ [Y] — Level ${ngLevel} (keep ${kept} of ${this.state.collectedOrbs} Souls · mobs +${200 * ng}% HP)`;
+      const keptTier = weaponTier(kept);
+      const tierNote = keptTier > 0 ? ` → T${keptTier}` : ' → Dagger';
+      this._goNgPlusBtn.textContent = `New Game+ [Y] — Level ${ngLevel} (keep ${kept} of ${this.state.collectedOrbs} Souls${tierNote} · mobs +${200 * ng}% HP)`;
     }
     if (this._goRestartBtn) this._goRestartBtn.onclick = () => this._startNewRun(false);
     if (this._goNgPlusBtn) this._goNgPlusBtn.onclick = () => this._startNewRun(true);
@@ -1688,9 +1691,10 @@ export class Game {
       collectedOrbs: newGamePlus ? Math.floor(this.state.collectedOrbs * 0.25) : 0,
       ngPlus: newGamePlus ? (this.state.ngPlus || 0) + 1 : 0,
       bossKills: newGamePlus ? (this.state.bossKills || 0) : 0,
-      // NG+ NEVER resets the ladder: the weapon tier is kept (no downgrade to
-      // Dagger on NG+).
-      weaponTier: newGamePlus ? (this.state.weaponTier || 0) : 0,
+      // NG+ RECALCULATES the ladder from the KEPT souls (user ruling): the
+      // tier is whatever the post-toll bank can afford — a maxed blade is
+      // never free across a cycle. Within a run the tier still only upgrades.
+      weaponTier: newGamePlus ? weaponTier(Math.floor(this.state.collectedOrbs * 0.25)) : 0,
       // Permanent hearts carry into NG+ too — the run only dies, the body
       // doesn't forget. A fresh run resets to the base count (constructor).
       maxHealth: newGamePlus ? (this._maxHealth || this.state.maxHealth || PLAYER.MAX_HEALTH) : PLAYER.MAX_HEALTH,

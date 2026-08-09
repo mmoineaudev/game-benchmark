@@ -95,9 +95,11 @@ Final design constraints:
 - Tier = `weaponTier(collectedOrbs)` — thresholds 50/100/200/400/800 (halved
   from 100/200/400/800/1600, user ruling), capped at `MAX_TIER`. Recompute on
   every pickup (and on boss-kill soul rewards); store in `state.weaponTier`;
-  persists across level regens AND NG+ (the ladder is never reset).
-- NG+ keeps the tier (no downgrade to Dagger); the 75% soul toll still shapes
-  how fast the ladder re-climbs after a death.
+  persists across level regens (state field, like `collectedOrbs`).
+- NG+ RECALCULATES the tier from the kept souls (user ruling): after the 75%
+  toll the tier is `weaponTier(⌊collectedOrbs × 0.25⌋)` — the death screen's
+  NG+ button shows the exact tier the bank buys. A maxed blade is never free
+  across a cycle; within a run the tier still only upgrades.
 
 ---
 

@@ -310,11 +310,12 @@ export const ENEMY = {
   DANGER_MAX_SUM: 2.0, // summed 1/d per sector maps to alpha = min(1, sum/2)
   HP_LEVEL_INTERVAL: 10, // +HP_PER_STEP bonus HP every 10 levels
   HP_PER_STEP: 1.0,      // +100% mob HP per 10 levels (user ruling: enemies lacked HP)
-  HP_OVERFLOW_POWER: 2, // QUADRATIC overflow: +floor(excess/10)^2 × mob HP past
-                         // the ×100 spawn cap (1, 4, 9, 16, 25...). User ruling:
-                         // linear ×3/10 too weak, exponential ×2 snowballed too
-                         // hard; quadratic outscales the player's linear damage
-                         // without the compounding cliff
+  HP_OVERFLOW_PER_STEP: 1.5, // LINEAR overflow: +150% mob HP per 10 excess
+                         // points past the ×100 spawn cap (mult = 1 + 1.5k,
+                         // k = floor(excess/10)). User ruling: exponential and
+                         // quadratic drafts snowballed (x485 @ excess 220);
+                         // linear outscales the player's ~linear damage
+                         // growth without the cliff
   HP_PER_NG: 3.0,        // +300% HP per NG+ cycle (100% base + 200% doubled-effect
                          // ruling + 100% additional — user ruling)
   SPEED_PER_LEVEL: 0.02, // +2% mob MOVE speed per level (user ruling: was +5%,
@@ -580,19 +581,17 @@ export function excessOrbs(orbs) {
 
 // Enemy HP: +100% per 10 levels, +300% per NG+ cycle (HP_PER_NG — base 100%,
 // the doubled-effect ruling +200%, plus an additional +100%), and spawn
-// pressure ABOVE the ×100 spawn cap converts to HP QUADRATICALLY — each 10
-// excess points adds floor(excess/10)^2 × HP (1, 4, 9, 16... — HP_OVERFLOW_POWER
-// 2). User ruling: linear ×3 was too weak, exponential ×2 snowballed; the
-// quadratic outscales the player's linear-in-souls damage without compounding.
-// Spawns cap, tankiness takes the overflow. SIGNIFICANTLY harder at depth.
+// pressure ABOVE the ×100 spawn cap converts to HP LINEARLY — each 10 excess
+// points adds +150% × HP (HP_OVERFLOW_PER_STEP: mult = 1 + 1.5·floor(excess/10)).
+// User ruling: quadratic (1+k²) exploded (x37 @ excess 60 -> x485 @ 220);
+// linear keeps the outscale-over-the-player property (player damage grows
+// ~linearly with souls) without the cliff. Spawns cap, tankiness takes the
+// overflow. SIGNIFICANTLY harder at depth.
 export function enemyHpMultiplier(ngPlus, level = 1, souls = 0) {
   const capPressure = (ENEMY.SPAWN_CAP - 1) * 10; // pressure at which spawnMult = ×100
   const excess = Math.max(0, (level || 1) + (souls || 0) - capPressure);
   const levelBonus = 1 + Math.floor((level || 1) / ENEMY.HP_LEVEL_INTERVAL);
-  const overflowMult = 1 + Math.pow(
-    Math.floor(excess / 10),
-    ENEMY.HP_OVERFLOW_POWER,
-  );
+  const overflowMult = 1 + ENEMY.HP_OVERFLOW_PER_STEP * Math.floor(excess / 10);
   return (1 + ENEMY.HP_PER_NG * (ngPlus || 0)) * levelBonus * overflowMult;
 }
 

@@ -194,14 +194,14 @@ console.log('== New Game+ ==');
   ok(Math.abs(enemyHpMultiplier(0, 20) - 3) < 1e-9, 'level 20 -> 300% enemy HP');
   ok(Math.abs(enemyHpMultiplier(1, 10) - 8) < 1e-9, 'NG+1 @ level 10 -> 800% enemy HP');
   // Spawn-cap overflow: pressure = level + souls; spawnMult caps at ×100
-  // (pressure 990). Past it, HP grows QUADRATICALLY: +floor(excess/10)^2
-  // (1, 4, 9, 16...) — HP_OVERFLOW_POWER 2. Outscales the player's linear
-  // damage without the exponential snowball.
+  // (pressure 990). Past it, HP grows LINEARLY: +150% per 10 excess points
+  // (mult = 1 + 1.5·floor(excess/10) — HP_OVERFLOW_PER_STEP). Outscales the
+  // player's ~linear damage without the quadratic/exponential snowballs.
   ok(Math.abs(enemyHpMultiplier(0, 1, 990) - 1) < 1e-9, 'pressure 991 (at the cap) -> no HP overflow');
-  ok(Math.abs(enemyHpMultiplier(0, 1, 1000) - 2) < 1e-9, 'pressure 1001 (10 past cap) -> x2 HP');
-  ok(Math.abs(enemyHpMultiplier(0, 1, 1010) - 5) < 1e-9, 'pressure 1011 (20 past cap) -> x5 HP');
-  ok(Math.abs(enemyHpMultiplier(0, 1, 1030) - 17) < 1e-9, 'pressure 1031 (40 past cap) -> x17 HP');
-  ok(Math.abs(enemyHpMultiplier(0, 10, 990) - 4) < 1e-9, 'level 10 (x2) + 10 past cap (x2) -> 400% HP');
+  ok(Math.abs(enemyHpMultiplier(0, 1, 1000) - 2.5) < 1e-9, 'pressure 1001 (10 past cap) -> x2.5 HP');
+  ok(Math.abs(enemyHpMultiplier(0, 1, 1010) - 4) < 1e-9, 'pressure 1011 (20 past cap) -> x4 HP');
+  ok(Math.abs(enemyHpMultiplier(0, 1, 1030) - 7) < 1e-9, 'pressure 1031 (40 past cap) -> x7 HP');
+  ok(Math.abs(enemyHpMultiplier(0, 10, 990) - 5) < 1e-9, 'level 10 (x2) + 10 past cap (x2.5) -> 500% HP');
 
   // Fresh restart resets everything
   const fresh2 = new GameState({ level: 1, collectedOrbs: 0, ngPlus: 0 });

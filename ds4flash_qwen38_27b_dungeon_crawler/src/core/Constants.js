@@ -518,6 +518,10 @@ export const BOSS = {
   HP_MULT: 22.5,              // base HP = ceil(4 × 22.5) = 90
   BASE_HP_FACTOR: 4,
   HEARTS_HP_BONUS: 0.1,       // +0.1 per permanent heart past 3
+  // Boss HP hearts factor base: the §17 examples (49s+5h→118, 100s+5h→154 with
+  // A=1+0.25·floor(s/50), 3h baseline F=1) require F(2 extra hearts) ∈ (1.6, 1.6148];
+  // 1.1^(2.5·h) = 1.1^5 = 1.61051 per 2 hearts fits all five binding §17/§24 values.
+  HEARTS_MULT_EXP: 2.5,       // hearts factor = 1.1^(2.5·heartsExtra)
   SOULS_HP_BONUS: 0.25,       // +0.25 per 50 souls
   DRIFT_SPEED: 2.2,           // drift toward player beyond 2.5 u
   DRIFT_DISTANCE: 2.5,

@@ -425,10 +425,30 @@ export class Game {
   }
 
   _onBossKilledEvent(d) {
-    this.state.bossKills += 1;
+    const s = this.state;
+    s.bossKills += 1;
     this._bossPortalOpen = true;
     this._regenAcc = 0;
-    this._toast('The Spectral Lord has fallen. The exit opens.');
+
+    // §17 boss defeat rewards
+    // (a) 5-minute uncapped buff (BUFF.BOSS_DURATION, NOT the 90 s breakable cap)
+    const effects = BUFF.EFFECTS;
+    const rewardBuff = effects[Math.floor(Math.random() * effects.length)];
+    this._onBuffCollected(rewardBuff); // side effects (BRIGHT/FIREBALL/speeds/HUNTER)
+    s.activeBuffTimer = BUFF.BOSS_DURATION; // uncapped: override the 60 s DURATION
+
+    // (b) +1 permanent max heart and heal +1
+    s.maxHealth += 1;
+    this._maxHealth = s.maxHealth;
+    s.health = Math.min(s.health + 1, s.maxHealth);
+
+    // (c) soul reward = level × max(1, ngPlus)
+    const rewardSouls = s.level * Math.max(1, s.ngPlus);
+    s.collectedOrbs += rewardSouls;
+    if (this.sword) this.sword.souls = s.collectedOrbs;
+
+    // §25 binding string
+    this._toast(`The Spectral Lord falls - ${rewardSouls} souls, a heart and a blessing are yours. The portal opens!`);
     this._hudDirty = true;
   }
 
@@ -1514,7 +1534,7 @@ export class Game {
       bossKills: s.bossKills,
       orbs: s.collectedOrbs,
     };
-    this.leaderboard.recordDeath({
+    this.leaderboard.submit({
       level: s.level,
       time: Math.round(s.runTime),
       ngPlus: s.ngPlus,

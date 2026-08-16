@@ -1,0 +1,17 @@
+{
+  "level": 14,
+  "runTime": 342.5,
+  "souls": 137,
+  "weaponTier": 3,
+  "maxHealth": 5,
+  "ngPlus": 1,
+  "bossKills": 2,
+  "lastDeath": {
+    "reason": "dead",
+    "level": 14,
+    "time": 342.5,
+    "orbs": 137,
+    "ngPlus": 1,
+    "date": "2026-01-01T00:00:00Z"
+  }
+}

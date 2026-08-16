@@ -85,6 +85,30 @@ export class InputSystem {
     return out;
   }
 
+  /**
+   * Explicitly (un)lock the pointer (§23/§26 UI toggles).
+   * locked=true  → request pointer lock on the canvas (no-op when already
+   *                locked or headless). locked=false → release pointer lock.
+   */
+  setPointerLock(locked) {
+    if (locked) {
+      if (!this.enabled || !this.canvas) return;
+      if (this.isPointerLocked()) return;
+      if (typeof this.canvas.requestPointerLock === 'function') {
+        this.canvas.requestPointerLock();
+      }
+    } else {
+      if (!this.enabled) return;
+      const d = typeof document !== 'undefined' ? document : null;
+      if (!d) return;
+      const active = d.pointerLockElement === this.canvas ||
+        (this.domElement && d.pointerLockElement === this.domElement);
+      if (active && typeof d.exitPointerLock === 'function') {
+        d.exitPointerLock();
+      }
+    }
+  }
+
   isPointerLocked() {
     if (!this.enabled) return false;
     const d = typeof document !== 'undefined' ? document : null;

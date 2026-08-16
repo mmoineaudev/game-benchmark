@@ -14,21 +14,27 @@ import * as THREE from 'three';
 
 import {
   WORLD, PLAYER, CAMERA, BIOMES, BOSS, BUFF,
-  DUNGEON, LIGHT_SOURCES,
-  EVOLUTION, SWORD, HIT_STOP, ORB_WEAPON,
+  DUNGEON, LIGHT_SOURCES, DROP,
+  EVOLUTION, SWORD, HIT_STOP, ORB_WEAPON, ENEMY,
   biomeForLevel, weaponTier, damageMult,
 } from './core/Constants.js';
 import { GameState } from './core/GameState.js';
 import { EventBus } from './core/EventBus.js';
 import { Leaderboard } from './core/Leaderboard.js';
+// DROP imported below with the other Constants.
 import { resolveCircleCollisions } from './core/Collision.js';
 
 import { DungeonGenerator } from './world/DungeonGenerator.js';
 import { BiomeSystem } from './world/BiomeSystem.js';
+import { WorldBuilder } from './world/WorldBuilder.js';
+import { PropSystem } from './world/PropSystem.js';
 
 import { InputSystem } from './systems/InputSystem.js';
 import { RuneSystem } from './systems/RuneSystem.js';
 import { PostProcessing } from './systems/PostProcessing.js';
+import { LightingSystem } from './systems/LightingSystem.js';
+import { ParticleSystem } from './systems/ParticleSystem.js';
+import { SmokeSystem } from './systems/SmokeSystem.js';
 
 import { OrbSystem } from './entities/OrbSystem.js';
 import { OrbShooter } from './entities/OrbShooter.js';
@@ -117,7 +123,7 @@ export class Game {
     this._regenAcc = 0;
     this._flashT = 0;
     this._hitStop = 0;
-    this._prevKeys = { e: false, m2: false, m0: false };
+    this._prevKeys = { m2: false, m0: false };
     this._leaderboardOpen = false;
     this._prevInExit = false;
     this._waterPuddles = [];
@@ -198,20 +204,19 @@ export class Game {
     );
     this.camera.position.set(0, PLAYER.HEIGHT + CAMERA.EYE_HEIGHT, 0);
 
-    // Headlight (§10.1)
-    const head = new THREE.PointLight(0xffd9a0,
-      LIGHT_SOURCES.PLAYER_HEADLIGHT.intensity, LIGHT_SOURCES.PLAYER_HEADLIGHT.distance, 2);
+    // Headlight (§10.1) — camera-attached fill light
+    const head = new THREE.PointLight(0xffd9a0, 1.4, 24, 1.8);
     head.position.set(0, -0.2, 0);
     this.camera.add(head);
 
     // Sword (camera-attached, §20)
     this.sword = new PlayerSword(this.camera, {
-      onSwingHit: (enemies, step, dir, pos, arc) =>
-        this._onSwordSwing(enemies, step, dir, pos, arc),
+      onSwingHit: (step, cone) =>
+        this._onSwordSwing(step, cone),
       onHitStop: (ms) => { this._hitStop = Math.max(this._hitStop, ms); },
       onElectricChain: (targets) => this._onElectricChain(targets),
       onEvolution: (tier, prev) => this._onEvolution(tier, prev),
-      getArcBolts: () => this._arcBolts,
+      arcTargets: () => this.skeletons ? this.skeletons.living : [],
     });
     this.camera.add(this.sword.group);
 
@@ -233,8 +238,14 @@ export class Game {
 
   /** 4. Input system. */
   _initInput() {
-    this.input = new InputSystem(this.renderer.domElement, {
-      onPointerLock: (locked) => {
+    this.input = new InputSystem(this.renderer.domElement);
+    this._prevKeys = {};
+    this._inputKeys = ['KeyN', 'KeyL', 'KeyY', 'KeyS', 'Tab', 'KeyP', 'KeyE'];
+    for (const code of this._inputKeys) this._prevKeys[code] = false;
+    // Pointer-lock edge (menu enter / death dismiss / leaderboard close).
+    if (typeof document !== 'undefined') {
+      this._plChange = () => {
+        const locked = this.input.isPointerLocked();
         if (locked) {
           if (this._inMenu) this._enterRun();
           else if (this._deathVisible) this._hideDeathScreen();
@@ -242,20 +253,9 @@ export class Game {
         } else if (this._leaderboardOpen) {
           this._hideLeaderboard();
         }
-      },
-      onKey: (code, pressed) => {
-        if (code === 'KeyN' && pressed) {
-          if (this._inMenu) this.newGame();
-          else if (this._deathVisible) this.newGame();
-        }
-        if (code === 'KeyL' && pressed && this._inMenu && this.leaderboard.hasSave()) this.loadGame();
-        if (code === 'KeyY' && pressed && this._deathVisible) this.newGamePlus();
-        if (code === 'KeyS' && pressed && this._deathVisible) this.saveGame();
-        if (code === 'Tab' && pressed) this._toggleLeaderboard();
-        if (code === 'KeyP' && pressed) this._togglePost();
-        if (code === 'KeyE' && pressed) this._tryDescend();
-      },
-    });
+      };
+      document.addEventListener('pointerlockchange', this._plChange);
+    }
   }
 
   /** 5. Event → HUD toasts + save bootstrap. */
@@ -267,7 +267,8 @@ export class Game {
   }
 
   _bootstrapSave() {
-    if (!this.leaderboard.hasSave()) return;
+    if (!this.leaderboard.getSave) return;
+    if (!this.leaderboard.getSave()) return;
     const btn = document.getElementById('btn-load');
     if (btn) btn.classList.remove('hidden');
   }
@@ -285,7 +286,8 @@ export class Game {
     this.dungeon = dungeon;
     this._titleDungeon = dungeon;
     // Build a minimal world so the title orbit shows geometry.
-    this._titleWorld = this.biomes.buildWorld(this.scene, dungeon, 'STONE');
+    this._titleWorld = new WorldBuilder().build(dungeon, this.biomes.getTexturesFor('STONE'), 'STONE');
+    this.scene.add(this._titleWorld.group);
     this.state.level = 1;
   }
 
@@ -306,17 +308,8 @@ export class Game {
       // Rotate the title world slowly for parallax.
       this._titleWorld.group.rotation.y = this._titleClock * 0.05;
     }
-    if (this.input && this.input.isLocked()) {
-      if (!this._titleHeld) {
-        this._titleHeld = true;
-        this._titleHoldStart = this._now;
-      }
-      if (this._now - this._titleHoldStart >= 5) {
-        this._titleHeld = false;
-        this.input.setPointerLock(false);
-        this._advanceFromTitle();
-      }
-    }
+    // (Pointer-lock hold-to-advance is a §23 showcase gesture; the menu
+    //  button handles normal entry. Kept simple here.)
   }
 
   _advanceFromTitle() {
@@ -326,6 +319,7 @@ export class Game {
   _showStartMenu() {
     const el = document.getElementById('start-menu');
     if (el) el.classList.remove('hidden');
+    this._hideLoadingOverlay();
     this._inMenu = true;
   }
 
@@ -379,7 +373,8 @@ export class Game {
     s.level = 1;
     s.bossKills = 0;
     s.health = s.maxHealth;
-    s.timeSurvived = 0;
+    s.runTime = 0;
+    s.levelTime = 0;
     this._bossPortalOpen = false;
     this._regenAcc = 0;
     this._isRunning = true;
@@ -388,6 +383,7 @@ export class Game {
 
   saveGame() {
     if (!this._deathVisible) return;
+    if (!this.leaderboard.setSave) return; // Leaderboard is rankings-only in this build
     this.leaderboard.setSave(this.state.serialize());
     const btn = document.getElementById('btn-load');
     if (btn) btn.classList.remove('hidden');
@@ -404,7 +400,7 @@ export class Game {
   }
 
   loadGame() {
-    if (!this.leaderboard.hasSave()) return;
+    if (!this.leaderboard.getSave) return;
     const saved = this.leaderboard.getSave();
     if (!saved) return;
     this._hideDeathScreen();
@@ -465,24 +461,23 @@ export class Game {
 
     // Phase 2 — world geometry
     await yieldFrame();
-    this.world = this.biomes.buildWorld(this.scene, dungeon, biomeId);
+    this.world = new WorldBuilder().build(
+      dungeon, this.biomes.getTexturesFor(biomeId), biomeId,
+    );
+    this.scene.add(this.world.group);
     const boxes = [...(this.world && this.world.collisionBoxes ? this.world.collisionBoxes : [])];
     this._boxesCache = null;
 
     // Phase 3 — props
     await yieldFrame();
-    this.props = this.biomes.getPropsFor(biomeId);
-    this.props.build(dungeon, biomeId);
-    this.scene.add(this.props.group);
-    this.props.configureCallbacks({
-      bus: this.eventBus,
-      state: s,
-      spawnOrbs: (x, z, n) => { if (this.orbs) this.orbs.dropOrb(x, z, n); },
-      spawnHealth: (x, z) => { if (this.orbs) this.orbs.dropHealth(x, z); },
-      spawnBuff: (x, z, buffId) => { if (this.orbs) this.orbs.dropBuff(x, z, buffId); },
+    this.props = new PropSystem(this.scene, this.eventBus, {
+      spawnOrbs: (x, z, n) => { if (this.orbs) this.orbs.dropOrb(x, WORLD.FLOOR_Y, z, n); },
       onBuffCollected: (effect) => this._onBuffCollected(effect),
       onPropBroken: () => {},
+      onPropOpened: () => {},
+      onSpawnWraith: (x, z) => { if (this.skeletons) this.skeletons._spawnMob('WRAITH', x, z, false); },
     });
+    this.props.build(dungeon, biomeId);
     for (const b of this.props.collidableBoxes()) boxes.push(b);
     this._waterPuddles = this._collectWaterPuddles();
 
@@ -492,9 +487,8 @@ export class Game {
 
     // Phase 5 — orbs
     await yieldFrame();
-    this.orbs = new OrbSystem(this.scene, this.camera);
+    this.orbs = new OrbSystem(this.scene);
     this._wireOrbs();
-    this.scene.add(this.orbs.group);
 
     // Phase 6 — shooter
     await yieldFrame();
@@ -510,31 +504,27 @@ export class Game {
       onProjectile: () => {},
       onFireballProjectile: () => {},
     });
-    this.shooter.setActiveBuff(s.activeBuff);
-    this.scene.add(this.shooter.group);
+    this.shooter.setActiveBuff(this._buffIndex(s.activeBuff));
 
     // Phase 7 — lighting
     await yieldFrame();
-    this.lighting = this.biomes.getLightingFor(biomeId);
+    this.lighting = new LightingSystem();
     this.lighting.build(this.scene, dungeon, biomeId);
     if (this._degraded) this.lighting.setDegraded(0);
-    this.lighting.setBright(s.activeBuff === BUFF.EFFECTS.BRIGHT);
 
     // Phase 8 — particles
     await yieldFrame();
-    this.particles = this.biomes.getParticlesFor(biomeId);
-    this.particles.group.position.set(
-      (dungeon.gridSize / 2) * DUNGEON.CELL_SIZE,
-      0,
-      (dungeon.gridSize / 2) * DUNGEON.CELL_SIZE,
-    );
-    this.scene.add(this.particles.group);
+    const pc = (dungeon.gridSize / 2) * DUNGEON.CELL_SIZE;
+    this.particles = new ParticleSystem(this.scene, {
+      radius: Math.max(20, dungeon.gridSize * DUNGEON.CELL_SIZE * 0.5),
+      yMin: 0, yMax: 6,
+      x: pc, z: pc,
+    });
 
     // Phase 9 — smoke
     await yieldFrame();
-    this.smoke = this.biomes.getSmokeFor(biomeId);
+    this.smoke = new SmokeSystem(this.scene);
     this._setupSmokeSources(biomeId, dungeon);
-    this.scene.add(this.smoke.group);
 
     // Phase 10 — runes
     await yieldFrame();
@@ -588,9 +578,21 @@ export class Game {
     if (this.skeletons) { this.skeletons.dispose(); this.skeletons = null; }
     if (this.orbs) { this.orbs.dispose(); this.orbs = null; }
     if (this.shooter) { this.shooter.dispose(); this.shooter = null; }
-    if (this.particles) { this.particles.dispose(); this.particles = null; }
-    if (this.smoke) { this.smoke.dispose(); this.smoke = null; }
-    if (this.runes) { this.runes.dispose(); this.runes = null; }
+    if (this.particles) {
+      this.scene.remove(this.particles.group);
+      this.particles.dispose();
+      this.particles = null;
+    }
+    if (this.smoke) {
+      this.scene.remove(this.smoke.group);
+      this.smoke.dispose();
+      this.smoke = null;
+    }
+    if (this.runes) {
+      this.scene.remove(this.runes.group);
+      this.runes.dispose();
+      this.runes = null;
+    }
     if (this.hunter) { this.hunter.dispose(); this.hunter = null; }
     for (const p of this._firePatches) {
       if (p.mesh) this.scene.remove(p.mesh);
@@ -703,7 +705,7 @@ export class Game {
   // =========================================================================
   _animate() {
     if (this.headless) return;
-    this._animateId = raf(this._animate);
+    this._animateId = raf(this._animate.bind(this));
 
     const t = nowSec();
     let dt = t - this._lastTime;
@@ -733,26 +735,21 @@ export class Game {
 
   _updateGame(sdt, dt) {
     this._perfMonitor(dt);
+    // Accumulate run + level timers
+    this.state.runTime += dt;
+    this.state.levelTime += dt;
 
-    // Timed-run timer
-    if (this.state.timedRun) {
-      this.state.timeLeft -= dt;
-      if (this.state.timeLeft <= 0) {
-        this.state.timeLeft = 0;
-        this._onPlayerDamaged(this.state.maxHealth, { source: 'time' });
-      }
-    }
+    // Timed-run timer (not used in this build; kept as a no-op for parity)
+    // if (this.state.timedRun) { ... }
 
-    // Weapon regen (per second)
+    // Health regen (§1: REGEN_DELAY 0, +1 heart per REGEN_INTERVAL s, capped at max)
     this._regenAcc += dt;
-    if (this._regenAcc >= 1) {
-      this._regenAcc -= 1;
-      const cap = this.state.timedRun ? PLAYER.MAX_ORBS_TIMED : PLAYER.MAX_ORBS;
-      this.state.collectedOrbs = Math.min(
-        this.state.collectedOrbs + PLAYER.ORBS_REGEN_PER_SEC, cap,
-      );
-      this._checkEvolution();
-      this._hudDirty = true;
+    if (this._regenAcc >= PLAYER.REGEN_INTERVAL) {
+      this._regenAcc %= PLAYER.REGEN_INTERVAL;
+      if (this.state.health < this.state.maxHealth) {
+        this.state.health = Math.min(this.state.maxHealth, this.state.health + 1);
+        this._hudDirty = true;
+      }
     }
 
     // Player movement
@@ -761,12 +758,15 @@ export class Game {
     // Fireball charge (buff #2)
     this._updateFireballCharge(dt);
 
+    // Keyboard edges (E / P / Tab / N / L / Y / S)
+    this._updateKeys();
+
     // Input edges
     this._updateInputEdges();
 
     // Systems
     if (this.skeletons) {
-      const frozen = this.state.safeSpawnTimer > 0;
+      const frozen = this.state.safeSpawn > 0;
       const fleeing = this.state.activeBuff === BUFF.EFFECTS.BRIGHT;
       this.skeletons.update(sdt,
         { x: this.state.x, z: this.state.z, invulnTimer: this.state.invulnTimer },
@@ -785,7 +785,10 @@ export class Game {
       this.sword.update(sdt, 0, this._now);
     }
     if (this.hunter) {
-      this.hunter.update(sdt, { x: this.state.x, z: this.state.z });
+      this.hunter.update(sdt,
+        { x: this.state.x, z: this.state.z },
+        this.skeletons ? this.skeletons.living : [],
+        this._collisionBoxes());
     }
     if (this.props) {
       this.props.update(sdt, this.state.x, this.state.z);
@@ -794,13 +797,14 @@ export class Game {
       if (hazardDmg > 0) this._onPlayerDamaged(hazardDmg, { source: 'hazard' });
     }
     if (this.runes) this.runes.update(this._now);
-    if (this.particles) this.particles.update(sdt, this.camera.position);
+    if (this.particles) this.particles.update(sdt, this.camera.position, this._torchPositions());
     if (this.smoke) this.smoke.update(sdt, this.camera.position);
+    if (this.hunter) this.hunter.setCollectedOrbs(this.state.collectedOrbs);
 
     // Safe-spawn timer
-    if (this.state.safeSpawnTimer > 0) {
-      this.state.safeSpawnTimer -= dt;
-      if (this.state.safeSpawnTimer <= 0) this.state.safeSpawnTimer = 0;
+    if (this.state.safeSpawn > 0) {
+      this.state.safeSpawn -= dt;
+      if (this.state.safeSpawn <= 0) this.state.safeSpawn = 0;
     }
 
     // Buff timer
@@ -831,6 +835,13 @@ export class Game {
     this._hudDirty = false;
   }
 
+  _torchPositions() {
+    if (!this.lighting) return null;
+    return this.lighting.torches.map((t) => ({
+      x: t.position.x, y: t.position.y, z: t.position.z,
+    }));
+  }
+
   _origin() {
     const o = this._originV || (this._originV = new THREE.Vector3());
     o.set(this.camera.position.x, 0.6, this.camera.position.z);
@@ -850,17 +861,19 @@ export class Game {
   // =========================================================================
   _updatePlayer(sdt) {
     const s = this.state;
-    const p = this.input.player;
+    const i = this.input;
+    if (!i) return;
 
     let speedMult = 1;
-    if (s.activeBuff === BUFF.EFFECTS.GODSPEED) speedMult *= BUFF.GODSPEED.speedMult;
-    if (s.activeBuff === BUFF.EFFECTS.EMPOWERED) speedMult *= BUFF.EMPOWERED.speedMult;
+    if (s.activeBuff === BUFF.EFFECTS.GODSPEED) speedMult *= BUFF.GODSPEED.moveMult;
+    if (s.activeBuff === BUFF.EFFECTS.EMPOWERED) speedMult *= BUFF.EMPOWERED.moveMult;
     const inWater = this._inWaterPool(s.x, s.z);
     if (inWater) speedMult *= 0.45;
 
-    const base = (p.sprint ? PLAYER.SPRINT_SPEED : PLAYER.WALK_SPEED) * speedMult;
-    const dx = p.x;
-    const dz = p.z;
+    const sprint = i.isPressed('ShiftLeft') || i.isPressed('ShiftRight');
+    const base = (sprint ? PLAYER.SPRINT_SPEED : PLAYER.WALK_SPEED) * speedMult;
+    const dx = (i.isPressed('KeyD') ? 1 : 0) - (i.isPressed('KeyA') ? 1 : 0);
+    const dz = (i.isPressed('KeyS') ? 1 : 0) - (i.isPressed('KeyW') ? 1 : 0);
     const len = Math.hypot(dx, dz);
     if (len > 0.001) {
       s.x += (dx / len) * base * sdt;
@@ -899,13 +912,50 @@ export class Game {
   }
 
   // =========================================================================
+  // Keyboard edges (§2: E descend, P post, Tab ledger, N/L/Y/S menus)
+  // =========================================================================
+  _updateKeys() {
+    if (!this.input) return;
+    const prev = this._prevKeys;
+    for (const code of this._inputKeys) {
+      const down = this.input.isPressed(code);
+      const edge = down && !prev[code];
+      prev[code] = down;
+      if (!edge) continue;
+      switch (code) {
+        case 'KeyE':
+          this._tryDescend();
+          break;
+        case 'KeyP':
+          this._togglePost();
+          break;
+        case 'Tab':
+          this._toggleLeaderboard();
+          break;
+        case 'KeyN':
+          if (this._deathVisible) this.newGame();
+          else if (this._inMenu) this.newGame();
+          break;
+        case 'KeyL':
+          if (this._inMenu) this.loadGame();
+          break;
+        case 'KeyY':
+          if (this._deathVisible) this.newGamePlus();
+          break;
+        case 'KeyS':
+          if (this._deathVisible) this.saveGame();
+          break;
+      }
+    }
+  }
+
   // Input edges (RMB attack, LMB orb, buff #2 fireball)
   // =========================================================================
   _updateInputEdges() {
-    const m2 = this.input.mouse.right;
-    const m0 = this.input.mouse.left;
+    const m2 = this.input.isMouseDown(2);
+    const m0 = this.input.isMouseDown(0);
     const canAct = !this._deathVisible && this._levelLoaded &&
-      this.state.safeSpawnTimer <= 0 && !this._inMenu;
+      this.state.safeSpawn <= 0 && !this._inMenu;
 
     if (m2 && !this._prevKeys.m2 && canAct) {
       this.sword.attack();
@@ -926,7 +976,7 @@ export class Game {
       if (this.fireballHeld) this.fireballHeld.visible = false;
       return;
     }
-    const m0 = this.input.mouse.left;
+    const m0 = this.input.isMouseDown(0);
     if (m0 && this._levelLoaded && !this._deathVisible) {
       this._fbHeld = true;
       this._fbCharge = Math.min(this._fbCharge + dt, BUFF.FIREBALL.chargeTime);
@@ -946,13 +996,12 @@ export class Game {
 
   _fireOrb() {
     if (!this.shooter) return;
-    const step = (this.sword && this.sword.comboStep) || 1;
-    this.shooter.fire(this._origin(), this._forward(), step);
+    this.shooter.fire(this._forward(), this._origin(), this._now);
   }
 
   _fireFireball() {
     if (!this.shooter) return;
-    this.shooter.fireFireball(this._origin(), this._forward());
+    this.shooter.fireFireball(this._forward(), this._origin(), this._now);
   }
 
   _spendOrb() {
@@ -979,26 +1028,27 @@ export class Game {
     }
   }
 
+  /** Map a buff effect to its shooter index (0 none, 1 BRIGHT, 2 FIREBALL, …). */
+  _buffIndex(effect) {
+    return effect ? BUFF.EFFECTS.indexOf(effect) + 1 : 0;
+  }
+
   /** Wire OrbSystem callbacks to state + HUD. */
   _wireOrbs() {
     const s = this.state;
-    this.orbs.rewireCallbacks({
-      onOrbCollected: (x, z, value) => {
-        const cap = s.timedRun ? PLAYER.MAX_ORBS_TIMED : PLAYER.MAX_ORBS;
-        s.collectedOrbs += value;
-        if (s.collectedOrbs > cap) s.collectedOrbs = cap;
-        if (this.sword) this.sword.souls = s.collectedOrbs;
-        this._checkEvolution();
-        this._hudDirty = true;
-      },
-      onHealthCollected: (x, z, value) => {
-        s.health = Math.min(s.maxHealth, s.health + value);
-        this._hudDirty = true;
-      },
-      onBuffCollected: (x, z, buffId) => {
-        this._onBuffCollected(buffId);
-      },
-    });
+    this.orbs.onOrbCollected = (x, z, value) => {
+      s.collectedOrbs += value;
+      if (this.sword) this.sword.souls = s.collectedOrbs;
+      this._checkEvolution();
+      this._hudDirty = true;
+    };
+    this.orbs.onHealthCollected = (x, z) => {
+      s.health = Math.min(s.maxHealth, s.health + DROP.HEALTH_RESTORE);
+      this._hudDirty = true;
+    };
+    this.orbs.onBuffCollected = (x, z, buffId) => {
+      this._onBuffCollected(buffId);
+    };
   }
 
   /** Snap the camera to the player position (after teleport / level load). */
@@ -1014,34 +1064,86 @@ export class Game {
   // =========================================================================
   // Combat callbacks
   // =========================================================================
-  _onSwordSwing(enemies, step, dir, pos, arc) {
+  /**
+   * Sword swing cone (§9.1). The sword supplies cone geometry in local
+   * camera space (origin 0,0,0; direction (0,0,-1) = camera forward;
+   * range, halfAngle); Game resolves which enemies/props/bolts are hit.
+   * Cone origin = player feet; direction = the player's actual forward
+   * vector (camera world direction on the XZ plane — the same convention
+   * as _forward(), which _updatePlayer's camera follows).
+   */
+  _onSwordSwing(step, cone) {
     if (!this.skeletons) return;
     const s = this.state;
     const dmg = this.sword.damage(step, s.weaponTier, damageMult(s.collectedOrbs));
-    for (const e of enemies) {
+
+    // World-space cone: origin at the player (feet + ~1.5u chest height).
+    const ox = s.x, oy = s.y + 1.5, oz = s.z;
+    // Forward = camera world direction flattened to XZ (matches _forward()).
+    const fwd = this._forward();
+    const fx = fwd.x, fz = fwd.z;
+
+    // --- enemies: within range AND within the swing cone ---
+    const range = cone.range;
+    const halfAngle = cone.halfAngle;
+    const cosHalf = Math.cos(halfAngle);
+    for (const e of this.skeletons.living) {
       if (!e || !e.alive) continue;
-      this.skeletons.hitSkeleton(e, dmg, pos);
+      const dx = e.position.x - ox, dz = e.position.z - oz;
+      const d2 = dx * dx + dz * dz;
+      if (d2 > range * range) continue;
+      const d = Math.sqrt(d2);
+      let dot;
+      if (d < 0.05) dot = 1; // enemy at origin — always inside
+      else dot = (dx / d) * fx + (dz / d) * fz;
+      if (dot < cosHalf) continue; // outside the XZ cone
+      // small vertical tolerance (cone origin is chest height)
+      const dy = (e.position.y + 0.8) - oy;
+      if (Math.abs(dy) > 1.5 + halfAngle * range * 0.5) continue;
+      this.skeletons.hitSkeleton(e, dmg, { x: ox, z: oz });
     }
-    // Breakables in swing reach
+
+    // --- breakables: same range, looser cone (§ BREAKABLE_CONE_LOOSE) ---
     if (this.props) {
-      const reach = this.sword._rangeForStep
-        ? this.sword._rangeForStep(step)
-        : SWORD.RANGE * this.sword.scale;
+      const looseCos = Math.cos(halfAngle + SWORD.BREAKABLE_CONE_LOOSE);
       for (const rec of this.props.breakables) {
         if (rec.broken) continue;
-        const dx = rec.pos.x - pos.x, dz = rec.pos.z - pos.z;
-        if (dx * dx + dz * dz <= reach * reach) {
-          this.props.breakBreakable(rec);
-        }
+        const dx = rec.pos.x - ox, dz = rec.pos.z - oz;
+        const d2 = dx * dx + dz * dz;
+        if (d2 > range * range) continue;
+        const d = Math.sqrt(d2);
+        const dot = d < 0.05 ? 1 : (dx / d) * fx + (dz / d) * fz;
+        if (dot < looseCos) continue;
+        this.props.breakBreakable(rec);
       }
+    }
+
+    // --- break enemy projectiles in the swing cone (arrows/orbs) ---
+    if (this.skeletons.breakProjectiles) {
+      const facing = Math.atan2(fx, fz); // breakProjectiles uses atan2(x, z) convention
+      this.skeletons.breakProjectiles(halfAngle, ox, oz, facing);
     }
   }
 
-  _onElectricChain(targets) {
+  /**
+   * Electric proc (§9.3). The sword fires onElectricChain({ damage, range })
+   * without targets, so Game resolves the targets: every living enemy
+   * within SWORD.ELECTRIC_RANGE (20u) of the player.
+   */
+  _onElectricChain(info) {
     if (!this.skeletons) return;
-    const dmg = 5 * damageMult(this.state.collectedOrbs);
-    for (const t of targets) {
-      if (t && t.alive) this.skeletons.hitSkeleton(t, dmg, null);
+    const s = this.state;
+    const range = (info && info.range) || SWORD.ELECTRIC_RANGE;
+    const mult = (info && info.damage) !== undefined
+      ? info.damage
+      : 5 * damageMult(s.collectedOrbs);
+    const r2 = range * range;
+    for (const e of this.skeletons.living) {
+      if (!e || !e.alive) continue;
+      const dx = e.position.x - s.x, dz = e.position.z - s.z;
+      if (dx * dx + dz * dz <= r2) {
+        this.skeletons.hitSkeleton(e, mult, null);
+      }
     }
   }
 
@@ -1120,7 +1222,7 @@ export class Game {
     this.eventBus.emit('run:ended', {
       type: 'death',
       level: s.level,
-      timeSurvived: s.timeSurvived,
+      runTime: s.runTime,
       ngPlus: s.ngPlus,
       bossKills: s.bossKills,
       orbs: s.collectedOrbs,
@@ -1155,13 +1257,21 @@ export class Game {
         this.sword.buffDamageMult = 1;
       }
     }
-    if (this.shooter) this.shooter.setActiveBuff(effect);
-    if (this.lighting) this.lighting.setBright(effect === BUFF.EFFECTS.BRIGHT);
+    if (this.shooter) this.shooter.setActiveBuff(this._buffIndex(effect));
+    if (this.lighting) {
+      this.lighting.setBright(effect === BUFF.EFFECTS.BRIGHT);
+      if (this._degraded) this.lighting.setDegraded(0);
+    }
+    if (this.sword && effect === BUFF.EFFECTS.EMPOWERED) {
+      this.sword.lengthMult = BUFF.EMPOWERED.swordLengthMult;
+    } else if (this.sword) {
+      this.sword.lengthMult = 1;
+    }
     if (effect === BUFF.EFFECTS.HUNTER) {
       if (!this.hunter) {
         this.hunter = new Hunter(this.scene, {
-          onKill: (e) => { if (this.skeletons) this.skeletons.hitSkeleton(e, 5, null); },
-          onPlayerDamaged: () => {},
+          collectedOrbs: this.state.collectedOrbs,
+          playerPos: { x: this.state.x, z: this.state.z },
         });
       }
     } else if (this.hunter) {
@@ -1181,7 +1291,11 @@ export class Game {
       this.sword.buffDamageMult = 1;
     }
     if (this.shooter) this.shooter.setActiveBuff(null);
-    if (this.lighting) this.lighting.setBright(false);
+    if (this.lighting) {
+      this.lighting.setBright(false);
+      if (this._degraded) this.lighting.setDegraded(0);
+    }
+    if (this.sword) this.sword.lengthMult = 1;
     if (this.hunter) {
       this.hunter.dispose();
       this.hunter = null;
@@ -1225,8 +1339,8 @@ export class Game {
     const dx = s.x - ex, dz = s.z - ez;
     if (dx * dx + dz * dz > 9) return;
     s.level += 1;
-    s.timeSurvived = 0;
-    s.safeSpawnTimer = 5;
+    s.levelTime = 0;
+    s.safeSpawn = 5;
     this._regenerateDungeon();
   }
 
@@ -1255,8 +1369,8 @@ export class Game {
     if (bl) bl.textContent = ` · ${biome.label}`;
     const timer = document.getElementById('timer');
     if (timer) {
-      timer.textContent = s.timedRun ? fmtTime(s.timeLeft) : fmtTime(s.timeSurvived);
-      timer.classList.toggle('low', s.timedRun && s.timeLeft < 30);
+      timer.textContent = fmtTime(s.runTime);
+      timer.classList.remove('low');
     }
 
     set('orb-count', s.collectedOrbs);
@@ -1279,9 +1393,9 @@ export class Game {
 
     const ss = document.getElementById('safe-spawn');
     if (ss) {
-      if (s.safeSpawnTimer > 0) {
+      if (s.safeSpawn > 0) {
         ss.classList.remove('hidden');
-        ss.textContent = String(Math.ceil(s.safeSpawnTimer));
+        ss.textContent = String(Math.ceil(s.safeSpawn));
       } else {
         ss.classList.add('hidden');
       }
@@ -1391,18 +1505,18 @@ export class Game {
     if (stats) {
       stats.textContent =
         `Reached Level ${s.level} · ${BIOMES[biomeForLevel(s.level, s.ngPlus)].name}\n` +
-        `Survived ${fmtTime(s.timeSurvived)} · Souls ${s.collectedOrbs} · Bosses ${s.bossKills}`;
+        `Survived ${fmtTime(s.runTime)} · Souls ${s.collectedOrbs} · Bosses ${s.bossKills}`;
     }
     this._lastDeath = {
       level: s.level,
-      time: s.timeSurvived,
+      time: s.runTime,
       ngPlus: s.ngPlus,
       bossKills: s.bossKills,
       orbs: s.collectedOrbs,
     };
     this.leaderboard.recordDeath({
       level: s.level,
-      time: Math.round(s.timeSurvived),
+      time: Math.round(s.runTime),
       ngPlus: s.ngPlus,
       bossKills: s.bossKills,
       orbs: s.collectedOrbs,
@@ -1418,7 +1532,7 @@ export class Game {
   }
 
   _toggleLeaderboard() {
-    if (!this.input || !this.input.isLocked()) return;
+    if (!this.input || !this.input.isPointerLocked()) return;
     if (this._leaderboardOpen) {
       this._hideLeaderboard();
     } else {

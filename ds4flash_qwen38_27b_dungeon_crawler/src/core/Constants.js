@@ -24,7 +24,12 @@ export const PLAYER = {
   SPRINT_ACCEL_STEP: 0.05,  // +5% sprint speed per tier, cumulative
   SPRINT_ACCEL_MAX: 3,      // accel component capped at ×3
   BASE_HEALTH: 3,           // max health 3, +1 permanent heart per boss kill
+  MAX_HEALTH_BONUS_PER_NG_PLUS: 1, // +1 permanent heart per boss kill (§26 NG+)
+  HEIGHT: 1.7,              // player height above floor (camera anchor)
+  WALK_SPEED: 4,            // base walk speed (SPEED)
+  SPRINT_SPEED: 6.2,        // base sprint speed (SPEED × SPRINT_MULT)
   INVULN_TIME: 0.8,         // i-frames after any hit
+  I_FRAMES: 0.8,            // i-frame window after any hit (§20)
   SHAKE_TIME: 0.25,
   REGEN_DELAY: 0,           // passive regen has no delay
   REGEN_INTERVAL: 5,        // +1 heart every 5 s, capped at max
@@ -39,6 +44,7 @@ export const CAMERA = {
   FAR: 160,
   SENSITIVITY: 0.002,       // rad/px
   PITCH_CLAMP: 85 * Math.PI / 180, // ±85°
+  EYE_HEIGHT: 0.2,         // eyes above PLAYER.HEIGHT
 };
 
 export const LIGHTING = {
@@ -382,6 +388,7 @@ export const HIT_STOP = {
   SWORD: 0.06,
   ELECTRIC: 0.12,
   EVOLUTION: 0.1,
+  ORB_HIT: 0.06,              // orb weapon direct hit (§10)
 };
 
 // ---------------------------------------------------------------------------
@@ -444,6 +451,8 @@ export const ORB_WEAPON = {
   EXPLODE_RADIUS: 2,
   EXPLODE_DAMAGE: 5,          // AOE = round(5 × orbDamageMultiplier)
   EXPLODE_Y_GATE: 2.6,        // blast only damages when blast point y < 2.6
+  COST_PER_HIT: 1,            // first step of a 3-step sequence costs 1 orb (§10)
+  EXPLOSION_RADIUS: 2,        // AOE radius (EXPLODE_RADIUS)
   POOL_SIZE: 48,              // normal orb slots
   FIREBALL_POOL_SIZE: 6,      // fireball slots
   FIREBALL_COOLDOWN: 0.35,
@@ -491,6 +500,7 @@ export const BUFF = {
     'HUNTER',
   ],
   // per-buff tuning
+  FIREBALL: { chargeTime: 0.35 }, // hold charge time = FIREBALL_COOLDOWN (0.35 s)
   BRIGHT: { ambientMult: 2.5, fogDensityMult: 0.35 },
   EMPOWERED: { swordLengthMult: 1.5, moveMult: 1.2, attackSpeedMult: 1.2 },
   GODSPEED: { attackSpeedMult: 1.5, moveMult: 1.5 },

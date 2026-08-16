@@ -776,7 +776,8 @@ export class Skeleton {
   /**
    * Run the attack cycle. Called when in range & cooldown ready (or by
    * ranged overrides). Advances windup→swing→recover→cooldown; fires the
-   * hit at swing progress ≥ 0.35.
+   * hit at swing progress ≥ 0.35. The cooldown ticks down while the enemy
+   * stays in range; the state machine returns to CHASE once it is ready.
    */
   _runAttackCycle(dt, px, pz) {
     const c = this.cycle;
@@ -784,22 +785,18 @@ export class Skeleton {
     // governed purely by the cooldown; fire immediately.
     if (c.windup <= 0 && c.swing <= 0 && c.recover <= 0) {
       if (this._phase === 'cd') {
-        if (this.cooldown > 0) { this.cooldown -= dt; return; }
+        if (this.cooldown > 0) {
+          this.cooldown -= dt;
+          if (this.cooldown <= 0) {
+            this._fireHit(px, pz);
+            this.cooldown = c.cooldown;
+          }
+          return;
+        }
         this._fireHit(px, pz);
         this.cooldown = c.cooldown;
         return;
       }
-    }
-    if (this._phase === 'cd') {
-      if (this.cooldown > 0) {
-        this.cooldown -= dt;
-        return; // still cooling — not attacking yet
-      }
-      this._phase = 'windup';
-      this._phaseT = 0;
-      this._hitFired = false;
-      this._fired = false;
-      this.state = ATTACK;
     }
     if (this._phase === 'windup') {
       this._phaseT += dt;
@@ -817,6 +814,21 @@ export class Skeleton {
       if (this._phaseT >= c.recover) {
         this._phase = 'cd';
         this.cooldown = c.cooldown;
+      }
+    } else if (this._phase === 'cd') {
+      // Cooldown: tick down while in range; return to CHASE when ready so
+      // the update() CHASE path can move/attack again (it re-enters the
+      // attack immediately if still in range).
+      if (this.cooldown > 0) {
+        this.cooldown -= dt;
+        if (this.cooldown <= 0) {
+          this._phase = 'windup';
+          this._phaseT = 0;
+          this._hitFired = false;
+          this._fired = false;
+          this.state = ATTACK;
+        }
+      } else {
         this.state = CHASE;
       }
     }
@@ -915,7 +927,6 @@ export class Skeleton {
         // In the middle of an attack: advance the cycle; ranged keeps aiming.
         this._runAttackCycle(dt, px, pz);
         this._applyPose();
-        if (this._phase === 'cd' && this.cooldown <= 0) this.state = CHASE;
         return true;
       }
 

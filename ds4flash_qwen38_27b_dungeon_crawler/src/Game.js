@@ -162,6 +162,8 @@ export class Game {
       // 5. event toasts + save bootstrap
       this._bindEventToasts();
       this._bootstrapSave();
+      // 5b. start-menu / death-screen buttons (keyboard paths already exist)
+      this._bindMenuButtons();
       // 6. title showcase scene + start menu
       this._initTitleScene();
       this._showStartMenu();
@@ -264,6 +266,21 @@ export class Game {
     this.eventBus.on('boss:killed', (d) => this._onBossKilledEvent(d));
     this.eventBus.on('weapon:evolved', (d) => this._onEvolution(d.tier, d.prevTier));
     this.eventBus.on('run:ended', (d) => this._onRunEndedEvent(d));
+  }
+
+  /** Wire the start-menu and death-screen HTML buttons to the same methods
+   *  the keyboard shortcuts (N/L/Y/S) use. Guarded so missing elements are a
+   *  no-op rather than a throw. */
+  _bindMenuButtons() {
+    const bind = (id, fn) => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('click', fn.bind(this));
+    };
+    bind('btn-new-game', this.newGame);
+    bind('btn-load', this.loadGame);
+    bind('btn-restart', this.newGame);
+    bind('btn-ngplus', this.newGamePlus);
+    bind('btn-save', this.saveGame);
   }
 
   _bootstrapSave() {
@@ -1384,7 +1401,24 @@ export class Game {
 
     const biomeId = biomeForLevel(s.level, s.ngPlus);
     const biome = BIOMES[biomeId];
-    set('level-title', `LEVEL ${s.level}`);
+    // #level-title contains the nested #biome-label span, so updating
+    // #level-title via textContent would destroy the span. Update only the
+    // level-number text node, then the span separately.
+    const lt = document.getElementById('level-title');
+    if (lt) {
+      const bl = document.getElementById('biome-label');
+      if (bl) {
+        // Keep the span's preceding text node holding the level number.
+        let tn = bl.previousSibling;
+        if (!(tn && tn.nodeType === Node.TEXT_NODE)) {
+          tn = document.createTextNode('');
+          lt.insertBefore(tn, bl);
+        }
+        tn.nodeValue = `LEVEL ${s.level}`;
+      } else {
+        lt.textContent = `LEVEL ${s.level}`;
+      }
+    }
     const bl = document.getElementById('biome-label');
     if (bl) bl.textContent = ` · ${biome.label}`;
     const timer = document.getElementById('timer');

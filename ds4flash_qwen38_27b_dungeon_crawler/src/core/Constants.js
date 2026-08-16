@@ -408,6 +408,16 @@ export const EVOLUTION = {
   ],
   // T5: exactly one extra camera-attached point light
   MAX_TIER: 5,
+  /** Display name for a 0-based tier index (clamped to array bounds). */
+  tierName(i) {
+    i = Math.max(0, Math.min(i, this.TIER_NAMES.length - 1));
+    return this.TIER_NAMES[i];
+  },
+  /** Effect description for a 0-based tier index (clamped to array bounds). */
+  tierDescr(i) {
+    i = Math.max(0, Math.min(i, this.TIER_EFFECTS.length - 1));
+    return this.TIER_EFFECTS[i];
+  },
 };
 
 /** weaponTier(souls) — ceiling over TIER_THRESHOLDS, 0..5. */

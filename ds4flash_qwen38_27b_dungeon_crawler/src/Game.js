@@ -1252,7 +1252,7 @@ export class Game {
     const biome = BIOMES[biomeId];
     set('level-title', `LEVEL ${s.level}`);
     const bl = document.getElementById('biome-label');
-    if (bl) bl.textContent = ` · ${biome.name}`;
+    if (bl) bl.textContent = ` · ${biome.label}`;
     const timer = document.getElementById('timer');
     if (timer) {
       timer.textContent = s.timedRun ? fmtTime(s.timeLeft) : fmtTime(s.timeSurvived);
@@ -1306,7 +1306,7 @@ export class Game {
     if (stats) {
       const kills = this.skeletons ? this.skeletons.kills : 0;
       stats.textContent =
-        `LEVEL ${s.level}  ${biome.name}\n` +
+        `LEVEL ${s.level}  ${biome.label}\n` +
         `NG+${s.ngPlus}   SOULS ${s.collectedOrbs}\n` +
         `KILLS ${kills}   BOSS ${s.bossKills}\n` +
         `WALK ${PLAYER.WALK_SPEED}  SPRINT ${PLAYER.SPRINT_SPEED}\n` +

@@ -242,6 +242,11 @@ export class Skeleton {
     const spriteMat = this._trackMat(makeSpriteGlow(colors.glow ?? 0xffd24a));
     this._boneMat = boneMat;
     this._glowMat = glowMat;
+    // Hit-flash feedback: white emissive pop on the bone material the instant a
+    // hit lands. makeBone returns a FRESH material per skeleton, so mutating
+    // its emissive is per-instance (no cross-enemy bleed). Base emissive is 0.
+    this._hitFlashT = 0;
+    this._HIT_FLASH_MAX = 0.12;
 
     const box = (w, h, d) => {
       const g = this._trackGeo(new THREE.BoxGeometry(w, h, d));
@@ -503,6 +508,9 @@ export class Skeleton {
   hit(dmg) {
     if (!this.alive) return false;
     this.hp -= dmg;
+    // Hit feedback: any landed hit pops a brief white emissive flash on the
+    // bone material (decayed in update() via _updateHitFlash).
+    this._hitFlashT = this._HIT_FLASH_MAX;
     // Any damage wakes it.
     if (this.state === DORMANT) this.state = WAKING;
     if (this.hp <= 0) {
@@ -524,6 +532,20 @@ export class Skeleton {
   _beginDeath() {
     this.state = DEAD;
     this._deathT = 0;
+  }
+
+  /** Decay the hit-flash: ramp the bone material's emissive white up on hit,
+   *  then ease it back to 0. Runs for both live and dying skeletons. */
+  _updateHitFlash(dt) {
+    if (this._hitFlashT <= 0) return;
+    this._hitFlashT = Math.max(0, this._hitFlashT - dt);
+    const k = this._hitFlashT / this._HIT_FLASH_MAX;   // 1 → 0
+    const b = this._boneMat;
+    if (b) {
+      b.emissive.setRGB(1, 1, 1);
+      b.emissiveIntensity = 0.9 * k;
+    }
+    if (this._hitFlashT <= 0 && b) b.emissiveIntensity = 0;
   }
 
   _updateDeath(dt) {
@@ -980,6 +1002,9 @@ export class Skeleton {
   update(dt, player, collisionBoxes = [], opts = {}) {
     if (this._disposed) return false;
     this._animT += dt;
+    // Hit-flash decay — runs in every state (live, frozen, fleeing, dying) so
+    // a flash triggered by a hit always animates out, even mid-death-fade.
+    this._updateHitFlash(dt);
     // Perf: cache the per-update collision source (shared BoxGrid when
     // SkeletonSystem provides one, else the raw box array) so the movement
     // helpers avoid re-deriving it.

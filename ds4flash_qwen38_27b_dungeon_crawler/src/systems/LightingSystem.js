@@ -225,15 +225,21 @@ export class LightingSystem {
     const spacing = LIGHTING.TORCH_SPACING; // 16 u
     const every = Math.max(1, Math.ceil(spacing / cellSize)); // 16/6 → 3 cells apart
 
-    // exposed edges with the open cell + boundary line, like RuneSystem
+    // exposed edges with the open cell + boundary line, like RuneSystem.
+    // An edge is "exposed" only where a SOLID cell borders an EMPTY cell —
+    // that's the interior wall face lighting the playable space. The dungeon's
+    // OUTER perimeter (cx/cz === 0 or gridSize-1) is the exterior shell: it
+    // borders the void, not a corridor, so it must NOT emit edges. Treating it
+    // as exposed (the old `cx === 0 ||` short-circuit) placed torches + their
+    // PointLights on the dungeon's outside face, i.e. lights "outside the map."
     const edges = [];
     for (let cx = 0; cx < gridSize; cx++) {
       for (let cz = 0; cz < gridSize; cz++) {
         if (grid[cx][cz] === 'empty') continue;
-        if (cx === 0 || grid[cx - 1][cz] === 'empty') edges.push({ axis: 'X', cx, cz, boundary: cx * cellSize });
-        if (cx === gridSize - 1 || grid[cx + 1][cz] === 'empty') edges.push({ axis: 'X', cx, cz, boundary: (cx + 1) * cellSize });
-        if (cz === 0 || grid[cx][cz - 1] === 'empty') edges.push({ axis: 'Z', cx, cz, boundary: cz * cellSize });
-        if (cz === gridSize - 1 || grid[cx][cz + 1] === 'empty') edges.push({ axis: 'Z', cx, cz, boundary: (cz + 1) * cellSize });
+        if (cx > 0 && grid[cx - 1][cz] === 'empty') edges.push({ axis: 'X', cx, cz, boundary: cx * cellSize });
+        if (cx < gridSize - 1 && grid[cx + 1][cz] === 'empty') edges.push({ axis: 'X', cx, cz, boundary: (cx + 1) * cellSize });
+        if (cz > 0 && grid[cx][cz - 1] === 'empty') edges.push({ axis: 'Z', cx, cz, boundary: cz * cellSize });
+        if (cz < gridSize - 1 && grid[cx][cz + 1] === 'empty') edges.push({ axis: 'Z', cx, cz, boundary: (cz + 1) * cellSize });
       }
     }
 

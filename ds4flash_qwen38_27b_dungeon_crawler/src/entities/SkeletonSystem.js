@@ -713,12 +713,11 @@ export class SkeletonSystem {
     // the enemy permanently unkillable (seen in the wild via a bad damageMult arg).
     if (!Number.isFinite(dmg) || dmg <= 0) return false;
     const killed = skeleton.hit(dmg);
-    if (killed) {
-      // Death is handled via onDeath (already fired by skeleton.hit).
-      // Remove from living list.
-      const idx = this.living.indexOf(skeleton);
-      if (idx !== -1) this.living.splice(idx, 1);
-    }
+    // NB: on kill we do NOT splice the corpse out of `living` here. update()
+    // must keep iterating it so its death animation runs and dispose() removes
+    // the mesh + frees GPU resources; the `_disposed` branch in update() then
+    // splices it. Splicing immediately left a permanent invisible-logic corpse:
+    // the mesh was never removed from the scene (the enemy "never dies").
     return killed;
   }
 
@@ -755,7 +754,11 @@ export class SkeletonSystem {
    *  can actually be hit; the boss is kept out of `living` (spawn-budget source)
    *  but must still be a valid target. */
   allTargets() {
-    const out = this.living.slice();
+    // Corpses (alive=false, still in `living` during their death fade) are NOT
+    // damageable targets — exclude them so the player's sword/orb/electric
+    // resolvers and the enemy-glow pass don't spend work (or glow) on corpses.
+    const out = [];
+    for (const s of this.living) if (s.alive) out.push(s);
     if (this.boss && this.boss.alive) out.push(this.boss);
     return out;
   }

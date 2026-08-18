@@ -265,7 +265,12 @@ export class Game {
         if (prompt) prompt.classList.toggle('hidden', locked);
         if (locked) {
           if (this._inMenu) this._enterRun();
-          else if (this._deathVisible) this._hideDeathScreen();
+          // NB: the death screen is NOT dismissed by re-locking the pointer.
+          // Re-locking while dead must be a no-op — dismissing it would resume
+          // the run with a health-0 player (reads as "death respawns you at
+          // spawn"). The screen is only closed by an explicit choice: the
+          // Restart/NG+/Save buttons or the N/Y/S keys in _updateKeys, which
+          // each call _hideDeathScreen() themselves as part of their flow.
           this._hideLeaderboard();
         } else if (this._leaderboardOpen) {
           this._hideLeaderboard();

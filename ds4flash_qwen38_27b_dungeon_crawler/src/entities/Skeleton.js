@@ -38,6 +38,7 @@ const SWING_HIT = ENEMY.SWING_HIT_PROGRESS; // 0.35
 const LOS_STEP = ENEMY.LOS_STEP;           // 0.4
 const LOS_RADIUS = ENEMY.LOS_RADIUS;       // 0.25
 const PATH_REEVAL = ENEMY.PATH_REEVAL_MS / 1000; // 0.3 s
+const LOS_REEVAL = 0.15;                  // LOS raycast re-check interval (perf)
 const DEATH_HOLD = 0.15;
 const DEATH_FADE = 0.45;                   // hold + fade ≈ 0.6 s
 const FLEE_SPEED_MULT = 1.15;
@@ -131,6 +132,17 @@ function mixPose(a, b, t) {
   return out;
 }
 
+// Perf: precomputed per-state bone key lists + the CHASE↔ATTACK union, so the
+// per-frame _applyPose() never allocates (no Object.entries / Set / closures).
+const POSE_KEYS = {};
+for (const s of Object.keys(POSES)) POSE_KEYS[s] = Object.keys(POSES[s].bones);
+const MIX_KEYS_CHASE_ATTACK = [...new Set([...POSE_KEYS[CHASE], ...POSE_KEYS[ATTACK]])];
+const POSE_STATES = Object.keys(POSES);
+const ZERO_ROT = { x: 0, y: 0, z: 0 };
+// Counter-swing pairs in fixed order (armL↔armR, legL↔legR).
+const COUNTER_KEYS = ['armL', 'armR', 'legL', 'legR'];
+const COUNTER_OTHER = ['armR', 'armL', 'legR', 'legL'];
+
 export class Skeleton {
   /**
    * @param {THREE.Scene|THREE.Group} scene scene root to attach the rig to
@@ -198,6 +210,10 @@ export class Skeleton {
 
     // Pose animation
     this._animT = Math.random() * 10;
+    // LOS time-gating (hasLOS): re-evaluate the sightline at most every
+    // LOS_REEVAL s; between checks reuse `_losVerdict`.
+    this._losNext = 0;
+    this._losVerdict = true;
 
     // Ranged config (magician / archer variants override)
     this.projectileKind = null;   // 'orb' | 'arrow'
@@ -353,10 +369,15 @@ export class Skeleton {
     const pos = opts.position || { x: 0, z: 0 };
     this.mesh.position.set(pos.x, 0, pos.z);
     if (this.scene && this.scene.add) this.scene.add(this.mesh);
-    this.ground();
+    // Compute the grounding offset ONCE while the mesh is at the origin
+    // (bind pose, feet at local -0.58). ground() re-applies this constant
+    // afterwards — idempotent, no per-call Box3, no per-call sink.
+    const bindBox = new THREE.Box3().setFromObject(this.mesh);
+    this._groundOffset = -bindBox.min.y;
+    this.mesh.position.y = this._groundOffset;
     this.facing = opts.facing || 0;
     this.mesh.rotation.y = this.facing;
-    this.position = new THREE.Vector3(pos.x, 0, pos.z);
+    this.position = new THREE.Vector3(pos.x, this._groundOffset, pos.z);
   }
 
   // -----------------------------------------------------------------
@@ -432,19 +453,26 @@ export class Skeleton {
   // Positioning / grounding
   // -----------------------------------------------------------------
 
-  /** Set xz position and ground the rig via Box3 (feet at y 0). */
+  /** Set xz position and keep the rig grounded (feet at y 0). */
   setPosition(x, z) {
     this.mesh.position.x = x;
     this.mesh.position.z = z;
-    if (this.position) this.position.set(x, 0, z);
+    if (this.position) this.position.x = x, this.position.z = z;
     this.ground();
   }
 
-  /** group.position.y = -Box3.min.y so the feet rest on y 0 (§15). */
+  /**
+   * Idempotent grounding: re-apply the bind-time offset so the feet rest on
+   * y 0 (§15). The offset is computed ONCE at construction (bind pose, mesh
+   * at origin) — re-measuring a Box3 of the already-lifted group each call
+   * is what made the old version non-idempotent and let enemies sink into
+   * the floor. O(1), no allocation.
+   */
   ground() {
-    const box = new THREE.Box3().setFromObject(this.mesh);
-    this.mesh.position.y = -box.min.y;
-    if (this.position) this.position.y = this.mesh.position.y;
+    const off = this._groundOffset;
+    if (off === undefined) return;
+    this.mesh.position.y = off;
+    if (this.position) this.position.y = off;
   }
 
   // -----------------------------------------------------------------
@@ -536,20 +564,16 @@ export class Skeleton {
 
   _applyPose() {
     const b = this.bones;
-    const setBone = (name, rot) => {
-      const node = b[name];
-      const base = this._boneBases[name];
-      if (rot) {
-        node.rotation.x = base.x + rot.x;
-        node.rotation.y = base.y + rot.y;
-        node.rotation.z = base.z + rot.z;
-      } else {
-        node.rotation.set(base.x, base.y, base.z);
-      }
-    };
+    const bases = this._boneBases;
 
     if (this.state === DEAD) {
-      for (const k of Object.keys(POSES[DEAD].bones)) setBone(k, POSES[DEAD].bones[k]);
+      const dead = POSES[DEAD].bones;
+      for (const name of POSE_KEYS[DEAD]) {
+        const node = b[name], base = bases[name], r = dead[name];
+        node.rotation.x = base.x + r.x;
+        node.rotation.y = base.y + (r.y || 0);
+        node.rotation.z = base.z + (r.z || 0);
+      }
       return;
     }
 
@@ -557,24 +581,43 @@ export class Skeleton {
       // Interpolate windup→swing→recover through the ATTACK keyframe.
       const c = this.cycle;
       const t = this._phaseT;
-      const { windup, swing, recover } = c;
-      let pose;
+      const { windup, recover } = c;
+      const from = POSES[CHASE].bones, to = POSES[ATTACK].bones;
       if (this._phase === 'windup') {
-        // arms drawn back as t→1
         const k = Math.min(1, t / Math.max(1e-6, windup));
-        pose = { bones: mixPose(POSES[CHASE], POSES[ATTACK], k) };
+        for (const name of MIX_KEYS_CHASE_ATTACK) {
+          const A = from[name] || ZERO_ROT, B = to[name] || ZERO_ROT;
+          const node = b[name], base = bases[name];
+          if (node) {
+            node.rotation.x = base.x + A.x + (B.x - A.x) * k;
+            node.rotation.y = base.y + (A.y + (B.y - A.y) * k);
+            node.rotation.z = base.z + (A.z || 0) + ((B.z || 0) - (A.z || 0)) * k;
+          }
+        }
       } else if (this._phase === 'swing') {
         // snap to the attack keyframe
-        pose = POSES[ATTACK];
+        for (const name of POSE_KEYS[ATTACK]) {
+          const node = b[name], base = bases[name], r = to[name];
+          node.rotation.x = base.x + r.x;
+          node.rotation.y = base.y + (r.y || 0);
+          node.rotation.z = base.z + (r.z || 0);
+        }
       } else {
-        // recover: ease back
         const k = Math.min(1, t / Math.max(1e-6, recover));
-        pose = { bones: mixPose(POSES[ATTACK], POSES[CHASE], k) };
+        for (const name of MIX_KEYS_CHASE_ATTACK) {
+          const B = from[name] || ZERO_ROT, A = to[name] || ZERO_ROT;
+          const node = b[name], base = bases[name];
+          if (node) {
+            node.rotation.x = base.x + A.x + (B.x - A.x) * k;
+            node.rotation.y = base.y + (A.y + (B.y - A.y) * k);
+            node.rotation.z = base.z + (A.z || 0) + ((B.z || 0) - (A.z || 0)) * k;
+          }
+        }
       }
-      for (const k of Object.keys(pose.bones)) setBone(k, pose.bones[k]);
       // Legs held mid-stride during an attack.
-      setBone('legL', { x: -0.2 });
-      setBone('legR', { x: 0.2 });
+      const ll = b['legL'], rr = b['legR'];
+      if (ll && bases['legL']) { ll.rotation.x = bases['legL'].x - 0.2; ll.rotation.y = bases['legL'].y; ll.rotation.z = bases['legL'].z; }
+      if (rr && bases['legR']) { rr.rotation.x = bases['legR'].x + 0.2; rr.rotation.y = bases['legR'].y; rr.rotation.z = bases['legR'].z; }
       return;
     }
 
@@ -582,32 +625,59 @@ export class Skeleton {
     const pose = POSES[this.state] || POSES[DORMANT];
     const ph = this._animT / pose.phase * Math.PI * 2;
     const s = Math.sin(ph);
-    for (const [name, rot] of Object.entries(pose.bones)) {
+    for (const name of POSE_KEYS[this.state] || POSE_KEYS[DORMANT]) {
+      const rot = pose.bones[name];
+      if (!rot) continue;
+      const node = b[name], base = bases[name];
+      if (!node) continue;
       // Oscillate limbs about the keyframe; arms/legs swing, torso sways.
       const amp = (name === 'armL' || name === 'legR') ? 1 : -1;
-      const r = {
-        x: rot.x + s * 0.25 * amp,
-        y: rot.y || 0,
-        z: (rot.z || 0) + s * 0.04 * amp,
-      };
-      setBone(name, r);
+      node.rotation.x = base.x + rot.x + s * 0.25 * amp;
+      node.rotation.y = base.y + (rot.y || 0);
+      node.rotation.z = base.z + (rot.z || 0) + s * 0.04 * amp;
     }
-    // Counter-swing the other limb for a natural walk.
-    const swap = { armL: 'armR', armR: 'armL', legL: 'legR', legR: 'legL' };
-    for (const name of ['armL', 'armR', 'legL', 'legR']) {
-      const other = swap[name];
-      if (pose.bones[other]) {
-        setBone(name, {
-          x: pose.bones[name].x - s * 0.25,
-          z: (pose.bones[name].z || 0) - s * 0.04,
-        });
-      }
+    // Counter-swing the other limb for a natural walk (fixed key order).
+    for (let i = 0; i < 4; i++) {
+      const name = COUNTER_KEYS[i];
+      const other = COUNTER_OTHER[i];
+      const rot = pose.bones[name];
+      if (!rot || !pose.bones[other]) continue;
+      const node = b[name], base = bases[name];
+      if (!node) continue;
+      node.rotation.x = base.x + rot.x - s * 0.25;
+      node.rotation.y = base.y + (rot.y || 0);
+      node.rotation.z = base.z + (rot.z || 0) - s * 0.04;
     }
   }
 
   // -----------------------------------------------------------------
   // Movement helpers
   // -----------------------------------------------------------------
+
+  /** True if there are any wall boxes to test against. */
+  _hasBoxes(boxes) {
+    return !!(this._grid || (boxes && boxes.length));
+  }
+
+  /**
+   * Collision resolution against the level's wall boxes. Uses the shared
+   * BoxGrid (O(cells)) when the SkeletonSystem provided one, else the
+   * linear scan. Same contract as resolveCircleCollisions(boxes, p, r).
+   */
+  _resolve(p) {
+    const grid = this._grid;
+    if (grid) { grid.resolve(p, RADIUS); return; }
+    const boxes = this._boxes;
+    if (boxes && boxes.length) resolveCircleCollisions(boxes, p, RADIUS);
+  }
+
+  /** Circle-vs-boxes hit test (grid accelerated when available). */
+  _hits(x, z, r) {
+    const grid = this._grid;
+    if (grid) return grid.circleHits(x, z, r);
+    const boxes = this._boxes;
+    return boxes && boxes.length && circleHitsBox(boxes, x, z, r);
+  }
 
   /**
    * Move the enemy toward (tx, tz) by up to `dist` units this frame.
@@ -626,15 +696,14 @@ export class Skeleton {
     this._face(targetYaw, opts.turnSpeed || 8, dt);
 
     const phases = this.phases && !opts.noPhase;
+    const doResolve = !phases && this._hasBoxes(boxes);
     let remaining = dist;
     let moved = 0;
     while (remaining > 1e-6) {
       const step = Math.min(STEP, remaining);
       p.x += nx * step;
       p.z += nz * step;
-      if (!phases && boxes && boxes.length) {
-        resolveCircleCollisions(boxes, p, RADIUS);
-      }
+      if (doResolve) this._resolve(p);
       remaining -= step;
       moved += step;
     }
@@ -685,7 +754,7 @@ export class Skeleton {
       const step = STEP;
       p.x += nx * step;
       p.z += nz * step;
-      if (boxes && boxes.length) resolveCircleCollisions(boxes, p, RADIUS);
+      if (this._hasBoxes(boxes)) this._resolve(p);
       this._syncMesh();
       return true;
     }
@@ -696,24 +765,36 @@ export class Skeleton {
 
   _greedyStep(px, pz, dt, boxes) {
     const p = this.position;
-    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-    // Prefer the axis with the largest error.
+    // Perf: no per-call allocations — fixed inline dir order, scalar test point.
+    // Prefer the axis with the largest error by picking the dir order inline.
     const ax = Math.abs(px - p.x), az = Math.abs(pz - p.z);
-    if (ax >= az) dirs.reverse();
-    for (const [dx, dz] of dirs) {
-      const tx = p.x + dx * STEP * 2;
-      const tz = p.z + dz * STEP * 2;
-      const test = { x: p.x, z: p.z };
-      test.x += dx * STEP;
-      test.z += dz * STEP;
-      if (boxes && boxes.length && circleHitsBox(boxes, test.x, test.z, RADIUS)) continue;
-      this._face(Math.atan2(dx, dz), 8, dt);
-      p.x = test.x;
-      p.z = test.z;
-      if (boxes && boxes.length) resolveCircleCollisions(boxes, p, RADIUS);
-      this._syncMesh();
-      return;
+    const preferX = ax >= az;
+    // Four candidate unit steps (dx, dz) in preference order.
+    if (preferX) {
+      if (this._tryGreedyDir(px, pz, dt, boxes, Math.sign(ax) || 1, 0)) return;
+      if (this._tryGreedyDir(px, pz, dt, boxes, 0, Math.sign(az) || 1)) return;
+      if (this._tryGreedyDir(px, pz, dt, boxes, -(Math.sign(ax) || 1), 0)) return;
+      if (this._tryGreedyDir(px, pz, dt, boxes, 0, -(Math.sign(az) || 1))) return;
+    } else {
+      if (this._tryGreedyDir(px, pz, dt, boxes, 0, Math.sign(az) || 1)) return;
+      if (this._tryGreedyDir(px, pz, dt, boxes, Math.sign(ax) || 1, 0)) return;
+      if (this._tryGreedyDir(px, pz, dt, boxes, 0, -(Math.sign(az) || 1))) return;
+      if (this._tryGreedyDir(px, pz, dt, boxes, -(Math.sign(ax) || 1), 0)) return;
     }
+  }
+
+  /** Try one greedy step along (sx, sz) ∈ {±1,0}. Returns true if it moved. */
+  _tryGreedyDir(px, pz, dt, boxes, sx, sz) {
+    const p = this.position;
+    const tx = p.x + sx * STEP;
+    const tz = p.z + sz * STEP;
+    if (this._hits(tx, tz, RADIUS)) return false;
+    this._face(Math.atan2(sx, sz), 8, dt);
+    p.x = tx;
+    p.z = tz;
+    if (this._hasBoxes(boxes)) this._resolve(p);
+    this._syncMesh();
+    return true;
   }
 
   _rebuildPath(px, pz, boxes) {
@@ -755,21 +836,34 @@ export class Skeleton {
   // LOS / attack
   // -----------------------------------------------------------------
 
-  /** Line-of-sight raycast (0.4 u steps) against collision boxes. */
+  /** Line-of-sight raycast (0.4 u steps) against collision boxes.
+   *  Perf: time-gated — the sightline only flips when geometry crosses it,
+   *  which is slow at a few u/s, so re-checking at most every LOS_REEVAL s is
+   *  indistinguishable in gameplay but removes the per-frame
+   *  O(steps × boxes) raycast (the top per-enemy cost at high level). */
   hasLOS(px, pz, boxes) {
     if (this.phases) return true;
     const p = this.position;
     const dx = px - p.x, dz = pz - p.z;
     const d = Math.hypot(dx, dz);
     if (d < 1e-4) return true;
-    const steps = Math.ceil(d / LOS_STEP);
-    for (let i = 1; i < steps; i++) {
-      const t = i / steps;
-      if (boxes && boxes.length &&
-          circleHitsBox(boxes, p.x + dx * t, p.z + dz * t, LOS_RADIUS)) {
-        return false;
+    // Re-evaluate on a timer driven by _animT (advanced by dt in update()).
+    if (this._animT < this._losNext) return this._losVerdict;
+    this._losNext = this._animT + LOS_REEVAL;
+    const grid = this._grid;
+    if (boxes && boxes.length) {
+      const steps = Math.ceil(d / LOS_STEP);
+      for (let i = 1; i < steps; i++) {
+        const t = i / steps;
+        const sx = p.x + dx * t, sz = p.z + dz * t;
+        if (grid ? grid.circleHits(sx, sz, LOS_RADIUS)
+                : circleHitsBox(boxes, sx, sz, LOS_RADIUS)) {
+          this._losVerdict = false;
+          return false;
+        }
       }
     }
+    this._losVerdict = true;
     return true;
   }
 
@@ -886,6 +980,11 @@ export class Skeleton {
   update(dt, player, collisionBoxes = [], opts = {}) {
     if (this._disposed) return false;
     this._animT += dt;
+    // Perf: cache the per-update collision source (shared BoxGrid when
+    // SkeletonSystem provides one, else the raw box array) so the movement
+    // helpers avoid re-deriving it.
+    this._boxes = collisionBoxes;
+    this._grid = opts.grid || null;
 
     if (this.state === DEAD) {
       // Corpse animation runs while alive===false (after the killing hit).

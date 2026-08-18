@@ -40,6 +40,9 @@ export class Burning extends Skeleton {
   update(dt, player, collisionBoxes = [], opts = {}) {
     if (this._disposed) return false;
     this._animT += dt;
+    // Perf: same collision-source cache as the base update().
+    this._boxes = collisionBoxes;
+    this._grid = (opts && opts.grid) || null;
     if (this.state === 'DEAD') {
       this._updateDeath(dt);
       return this._disposed === false;

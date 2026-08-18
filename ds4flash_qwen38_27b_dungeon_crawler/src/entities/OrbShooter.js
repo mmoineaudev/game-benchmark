@@ -133,6 +133,9 @@ export class OrbShooter {
     this._fireballShared = getFireballShared(); // singleton, never disposed
     this._ownMats = [];
     this._ownGeos = [];
+    // F6 (C8): accessor for live enemy targets so _checkContact can restore the
+    // spec'd orb direct-hit path (spec §10: direct-hit damage = round(2×mult)).
+    this._enemies = opts.enemies || (() => []);
 
     // Sequence state (one orb = one 3-step sequence).
     this.step = 0;                 // 0 = no open sequence, 1..3 = steps fired
@@ -420,6 +423,18 @@ export class OrbShooter {
     // ceiling (wall-height ceiling plane)
     const ceilY = (this._ceilingY != null) ? this._ceilingY : 20;
     if (p.y >= ceilY) return 'ceiling';
+    // enemies — F6 (C8): restored the spec'd direct-hit path (spec §10:
+    // direct-hit damage = round(2×mult); step-3 orbs detonate on enemy
+    // contact like any other surface). Checked before walls/props because
+    // the enemy is the reason the shot was fired.
+    const enemies = this._enemies();
+    for (let i = 0; i < enemies.length; i++) {
+      const e = enemies[i];
+      if (!e || !e.alive) continue;
+      const dx = p.x - e.position.x, dz = p.z - e.position.z;
+      const r = ORB_WEAPON.RADIUS + (e.radius || 0.4);
+      if (dx * dx + dz * dz <= r * r) return 'enemy';
+    }
     // walls (AABBs)
     const walls = this.walls();
     for (let i = 0; i < walls.length; i++) {

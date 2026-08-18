@@ -229,7 +229,7 @@ export class Game {
       onHitStop: (ms) => { this._hitStop = Math.max(this._hitStop, ms); },
       onElectricChain: (targets) => this._onElectricChain(targets),
       onEvolution: (tier, prev) => this._onEvolution(tier, prev),
-      arcTargets: () => this.skeletons ? this.skeletons.living : [],
+      arcTargets: () => this.skeletons ? this.skeletons.allTargets() : [],
     });
     this.camera.add(this.sword.group);
 
@@ -524,7 +524,7 @@ export class Game {
     this.props = new PropSystem(this.scene, this.eventBus, {
       spawnOrbs: (x, z, n) => { if (this.orbs) this.orbs.dropOrb(x, WORLD.FLOOR_Y, z, n); },
       onBuffCollected: (effect) => this._onBuffCollected(effect),
-      onPropBroken: () => {},
+      onPropBroken: () => this._onPropBroken(),
       onPropOpened: () => {},
       onSpawnWraith: (x, z) => { if (this.skeletons) this.skeletons._spawnMob('WRAITH', x, z, false); },
     });
@@ -546,6 +546,7 @@ export class Game {
     this.shooter = new OrbShooter(this.scene, {
       orbs: s.collectedOrbs,
       getOrbs: () => s.collectedOrbs,
+      enemies: () => this.skeletons ? this.skeletons.allTargets() : [],
       walls: () => this._collisionBoxes(),
       props: () => (this.props ? this.props.collidableBoxes() : []),
       spendOrb: () => this._spendOrb(),
@@ -596,7 +597,6 @@ export class Game {
     s.activeBuffTimer = 0;
     if (this.sword) {
       this.sword.buffAttackSpeedMult = 1;
-      this.sword.buffDamageMult = 1;
       this.sword.souls = s.collectedOrbs;
     }
     // Reset look so the run never inherits the title-screen orbit aim.
@@ -751,6 +751,7 @@ export class Game {
       },
       onPlayerDamaged: (dmg, src) => this._onPlayerDamaged(dmg, src),
       onBlinkHit: (x, z, r, d) => this._onBlinkHit(x, z, r, d),
+      onChargeHit: (boss) => this._onChargeHit(boss),
       onToast: (msg) => this._toast(msg),
       onFirePatch: (x, z) => this._spawnFirePatch(x, z),
       collisionBoxes: boxes,
@@ -761,8 +762,11 @@ export class Game {
     sys.maxHealth = this.state.maxHealth;
     sys.bossKills = this.state.bossKills;
     sys.level = this.state.level;
-    sys._speedMult = 1 + this.state.ngPlus * 0.05;
-    sys._attackMult = 1 + this.state.ngPlus * 0.05;
+    // Enemy scaling: base = level + boss-kill bonus (ENEMY.speedMult/attackMult),
+    // with the NG+ multiplier stacked on top.
+    const ngPlusMult = 1 + this.state.ngPlus * 0.05;
+    sys._speedMult = ENEMY.speedMult(this.state.level, this.state.bossKills) * ngPlusMult;
+    sys._attackMult = ENEMY.attackMult(this.state.level, this.state.bossKills) * ngPlusMult;
     // Boss level: spawn the boss in the arena.
     if (sys.isBossLevelFn(this.state.level)) {
       sys._hasArena = true;
@@ -773,17 +777,9 @@ export class Game {
 
   /** Collect water-pool circles for movement slowdown (§26). */
   _collectWaterPuddles() {
-    const out = [];
-    if (!this.props) return out;
-    // PropSystem tracks hazards; water pools are the non-damaging ones.
-    if (this.props.hazards) {
-      for (const h of this.props.hazards) {
-        if (h.type === 'water' || h.damage === 0) {
-          out.push({ x: h.x, z: h.z, r: h.radius || 1.5 });
-        }
-      }
-    }
-    return out;
+    // PropSystem registers water pools (non-damaging slow zones) in `waterPuddles`.
+    if (!this.props || !this.props.waterPuddles) return [];
+    return this.props.waterPuddles;
   }
 
   _setupSmokeSources(biomeId, dungeon) {
@@ -932,7 +928,8 @@ export class Game {
       this.hunter.update(sdt,
         { x: this.state.x, z: this.state.z },
         this.skeletons ? this.skeletons.living : [],
-        this._collisionBoxes());
+        this._collisionBoxes(),
+        this.skeletons ? this.skeletons.boxGrid : null);
     }
     if (this.props) {
       this.props.update(sdt, this.state.x, this.state.z);
@@ -1052,6 +1049,19 @@ export class Game {
     this._boxesCache = boxes;
     this._boxesCacheLevel = this.state.level;
     return boxes;
+  }
+
+  /**
+   * A breakable prop was destroyed: its AABB must stop colliding. Rebuild the
+   * cached box list and the enemy BoxGrid from the (now shrunk) live prop
+   * boxes. Walls are immutable, so only the prop boxes changed.
+   */
+  _onPropBroken() {
+    this._boxesCache = null;
+    if (this.skeletons) {
+      const boxes = this._collisionBoxes();
+      this.skeletons.setCollisionBoxes(boxes);
+    }
   }
 
   _inWaterPool(x, z) {
@@ -1241,7 +1251,7 @@ export class Game {
     const range = cone.range;
     const halfAngle = cone.halfAngle;
     const cosHalf = Math.cos(halfAngle);
-    for (const e of this.skeletons.living) {
+    for (const e of this.skeletons.allTargets()) {
       if (!e || !e.alive) continue;
       const dx = e.position.x - ox, dz = e.position.z - oz;
       const d2 = dx * dx + dz * dz;
@@ -1292,7 +1302,7 @@ export class Game {
       ? info.damage
       : 5 * damageMult(this.sword.scale, s.weaponTier, s.level);
     const r2 = range * range;
-    for (const e of this.skeletons.living) {
+    for (const e of this.skeletons.allTargets()) {
       if (!e || !e.alive) continue;
       const dx = e.position.x - s.x, dz = e.position.z - s.z;
       if (dx * dx + dz * dz <= r2) {
@@ -1313,7 +1323,7 @@ export class Game {
     if (!this.skeletons) return;
     const dmg = damage || 2;
     let hit = false;
-    for (const e of this.skeletons.living) {
+    for (const e of this.skeletons.allTargets()) {
       if (!e.alive) continue;
       const dx = e.position.x - x, dz = e.position.z - z;
       const d = Math.hypot(dx, dz);
@@ -1333,7 +1343,7 @@ export class Game {
     if (!this.skeletons) return;
     const dmg = damage || 4;
     const R = ORB_WEAPON.EXPLOSION_RADIUS;
-    for (const e of this.skeletons.living) {
+    for (const e of this.skeletons.allTargets()) {
       if (!e.alive) continue;
       const dx = e.position.x - x, dz = e.position.z - z;
       const d = Math.hypot(dx, dz);
@@ -1356,6 +1366,11 @@ export class Game {
     if (dx * dx + dz * dz <= r * r) {
       this._onPlayerDamaged(d, { source: 'blink' });
     }
+  }
+
+  // Boss CHARGE contact (GhostBoss already gated distance + once-per-charge).
+  _onChargeHit(boss) {
+    this._onPlayerDamaged(BOSS.CHARGE_DMG, { source: 'bossCharge' });
   }
 
   _onPlayerDamaged(dmg, src) {
@@ -1389,12 +1404,13 @@ export class Game {
   _spawnDrops(info) {
     if (!this.orbs) return;
     const { x, z, drops, healthChance } = info;
-    if (drops > 0) this.orbs.dropOrb(x, z, drops);
-    if (healthChance) this.orbs.dropHealth(x, z);
+    // OrbSystem drop signatures are (x, y, z, ...) — pass the floor Y.
+    if (drops > 0) this.orbs.dropOrb(x, WORLD.FLOOR_Y, z, drops);
+    if (healthChance) this.orbs.dropHealth(x, WORLD.FLOOR_Y, z);
     if (Math.random() < 0.05) {
       const effects = BUFF.EFFECTS.filter((e) => e !== this.state.activeBuff);
       const pick = effects[Math.floor(Math.random() * effects.length)];
-      this.orbs.dropBuff(x, z, pick);
+      this.orbs.dropBuff(x, WORLD.FLOOR_Y, z, pick);
     }
   }
 
@@ -1403,12 +1419,13 @@ export class Game {
     s.activeBuff = effect;
     s.activeBuffTimer = BUFF.DURATION;
     if (this.sword) {
+      // EMPOWERED 1.2 / GODSPEED 1.5 / otherwise 1.0 (consumed by sword.attackSpeed)
       if (effect === BUFF.EFFECTS.EMPOWERED) {
         this.sword.buffAttackSpeedMult = BUFF.EMPOWERED.attackSpeedMult;
-        this.sword.buffDamageMult = BUFF.EMPOWERED.damageMult;
+      } else if (effect === BUFF.EFFECTS.GODSPEED) {
+        this.sword.buffAttackSpeedMult = BUFF.GODSPEED.attackSpeedMult;
       } else {
         this.sword.buffAttackSpeedMult = 1;
-        this.sword.buffDamageMult = 1;
       }
     }
     if (this.shooter) this.shooter.setActiveBuff(this._buffIndex(effect));
@@ -1442,7 +1459,6 @@ export class Game {
     s.activeBuffTimer = 0;
     if (this.sword) {
       this.sword.buffAttackSpeedMult = 1;
-      this.sword.buffDamageMult = 1;
     }
     if (this.shooter) this.shooter.setActiveBuff(null);
     if (this.lighting) {
@@ -1504,11 +1520,13 @@ export class Game {
   _updateHud() {
     if (this.headless) return;
     const s = this.state;
+    const el = this._hudEls();
+
     const set = (id, text, width) => {
-      const el = document.getElementById(id);
-      if (el) {
-        if (text != null) el.textContent = String(text); // null = bar fill, no text
-        if (width !== undefined) el.style.width = width;
+      const e = el[id];
+      if (e) {
+        if (text != null) e.textContent = String(text); // null = bar fill, no text
+        if (width !== undefined) e.style.width = width;
       }
     };
 
@@ -1521,9 +1539,9 @@ export class Game {
     // #level-title contains the nested #biome-label span, so updating
     // #level-title via textContent would destroy the span. Update only the
     // level-number text node, then the span separately.
-    const lt = document.getElementById('level-title');
+    const lt = el['level-title'];
     if (lt) {
-      const bl = document.getElementById('biome-label');
+      const bl = el['biome-label'];
       if (bl) {
         // Keep the span's preceding text node holding the level number.
         let tn = bl.previousSibling;
@@ -1536,9 +1554,9 @@ export class Game {
         lt.textContent = `LEVEL ${s.level}`;
       }
     }
-    const bl = document.getElementById('biome-label');
+    const bl = el['biome-label'];
     if (bl) bl.textContent = ` · ${biome.label}`;
-    const timer = document.getElementById('timer');
+    const timer = el['timer'];
     if (timer) {
       timer.textContent = fmtTime(s.runTime);
       timer.classList.remove('low');
@@ -1548,11 +1566,11 @@ export class Game {
     set('weapon-name', EVOLUTION.tierName(s.weaponTier));
     set('weapon-tier', `TIER ${s.weaponTier} — ${EVOLUTION.tierDescr(s.weaponTier)}`);
 
-    const pips = document.querySelectorAll('#combo-pips .pip');
+    const pips = el.pips;
     const step = this.sword ? this.sword.comboStep : 0;
     pips.forEach((p, i) => p.classList.toggle('on', i < step));
 
-    const badge = document.getElementById('buff-badge');
+    const badge = el['buff-badge'];
     if (badge) {
       if (s.activeBuff) {
         badge.classList.remove('hidden');
@@ -1562,7 +1580,7 @@ export class Game {
       }
     }
 
-    const ss = document.getElementById('safe-spawn');
+    const ss = el['safe-spawn'];
     if (ss) {
       if (s.safeSpawn > 0) {
         ss.classList.remove('hidden');
@@ -1572,22 +1590,22 @@ export class Game {
       }
     }
 
-    const bbw = document.getElementById('boss-bar-wrap');
+    const bbw = el['boss-bar-wrap'];
     const boss = this.skeletons && this.skeletons.boss;
     if (bbw) {
       if (boss && boss.alive) {
         bbw.classList.remove('hidden');
         const frac = boss.maxHp > 0 ? boss.hp / boss.maxHp : 0;
-        const fill = document.getElementById('boss-bar-fill');
+        const fill = el['boss-bar-fill'];
         if (fill) fill.style.width = `${Math.max(0, frac * 100)}%`;
-        const label = document.getElementById('boss-bar-label');
+        const label = el['boss-bar-label'];
         if (label) label.textContent = boss.label || 'SPECTRAL LORD';
       } else {
         bbw.classList.add('hidden');
       }
     }
 
-    const stats = document.getElementById('stats-panel');
+    const stats = el['stats-panel'];
     if (stats) {
       const kills = s.kills || 0;
       stats.textContent =
@@ -1606,8 +1624,23 @@ export class Game {
     this._updateMessages();
   }
 
+  /** Cache HUD element handles once — the HUD DOM is static for the whole run,
+   *  so per-frame `getElementById` / `querySelectorAll` lookups (the real
+   *  per-frame cost) collapse to a one-time capture. */
+  _hudEls() {
+    if (this._hudCache) return this._hudCache;
+    const ids = ['hp-fill', 'hp-num', 'orb-count', 'weapon-name', 'weapon-tier',
+      'level-title', 'biome-label', 'timer', 'buff-badge', 'safe-spawn',
+      'boss-bar-wrap', 'boss-bar-fill', 'boss-bar-label', 'stats-panel',
+      'messages'];
+    const map = { pips: document.querySelectorAll('#combo-pips .pip') };
+    for (const id of ids) map[id] = document.getElementById(id);
+    this._hudCache = map;
+    return map;
+  }
+
   _updateMessages() {
-    const box = document.getElementById('messages');
+    const box = this._hudEls().messages;
     if (!box) return;
     this._messages = this._messages.filter((m) => this._now - m.t < 3);
     if (this._messages.length !== this._msgSig) {
@@ -1758,8 +1791,13 @@ export class Game {
   // =========================================================================
   _render() {
     if (!this.renderer) return;
+    // Mark layer-1 glow targets (enemy meshes, incl. boss) then render.
+    // `now` is ms — uPulse = sin(now · 0.003) expects a ms clock.
     if (this.post && this.post.available) {
-      this.post.render();
+      if (this.post.setEnemyTargets && this.skeletons) {
+        this.post.setEnemyTargets(this.skeletons.allTargets().map((e) => e.mesh));
+      }
+      this.post.render(this._now * 1000);
     } else {
       this.renderer.render(this.scene, this.camera);
     }

@@ -357,8 +357,12 @@ export class PlayerSword {
       this._startStep(1, now);
       return;
     }
-    if (this._phase === 'recover' && this.canChain) {
+    if (this._phase === 'recover' && this.canChain && this.comboStep < 3) {
       // Chain into the next step (or buffered press).
+      // `comboStep < 3` guard: step 3 is the final thrust — chaining past it
+      // would set comboStep=4, and SWORD.COMBO has no key 4 → `SWORD.COMBO[4]`
+      // is undefined and the next update() throws on `.windup`. (Mirrors the
+      // guard in update()'s recover branch.)
       this._startStep(this.comboStep + 1, now);
       return;
     }

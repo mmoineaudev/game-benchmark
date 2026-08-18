@@ -85,7 +85,7 @@ export class Hunter {
   /**
    * True if the line from the hunter to (tx, tz) is clear of `boxes`.
    */
-  hasLOS(tx, tz, boxes) {
+  hasLOS(tx, tz, boxes, grid) {
     const p = this.position;
     const dx = tx - p.x, dz = tz - p.z;
     const d = Math.hypot(dx, dz);
@@ -93,8 +93,10 @@ export class Hunter {
     const steps = Math.ceil(d / ENEMY.LOS_STEP);
     for (let i = 1; i < steps; i++) {
       const t = i / steps;
-      if (boxes && boxes.length &&
-          circleHitsBox(boxes, p.x + dx * t, p.z + dz * t, ENEMY.LOS_RADIUS)) return false;
+      const sx = p.x + dx * t, sz = p.z + dz * t;
+      if (grid ? grid.circleHits(sx, sz, ENEMY.LOS_RADIUS)
+               : (boxes && boxes.length &&
+                  circleHitsBox(boxes, sx, sz, ENEMY.LOS_RADIUS))) return false;
     }
     return true;
   }
@@ -104,8 +106,9 @@ export class Hunter {
    * @param {{x:number,z:number}} playerPos player position
    * @param {Array} enemies living enemies (each: {position|mesh, alive})
    * @param {Array<{minX,minZ,maxX,maxZ}>} collisionBoxes
+   * @param {BoxGrid|null} [grid] optional shared spatial index
    */
-  update(dt, playerPos, enemies = [], collisionBoxes = []) {
+  update(dt, playerPos, enemies = [], collisionBoxes = [], grid = null) {
     if (!this.alive) return;
     this._animT += dt;
     const p = this.position;
@@ -120,7 +123,7 @@ export class Hunter {
       p.z += nz * step;
     }
     // Face the target enemy (or the player) and hover.
-    let target = this._acquireTarget(enemies, collisionBoxes);
+    let target = this._acquireTarget(enemies, collisionBoxes, grid);
     if (target) {
       this._faceTarget(target, dt);
     } else if (d > 1e-3) {
@@ -148,7 +151,7 @@ export class Hunter {
   }
 
   /** Nearest living enemy within ATTACK_RANGE with LOS. */
-  _acquireTarget(enemies, boxes) {
+  _acquireTarget(enemies, boxes, grid) {
     let best = null, bestD = ATTACK_RANGE;
     const p = this.position;
     for (const e of enemies) {
@@ -157,7 +160,7 @@ export class Hunter {
       if (!ep) continue;
       const d = Math.hypot(ep.x - p.x, ep.z - p.z);
       if (d > bestD) continue;
-      if (!this.hasLOS(ep.x, ep.z, boxes)) continue;
+      if (!this.hasLOS(ep.x, ep.z, boxes, grid)) continue;
       bestD = d;
       best = e;
     }

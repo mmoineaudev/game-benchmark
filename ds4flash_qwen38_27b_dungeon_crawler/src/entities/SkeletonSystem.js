@@ -36,7 +36,8 @@ import {
   DUNGEON,
   enemyHpMultiplier,
 } from '../core/Constants.js';
-import { circleHitsBox, resolveCircleCollisions } from '../core/Collision.js';
+import { circleHitsBox, resolveCircleCollisions, BoxGrid } from '../core/Collision.js';
+import { makeBone, makeGlow } from '../core/Materials.js';
 import { Skeleton } from './Skeleton.js';
 import { GhostBoss } from './GhostBoss.js';
 import { Burning } from './enemies/Burning.js';
@@ -94,15 +95,39 @@ export class SkeletonSystem {
     this.bossKills = state.bossKills;
     this.souls = state.collectedOrbs;
 
+    // Perf: shared projectile visuals — ONE geometry + material per kind
+    // (C5: the pools were data-only, so enemy arrows/orbs were invisible).
+    // Meshes are created once per pool slot and toggled by `visible`.
+    this._projGeos = [];
+    this._projMats = [];
+    if (scene) {
+      const arrowGeo = new THREE.BoxGeometry(0.07, 0.07, 0.38);
+      const orbGeo = new THREE.SphereGeometry(0.16, 8, 6);
+      const arrowMat = makeBone(11);
+      arrowMat.color.set(0xcfc9b8);
+      const orbMat = makeGlow(0xff3b2f, 1.4);
+      this._projGeos.push(arrowGeo, orbGeo);
+      this._projMats.push(arrowMat, orbMat);
+      this._arrowGeo = arrowGeo;
+      this._orbGeo = orbGeo;
+      this._arrowMat = arrowMat;
+      this._orbMat = orbMat;
+    }
+
     this.opts = opts;
     this.eventBus = opts.eventBus || null;
     this.onKill = opts.onKill || null;
     this.onBossKill = opts.onBossKill || null;
     this.onPlayerDamaged = opts.onPlayerDamaged || null;
     this.onBlinkHit = opts.onBlinkHit || null;
+    this.onChargeHit = opts.onChargeHit || null;
     this.onToast = opts.onToast || null;
     this.onFirePatch = opts.onFirePatch || null;
     this.collisionBoxes = opts.collisionBoxes || [];
+    // Perf: static spatial index over the level's wall boxes. Boxes never
+    // change within a level, so the grid is built once and reused by every
+    // enemy's per-frame LOS/move/path code (O(cells) instead of O(boxes)).
+    this.boxGrid = new BoxGrid(this.collisionBoxes, 2.0);
 
     this.isBossLevelFn = opts.isBossLevel ||
       ((lvl) => lvl % BOSS.INTERVAL === 0);
@@ -125,6 +150,27 @@ export class SkeletonSystem {
     // Boss
     this.boss = null;
     this.bossKilled = false;
+
+    // Perf: cached per-frame boss update callbacks (were allocated fresh
+    // inside update() every frame the boss was alive).
+    this._bossOpts = {
+      collisionBoxes: null, // set per update
+      onSummon: (x, z, idx) => {
+        const w = this._spawnMob('WRAITH', x, z, false);
+        if (w) w.onProjectile = (info) => this._fireEnemyProjectile(info);
+        return w;
+      },
+      onBlinkHit: (x, z, r, d) => {
+        if (this.onBlinkHit) this.onBlinkHit(x, z, r, d);
+      },
+      onChargeHit: (boss) => {
+        if (this.onChargeHit) this.onChargeHit(boss);
+      },
+    };
+
+    // Perf: cached per-enemy update opts (was a fresh object literal per
+    // enemy per frame).
+    this._enemyOpts = { frozen: false, fleeing: false, grid: null };
 
     // BURN
     this.burn = null;
@@ -155,6 +201,17 @@ export class SkeletonSystem {
       // First reveal immediately (§16.1).
       this.revealTimer = ENEMY.SPAWN_INTERVAL;
     }
+  }
+
+  /**
+   * Rebuild the static collision index from a fresh box list. Called by Game
+   * when a breakable prop is destroyed (its AABB must stop colliding) so the
+   * BoxGrid and linear list stay in sync with `props.collidableBoxes()`.
+   * Walls are immutable within a level, so this is cheap and rare.
+   */
+  setCollisionBoxes(boxes) {
+    this.collisionBoxes = boxes;
+    this.boxGrid = new BoxGrid(boxes, 2.0);
   }
 
   // =========================================================================
@@ -442,8 +499,19 @@ export class SkeletonSystem {
     if (this.onToast) this.onToast('The BURN rises — the level is cleared!');
   }
 
-  /** Create a projectile pool entry. */
+  /** Create a projectile pool entry (data + one shared-geometry mesh). */
   _makeProjectile(kind) {
+    let mesh = null;
+    if (this.scene && (kind === 'arrow' ? this._arrowGeo : this._orbGeo)) {
+      mesh = new THREE.Mesh(
+        kind === 'arrow' ? this._arrowGeo : this._orbGeo,
+        kind === 'arrow' ? this._arrowMat : this._orbMat,
+      );
+      mesh.visible = false;
+      mesh.position.y = 0.85; // chest height, like the other combat visuals
+      mesh.rotation.order = 'YXZ';
+      this.scene.add(mesh);
+    }
     return {
       active: false,
       kind,           // 'arrow' | 'orb'
@@ -456,6 +524,7 @@ export class SkeletonSystem {
       stopDistance: null,
       traveled: 0,
       source: null,
+      mesh,
     };
   }
 
@@ -501,9 +570,16 @@ export class SkeletonSystem {
   _updateProjectiles(dt, player) {
     const update = (pool) => {
       for (const p of pool) {
-        if (!p.active) continue;
+        if (!p.active) {
+          if (p.mesh) p.mesh.visible = false;
+          continue;
+        }
         p.life -= dt;
-        if (p.life <= 0) { p.active = false; continue; }
+        if (p.life <= 0) {
+          p.active = false;
+          if (p.mesh) p.mesh.visible = false;
+          continue;
+        }
         const step = p.speed * dt;
         p.x += p.dx * step;
         p.z += p.dz * step;
@@ -511,11 +587,13 @@ export class SkeletonSystem {
         // Wall hit
         if (circleHitsBox(this.collisionBoxes, p.x, p.z, p.radius)) {
           p.active = false;
+          if (p.mesh) p.mesh.visible = false;
           continue;
         }
         // Stop distance (mage orb)
         if (p.stopDistance && p.traveled >= p.stopDistance) {
           p.active = false;
+          if (p.mesh) p.mesh.visible = false;
           continue;
         }
         // Player hit
@@ -526,6 +604,17 @@ export class SkeletonSystem {
             this.onPlayerDamaged(p.damage, { source: 'projectile', x: p.x, z: p.z });
           }
           p.active = false;
+          if (p.mesh) p.mesh.visible = false;
+          continue;
+        }
+        // C5: move the shared-geometry mesh (pool is pre-allocated: no
+        // per-frame allocation).
+        const m = p.mesh;
+        if (m) {
+          if (!m.visible) m.visible = true;
+          m.position.x = p.x;
+          m.position.z = p.z;
+          if (p.kind === 'arrow') m.rotation.y = Math.atan2(p.dx, p.dz);
         }
       }
     };
@@ -649,6 +738,7 @@ export class SkeletonSystem {
         if (diff > Math.PI) diff = Math.PI * 2 - diff;
         if (diff <= coneHalfAngle) {
           p.active = false;
+          if (p.mesh) p.mesh.visible = false;
         }
       }
     };
@@ -659,6 +749,16 @@ export class SkeletonSystem {
   // =========================================================================
   // Query
   // =========================================================================
+
+  /** Query: every damageable target — non-boss skeletons plus the live boss.
+   *  Used by the player-damage resolvers (sword / electric / orb) so the boss
+   *  can actually be hit; the boss is kept out of `living` (spawn-budget source)
+   *  but must still be a valid target. */
+  allTargets() {
+    const out = this.living.slice();
+    if (this.boss && this.boss.alive) out.push(this.boss);
+    return out;
+  }
 
   /** Spawn queue fully drained? */
   queueDrained() {
@@ -699,12 +799,17 @@ export class SkeletonSystem {
     }
 
     // --- Update all living skeletons ---
+    // Perf: cached opts object (was allocated per enemy per frame).
+    const eopts = this._enemyOpts;
+    eopts.grid = this.boxGrid;
     for (let i = this.living.length - 1; i >= 0; i--) {
       const s = this.living[i];
       if (s._disposed) { this.living.splice(i, 1); continue; }
       if (!s.alive && s.state === 'DEAD') {
         // Dying — let the death animation run; remove when disposed.
-        s.update(dt, player, this.collisionBoxes, { frozen: false, fleeing: false });
+        eopts.frozen = false;
+        eopts.fleeing = false;
+        s.update(dt, player, this.collisionBoxes, eopts);
         continue;
       }
       if (!s.alive) { this.living.splice(i, 1); continue; }
@@ -712,10 +817,9 @@ export class SkeletonSystem {
       const dx = player.x - s.position.x, dz = player.z - s.position.z;
       const distSq = dx * dx + dz * dz;
       const farFrozen = distSq > ENEMY.FROZEN_DIST * ENEMY.FROZEN_DIST;
-      s.update(dt, player, this.collisionBoxes, {
-        frozen: frozen || farFrozen,
-        fleeing,
-      });
+      eopts.frozen = frozen || farFrozen;
+      eopts.fleeing = fleeing;
+      s.update(dt, player, this.collisionBoxes, eopts);
     }
 
     // --- Enemy projectiles ---
@@ -723,17 +827,9 @@ export class SkeletonSystem {
 
     // --- Boss update (§17) ---
     if (this.boss && this.boss.alive && !frozen) {
-      this.boss.update(dt, player, this.dungeon, {
-        collisionBoxes: this.collisionBoxes,
-        onSummon: (x, z, idx) => {
-          const w = this._spawnMob('WRAITH', x, z, false);
-          if (w) w.onProjectile = (info) => this._fireEnemyProjectile(info);
-          return w;
-        },
-        onBlinkHit: (x, z, r, d) => {
-          if (this.onBlinkHit) this.onBlinkHit(x, z, r, d);
-        },
-      });
+      this._bossOpts.collisionBoxes = this.collisionBoxes;
+      this._bossOpts.grid = this.boxGrid;
+      this.boss.update(dt, player, this.dungeon, this._bossOpts);
       this._tickBossSmoke(dt, player);
     }
     // Boss corpse: let it fade & dispose.

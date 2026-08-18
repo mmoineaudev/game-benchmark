@@ -48,6 +48,7 @@ export class PropSystem {
     this.breakables = [];      // { mesh, pos, box, broken }
     this.interactives = [];    // { root, box, opened, opening, lid, t }
     this.hazards = [];         // { x, z, kind }
+    this.waterPuddles = [];    // { x, z, r } — slow zones (no damage)
     this.wisps = [];           // { group, light, cx, cz, ox, oz, ang, vx, vz, bounds }
     this.cosmetic = [];        // groups hidden by reduceDecorations (lights included)
     this._cosmeticLights = [];
@@ -771,6 +772,8 @@ export class PropSystem {
         new THREE.Vector3(s.r, s.r, s.r)
       );
       mesh.setMatrixAt(i, m4);
+      // Register as a slow zone (§26) — water is a non-damaging hazard.
+      this.waterPuddles.push({ x: s.x, z: s.z, r: s.r });
     }
     mesh.instanceMatrix.needsUpdate = true;
     this.group.add(mesh);
@@ -950,6 +953,7 @@ export class PropSystem {
     this.breakables.length = 0;
     this.interactives.length = 0;
     this.hazards.length = 0;
+    this.waterPuddles.length = 0;
     this.wisps.length = 0;
     this.cosmetic.length = 0;
     this.instanced.length = 0;

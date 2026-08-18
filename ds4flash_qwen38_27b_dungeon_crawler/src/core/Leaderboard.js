@@ -79,4 +79,41 @@ export class Leaderboard {
     if (a.time !== b.time) return a.time - b.time;
     return b.orbs - a.orbs;
   }
+
+  // -----------------------------------------------------------------
+  // F3 (C3): run save / load (§26 — "Save for later" / "Load last save").
+  // One save slot, separate from the leaderboard key.
+  // -----------------------------------------------------------------
+
+  _saveKey() {
+    return `${this.key}:save`;
+  }
+
+  /** Store a serialized GameState snapshot. Returns the stored object. */
+  setSave(snapshot) {
+    if (this._storageAvailable()) {
+      try {
+        localStorage.setItem(this._saveKey(), JSON.stringify(snapshot));
+        return snapshot;
+      } catch {
+        this._memSave = snapshot;
+        return snapshot;
+      }
+    }
+    this._memSave = snapshot;
+    return snapshot;
+  }
+
+  /** @returns {object|null} the stored snapshot, or null when absent/corrupt. */
+  getSave() {
+    if (this._storageAvailable()) {
+      try {
+        const raw = localStorage.getItem(this._saveKey());
+        return raw ? JSON.parse(raw) : null;
+      } catch {
+        return this._memSave ?? null;
+      }
+    }
+    return this._memSave ?? null;
+  }
 }

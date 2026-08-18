@@ -327,6 +327,11 @@ export class GhostBoss {
   _drawBar(frac) {
     const ctx = this._barCtx;
     if (!ctx) return;
+    // Perf: only redraw + re-upload the texture when the fill fraction changes
+    // (was: every frame — a full 256×32 canvas re-upload on the GPU 60×/sec).
+    const q = Math.max(0, Math.min(1, frac));
+    if (q === this._lastBarFrac) return;
+    this._lastBarFrac = q;
     const W = this._barW, H = this._barH;
     ctx.clearRect(0, 0, W, H);
     // Frame
@@ -337,7 +342,7 @@ export class GhostBoss {
     ctx.fillRect(5, 5, W - 10, H - 10);
     // Fill (red)
     ctx.fillStyle = '#d42a2a';
-    ctx.fillRect(5, 5, (W - 10) * Math.max(0, Math.min(1, frac)), H - 10);
+    ctx.fillRect(5, 5, (W - 10) * q, H - 10);
     // Border
     ctx.strokeStyle = '#8a8f96';
     ctx.lineWidth = 2;
@@ -529,7 +534,10 @@ export class GhostBoss {
   }
 
   _updateSmokeClouds(dt) {
-    for (const c of this.smokeClouds) {
+    // Perf: in-place compaction (was: per-frame .filter() array allocation).
+    let w = 0;
+    for (let i = 0; i < this.smokeClouds.length; i++) {
+      const c = this.smokeClouds[i];
       if (!c.active) continue;
       c.timeLeft -= dt;
       if (c.timeLeft <= 0) {
@@ -553,25 +561,29 @@ export class GhostBoss {
         if (c.mesh) c.mesh.position.set(c.x, 0.8, c.z);
       }
       // 'linger': stays put; SkeletonSystem ticks the DoT from timeLeft.
+      this.smokeClouds[w++] = c;
     }
-    this.smokeClouds = this.smokeClouds.filter((c) => c.active);
+    this.smokeClouds.length = w;
   }
 
   // -----------------------------------------------------------------
   // Movement / LOS
   // -----------------------------------------------------------------
 
-  /** Wall-free straight line from the boss to (px,pz)? (charge gate, §26). */
+  /** Wall-free straight line from the boss to (px,pz)? (charge gate, §26).
+   *  Uses the shared BoxGrid when SkeletonSystem provides one. */
   _wallFree(px, pz, boxes) {
     const p = this.position;
     const dx = px - p.x, dz = pz - p.z;
     const d = Math.hypot(dx, dz);
     if (d < 1e-4) return true;
+    const grid = this._grid;
     const steps = Math.ceil(d / 0.4);
     for (let i = 1; i < steps; i++) {
       const t = i / steps;
-      if (boxes && boxes.length &&
-          circleHitsBox(boxes, p.x + dx * t, p.z + dz * t, 0.45)) {
+      const sx = p.x + dx * t, sz = p.z + dz * t;
+      if (grid ? grid.circleHits(sx, sz, 0.45)
+               : (boxes && boxes.length && circleHitsBox(boxes, sx, sz, 0.45))) {
         return false;
       }
     }
@@ -590,12 +602,15 @@ export class GhostBoss {
     if (d < 1e-6) return;
     const nx = dx / d, nz = dz / d;
     this._face(Math.atan2(nx, nz), 6, dt);
+    const grid = this._grid;
+    const hasBoxes = !!grid || (boxes && boxes.length);
     let remaining = dist;
     while (remaining > 1e-6) {
       const step = Math.min(STEP, remaining);
       p.x += nx * step;
       p.z += nz * step;
-      if (boxes && boxes.length) resolveCircleCollisions(boxes, p, this.radius);
+      if (grid) grid.resolve(p, this.radius);
+      else if (hasBoxes) resolveCircleCollisions(boxes, p, this.radius);
       remaining -= step;
     }
     this._syncMesh();
@@ -610,11 +625,14 @@ export class GhostBoss {
     const p = this.position;
     const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
     if (Math.abs(px - p.x) >= Math.abs(pz - p.z)) dirs.reverse();
+    const grid = this._grid;
     for (const [dx, dz] of dirs) {
       const tx = p.x + dx * STEP * 3;
       const tz = p.z + dz * STEP * 3;
       const probeX = p.x + dx * 0.6, probeZ = p.z + dz * 0.6;
-      if (boxes && boxes.length && circleHitsBox(boxes, probeX, probeZ, this.radius)) continue;
+      const blocked = grid ? grid.circleHits(probeX, probeZ, this.radius)
+        : (boxes && boxes.length && circleHitsBox(boxes, probeX, probeZ, this.radius));
+      if (blocked) continue;
       this._face(Math.atan2(dx, dz), 6, dt);
       this._move(tx, tz, STEP, dt, boxes);
       return;
@@ -669,6 +687,8 @@ export class GhostBoss {
     const dx = px - p.x, dz = pz - p.z;
     const dist = Math.hypot(dx, dz);
     const boxes = opts.collisionBoxes || [];
+    // Perf: shared BoxGrid (built once per level by SkeletonSystem).
+    this._grid = opts.grid || null;
 
     // --- BLINKING: frozen while charging the nova (§26) ---
     if (this.state === BLINKING) {

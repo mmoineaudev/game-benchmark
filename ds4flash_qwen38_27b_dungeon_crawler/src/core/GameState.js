@@ -127,19 +127,61 @@ export class GameState {
   }
 
   toJSON() {
+    return this.serialize();
+  }
+
+  /**
+   * F3 (C3): full serializable run snapshot for save/load (§26). Persists the
+   * fields the Game loop actually reads (activeBuff/activeBuffTimer are the
+   * live buff fields; buffEffect/buffTime are the unused legacy pair).
+   */
+  serialize() {
     return {
       level: this.level,
       runTime: this.runTime,
-      collectedOrbs: this.collectedOrbs,
-      weaponTier: this.weaponTier,
-      maxHealth: this.maxHealth,
+      levelTime: this.levelTime,
       ngPlus: this.ngPlus,
       bossKills: this.bossKills,
+      kills: this.kills ?? 0,
+      collectedOrbs: this.collectedOrbs,
+      weaponTier: this.weaponTier,
+      totalOrbs: this.totalOrbs ?? 0,
+      maxHealth: this.maxHealth,
+      health: this.health,
+      activeBuff: this.activeBuff ?? null,
+      activeBuffTimer: this.activeBuffTimer ?? 0,
       biome: this.biome,
       biomeIndex: this.biomeIndex,
-      health: this.health,
       player: { ...this.player },
     };
+  }
+
+  /** Restore run state from a serialize() snapshot (in-place). */
+  deserialize(data) {
+    if (!data || typeof data !== 'object') return;
+    this.level = data.level ?? 1;
+    this.runTime = data.runTime ?? 0;
+    this.levelTime = data.levelTime ?? 0;
+    this.ngPlus = data.ngPlus ?? 0;
+    this.bossKills = data.bossKills ?? 0;
+    this.kills = data.kills ?? 0;
+    this.collectedOrbs = data.collectedOrbs ?? 0;
+    this.weaponTier = data.weaponTier ?? 0;
+    this.totalOrbs = data.totalOrbs ?? 0;
+    this.maxHealth = data.maxHealth ?? BASE_HEALTH;
+    this.health = data.health ?? this.maxHealth;
+    this.activeBuff = data.activeBuff ?? null;
+    this.activeBuffTimer = data.activeBuffTimer ?? 0;
+    this.biome = data.biome ?? null;
+    this.biomeIndex = data.biomeIndex ?? 0;
+    if (data.player) {
+      this.player = { ...this.player, ...data.player };
+    }
+    // Self-heal: maxHealth mirrors permanent hearts (base + boss kills).
+    if (this.maxHealth < BASE_HEALTH + this.bossKills) {
+      this.maxHealth = BASE_HEALTH + this.bossKills;
+    }
+    if (this.health > this.maxHealth) this.health = this.maxHealth;
   }
 
   static fromJSON(data) {

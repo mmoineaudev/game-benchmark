@@ -228,6 +228,7 @@ export const ENEMY_TYPES = ['SKELETON', 'MAGICIAN', 'ARMORED', 'ARCHER', 'RAT', 
 
 export const ENEMY = {
   MAX_ALIVE: 200,
+  NOVICE_WINDOW: 3,          // levels 1..3: enemy HP multiplier frozen at 1 (base HP); linear ramp resumes at level 4
   SPAWN_INTERVAL: 0.5,        // reveal one mob every 0.5 s
   SPAWN_PLAYER_DIST: 30,      // spawns only > 30 m from the player
   FROZEN_DIST: 40,            // mobs > 40 m frozen immobile
@@ -317,8 +318,12 @@ export const ELITE = {
  * Enemy HP multiplier — the §3/§16.1 binding formula:
  * (1 + 3·ngPlus) × (1 + floor(level/10)) × (1 + 1.5·floor(max(0, level+souls−990)/10))
  * The overflow term is LINEAR by user ruling — never make it exponential/quadratic.
+ * Playability window: levels 1..ENEMY.NOVICE_WINDOW freeze the multiplier at 1
+ * (base HP warmup — applies to every run including NG+ starts); the linear
+ * ramp resumes at level 4.
  */
 export function enemyHpMultiplier(ngPlus, level, souls) {
+  if (level <= ENEMY.NOVICE_WINDOW) return 1;
   const excess = Math.max(0, level + souls - 990);
   return (1 + 3 * ngPlus) * (1 + Math.floor(level / 10)) * (1 + 1.5 * Math.floor(excess / 10));
 }

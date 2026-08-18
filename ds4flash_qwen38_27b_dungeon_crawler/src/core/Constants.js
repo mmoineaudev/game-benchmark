@@ -229,6 +229,12 @@ export const ENEMY = {
   MAX_ALIVE: 200,
   NOVICE_WINDOW: 3,          // levels 1..3: enemy HP multiplier frozen at 1 (base HP); linear ramp resumes at level 4
   SPAWN_INTERVAL: 0.5,        // reveal one mob every 0.5 s
+  // Sustained spawning: the §16.1 slot formula is the floor's TARGET population.
+  // When kills drain the floor below target, _sustainSpawns refills the queue
+  // from the original recipe — one mob per REGEN_INTERVAL — until
+  // alive+queued == target. This turns "one-shot 2/4/7 mobs, then an empty
+  // floor" into steady pressure without changing the formula's per-level scaling.
+  REGEN_INTERVAL: 2.0,        // seconds between sustained respawns
   SPAWN_PLAYER_DIST: 30,      // spawns only > 30 m from the player
   FROZEN_DIST: 40,            // mobs > 40 m frozen immobile
   SPAWN_CAP: 100,             // spawnMult capped at ×100

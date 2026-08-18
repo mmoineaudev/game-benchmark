@@ -141,6 +141,14 @@ export class SkeletonSystem {
     this._arenaFirstSpawn = true;
     this._hasArena = false;
     this._planSlots = 0;
+    // --- Sustained spawning: the §16.1 slot formula is the floor's TARGET
+    // --- population, not a one-shot grant. When kills drain the floor below
+    // target, the queue refills from the original recipe on a regen timer so
+    // the level keeps pressure until you descend (see _sustainSpawns).
+    this._targetPop = 0;
+    this._spawnRecipe = [];     // the original finite plan, reused to refill
+    this._recipeCycle = 0;      // round-robin index into _spawnRecipe
+    this._regenTimer = 0;
     this._speedMult = 1;
     this._attackMult = 1;
     this._disposed = false;
@@ -331,6 +339,18 @@ export class SkeletonSystem {
       }
       if (this._arenaFirstSpawn) this._arenaFirstSpawn = false;
     }
+    // Sustained spawning: remember the full planned composition as the level's
+    // "recipe" and its length as the TARGET population. `_sustainSpawns` later
+    // recycles this recipe (round-robin) to refill the queue after kills, so
+    // the floor holds steady pressure instead of going empty.
+    this._spawnRecipe = this.spawnQueue.map((e) => ({
+      type: e.type,
+      cell: { ...e.cell },
+      elite: e.elite,
+    }));
+    this._targetPop = this.spawnQueue.length;
+    this._recipeCycle = 0;
+    this._regenTimer = 0;
     return this.spawnQueue;
   }
 
@@ -379,6 +399,33 @@ export class SkeletonSystem {
     const wz = (cell.z + 0.5) * this.dungeon.cellSize;
     this._spawnMob(entry.type, wx, wz, entry.elite);
     this._revealed++;
+  }
+
+  /**
+   * Sustained spawning (post-§16.1 tuning): the slot formula is the floor's
+   * TARGET population, not a one-shot grant. While the floor is below target
+   * (alive + queued + dying < _targetPop) and we're past a short grace after
+   * the last kill, top the queue up by one recipe entry every
+   * ENEMY.REGEN_INTERVAL seconds. This is what turns "kill 2, then an empty
+   * floor for 10 minutes" into a level that keeps generating pressure until
+   * you descend. Boss levels have no recipe (they spawn the boss instead), so
+   * this is a no-op there.
+   */
+  _sustainSpawns(dt, player) {
+    if (!this._spawnRecipe.length) return;      // boss level / no recipe
+    // alive = living (excluding corpses) + queued (not yet revealed).
+    const alive = this.living.reduce((n, s) => n + (s.alive ? 1 : 0), 0);
+    const queued = this.spawnQueue.length;
+    if (alive + queued >= this._targetPop) return;
+    this._regenTimer += dt;
+    if (this._regenTimer < ENEMY.REGEN_INTERVAL) return;
+    this._regenTimer = 0;
+    // Recycle the recipe round-robin so respawns mirror the original mix. The
+    // entry goes on the queue; the normal reveal path (one per SPAWN_INTERVAL)
+    // drains it, honoring the SPAWN_PLAYER_DIST deferral for close cells.
+    const entry = this._spawnRecipe[this._recipeCycle % this._spawnRecipe.length];
+    this._recipeCycle++;
+    this.spawnQueue.push({ type: entry.type, cell: { ...entry.cell }, elite: entry.elite });
   }
 
   /** Create a single skeleton at world (wx, wz) with scaling applied. */
@@ -800,6 +847,9 @@ export class SkeletonSystem {
         this._revealNext(player);
       }
     }
+    // --- Sustained spawning: refill the queue after kills so the floor holds
+    //     its target population (see _sustainSpawns). No-op on boss levels. ---
+    if (!frozen) this._sustainSpawns(dt, player);
 
     // --- Update all living skeletons ---
     // Perf: cached opts object (was allocated per enemy per frame).

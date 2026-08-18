@@ -405,11 +405,36 @@ const timerChanged = tm1.text !== tm2.text;
 const runProgressing = typeof tm2.levelTime === 'number' && typeof tm1.levelTime === 'number' && tm2.levelTime > tm1.levelTime;
 check('timer advances (or run progressing)', timerChanged || runProgressing, `${JSON.stringify(tm1)} → ${JSON.stringify(tm2)}`);
 
+// ---------------------------------------------------------------------------
+// 6b. Enemy-glow pass (§12.2). The glow blur passes only run once at least
+// one enemy is marked on the glow layer, so a boot-only window never
+// exercises them. Wait for a marked enemy (best-effort, bounded), then observe
+// a few frames before the exception check. (Regression guard: the standalone
+// blur ShaderPasses were once called without write/read buffers and threw
+// `readBuffer.texture` on the FIRST enemy spawned.)
+// ---------------------------------------------------------------------------
+let glowTargets = 0;
+try {
+  await waitFor(
+    () => evalInPage(`(window.game && window.game.post ? window.game.post.enemyTargets.size : 0) > 0`),
+    30000,
+    'enemy marked on glow layer (post.enemyTargets > 0)',
+  );
+} catch { /* not fatal — record below */ }
+glowTargets = await evalInPage(`(window.game && window.game.post ? window.game.post.enemyTargets.size : 0)`).catch(() => 0);
+check('enemy glow layer has a marked enemy (blur pass exercised)', glowTargets > 0, `enemyTargets=${glowTargets}`);
+await sleep(4000); // let several glow frames run (incl. any exception)
+
 // No JS exceptions / console errors.
 check('zero JS exceptions', jsExceptions.length === 0,
   jsExceptions.length ? jsExceptions.map((s) => String(s).split('\n')[0]).join(' | ').slice(0, 300) : undefined);
-check('zero console.error entries', consoleErrors.length === 0,
-  consoleErrors.length ? consoleErrors.join(' | ').slice(0, 300) : undefined);
+// Filter the benign Vite-HMR artifact: the headless CDP build reports the
+// dev-server HMR websocket URL malformed ('ws:://...'), so the Vite client
+// logs a console.error on connect. It is a harness/transport artifact, not a
+// game error (the page boots and plays fine).
+const realConsoleErrors = consoleErrors.filter((e) => !e.startsWith('[vite] failed to connect to websocket'));
+check('zero console.error entries (benign vite ws:: artifact filtered)', realConsoleErrors.length === 0,
+  realConsoleErrors.length ? realConsoleErrors.join(' | ').slice(0, 300) : undefined);
 // Filter benign 'network: undefined' CDP log entries: this is a favicon/
 // network-level entry (no gameplay, no resource in the page maps to it —
 // the page ships no favicon and the only fetch goes to the :5174 save API,

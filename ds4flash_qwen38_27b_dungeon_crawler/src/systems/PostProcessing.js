@@ -296,15 +296,14 @@ export class PostProcessing {
     renderer.render(scene, this._glowCam);
     this._restoreOverride();
 
-    // 2) horizontal blur: sharp → A
-    this._blurH.uniforms.tDiffuse.value = this._sharpRT.texture;
-    renderer.setRenderTarget(this._blurA);
-    this._blurH.render(renderer);
+    // 2) horizontal blur: sharp → A. The standalone pass is NOT in the
+    // composer, so it never receives the composer's buffers — pass them
+    // explicitly: render(renderer, writeBuffer, readBuffer). Omitting them
+    // makes ShaderPass.render do `readBuffer.texture` on undefined → TypeError.
+    this._blurH.render(renderer, this._blurA, this._sharpRT);
 
     // 3) vertical blur: A → B
-    this._blurV.uniforms.tDiffuse.value = this._blurA.texture;
-    renderer.setRenderTarget(this._blurB);
-    this._blurV.render(renderer);
+    this._blurV.render(renderer, this._blurB, this._blurA);
 
     renderer.setRenderTarget(null);
   }

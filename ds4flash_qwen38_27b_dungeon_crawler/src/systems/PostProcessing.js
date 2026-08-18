@@ -266,8 +266,15 @@ export class PostProcessing {
   _renderEnemyGlow() {
     const renderer = this.renderer;
     const scene = this.scene;
+    // Defensive: the RTs are created in _init and only nulled in dispose();
+    // if a pass ever runs while they're gone (half-constructed / disposed),
+    // skip instead of throwing on `.texture`.
+    if (!this._sharpRT || !this._blurA || !this._blurB) return;
     if (this.enemyTargets.size === 0) {
-      // nothing marked → clear the sharp buffer so the composite adds nothing
+      // nothing marked → clear the sharp buffer so the composite adds nothing.
+      // Restore the default target BEFORE clearing so a leftover bound target
+      // from a previous frame can't swallow the composer's clear.
+      renderer.setRenderTarget(null);
       renderer.setRenderTarget(this._sharpRT);
       renderer.setClearColor(0x000000, 0);
       renderer.clear();
@@ -275,6 +282,7 @@ export class PostProcessing {
       renderer.setClearColor(0x000000, 0);
       renderer.clear();
       renderer.setRenderTarget(this._blurB);
+      renderer.setClearColor(0x000000, 0);
       renderer.clear();
       renderer.setRenderTarget(null);
       return;

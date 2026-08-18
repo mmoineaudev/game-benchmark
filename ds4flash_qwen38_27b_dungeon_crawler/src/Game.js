@@ -228,6 +228,7 @@ export class Game {
         this._onSwordSwing(step, cone),
       onHitStop: (ms) => { this._hitStop = Math.max(this._hitStop, ms); },
       onElectricChain: (targets) => this._onElectricChain(targets),
+      onBoltHit: (target, damage) => this._onBoltHit(target, damage),
       onEvolution: (tier, prev) => this._onEvolution(tier, prev),
       arcTargets: () => this.skeletons ? this.skeletons.allTargets() : [],
     });
@@ -1309,6 +1310,17 @@ export class Game {
         this.skeletons.hitSkeleton(e, mult, null);
       }
     }
+  }
+
+  /**
+   * Arc-bolt landing (§9.3, T3–T5). The sword homes a bolt to a single target
+   * and reports it here with the damage frozen at fire time (orb damage).
+   * Game applies it via hitSkeleton (resolves death / orb drop / burst); a
+   * bolt that lands on an already-dead target is a no-op.
+   */
+  _onBoltHit(target, damage) {
+    if (!this.skeletons || !target || !target.alive) return;
+    this.skeletons.hitSkeleton(target, damage, null);
   }
 
   _onEvolution(tier, prevTier) {

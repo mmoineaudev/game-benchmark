@@ -26,6 +26,7 @@ All ranked fixes (§H) are implemented and gate-verified (`vite build` + weapon/
 | #6 | BoxGrid staleness after breaks (D7) | **FIXED** — `SkeletonSystem.setCollisionBoxes()` rebuilds grid on `onPropBroken`; `Game._onPropBroken` invalidates cache. |
 | #7 | HUD `_hudDirty` never honored (C20) | **FIXED** — HUD DOM handles cached once in `_hudEls()`; per-frame cost is attribute writes only (no `getElementById`/`querySelectorAll` churn). |
 | #8 | Dead-code cleanup | **DONE** — `GameState` legacy buff/sprint API, `fromJSON` duplicate, `PropSystem.checkHazard`, `breakBreakable {x,z}` overload, `LightingSystem._lights`/`baseIntensity`, `SmokeSystem` `aLife`, `bossBarUpdated` (write-only), `biomeForLevel` 2-arg calls, `post.resize` dead call, `REGEN_DELAY`, `TIMED_RUN`/`TITLE`/`LEADERBOARD` exports, `WorldBuilder` `biomeId` param. |
+| #9 | **Arc bolts deal no damage** (§9.3, T3–T5 — found in a follow-up sweep, not in the original §H list) | **FIXED** — `b.damage` was frozen at fire time (`PlayerSword._spawnBolt`) but the bolt's *landed* branch never applied it or fired any callback, so T3–T5 arc bolts were a pure visual. Wired `PlayerSword.onBoltHit(target, damage)` → `Game._onBoltHit` → `skeletons.hitSkeleton(target, damage)` (death/orb-drop/burst resolved; no-op on an already-dead target). Verified by a headless probe (bolt lands → `onBoltHit` fires with orb damage, no exceptions). |
 
 > `LIGHT_CEILING` is intentionally retained — the `biome-check` gate reads it as the §22 light-budget limit.
 

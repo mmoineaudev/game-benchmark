@@ -52,6 +52,7 @@ export class PlayerSword {
     this.onSwingHit = opts.onSwingHit || null;   // (step, cone) — Game applies damage
     this.onHitStop = opts.onHitStop || null;     // (seconds)
     this.onElectricChain = opts.onElectricChain || null; // { damage, range }
+    this.onBoltHit = opts.onBoltHit || null;     // (target, damage) — Game applies damage
     this.onEvolution = opts.onEvolution || null; // (tier)
 
     this._disposed = false;
@@ -526,8 +527,12 @@ export class PlayerSword {
       const to = _tmpA.copy(b.target.position).sub(b.sprite.position);
       const dist = to.length();
       if (dist < 0.4) {
-        // landed
+        // landed: deal the frozen-at-fire-time orb damage (Game resolves
+        // death / orbs / burst via hitSkeleton).
+        const hitTarget = b.target;
+        const dmg = b.damage;
         b.active = false; b.sprite.visible = false; b.target = null;
+        if (this.onBoltHit && hitTarget) this.onBoltHit(hitTarget, dmg);
         continue;
       }
       to.normalize();

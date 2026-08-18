@@ -20,7 +20,7 @@ import {
 } from '../core/Constants.js';
 import { generateGlowTexture } from '../world/Textures.js';
 
-const LAYER_SWORD = 2;
+export const LAYER_SWORD = 2;
 
 // Blade lengths per tier — monotonic, ~0.76 (T0) → ~1.0 (T5).
 const BLADE_LENGTHS = [0.76, 0.81, 0.86, 0.90, 0.95, 1.0];
@@ -89,6 +89,9 @@ export class PlayerSword {
 
     // --- blade flash ---
     this._flashT = 0;
+
+    // --- swing animation pose (group is the animated root; idle pose = home) ---
+    this._anim = { p: 0, rotZ: 0, rotX: 0, posZ: 0, to: {} };
 
     // --- trails / sparks / smoke (§13 pools) ---
     this._trails = this._makeSpritePool(3);      // slash1 / slash2 / thrust
@@ -270,6 +273,11 @@ export class PlayerSword {
       g.add(b);
       this._formMeshes[5] = g;
     }
+
+    // Attach every prebuilt tier form to the sword root. _showForm() only
+    // toggles .visibility, so forms not parented into this.group are orphans
+    // outside the scene graph and never render, regardless of camera layers.
+    for (const g of Object.values(this._formMeshes)) this.group.add(g);
   }
 
   /**
@@ -368,6 +376,13 @@ export class PlayerSword {
     this._bufferedPress = false;
     this.isAttacking = true;
     this.canChain = false;
+    // Per-step swing pose targets (Z = arc side-swing, X = overhead, Z-forward
+    // lunge = thrust). Step 3 is a forward piercing thrust, no lateral arc.
+    const a = this._anim;
+    if (step === 1) { a.to.rotZ = 0.95; a.to.rotX = -0.35; a.to.posZ = 0.06; }
+    else if (step === 2) { a.to.rotZ = -0.95; a.to.rotX = -0.35; a.to.posZ = 0.06; }
+    else { a.to.rotZ = 0; a.to.rotX = 0.55; a.to.posZ = 0.34; }
+    a.to.p = 1;
   }
 
   /**
@@ -442,6 +457,34 @@ export class PlayerSword {
       if (now >= this._cooldownEnd) {
         this._phase = 'idle';
         this.comboStep = 0;
+      }
+    }
+
+    // --- swing pose (group transform): windup pulls back, swing extends
+    //     through the strike, recover returns to the floating home pose.
+    //     p in [0,1] is the strike extension; windup runs it 0→1 with the
+    //     target direction negated (pull-back), recover eases 1→0. ---
+    {
+      const a = this._anim;
+      const stepDef = SWORD.COMBO[this.comboStep] || null;
+      if (this._phase === 'windup' && stepDef) {
+        a.p = Math.min(1, this._phaseT / stepDef.windup);
+      } else if (this._phase === 'swing' && stepDef) {
+        a.p = 1;
+      } else if (this._phase === 'recover' && stepDef) {
+        a.p = Math.max(0, 1 - this._phaseT / stepDef.recover);
+      } else {
+        a.p = 0;
+      }
+      const dir = (this._phase === 'windup') ? -1 : 1;
+      const p = a.p * dir;
+      a.rotZ = a.to.rotZ * p;
+      a.rotX = a.to.rotX * p;
+      a.posZ = a.to.posZ * p;
+      if (this.group) {
+        this.group.rotation.z = a.rotZ;
+        this.group.rotation.x = a.rotX;
+        this.group.position.z = -0.55 + a.posZ;
       }
     }
 

@@ -14,7 +14,7 @@ import * as THREE from 'three';
 
 import {
   WORLD, PLAYER, CAMERA, BIOMES, BOSS, BUFF,
-  DUNGEON, LIGHT_SOURCES, DROP,
+  DUNGEON, LIGHT_SOURCES, DROP, RENDERER,
   EVOLUTION, SWORD, HIT_STOP, ORB_WEAPON, ENEMY,
   biomeForLevel, weaponTier, damageMult,
 } from './core/Constants.js';
@@ -39,7 +39,8 @@ import { SmokeSystem } from './systems/SmokeSystem.js';
 import { OrbSystem } from './entities/OrbSystem.js';
 import { OrbShooter } from './entities/OrbShooter.js';
 import { SkeletonSystem } from './entities/SkeletonSystem.js';
-import { PlayerSword } from './entities/PlayerSword.js';
+import { Skeleton } from './entities/Skeleton.js';
+import { PlayerSword, LAYER_SWORD } from './entities/PlayerSword.js';
 import { Hunter } from './entities/Hunter.js';
 
 const SAVE_SERVER_URL = 'http://localhost:5174/save';
@@ -186,6 +187,7 @@ export class Game {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = RENDERER.EXPOSURE;
     if (this.renderer.outputColorSpace !== undefined) {
       this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     } else if (this.renderer.outputEncoding !== undefined) {
@@ -205,9 +207,18 @@ export class Game {
       CAMERA.FOV, window.innerWidth / window.innerHeight, CAMERA.NEAR, CAMERA.FAR,
     );
     this.camera.position.set(0, PLAYER.HEIGHT + CAMERA.EYE_HEIGHT, 0);
+    // YXZ so yaw/pitch are independent euler angles (mouse look §4.2.2).
+    this.camera.rotation.order = 'YXZ';
+    // Sword (and its tier forms) live on LAYER_SWORD (2) — the camera must enable
+    // that layer or the sword is never rendered (it is a camera child on layer 2).
+    this.camera.layers.enable(LAYER_SWORD);
+    // The camera must be in the scene graph, otherwise its children (sword,
+    // headlight, held fireball, bolt/trail sprites) are never traversed by
+    // renderer.render(scene, camera) and nothing camera-attached draws.
+    this.scene.add(this.camera);
 
     // Headlight (§10.1) — camera-attached fill light
-    const head = new THREE.PointLight(0xffd9a0, 1.4, 24, 1.8);
+    const head = new THREE.PointLight(0xffd9a0, 2.4, 34, 1.2);
     head.position.set(0, -0.2, 0);
     this.camera.add(head);
 
@@ -248,6 +259,9 @@ export class Game {
     if (typeof document !== 'undefined') {
       this._plChange = () => {
         const locked = this.input.isPointerLocked();
+        this.state.pointerLocked = locked;
+        const prompt = document.getElementById('prompt');
+        if (prompt) prompt.classList.toggle('hidden', locked);
         if (locked) {
           if (this._inMenu) this._enterRun();
           else if (this._deathVisible) this._hideDeathScreen();
@@ -585,6 +599,12 @@ export class Game {
       this.sword.buffDamageMult = 1;
       this.sword.souls = s.collectedOrbs;
     }
+    // Reset look so the run never inherits the title-screen orbit aim.
+    if (this.camera) {
+      this.camera.rotation.order = 'YXZ';
+      this.camera.rotation.y = 0;
+      this.camera.rotation.x = -0.1;
+    }
     this._placeCamera();
 
     // Fire the level-loaded event (§26: show title overlay).
@@ -592,6 +612,77 @@ export class Game {
 
     // Phase 11 — done
     await yieldFrame();
+    // Pre-compile enemy shader programs while the loading overlay is still
+    // up. The title/loading screens never render enemies, so the enemy
+    // materials (bone/metal/cloth MeshStandardMaterial + emissive glow) have
+    // no compiled GLSL program until the first enemy is drawn. That first
+    // draw compiles the shader synchronously on the GPU/main thread → a hard
+    // hitch the moment the player meets the first enemy.
+    //
+    // The real enemies are still in the spawn queue at this point (revealed
+    // one-per-0.5 s during play), so the scene holds no enemy meshes. We
+    // build one throwaway enemy of every registered type, add them to the
+    // scene, force ONE real render frame (the identical code path gameplay
+    // uses, so the exact shader programs are compiled), then remove them.
+    // renderer.compile() alone is not sufficient: it builds programs against
+    // a traverseVisible light state that doesn't always match the real draw,
+    // so the first gameplay enemy would still compile. A forced real render
+    // is the reliable path. The loading overlay hides the canvas, so the
+    // throwaway frame is invisible. (Skipped if the renderer is unavailable,
+    // e.g. headless.)
+    if (this.renderer) {
+      const prewarm = [];
+      const types = ['SKELETON', 'MAGICIAN', 'ARMORED', 'ARCHER',
+                     'RAT', 'BRUTE', 'WRAITH', 'BURN'];
+      const prewarmDebug = { built: 0, failed: [], progsBefore: 0, progsAfter: 0, renderRan: false };
+      try { prewarmDebug.progsBefore = this.renderer.info.programs.length; } catch {}
+      // Place them 8u in front of the camera (it faces -Z after the
+      // _placeCamera reset), NOT at the camera position — at distance ~0 the
+      // rig's child meshes fall inside the near clip plane and get clipped,
+      // so no programs compile. 8u is well inside NEAR/FAR (0.1/160) and the
+      // 90° FOV, so every descendant is guaranteed to be rasterized.
+      const ppx = this.camera.position.x;
+      const ppz = this.camera.position.z - 8;
+      for (const t of types) {
+        try {
+          const e = Skeleton.forType(t, this.scene, {
+            position: { x: ppx, z: ppz },
+          });
+          if (e && e.mesh) {
+            e.mesh.visible = true;
+            // Culling is per-Mesh in three.js — the Group flag is ignored by
+            // child meshes, so force every descendant to be drawn regardless
+            // of the camera frustum (the enemies sit at the entrance, which
+            // may be behind the camera's view direction).
+            e.mesh.traverse((o) => { o.frustumCulled = false; });
+            prewarm.push(e);
+            prewarmDebug.built++;
+          }
+        } catch (err) { prewarmDebug.failed.push(t + ':' + String(err)); }
+      }
+      if (prewarm.length) {
+        // Force one render through the game's OWN render path (post-processing
+        // composer or plain, exactly as gameplay does) so every enemy type's
+        // exact program — including the shadow-pass variants — is compiled
+        // now, behind the loading overlay. A plain renderer.render misses the
+        // composer/shadow variants, so use _render() to match gameplay.
+        this._render();
+        prewarmDebug.renderRan = true;
+        // The composer renders into render targets; in some contexts the
+        // target-bound pass can no-op. A direct draw to the canvas is the
+        // guaranteed-compile fallback for the same materials.
+        this.renderer.render(this.scene, this.camera);
+        prewarmDebug.plainRan = true;
+      }
+      for (const e of prewarm) {
+        try {
+          if (e.mesh) this.scene.remove(e.mesh);
+          e.dispose();
+        } catch { /* already gone */ }
+      }
+      try { prewarmDebug.progsAfter = this.renderer.info.programs.length; } catch {}
+      window.__prewarmDebug = prewarmDebug;
+    }
     this._levelLoaded = true;
     this._isRunning = true;
     this._hudDirty = true;
@@ -651,6 +742,7 @@ export class Game {
     const sys = new SkeletonSystem(this.scene, dungeon, biomeId, this.state, {
       onKill: (enemy, info) => {
         // §26: onKill fires BEFORE the bus → spawn drops directly.
+        this.state.kills = (this.state.kills || 0) + 1;
         this._spawnDrops(info);
         this.eventBus.emit('enemy:killed', info);
       },
@@ -767,6 +859,10 @@ export class Game {
       this._updateGame(sdt, dt);
     }
 
+    // Keyboard edges (E / P / Tab / N / L / Y / S) — must run in every state so
+    // the start menu (N/L) and death screen (N/Y/S) respond, not just in-run.
+    this._updateKeys();
+
     this._render();
   }
 
@@ -789,14 +885,25 @@ export class Game {
       }
     }
 
+    // Mouse look (§4.2.2): consume accumulated mouse deltas, rotate camera.
+    if (this.input && this.camera) {
+      const m = this.input.consumeMouse();
+      if (m.x !== 0 || m.y !== 0) {
+        this.camera.rotation.y -= m.x * CAMERA.SENSITIVITY;
+        this.camera.rotation.x -= m.y * CAMERA.SENSITIVITY;
+        const lim = CAMERA.PITCH_CLAMP;
+        if (this.camera.rotation.x > lim) this.camera.rotation.x = lim;
+        else if (this.camera.rotation.x < -lim) this.camera.rotation.x = -lim;
+      }
+      // Keep pointer-lock state fresh every frame (cheap).
+      this.state.pointerLocked = this.input.isPointerLocked();
+    }
+
     // Player movement
     this._updatePlayer(sdt);
 
     // Fireball charge (buff #2)
     this._updateFireballCharge(dt);
-
-    // Keyboard edges (E / P / Tab / N / L / Y / S)
-    this._updateKeys();
 
     // Input edges
     this._updateInputEdges();
@@ -909,12 +1016,19 @@ export class Game {
 
     const sprint = i.isPressed('ShiftLeft') || i.isPressed('ShiftRight');
     const base = (sprint ? PLAYER.SPRINT_SPEED : PLAYER.WALK_SPEED) * speedMult;
+    // Camera-relative WASD: rotate input direction by the camera yaw so
+    // KeyW always moves where the camera faces (not a fixed world axis).
+    const yaw = this.camera.rotation.y;
     const dx = (i.isPressed('KeyD') ? 1 : 0) - (i.isPressed('KeyA') ? 1 : 0);
-    const dz = (i.isPressed('KeyS') ? 1 : 0) - (i.isPressed('KeyW') ? 1 : 0);
+    const dz = (i.isPressed('KeyW') ? 1 : 0) - (i.isPressed('KeyS') ? 1 : 0);
     const len = Math.hypot(dx, dz);
     if (len > 0.001) {
-      s.x += (dx / len) * base * sdt;
-      s.z += (dz / len) * base * sdt;
+      const fwd = { x: -Math.sin(yaw), z: -Math.cos(yaw) }; // camera forward on XZ
+      const rgt = { x: Math.cos(yaw), z: -Math.sin(yaw) };  // camera right on XZ
+      const wx = (rgt.x * dx + fwd.x * dz) / len;
+      const wz = (rgt.z * dx + fwd.z * dz) / len;
+      s.x += wx * base * sdt;
+      s.z += wz * base * sdt;
     }
     s.y = WORLD.FLOOR_Y;
 
@@ -1390,7 +1504,7 @@ export class Game {
     const set = (id, text, width) => {
       const el = document.getElementById(id);
       if (el) {
-        if (text !== undefined) el.textContent = String(text);
+        if (text != null) el.textContent = String(text); // null = bar fill, no text
         if (width !== undefined) el.style.width = width;
       }
     };
@@ -1472,7 +1586,7 @@ export class Game {
 
     const stats = document.getElementById('stats-panel');
     if (stats) {
-      const kills = this.skeletons ? this.skeletons.kills : 0;
+      const kills = s.kills || 0;
       stats.textContent =
         `LEVEL ${s.level}  ${biome.label}\n` +
         `NG+${s.ngPlus}   SOULS ${s.collectedOrbs}\n` +

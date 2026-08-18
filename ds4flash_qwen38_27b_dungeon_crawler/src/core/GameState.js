@@ -32,6 +32,7 @@ export class GameState {
     this.levelTime = 0;        // seconds into the current level
     this.ngPlus = 0;
     this.bossKills = 0;
+    this.kills = 0;              // cumulative mob kills (display stat, not saved)
 
     // Score / progression
     this.collectedOrbs = 0;    // THE ONE souls counter

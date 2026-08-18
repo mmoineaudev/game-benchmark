@@ -131,58 +131,58 @@ export const ROOM_ENEMY_MODIFIERS = {
 
 export const BIOMES = {
   STONE: {
-    wall: 0x6b6560, floor: 0x4a453f, ceiling: 0x2e2b28, fog: 0x12100e, fogDensity: 0.035,
-    ambient: 0x8a7a66, ambientIntensity: 0.35, torchColor: 0xffa030,
+    wall: 0x6b6560, floor: 0x4a453f, ceiling: 0x2e2b28, fog: 0x12100e, fogDensity: 0.016,
+    ambient: 0x8a7a66, ambientIntensity: 0.5, torchColor: 0xffa030,
     label: 'STONE DUNGEON', torchMode: 'standard', brazierRooms: ['HALL'],
   },
   HAUNTED_CRYPT: {
-    wall: 0x3d4450, floor: 0x2b3038, ceiling: 0x1a1d23, fog: 0x0a0c12, fogDensity: 0.045,
-    ambient: 0x556088, ambientIntensity: 0.30, torchColor: 0x9db4ff,
+    wall: 0x3d4450, floor: 0x2b3038, ceiling: 0x1a1d23, fog: 0x0a0c12, fogDensity: 0.023,
+    ambient: 0x556088, ambientIntensity: 0.44, torchColor: 0x9db4ff,
     label: 'HAUNTED CRYPT', torchMode: 'standard', brazierRooms: ['HALL'],
   },
   FUNGAL_CAVERN: {
-    wall: 0x35513a, floor: 0x24331f, ceiling: 0x161f14, fog: 0x0a120c, fogDensity: 0.040,
-    ambient: 0x3d6b4a, ambientIntensity: 0.32, torchColor: 0x66ff99,
+    wall: 0x35513a, floor: 0x24331f, ceiling: 0x161f14, fog: 0x0a120c, fogDensity: 0.020,
+    ambient: 0x3d6b4a, ambientIntensity: 0.46, torchColor: 0x66ff99,
     label: 'FUNGAL CAVERN', torchMode: 'vaultOnly', brazierRooms: ['HALL'],
   },
   VOLCANIC_DEPTHS: {
-    wall: 0x5a2f26, floor: 0x38201a, ceiling: 0x1f100c, fog: 0x160a06, fogDensity: 0.040,
-    ambient: 0xb05020, ambientIntensity: 0.35, torchColor: 0xff6a20,
+    wall: 0x5a2f26, floor: 0x38201a, ceiling: 0x1f100c, fog: 0x160a06, fogDensity: 0.020,
+    ambient: 0xb05020, ambientIntensity: 0.49, torchColor: 0xff6a20,
     label: 'VOLCANIC DEPTHS', torchMode: 'standard', brazierRooms: ['HALL'],
   },
   FROZEN_HALLS: {
-    wall: 0x3a5570, floor: 0x273848, ceiling: 0x18202b, fog: 0x0b1118, fogDensity: 0.038,
-    ambient: 0x6699cc, ambientIntensity: 0.34, torchColor: 0x9fd4ff,
+    wall: 0x3a5570, floor: 0x273848, ceiling: 0x18202b, fog: 0x0b1118, fogDensity: 0.019,
+    ambient: 0x6699cc, ambientIntensity: 0.48, torchColor: 0x9fd4ff,
     label: 'FROZEN HALLS', torchMode: 'standard', brazierRooms: ['HALL'],
   },
   CRYSTAL_DEPTHS: {
-    wall: 0x4a3a66, floor: 0x332848, ceiling: 0x1e1830, fog: 0x100c1a, fogDensity: 0.038,
-    ambient: 0x8866cc, ambientIntensity: 0.34, torchColor: 0xcc88ff,
+    wall: 0x4a3a66, floor: 0x332848, ceiling: 0x1e1830, fog: 0x100c1a, fogDensity: 0.019,
+    ambient: 0x8866cc, ambientIntensity: 0.48, torchColor: 0xcc88ff,
     label: 'CRYSTAL DEPTHS', torchMode: 'standard', brazierRooms: ['HALL'],
   },
   POISON_SWAMP: {
-    wall: 0x4a5a24, floor: 0x33401a, ceiling: 0x1c2410, fog: 0x101508, fogDensity: 0.045,
-    ambient: 0x779922, ambientIntensity: 0.30, torchColor: 0xaaff44,
+    wall: 0x4a5a24, floor: 0x33401a, ceiling: 0x1c2410, fog: 0x101508, fogDensity: 0.023,
+    ambient: 0x779922, ambientIntensity: 0.44, torchColor: 0xaaff44,
     label: 'POISON SWAMP', torchMode: 'vaultOnly', brazierRooms: ['HALL'],
   },
   GOLDEN_TEMPLE: {
-    wall: 0x8a7340, floor: 0x6b5730, ceiling: 0x3d3018, fog: 0x1a1408, fogDensity: 0.032,
-    ambient: 0xccaa55, ambientIntensity: 0.40, torchColor: 0xffcc44,
+    wall: 0x8a7340, floor: 0x6b5730, ceiling: 0x3d3018, fog: 0x1a1408, fogDensity: 0.015,
+    ambient: 0xccaa55, ambientIntensity: 0.54, torchColor: 0xffcc44,
     label: 'GOLDEN TEMPLE', torchMode: 'standard', brazierRooms: ['HALL', 'TEMPLE'],
   },
   FLOODED_RUINS: {
-    wall: 0x2f5558, floor: 0x1f3a3e, ceiling: 0x122325, fog: 0x081214, fogDensity: 0.042,
-    ambient: 0x44aacc, ambientIntensity: 0.32, torchColor: 0x66e0ff,
+    wall: 0x2f5558, floor: 0x1f3a3e, ceiling: 0x122325, fog: 0x081214, fogDensity: 0.021,
+    ambient: 0x44aacc, ambientIntensity: 0.46, torchColor: 0x66e0ff,
     label: 'FLOODED RUINS', torchMode: 'standard', brazierRooms: ['HALL'],
   },
   EMBER_FORGE: {
-    wall: 0x33302e, floor: 0x22201e, ceiling: 0x111010, fog: 0x0a0908, fogDensity: 0.040,
-    ambient: 0xcc6633, ambientIntensity: 0.32, torchColor: 0xff8844,
+    wall: 0x33302e, floor: 0x22201e, ceiling: 0x111010, fog: 0x0a0908, fogDensity: 0.020,
+    ambient: 0xcc6633, ambientIntensity: 0.46, torchColor: 0xff8844,
     label: 'EMBER FORGE', torchMode: 'standard', brazierRooms: ['HALL'],
   },
   SPECTRAL_COURT: {
-    wall: 0x2a2140, floor: 0x1c1730, ceiling: 0x0f0c1c, fog: 0x070510, fogDensity: 0.050,
-    ambient: 0x7755cc, ambientIntensity: 0.35, torchColor: 0xb088ff,
+    wall: 0x2a2140, floor: 0x1c1730, ceiling: 0x0f0c1c, fog: 0x070510, fogDensity: 0.026,
+    ambient: 0x7755cc, ambientIntensity: 0.49, torchColor: 0xb088ff,
     label: 'SPECTRAL COURT', torchMode: 'standard', brazierRooms: ['HALL'],
   },
 };
@@ -623,13 +623,13 @@ export const LIGHT_CEILING = {
 
 // Point light sources: [intensity, distance, decay], shadow flag
 export const LIGHT_SOURCES = {
-  TORCH:       { intensity: 3, distance: 14, decay: 1.5, shadow: false },
-  BRAZIER:     { intensity: 4, distance: 18, decay: 1.4, shadow: false },
-  CRYSTAL:     { intensity: 2.5, distance: 12, decay: 1.5, shadow: false },
-  MUSHROOM:    { intensity: 3.2, distance: 12, decay: 1.2, shadow: false },
-  WISP:        { intensity: 1.5, distance: 8, decay: 1.6, shadow: false },
-  PORTAL:      { intensity: 3, distance: 16, decay: 1.4, shadow: false },
-  HEALD:       { intensity: 1.2, distance: 6, decay: 1.5, shadow: false },
+  TORCH:       { intensity: 5.5, distance: 26, decay: 1.1, shadow: false },
+  BRAZIER:     { intensity: 7, distance: 30, decay: 1.1, shadow: false },
+  CRYSTAL:     { intensity: 4.6, distance: 20, decay: 1.1, shadow: false },
+  MUSHROOM:    { intensity: 5.2, distance: 19, decay: 1.1, shadow: false },
+  WISP:        { intensity: 2.8, distance: 14, decay: 1.1, shadow: false },
+  PORTAL:      { intensity: 5.5, distance: 28, decay: 1.1, shadow: false },
+  HEALD:       { intensity: 2.2, distance: 11, decay: 1.1, shadow: false },
 };
 
 // ---------------------------------------------------------------------------
@@ -743,7 +743,7 @@ export const HAZARD = {
 export const RENDERER = {
   ANTIALIAS: true,
   TONE_MAPPING: 'ACESFilmic',
-  EXPOSURE: 1.0,
+  EXPOSURE: 1.25,
   SHADOW_MAP: 'PCFSoft',
   MAX_PIXEL_RATIO: 2,
   POST_BLOOM_STRENGTH: 0.055,

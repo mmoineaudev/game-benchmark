@@ -63,26 +63,26 @@ export class WorldBuilder {
     // Enumerate non-empty cells and wall segments
     // ------------------------------------------------------------------
     const cells = []; // [cx, cz]
-    const walls = []; // { cx, cz, axis: 'X'|'Z', boundary: number } — wall LINE at boundary
+    const walls = []; // { axis: 'X'|'Z', boundary, cx, cz } — wall LINE at boundary, belonging to cell (cx,cz)
     for (let cx = 0; cx < n; cx++) {
       for (let cz = 0; cz < n; cz++) {
         if (grid[cx][cz] === 'empty') continue;
         cells.push([cx, cz]);
         // West edge: grid boundary (cx === 0) or 'empty' neighbor (cx-1, cz)
         if (cx === 0 || grid[cx - 1][cz] === 'empty') {
-          walls.push({ axis: 'X', boundary: cx * cellSize });
+          walls.push({ axis: 'X', boundary: cx * cellSize, cx, cz });
         }
         // East edge
         if (cx === n - 1 || grid[cx + 1][cz] === 'empty') {
-          walls.push({ axis: 'X', boundary: (cx + 1) * cellSize });
+          walls.push({ axis: 'X', boundary: (cx + 1) * cellSize, cx, cz });
         }
         // North edge (lower cz)
         if (cz === 0 || grid[cx][cz - 1] === 'empty') {
-          walls.push({ axis: 'Z', boundary: cz * cellSize });
+          walls.push({ axis: 'Z', boundary: cz * cellSize, cx, cz });
         }
         // South edge
         if (cz === n - 1 || grid[cx][cz + 1] === 'empty') {
-          walls.push({ axis: 'Z', boundary: (cz + 1) * cellSize });
+          walls.push({ axis: 'Z', boundary: (cz + 1) * cellSize, cx, cz });
         }
       }
     }
@@ -142,34 +142,35 @@ export class WorldBuilder {
     const q1 = new THREE.Quaternion();
     walls.forEach((w, i) => {
       if (w.axis === 'X') {
-        // east/west wall at x = boundary, spanning z: boundary..boundary+CELL
+        // east/west wall at x = boundary, spanning z: cz*cellSize .. cz*cellSize+CELL (one cell)
         m4.compose(
-          new THREE.Vector3(w.boundary, WALL_H / 2, w.boundary + CELL / 2),
+          new THREE.Vector3(w.boundary, WALL_H / 2, w.cz * cellSize + CELL / 2),
           qRotY,
           new THREE.Vector3(1, 1, 1)
         );
       } else {
-        // north/south wall at z = boundary, spanning x: boundary..boundary+CELL
+        // north/south wall at z = boundary, spanning x: cx*cellSize .. cx*cellSize+CELL (one cell)
         m4.compose(
-          new THREE.Vector3(w.boundary + CELL / 2, WALL_H / 2, w.boundary),
+          new THREE.Vector3(w.cx * cellSize + CELL / 2, WALL_H / 2, w.boundary),
           q1,
           new THREE.Vector3(1, 1, 1)
         );
       }
       wallMesh.setMatrixAt(i, m4);
-      // Collision AABB: thickness × 0.6 (0.18 u effective) centered on the wall line.
+      // Collision AABB: thickness × 0.6 (0.18 u effective) centered on the wall line,
+      // spanning that wall's single cell along its length.
       if (w.axis === 'X') {
         collisionBoxes.push({
           minX: w.boundary - COLL_T / 2,
-          minZ: w.boundary,
+          minZ: w.cz * cellSize,
           maxX: w.boundary + COLL_T / 2,
-          maxZ: w.boundary + CELL,
+          maxZ: w.cz * cellSize + CELL,
         });
       } else {
         collisionBoxes.push({
-          minX: w.boundary,
+          minX: w.cx * cellSize,
           minZ: w.boundary - COLL_T / 2,
-          maxX: w.boundary + CELL,
+          maxX: w.cx * cellSize + CELL,
           maxZ: w.boundary + COLL_T / 2,
         });
       }

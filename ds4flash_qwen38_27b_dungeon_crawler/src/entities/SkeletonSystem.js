@@ -619,6 +619,10 @@ export class SkeletonSystem {
    */
   hitSkeleton(skeleton, dmg, origin = null) {
     if (skeleton._disposed || !skeleton.alive) return false;
+    // Guard: non-finite / non-positive damage must never be applied — subtracting
+    // NaN from hp makes hp NaN and `NaN <= 0` is always false, which would make
+    // the enemy permanently unkillable (seen in the wild via a bad damageMult arg).
+    if (!Number.isFinite(dmg) || dmg <= 0) return false;
     const killed = skeleton.hit(dmg);
     if (killed) {
       // Death is handled via onDeath (already fired by skeleton.hit).

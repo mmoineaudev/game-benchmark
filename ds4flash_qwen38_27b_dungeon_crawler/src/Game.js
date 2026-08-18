@@ -1226,7 +1226,10 @@ export class Game {
   _onSwordSwing(step, cone) {
     if (!this.skeletons) return;
     const s = this.state;
-    const dmg = this.sword.damage(step, s.weaponTier, damageMult(s.collectedOrbs));
+    // Binding composition rule: (1 + (scale−1)×0.5) × 1.1^tier × 1.1^⌊level/5⌋.
+    // All three inputs are required — passing fewer yields NaN damage.
+    const dmg = this.sword.damage(step, s.weaponTier,
+      damageMult(this.sword.scale, s.weaponTier, s.level));
 
     // World-space cone: origin at the player (feet + ~1.5u chest height).
     const ox = s.x, oy = s.y + 1.5, oz = s.z;
@@ -1287,7 +1290,7 @@ export class Game {
     const range = (info && info.range) || SWORD.ELECTRIC_RANGE;
     const mult = (info && info.damage) !== undefined
       ? info.damage
-      : 5 * damageMult(s.collectedOrbs);
+      : 5 * damageMult(this.sword.scale, s.weaponTier, s.level);
     const r2 = range * range;
     for (const e of this.skeletons.living) {
       if (!e || !e.alive) continue;

@@ -111,7 +111,6 @@ export class GhostBoss {
     // --- HP (§17 formula) ---
     this.maxHp = bossMaxHp(opts);
     this.hp = this.maxHp;
-    this.bossBarUpdated = true;        // set whenever hp changes → Game HUD
 
     // --- identity / exposed state ---
     this.radius = BOSS.RADIUS;         // 0.9
@@ -393,13 +392,11 @@ export class GhostBoss {
     if (this._blinkRing) this._blinkRing.visible = false;
     if (this._blinkSparks) for (const s of this._blinkSparks) s.visible = false;
     this.hp -= dmg;
-    this.bossBarUpdated = true;
     if (this.hp <= 0) {
       this.hp = 0;
       this.alive = false;
       this.state = DEAD;
       this._deathT = 0;
-      this.bossBarUpdated = true;
       if (this.onDeath && !this._deathFired) {
         this._deathFired = true;
         this.onDeath(this);

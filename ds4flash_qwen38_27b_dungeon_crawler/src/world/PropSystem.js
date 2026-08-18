@@ -8,8 +8,7 @@
  *   props.build(dungeon, biomeId, opts);      // dungeon = DungeonGenerator output
  *   props.update(dt, playerX, playerZ);       // per frame (Game)
  *   props.tickHazard(dt, playerX, playerZ);   // Game hazard tick driver
- *   props.breakBreakable(meshOrPos);          // sword / orb / step-on entry point
- *   props.checkHazard(x, z);                 // returns {dmg} for the 0.8 s tick
+ *   props.breakBreakable(meshOrRecord);       // sword / orb / step-on entry point
  *   props.collidableBoxes();                 // AABBs to append to collision (§5.4/§26)
  *   props.reduceDecorations(0.5);            // degraded mode (§22)
  *   props.dispose();
@@ -322,16 +321,6 @@ export class PropSystem {
     let rec = null;
     if (target && target.userData && target.userData.breakable) {
       rec = target.userData.breakable;
-    } else if (target && target.broken === undefined && target.x !== undefined) {
-      // position: nearest unbroken within step radius
-      let best = null, bestD = STEP_ON_RADIUS;
-      for (const b of this.breakables) {
-        if (b.broken) continue;
-        const dx = b.pos.x - target.x, dz = b.pos.z - target.z;
-        const d = Math.hypot(dx, dz);
-        if (d <= bestD) { bestD = d; best = b; }
-      }
-      rec = best;
     } else if (target && target.broken !== undefined) {
       rec = target;
     }
@@ -497,17 +486,6 @@ export class PropSystem {
    * every HAZARD.TICK_INTERVAL (i-frames handled by the caller).
    * Returns accumulated tick damage this frame (0 or 1).
    */
-  checkHazard(x, z) {
-    for (const h of this.hazards) {
-      const dx = h.x - x, dz = h.z - z;
-      if (dx * dx + dz * dz <= HAZARD.DAMAGE_RADIUS * HAZARD.DAMAGE_RADIUS) {
-        return { dmg: true, kind: h.kind, x: h.x, z: h.z };
-      }
-    }
-    return { dmg: false };
-  }
-
-  /** Advance per-hazard tick timers; returns total damage ticks due this frame. */
   tickHazard(dt, x, z) {
     let due = 0;
     for (const h of this.hazards) {

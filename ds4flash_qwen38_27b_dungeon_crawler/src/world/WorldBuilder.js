@@ -5,7 +5,7 @@
  * Cell (cx, cz) center in world space: (cx*6 + 3, 0, cz*6 + 3).
  * Exposed edges sit on the boundary lines between cells.
  *
- * build(dungeon, biomeTextures, biomeId) →
+ * build(dungeon, biomeTextures) →
  *   { group, collisionBoxes, dispose() }
  */
 
@@ -22,9 +22,8 @@ export class WorldBuilder {
    * @param {object} dungeon  — DungeonGenerator.generate() output
    * @param {object|null} biomeTextures — {wall, floor, ceiling} THREE textures
    *        (null / null entries → placeholder materials, headless)
-   * @param {string} biomeId — biome id (unused by geometry; kept for API)
    */
-  build(dungeon, biomeTextures, biomeId) {
+  build(dungeon, biomeTextures) {
     const { grid, gridSize, cellSize = CELL } = dungeon;
     const n = gridSize;
     const tx = biomeTextures || {};

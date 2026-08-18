@@ -12,6 +12,25 @@
 
 ---
 
+## Resolution status (2026-08-18)
+
+All ranked fixes (§H) are implemented and gate-verified (`vite build` + weapon/boss/dungeon/biome-check + headless smoke).
+
+| Ranked | Finding | Status |
+|---|---|---|
+| #1 | Boss charge damage (C5/D4/D8) | **FIXED** — `onChargeHit` wired through `SkeletonSystem._bossOpts` → `GhostBoss`; applies `BOSS.CHARGE_DMG` (respects i-frames). Verified via headless charge probe. |
+| #2 | Enemy-glow post-process inert (F1/F2) | **FIXED** — `_render` calls `post.setEnemyTargets(allTargets()→mesh)` per frame and passes ms clock into `post.render(now)` so `uPulse` animates. |
+| #3 | Water-puddle slowdown dead (E9) | **FIXED** — `PropSystem.waterPuddles[]` tracks VAULT pools (registered in `_buildInstancedWater`); `Game._collectWaterPuddles` reads it. Kept out of the damage-hazard path. |
+| #4 | EMPOWERED/GODSPEED damage unapplied (C1/C2) | **FIXED** — removed phantom `buffDamageMult`; GODSPEED `attackSpeedMult:1.5` / EMPOWERED `1.2` now set on the sword. |
+| #5 | Boss-kill speed/attack bonus (B8/D3) | **FIXED** — `Game` now stacks NG+ on top of exported `ENEMY.speedMult/attackMult` (restores level + boss-kill scaling). |
+| #6 | BoxGrid staleness after breaks (D7) | **FIXED** — `SkeletonSystem.setCollisionBoxes()` rebuilds grid on `onPropBroken`; `Game._onPropBroken` invalidates cache. |
+| #7 | HUD `_hudDirty` never honored (C20) | **FIXED** — HUD DOM handles cached once in `_hudEls()`; per-frame cost is attribute writes only (no `getElementById`/`querySelectorAll` churn). |
+| #8 | Dead-code cleanup | **DONE** — `GameState` legacy buff/sprint API, `fromJSON` duplicate, `PropSystem.checkHazard`, `breakBreakable {x,z}` overload, `LightingSystem._lights`/`baseIntensity`, `SmokeSystem` `aLife`, `bossBarUpdated` (write-only), `biomeForLevel` 2-arg calls, `post.resize` dead call, `REGEN_DELAY`, `TIMED_RUN`/`TITLE`/`LEADERBOARD` exports, `WorldBuilder` `biomeId` param. |
+
+> `LIGHT_CEILING` is intentionally retained — the `biome-check` gate reads it as the §22 light-budget limit.
+
+---
+
 ## A. Entry & bootstrap
 
 `main.js` (4 lines) → `new Game('app'); game.init()`. `Game.init()` (Game.js:148) runs the §4.2 binding order: renderer → camera(+sword, headlight, fireball) → post → input → events/save → title scene → rAF loop. All guarded for headless (§27). `index.html` provides the HUD/overlay DOM the game queries by id.

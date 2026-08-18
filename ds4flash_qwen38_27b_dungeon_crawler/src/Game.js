@@ -317,7 +317,7 @@ export class Game {
     this.dungeon = dungeon;
     this._titleDungeon = dungeon;
     // Build a minimal world so the title orbit shows geometry.
-    this._titleWorld = new WorldBuilder().build(dungeon, this.biomes.getTexturesFor('STONE'), 'STONE');
+    this._titleWorld = new WorldBuilder().build(dungeon, this.biomes.getTexturesFor('STONE'));
     this.scene.add(this._titleWorld.group);
     this.state.level = 1;
   }
@@ -513,7 +513,7 @@ export class Game {
     // Phase 2 — world geometry
     await yieldFrame();
     this.world = new WorldBuilder().build(
-      dungeon, this.biomes.getTexturesFor(biomeId), biomeId,
+      dungeon, this.biomes.getTexturesFor(biomeId),
     );
     this.scene.add(this.world.group);
     const boxes = [...(this.world && this.world.collisionBoxes ? this.world.collisionBoxes : [])];
@@ -1783,7 +1783,6 @@ export class Game {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    if (this.post && this.post.resize) this.post.resize();
   };
 
   // =========================================================================

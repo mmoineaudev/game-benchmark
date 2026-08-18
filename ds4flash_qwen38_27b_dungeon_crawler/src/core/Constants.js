@@ -31,7 +31,6 @@ export const PLAYER = {
   INVULN_TIME: 0.8,         // i-frames after any hit
   I_FRAMES: 0.8,            // i-frame window after any hit (§20)
   SHAKE_TIME: 0.25,
-  REGEN_DELAY: 0,           // passive regen has no delay
   REGEN_INTERVAL: 5,        // +1 heart every 5 s, capped at max
   SAFE_SPAWN: 5,            // rooted + invincible at level start
   EXIT_RADIUS: 2,           // inExitRoom = within 2 u of exit cell center
@@ -608,15 +607,7 @@ export const BURN = {
 };
 
 // ---------------------------------------------------------------------------
-// Timed run (§3)
-// ---------------------------------------------------------------------------
-
-export const TIMED_RUN = {
-  LEVEL_TIME_LIMIT: 180,      // seconds per level; run ends at 0
-};
-
-// ---------------------------------------------------------------------------
-// Light budget (§22)
+// Light budget (§22) — also the verification limit for biome-check
 // ---------------------------------------------------------------------------
 
 export const LIGHT_CEILING = {
@@ -795,24 +786,3 @@ export const POOLS = {
   WATER_POOLS: 24,
 };
 
-// ---------------------------------------------------------------------------
-// Misc binding values
-// ---------------------------------------------------------------------------
-
-export const TITLE = {
-  TITLE_GATE_FPS: 30,
-  TITLE_GATE_WINDOW: 3,       // rolling ~3 s average fps
-  TITLE_MAX_HOLD: 8,          // hard max-hold
-  HITCH_MS: 0.25,
-  DEGRADE_SUSTAINED_MS: 10000, // fps < 30 sustained > 10 s → degraded
-  DEGRADE_DENSITY: 0.5,
-};
-
-export const LEADERBOARD = {
-  STORAGE_KEY: 'dungeonCrawlerSave',
-  MAX_ENTRIES: 10,
-  SAVE_SERVER_PORT: 5174,
-  NG_TOLL: 0.75,              // 75% toll; keeps 25%
-  NG_KEEP_FRACTION: 0.25,
-  HP_PER_NG: 3.0,             // +300% enemy HP per NG+ cycle
-};

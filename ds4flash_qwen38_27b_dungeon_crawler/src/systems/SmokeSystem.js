@@ -63,7 +63,6 @@ export class SmokeSystem {
     this.geometry.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     this.geometry.setAttribute('aSize', new THREE.BufferAttribute(this.size, 1));
     this.geometry.setAttribute('aOpacity', new THREE.BufferAttribute(this.opacity, 1));
-    this.geometry.setAttribute('aLife', new THREE.BufferAttribute(this.life, 1));
     this.geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e6);
 
     this.material = new THREE.ShaderMaterial({

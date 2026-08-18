@@ -50,7 +50,6 @@ export class LightingSystem {
     this.geometries = [];
     this.materials = [];
     this.textures = [];
-    this._lights = [];        // {light, baseIntensity}
     this._biomeAmbient = null;
     this._biomeFogDensity = null;
     this._shadowTorch = null; // the ONE shadow-casting torch (or null)
@@ -194,10 +193,7 @@ export class LightingSystem {
     if (this.ambient && this.scene) this.scene.remove(this.ambient);
     if (this.scene) this.scene.remove(this.group);
 
-    for (const { light, baseIntensity } of this._lights) {
-      // lights are parented to their meshes; removing the mesh removes the light
-    }
-    this._lights.length = 0;
+    // lights are parented to their meshes; removing the group removes the lights
 
     for (const g of this.geometries) g.dispose();
     for (const m of this.materials) m.dispose();
@@ -322,7 +318,6 @@ export class LightingSystem {
     const entry = { mesh, light, position: pos.clone(), castShadow: false };
     this.torches.push(entry);
     this.lightList.push(light);
-    this._lights.push({ light, baseIntensity: src.intensity });
     return entry;
   }
 
@@ -368,7 +363,6 @@ export class LightingSystem {
 
     this.group.add(mesh);
     this.lightList.push(light);
-    this._lights.push({ light, baseIntensity: src.intensity });
   }
 
   _addCrystalLamp(pos, biome) {
@@ -395,7 +389,6 @@ export class LightingSystem {
 
     this.group.add(mesh);
     this.lightList.push(light);
-    this._lights.push({ light, baseIntensity: src.intensity });
   }
 
   /** Additive light shaft for a torch inside a VAULT room (§26). */
@@ -436,7 +429,6 @@ export class LightingSystem {
     light.position.set(pos.x, 1.2, pos.z);
     this.group.add(light);
     this.lightList.push(light);
-    this._lights.push({ light, baseIntensity: 2 });
   }
 
   _addExitMarker(pos) {
@@ -492,7 +484,6 @@ export class LightingSystem {
     light.position.set(pos.x, 1.3, pos.z);
     this.group.add(light);
     this.lightList.push(light);
-    this._lights.push({ light, baseIntensity: src.intensity });
   }
 
   /** Is a world position inside a room's cell footprint? */

@@ -59,7 +59,7 @@ export default class WorldBuilder {
         [0, 1, wx, wz + cellSize / 2],
         [0, -1, wx, wz - cellSize / 2]
       ];
-      for (const [dx, dz] of nb) {
+      for (const [dx, dz, ex, ez] of nb) {
         const nx = c.x + dx, nz = c.z + dz;
         const outOfBounds = nx < 0 || nz < 0 || nx >= gridSize || nz >= gridSize;
         if (!outOfBounds && grid[nz][nx] !== EMPTY) continue; // interior edge between two open cells

@@ -1,0 +1,10 @@
+{
+  "perf": {
+    "frames": 79,
+    "postBuildHitch": 277.4,
+    "avgFps": 5.7,
+    "recentFrames": 27
+  },
+  "exceptions": [],
+  "fails": 0
+}

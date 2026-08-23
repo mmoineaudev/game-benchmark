@@ -3,7 +3,6 @@ import * as THREE from 'three';
 import GameState from './GameState.js';
 import EventBus from './EventBus.js';
 import Leaderboard from './Leaderboard.js';
-import Collision from './Collision.js';
 import {
   WORLD, PLAYER, CAMERA, BIOMES, BIOME_SEQUENCE, DUNGEON, TIMED_RUN,
   EVOLUTION, weaponTier, swordHitDamage, damageMult, totalSwordScale,
@@ -604,7 +603,7 @@ export default class Game {
     if (this.state.levelTime >= TIMED_RUN.LEVEL_TIME_LIMIT) { this._endRun('time'); return; }
 
     // ---- world systems ----
-    const time = now_ms();
+    const time = performance.now();
     this.lighting?.update(time);
     this.particles?.update(dt, camPos);
     this.smoke?.update(dt);
@@ -1274,6 +1273,16 @@ export default class Game {
     this.post.enabled = !this.post.enabled;
   }
 
+  // QA hook (smoke test): jump straight to the adaptive-resolution tier
+  _forceAdaptiveResolution() {
+    if (this._resScaled) return false;
+    this._resScaled = true;
+    const s = Math.min(devicePixelRatio, 2) * 0.75;
+    this.renderer.setPixelRatio(s);
+    this.post.setSize(Math.round(innerWidth * s), Math.round(innerHeight * s));
+    return true;
+  }
+
   _toggleLedger() {
     const lb = document.getElementById('leaderboard');
     const showing = lb.style.display === 'flex';
@@ -1357,6 +1366,14 @@ export default class Game {
         this.props?.reduceDecorations(0.5);
         this.world?.setDegraded(0.5);
         document.getElementById('perf-warning').style.display = 'block';
+      }
+      // adaptive resolution tier 2 (before decoration cuts help enough):
+      // drop the framebuffer to 75% — fill-rate is the usual software-GL/igpu cost
+      if (this._degraded && this._lowFpsTimer > 15 && !this._resScaled) {
+        this._resScaled = true;
+        const s = Math.min(devicePixelRatio, 2) * 0.75;
+        this.renderer.setPixelRatio(s);
+        this.post.setSize(Math.round(innerWidth * s), Math.round(innerHeight * s));
       }
     } else this._lowFpsTimer = Math.max(0, this._lowFpsTimer - dt);
   }

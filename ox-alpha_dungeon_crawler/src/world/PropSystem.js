@@ -6,6 +6,7 @@ import { PROPS, HAZARD, BIOMES } from '../core/Constants.js';
 export default class PropSystem {
   constructor() {
     this.group = null;
+    this.collisionBoxes = [];
     this.breakables = [];     // {mesh, alive, pos}
     this.sarcophagi = [];     // {group, lid, opened, pos, cellCenter}
     this.hazards = [];        // {x, z, kind}  lava | acid

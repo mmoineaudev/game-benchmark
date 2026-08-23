@@ -59,9 +59,11 @@ export default class WorldBuilder {
         [0, 1, wx, wz + cellSize / 2],
         [0, -1, wx, wz - cellSize / 2]
       ];
-      for (const [dx, dz, ex, ez] of nb) {
+      for (const [dx, dz] of nb) {
         const nx = c.x + dx, nz = c.z + dz;
-        if (nx >= 0 && nz >= 0 && nx < gridSize && nz < gridSize && grid[nz][nx] !== EMPTY) continue;
+        const outOfBounds = nx < 0 || nz < 0 || nx >= gridSize || nz >= gridSize;
+        if (!outOfBounds && grid[nz][nx] !== EMPTY) continue; // interior edge between two open cells
+        // exposed OR boundary edge → wall (boundary walls keep the player inside the map)
         edges.push({ ex, ez, horiz: dz !== 0 });
       }
     }

@@ -122,6 +122,16 @@ export default class Game {
     document.getElementById('btn-ngplus').onclick = () => this._ngPlus();
     document.getElementById('btn-save').onclick = () => this._saveForLater();
     document.getElementById('btn-ledger2').onclick = () => this._toggleLedger();
+
+    // death/menu keys: the in-game Tab handler lives in _update which stops when
+    // _isRunning=false — so death-screen keys need a window-level listener
+    window.addEventListener('keydown', (e) => {
+      if (!this._deathShown) return;
+      if (e.code === 'Tab') { e.preventDefault(); this._toggleLedger(); }
+      else if (e.code === 'KeyN') this._restart();
+      else if (e.code === 'KeyY') this._ngPlus();
+      else if (e.code === 'KeyS') this._saveForLater();
+    });
   }
 
   // ============================== SAVES ==============================
@@ -270,12 +280,14 @@ export default class Game {
   }
 
   _restart() {
+    this._deathShown = false;
     document.getElementById('death-overlay').classList.remove('visible');
     this.state = new GameState(); // level 1, 0 orbs, ngPlus 0, bossKills 0, max health 3
     this._regenerateDungeon({ newRun: true });
   }
 
   _ngPlus() {
+    this._deathShown = false;
     document.getElementById('death-overlay').classList.remove('visible');
     const s = this.state;
     const keptSouls = Math.floor(s.collectedOrbs * 0.25);   // heavy 75% toll

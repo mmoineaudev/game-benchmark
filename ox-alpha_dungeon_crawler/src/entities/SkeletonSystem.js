@@ -210,12 +210,17 @@ export default class SkeletonSystem {
       if (d > bestD) { bestD = d; best = { x, z }; }
     }
     if (!best) return;
-    const def = { ...ENEMY_TYPES.WRAITH, phases: false, instantAttack: false, drops: 2 };
-    def.hp = 1; // HP set below via burnHp
+    const def = {
+      ...ENEMY_TYPES.WRAITH,
+      phases: false, instantAttack: false, drops: 2,
+      // melee cycle (spec §18: cooldown 1.4s) — without this _tickAttack throws
+      cycle: { windup: 0.4, swing: 0.25, recover: 0.35, cooldown: 1.4 },
+      eliteEligible: false, elite: undefined
+    };
     const hp = burnHp(ngPlus);
     const sk = new Skeleton(def, 'BURN', { hp, drops: 2, speedMult: 1, speedOverride: 2.6 });
     sk.isBURN = true;
-    sk.attackCooldownMax = 1.4; sk.range = 1.3; sk.speed = 2.6; sk.dmg = 1;
+    sk.range = 1.3; sk.speed = 2.6; sk.dmg = 1;
     sk.pos.set(best.x * 6, 0, best.z * 6);
     sk.group.position.copy(sk.pos);
     sk.ground();
@@ -377,6 +382,10 @@ export default class SkeletonSystem {
 
   _tickAttack(e, dt, ctx, landFn) {
     const cycle = e.def.cycle;
+    if (!cycle) { // defensive: types without a cycle use instant attacks
+      e.state = 'CHASE'; e.attackPhase = null; e.cooldown = 1.0;
+      return;
+    }
     e.attackT += dt * (ctx.attackSpeedMult ?? 1);
     if (e.attackPhase === 'windup' && e.attackT >= cycle.windup) { e.attackPhase = 'swing'; e.attackT = 0; e._hitApplied = false; }
     else if (e.attackPhase === 'swing') {

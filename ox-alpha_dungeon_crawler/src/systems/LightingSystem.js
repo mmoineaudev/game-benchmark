@@ -22,8 +22,8 @@ export default class LightingSystem {
     this.group = group;
     scene.add(group);
 
-    // ambient + fog
-    this.ambient = new THREE.AmbientLight(pal.ambient, pal.ambientIntensity);
+    // ambient + fog — brighter ambient floor so nothing is pitch black
+    this.ambient = new THREE.AmbientLight(pal.ambient, Math.max(pal.ambientIntensity, 0.5));
     group.add(this.ambient);
     scene.fog = new THREE.FogExp2(pal.fog, pal.fogDensity);
     scene.background = new THREE.Color(pal.fog);
@@ -35,21 +35,20 @@ export default class LightingSystem {
     let torchCount = 0;
     const torchPositions = [];
     const isVaultOnly = pal.torchMode === 'vaultOnly';
+    // Torch placement strategy (playability ruling): torches on EVERY cell center
+    // row/column intersection of walkable space — dense enough that the whole map
+    // reads as lit, spaced to avoid doubling up on adjacent parallel edges.
     for (let z = 0; z < gridSize; z++) {
       for (let x = 0; x < gridSize; x++) {
         if (grid[z][x] === 'empty') continue;
         if (isVaultOnly && grid[z][x] !== 'room') continue;
         if (isVaultOnly && dungeon.metadata[z][x].roomType !== 'VAULT') continue;
-        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-          const nx = x + dx, nz = z + dz;
-          const exposed = nx < 0 || nz < 0 || nx >= gridSize || nz >= gridSize || grid[nz][nx] === 'empty';
-          if (!exposed) continue;
-          const wx = x * cellSize + dx * cellSize * 0.42;
-          const wz = z * cellSize + dz * cellSize * 0.42;
-          // spacing filter along the edge direction
-          const key = Math.round((dx ? wz : wx) / TORCH_SPACING);
-          torchPositions.push({ wx, wz, key, dx });
-        }
+        // one torch per open cell whose grid coords are both even — a regular
+        // 2-cell lattice (12 u spacing) covering every room and corridor
+        if ((x + z) % 2 !== 0) continue;
+        const wx = x * cellSize;
+        const wz = z * cellSize;
+        torchPositions.push({ wx, wz, key: 0, dx: 1 });
       }
     }
     // dedupe by position key then build
@@ -179,15 +178,13 @@ export default class LightingSystem {
   }
 
   applyBRIGHT(on, pal) {
-    // ambient ×2.5, fog density ×0.35 while active
+    // ambient ×2.5 while active; restore to the biome floor otherwise
     if (on) {
-      this._savedAmbient = { i: this.ambient.intensity };
-      this.ambient.intensity = pal.ambientIntensity * 2.5;
-      this.sceneRef?.fog;
-    } else if (this._savedAmbient) {
-      this.ambient.intensity = pal.ambientIntensity;
-      this._savedAmbient = null;
+      this.ambient.intensity = Math.max(pal.ambientIntensity, 0.5) * 2.5;
+    } else if (this._brightWasOn) {
+      this.ambient.intensity = Math.max(pal.ambientIntensity, 0.5);
     }
+    this._brightWasOn = on;
   }
 
   dispose(scene) {

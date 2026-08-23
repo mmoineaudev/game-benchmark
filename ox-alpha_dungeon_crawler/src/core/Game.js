@@ -5,6 +5,7 @@ import EventBus from './EventBus.js';
 import Leaderboard from './Leaderboard.js';
 import {
   WORLD, PLAYER, CAMERA, BIOMES, BIOME_SEQUENCE, DUNGEON, TIMED_RUN,
+  LIGHTING,
   EVOLUTION, weaponTier, swordHitDamage, damageMult, totalSwordScale,
   attackSpeedFromSouls, orbDirectDamage, orbExplodeDamage, ORB_WEAPON,
   BUFF, HUNTER, DROP, SAVE_KEY, SAVE_SERVER, biomeForLevel, MAX_TIER
@@ -84,8 +85,10 @@ export default class Game {
     this.camera = new THREE.PerspectiveCamera(CAMERA.FOV, innerWidth / innerHeight, CAMERA.NEAR, CAMERA.FAR);
     this.camera.layers.enable(2);          // sword layer
     this.camera.position.y = PLAYER.EYE ?? 1.6;
-    // headlight on layer 0 — never lights the sword
-    this.headlight = new THREE.PointLight(0xfff2dd, 0.9, 18, 1.4);
+    // headlight on layer 0 — never lights the sword (wide + low decay: the
+    // playable corridor around the player; your standing "wider, less decay" fix)
+    this.headlight = new THREE.PointLight(0xfff2dd, LIGHTING.HEADLIGHT_INTENSITY,
+      LIGHTING.HEADLIGHT_DISTANCE, LIGHTING.HEADLIGHT_DECAY);
     this.headlight.layers.set(0);
     this.camera.add(this.headlight);
     this.scene = new THREE.Scene();

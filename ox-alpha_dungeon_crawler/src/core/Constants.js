@@ -32,9 +32,10 @@ export const CAMERA = {
 };
 
 export const LIGHTING = {
-  AMBIENT_INTENSITY_STONE: 0.28,
-  HEADLIGHT_INTENSITY: 0.9,
-  HEADLIGHT_DISTANCE: 18
+  AMBIENT_INTENSITY_STONE: 0.55,
+  HEADLIGHT_INTENSITY: 1.7,
+  HEADLIGHT_DISTANCE: 30,
+  HEADLIGHT_DECAY: 1.05
 };
 
 export const MATERIALS = {
@@ -397,13 +398,13 @@ export const PROPS = {
 };
 
 export const LIGHT_SOURCES = {
-  TORCH: { intensity: 1.1, distance: 14, decay: 1.4, shadow: false },
-  BRAZIER: { intensity: 1.4, distance: 16, decay: 1.3, shadow: false },
-  CRYSTAL: { intensity: 1.0, distance: 11, decay: 1.3, shadow: false },
+  TORCH: { intensity: 1.6, distance: 20, decay: 1.1, shadow: false },
+  BRAZIER: { intensity: 2.0, distance: 22, decay: 1.1, shadow: false },
+  CRYSTAL: { intensity: 1.4, distance: 14, decay: 1.2, shadow: false },
   MUSHROOM: { intensity: 3.2, distance: 12, decay: 1.2, shadow: false }, // binding §7.3
   MARKER_START: { intensity: 1.0, distance: 10, decay: 1.4, shadow: false },
   MARKER_EXIT: { intensity: 1.6, distance: 16, decay: 1.3, shadow: false },
-  WISP: { intensity: 0.8, distance: 8, decay: 1.5, shadow: false },
+  WISP: { intensity: 1.0, distance: 10, decay: 1.3, shadow: false },
   SWORD_EXTRA_T5: { intensity: 0.9, distance: 8, decay: 1.4, shadow: false }
 };
 

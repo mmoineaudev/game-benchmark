@@ -1,9 +1,9 @@
 {
   "perf": {
-    "frames": 79,
-    "postBuildHitch": 277.4,
+    "frames": 72,
+    "postBuildHitch": 300.1,
     "avgFps": 5.7,
-    "recentFrames": 27
+    "recentFrames": 25
   },
   "exceptions": [],
   "fails": 0

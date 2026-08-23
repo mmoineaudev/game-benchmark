@@ -26,22 +26,21 @@ export default class LightingSystem {
     // Key: the ambient light's COLOR must be bright (near-white with a biome tint),
     // because AmbientLight multiplies color × intensity — a dark brown color stays dark
     // no matter the intensity.
-    const brightTint = new THREE.Color(pal.ambient).lerp(new THREE.Color(0xffffff), 0.85);
-    this.ambient = new THREE.AmbientLight(brightTint, 2.4);
+    const brightTint = new THREE.Color(pal.ambient).lerp(new THREE.Color(0xffffff), 0.6);
+    this.ambient = new THREE.AmbientLight(brightTint, 1.0);
     group.add(this.ambient);
     this.hemi = new THREE.HemisphereLight(
       new THREE.Color(pal.ceiling).lerp(new THREE.Color(0xffffff), 0.7),
       new THREE.Color(pal.floor).lerp(new THREE.Color(0xffffff), 0.55),
-      1.5);
+      0.6);
     group.add(this.hemi);
     // soft directional from above: gives floor/walls shape (flat ambient = flat look)
-    this.dir = new THREE.DirectionalLight(0xfff4e0, 0.7);
+    this.dir = new THREE.DirectionalLight(0xfff4e0, 0.28);
     this.dir.position.set(3, 10, 2);
     group.add(this.dir);
-    // fog/background lifted to a visible dark slate — pure black fog reads as
-    // "the map is black", but too light washes everything out. 0.22 = readable
-    // distance without flattening the scene.
-    const fogLifted = new THREE.Color(pal.fog).lerp(new THREE.Color(0xffffff), 0.22);
+    // fog/background lifted toward a BIOME-TINTED gray (not white) — keeps each
+    // biome's identity visible while never reading as pure black
+    const fogLifted = new THREE.Color(pal.fog).lerp(new THREE.Color(0x8a8478), 0.55);
     scene.fog = new THREE.FogExp2(fogLifted.getHex(), pal.fogDensity * 0.45);
     scene.background = fogLifted.clone();
 
@@ -71,23 +70,29 @@ export default class LightingSystem {
     // dedupe by position key then build
     const seen = new Set();
     const torchGeo = new THREE.CylinderGeometry(0.05, 0.07, 0.7, 6);
+    const bracketGeo = new THREE.BoxGeometry(0.3, 0.3, 0.05);
     const flameGeo = new THREE.SphereGeometry(0.12, 6, 5);
     const torchMat = new THREE.MeshStandardMaterial({ color: 0x4a3018, roughness: 1 });
     const flameMat = new THREE.MeshBasicMaterial({ color: pal.torchColor });
-    this._disposables.push(torchGeo, flameGeo, torchMat, flameMat);
+    this._disposables.push(torchGeo, bracketGeo, flameGeo, torchMat, flameMat);
 
     for (const t of torchPositions) {
       const dedupeKey = `${Math.round(t.wx)}:${Math.round(t.wz)}:${t.key}`;
       if (seen.has(dedupeKey)) continue;
       seen.add(dedupeKey);
+      // wall-mounted: bracket plate against the wall, stick below it, flame on top,
+      // light exactly at the flame (nothing floats)
+      const bracket = new THREE.Mesh(bracketGeo, torchMat);
+      bracket.position.set(t.wx, 2.1, t.wz);
+      if (t.dx !== undefined && t.horiz === false) bracket.rotation.y = Math.PI / 2;
       const stick = new THREE.Mesh(torchGeo, torchMat);
-      stick.position.set(t.wx, 2.5, t.wz);
+      stick.position.set(t.wx, 1.75, t.wz);
       const flame = new THREE.Mesh(flameGeo, flameMat);
-      flame.position.set(t.wx, 2.95, t.wz);
+      flame.position.set(t.wx, 2.12, t.wz);
       const light = new THREE.PointLight(pal.torchColor, LIGHT_SOURCES.TORCH.intensity, LIGHT_SOURCES.TORCH.distance, LIGHT_SOURCES.TORCH.decay);
-      light.position.set(t.wx, 3.1, t.wz);
+      light.position.set(t.wx, 2.12, t.wz);
       light.castShadow = false; // assigned once below
-      group.add(stick, flame, light);
+      group.add(bracket, stick, flame, light);
       this.lights.push(light);
       this.torchLights.push(light);
       torchCount++;
@@ -197,9 +202,9 @@ export default class LightingSystem {
   applyBRIGHT(on, pal) {
     // ambient ×2 while active; restore otherwise
     if (on) {
-      this.ambient.intensity = 4.5;
+      this.ambient.intensity = 2.0;
     } else if (this._brightWasOn) {
-      this.ambient.intensity = 2.4;
+      this.ambient.intensity = 1.0;
     }
     this._brightWasOn = on;
   }

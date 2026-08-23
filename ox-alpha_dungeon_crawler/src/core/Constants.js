@@ -16,8 +16,8 @@ export const PLAYER = {
   SENSITIVITY: 0.002,
   PITCH_CLAMP: Math.PI * 85 / 180,
   MAX_HEALTH_BASE: 3,
-  REGEN_DELAY: 0,           // regen starts immediately
-  REGEN_INTERVAL: 5,        // +1 heart / 5 s
+  REGEN_DELAY: 8,           // regen starts 8 s after last damage (damage is felt)
+  REGEN_INTERVAL: 6,        // +1 heart / 6 s after the delay
   INVULN_TIME: 0.8,
   SAFE_SPAWN_TIME: 5,
   SHAKE_TIME: 0.25,
@@ -33,7 +33,7 @@ export const CAMERA = {
 
 export const LIGHTING = {
   AMBIENT_INTENSITY_STONE: 0.55,
-  HEADLIGHT_INTENSITY: 1.7,
+  HEADLIGHT_INTENSITY: 1.0,
   HEADLIGHT_DISTANCE: 30,
   HEADLIGHT_DECAY: 1.05
 };
@@ -398,8 +398,8 @@ export const PROPS = {
 };
 
 export const LIGHT_SOURCES = {
-  TORCH: { intensity: 1.6, distance: 20, decay: 1.1, shadow: false },
-  BRAZIER: { intensity: 2.0, distance: 22, decay: 1.1, shadow: false },
+  TORCH: { intensity: 0.9, distance: 16, decay: 1.15, shadow: false },
+  BRAZIER: { intensity: 1.1, distance: 18, decay: 1.15, shadow: false },
   CRYSTAL: { intensity: 1.4, distance: 14, decay: 1.2, shadow: false },
   MUSHROOM: { intensity: 3.2, distance: 12, decay: 1.2, shadow: false }, // binding §7.3
   MARKER_START: { intensity: 1.0, distance: 10, decay: 1.4, shadow: false },

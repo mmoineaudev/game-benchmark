@@ -1227,9 +1227,10 @@ export default class Game {
       badge.textContent = `${names[s.buffEffect]} ${Math.ceil(s.buffTime)}s`;
     } else badge.style.display = 'none';
     const sb = document.getElementById('sprint-bonus');
-    if (s.sprintSpeedMult() > 1.001) {
+    // show only the ACCELERATION BONUS above the base ×1.55 (tier 0 = hidden)
+    if (s.sprintTier > 0) {
       sb.style.display = 'block';
-      sb.textContent = `SPRINT ×${s.sprintSpeedMult().toFixed(2)}`;
+      sb.textContent = `SPRINT +${Math.round((s.sprintSpeedMult() / PLAYER.SPRINT_MULT - 1) * 100)}%`;
     } else sb.style.display = 'none';
 
     // danger glow: alpha = min(1, Σ(1/d)/2) per sector, living enemies within 40 m

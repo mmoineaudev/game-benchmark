@@ -126,7 +126,7 @@ export default class OrbShooter {
       // enemy hit?
       let hitEnemy = null;
       for (const e of enemies) {
-        if (!e.alive || e.state === 'DEAD' || e.frozen) continue;
+        if (e.state === 'DEAD' || e.frozen) continue;
         const dx = e.pos.x - m.position.x, dz = e.pos.z - m.position.z;
         const dy = (e.group.position.y + 1) - m.position.y;
         if (dx * dx + dz * dz < 0.45 && Math.abs(dy) < 1.6) { hitEnemy = e; break; }

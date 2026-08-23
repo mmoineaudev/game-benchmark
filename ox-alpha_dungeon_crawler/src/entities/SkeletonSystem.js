@@ -347,7 +347,7 @@ export default class SkeletonSystem {
       e.pathTimer = 0;
     } else {
       // greedy 4-neighbor step toward the player's CELL, re-eval every 300 ms
-      e.pathTimer -= dt;
+      e.pathTimer -= ctx.dt;
       if (e.pathTimer <= 0 || !e.pathStep) {
         e.pathTimer = ENEMY_SPAWN.PATH_REEVAL;
         e.pathStep = ctx.pathStepFn(e.pos.x, e.pos.z, P.x, P.z);
@@ -473,7 +473,7 @@ export default class SkeletonSystem {
         const seesLOS = ctx.losFn(b.pos.x, b.pos.z, P.x, P.z);
         if (seesLOS) this._moveBoss(b, P.x, P.z, ctx, BOSS.DRIFT_SPEED);
         else {
-          b.pathTimer = (b.pathTimer ?? 0) - dt;
+          b.pathTimer = (b.pathTimer ?? 0) - ctx.dt;
           if (b.pathTimer <= 0 || !b.pathStep) {
             b.pathTimer = ENEMY_SPAWN.PATH_REEVAL;
             b.pathStep = ctx.pathStepFn(b.pos.x, b.pos.z, P.x, P.z);

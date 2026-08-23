@@ -467,6 +467,9 @@ export default class Game {
     this.state.player.z = e.z * cs;
     this.state.player.yaw = Math.PI; // face into the dungeon
     this.state.player.pitch = 0;
+    // CRITICAL: sync the camera itself — the update loop moves camera.position,
+    // so a stale camera at the origin leaves the player outside the dungeon
+    this.camera.position.set(this.state.player.x, PLAYER.EYE ?? 1.6, this.state.player.z);
     this._exitCellCenter = { x: this._dungeon.exitCell.x * cs, z: this._dungeon.exitCell.z * cs };
   }
 

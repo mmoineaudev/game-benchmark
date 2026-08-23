@@ -25,7 +25,12 @@ export default class WorldBuilder {
     for (let z = 0; z < gridSize; z++) for (let x = 0; x < gridSize; x++)
       if (grid[z][x] !== EMPTY) cells.push({ x, z });
 
-    const floorMat = new THREE.MeshStandardMaterial({ map: texSet.floor, roughness: 0.95 });
+    const floorMat = new THREE.MeshStandardMaterial({
+      map: texSet.floor, roughness: 0.95,
+      // slight emissive lift so flagstones read at grazing view angles
+      emissive: 0x8a8274, emissiveIntensity: 0.22,
+      emissiveMap: texSet.floor
+    });
     const ceilMat = new THREE.MeshStandardMaterial({ map: texSet.ceiling, roughness: 1 });
     const wallMat = new THREE.MeshStandardMaterial({ map: texSet.wall, roughness: 0.9 });
     this._disposables.push(floorMat, ceilMat, wallMat);
@@ -47,6 +52,10 @@ export default class WorldBuilder {
     floors.instanceMatrix.needsUpdate = true;
     ceilings.instanceMatrix.needsUpdate = true;
     floors.receiveShadow = true; ceilings.receiveShadow = true;
+    // instanced meshes span the whole map — the auto bounding sphere (computed from
+    // the base geometry at the origin) wrongly culls distant-from-origin instances
+    floors.frustumCulled = false;
+    ceilings.frustumCulled = false;
     group.add(floors, ceilings);
 
     // walls — one box per exposed edge; collision depth ×0.6
@@ -85,8 +94,8 @@ export default class WorldBuilder {
           this.collisionBoxes.push({ minX: e.ex - cd / 2, maxX: e.ex + cd / 2, minZ: e.ez - cellSize / 2, maxZ: e.ez + cellSize / 2 });
         }
       }
-      if (nH > 0) { wallsH.count = ih; wallsH.instanceMatrix.needsUpdate = true; wallsH.castShadow = wallsH.receiveShadow = true; group.add(wallsH); }
-      if (ie > 0 || edges.length - nH > 0) { wallsE.count = ie; wallsE.instanceMatrix.needsUpdate = true; wallsE.castShadow = wallsE.receiveShadow = true; group.add(wallsE); }
+      if (nH > 0) { wallsH.count = ih; wallsH.instanceMatrix.needsUpdate = true; wallsH.castShadow = wallsH.receiveShadow = true; wallsH.frustumCulled = false; group.add(wallsH); }
+      if (ie > 0 || edges.length - nH > 0) { wallsE.count = ie; wallsE.instanceMatrix.needsUpdate = true; wallsE.castShadow = wallsE.receiveShadow = true; wallsE.frustumCulled = false; group.add(wallsE); }
     }
 
     // floor debris — ONE InstancedMesh (~1/cell cut ~80%)
@@ -107,6 +116,7 @@ export default class WorldBuilder {
         this.debrisMesh.setMatrixAt(i, dummy.matrix);
       }
       this.debrisMesh.instanceMatrix.needsUpdate = true;
+      this.debrisMesh.frustumCulled = false;
       group.add(this.debrisMesh);
     }
 

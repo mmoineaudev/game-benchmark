@@ -22,11 +22,28 @@ export default class LightingSystem {
     this.group = group;
     scene.add(group);
 
-    // ambient + fog — brighter ambient floor so nothing is pitch black
-    this.ambient = new THREE.AmbientLight(pal.ambient, Math.max(pal.ambientIntensity, 0.5));
+    // ambient + fog — bright ambient floor so NOTHING is ever pitch black.
+    // Key: the ambient light's COLOR must be bright (near-white with a biome tint),
+    // because AmbientLight multiplies color × intensity — a dark brown color stays dark
+    // no matter the intensity.
+    const brightTint = new THREE.Color(pal.ambient).lerp(new THREE.Color(0xffffff), 0.85);
+    this.ambient = new THREE.AmbientLight(brightTint, 2.4);
     group.add(this.ambient);
-    scene.fog = new THREE.FogExp2(pal.fog, pal.fogDensity);
-    scene.background = new THREE.Color(pal.fog);
+    this.hemi = new THREE.HemisphereLight(
+      new THREE.Color(pal.ceiling).lerp(new THREE.Color(0xffffff), 0.7),
+      new THREE.Color(pal.floor).lerp(new THREE.Color(0xffffff), 0.55),
+      1.5);
+    group.add(this.hemi);
+    // soft directional from above: gives floor/walls shape (flat ambient = flat look)
+    this.dir = new THREE.DirectionalLight(0xfff4e0, 0.7);
+    this.dir.position.set(3, 10, 2);
+    group.add(this.dir);
+    // fog/background lifted to a visible dark slate — pure black fog reads as
+    // "the map is black", but too light washes everything out. 0.22 = readable
+    // distance without flattening the scene.
+    const fogLifted = new THREE.Color(pal.fog).lerp(new THREE.Color(0xffffff), 0.22);
+    scene.fog = new THREE.FogExp2(fogLifted.getHex(), pal.fogDensity * 0.45);
+    scene.background = fogLifted.clone();
 
     const { grid, gridSize, cellSize } = dungeon;
 
@@ -178,11 +195,11 @@ export default class LightingSystem {
   }
 
   applyBRIGHT(on, pal) {
-    // ambient ×2.5 while active; restore to the biome floor otherwise
+    // ambient ×2 while active; restore otherwise
     if (on) {
-      this.ambient.intensity = Math.max(pal.ambientIntensity, 0.5) * 2.5;
+      this.ambient.intensity = 4.5;
     } else if (this._brightWasOn) {
-      this.ambient.intensity = Math.max(pal.ambientIntensity, 0.5);
+      this.ambient.intensity = 2.4;
     }
     this._brightWasOn = on;
   }
@@ -193,6 +210,7 @@ export default class LightingSystem {
       scene.fog = null;
       scene.background = null;
     }
+    this.hemi = null; this.dir = null;
     for (const d of this._disposables) d.dispose();
     this.lights = []; this.torchLights = []; this.godRays = [];
     this.group = null; this.ambient = null; this._disposables = [];

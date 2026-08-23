@@ -50,12 +50,12 @@ export function generateStoneWallTexture(size, tint) {
 export function generateFloorTexture(size, tint) {
   const c = canvas(size);
   const ctx = c.getContext('2d');
-  ctx.fillStyle = '#' + mixHex(0x3a3630, tint, 0.35).toString(16).padStart(6, '0');
+  ctx.fillStyle = '#' + mixHex(0x5a564e, tint, 0.35).toString(16).padStart(6, '0');
   ctx.fillRect(0, 0, size, size);
   const t = size / 4;
   for (let ry = 0; ry < 4; ry++) for (let rx = 0; rx < 4; rx++) {
-    const shade = 0.85 + Math.random() * 0.3;
-    const base = mixHex(0x6a645a, tint, 0.35);
+    const shade = 0.9 + Math.random() * 0.35;
+    const base = mixHex(0x8a8274, tint, 0.35);
     const r = Math.round(((base >> 16) & 255) * shade), g = Math.round(((base >> 8) & 255) * shade), b = Math.round((base & 255) * shade);
     ctx.fillStyle = `rgb(${r},${g},${b})`;
     ctx.fillRect(rx * t + 2, ry * t + 2, t - 4, t - 4);

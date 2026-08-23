@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>The Depths — Dungeon Crawler</title>
+  <style>
+    @font-face { font-family: 'CinzelFallback'; src: local('Cinzel'); }
+    html, body { margin: 0; padding: 0; overflow: hidden; background: #000; height: 100%; }
+    #app { position: fixed; inset: 0; }
+    canvas { display: block; }
+    .hud, .overlay { font-family: Georgia, 'CinzelFallback', serif; user-select: none; }
+    /* ---------- HUD ---------- */
+    #hud { position: fixed; inset: 0; pointer-events: none; color: #e8dcc0; z-index: 10; }
+    .panel {
+      background: linear-gradient(160deg, rgba(20,16,12,.88), rgba(10,8,6,.92));
+      border: 1px solid #6b5a34;
+      box-shadow: 0 0 12px rgba(0,0,0,.7), inset 0 0 18px rgba(0,0,0,.55);
+      border-radius: 3px;
+    }
+    /* hearts top-left */
+    #hp-wrap { position: absolute; top: 14px; left: 14px; padding: 8px 12px; min-width: 190px; }
+    #hp-label { font-size: 11px; letter-spacing: 2px; color: #b09a62; }
+    #hp-bar { width: 180px; height: 12px; background: #1a0c0c; border: 1px solid #4a2f24; margin-top: 4px; }
+    #hp-fill { height: 100%; width: 100%; background: linear-gradient(#b03030, #701818); transition: width .15s; }
+    #hp-num { font-size: 11px; color: #d8c9a0; margin-top: 2px; }
+    #sprint-bonus { font-size: 11px; color: #8fae7e; margin-top: 2px; display: none; }
+    /* souls top-right */
+    #souls-wrap { position: absolute; top: 14px; right: 14px; text-align: right; padding: 8px 14px; }
+    #souls-label { font-size: 11px; letter-spacing: 3px; color: #b09a62; }
+    #orb-count { font-size: 26px; color: #e8c85a; text-shadow: 0 0 8px rgba(232,200,90,.45); }
+    #weapon-slot { margin-top: 6px; font-size: 12px; color: #d8c9a0; border-top: 1px solid #4a3f28; padding-top: 5px; }
+    #buff-badge { margin-top: 4px; font-size: 11px; color: #9ecbe0; display: none; }
+    /* level title + timer top-center */
+    #top-center { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); text-align: center; padding: 6px 18px; }
+    #biome-label { font-size: 13px; letter-spacing: 3px; color: #cdb87a; }
+    #timer { font-size: 18px; color: #e8dcc0; }
+    #timer.low { color: #d84a35; }
+    /* combo pips */
+    #combo-pips { position: absolute; bottom: 120px; right: 26px; display: flex; gap: 6px; }
+    .pip { width: 10px; height: 10px; border: 1px solid #6b5a34; background: rgba(0,0,0,.5); transform: rotate(45deg); }
+    .pip.on { background: #c8a84e; box-shadow: 0 0 6px rgba(200,168,78,.7); }
+    /* stats panel (Tab) */
+    #stats-panel { position: absolute; bottom: 60px; left: 50%; transform: translateX(-50%);
+      padding: 10px 22px; font-size: 12px; line-height: 1.7; display: none; white-space: pre; color: #d8c9a0; }
+    /* messages */
+    #messages { position: absolute; bottom: 170px; left: 50%; transform: translateX(-50%); text-align: center; }
+    .msg { font-size: 17px; color: #efe0ac; text-shadow: 0 0 10px rgba(0,0,0,.9); margin-top: 6px; animation: msgfade 3.2s forwards; }
+    @keyframes msgfade { 0%{opacity:0} 8%{opacity:1} 75%{opacity:1} 100%{opacity:0} }
+    /* prompts */
+    #prompt { position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%); font-size: 15px;
+      color: #e8c85a; text-shadow: 0 0 8px #000; display: none; }
+    #exit-prompt { position: absolute; bottom: 130px; left: 50%; transform: translateX(-50%); font-size: 15px;
+      color: #ffd700; text-shadow: 0 0 10px #000; display: none; }
+    #hint-line { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); font-size: 11px;
+      letter-spacing: 1px; color: rgba(216,201,160,.55); }
+    /* danger glow borders */
+    .danger-edge { position: absolute; opacity: 0; pointer-events: none; }
+    #danger-bottom { bottom: 0; left: 0; right: 0; height: 110px; background: linear-gradient(to top, rgba(200,30,20,.85), transparent); }
+    #danger-top { top: 0; left: 0; right: 0; height: 110px; background: linear-gradient(to bottom, rgba(200,30,20,.85), transparent); }
+    #danger-left { top: 0; bottom: 0; left: 0; width: 110px; background: linear-gradient(to right, rgba(200,30,20,.85), transparent); }
+    #danger-right { top: 0; bottom: 0; right: 0; width: 110px; background: linear-gradient(to left, rgba(200,30,20,.85), transparent); }
+    #damage-flash { position: fixed; inset: 0; background: radial-gradient(circle, transparent 40%, rgba(180,20,10,.55));
+      opacity: 0; pointer-events: none; z-index: 11; }
+    #safe-spawn { position: absolute; top: 42%; left: 50%; transform: translate(-50%,-50%); font-size: 34px;
+      color: #9ecbe0; text-shadow: 0 0 14px #000; display: none; }
+    #perf-warning { position: absolute; bottom: 32px; right: 14px; font-size: 11px; color: #d8a03a; display: none; }
+    /* boss bar */
+    #boss-bar-wrap { position: absolute; bottom: 64px; left: 50%; transform: translateX(-50%); width: 420px;
+      padding: 6px 10px; display: none; text-align: center; }
+    #boss-label { font-size: 12px; letter-spacing: 3px; color: #d8b06a; }
+    #boss-bar { height: 10px; background: #140a0a; border: 1px solid #5a3020; margin-top: 3px; }
+    #boss-fill { height: 100%; width: 100%; background: linear-gradient(#c04838, #801818); }
+    /* leaderboard */
+    #leaderboard { position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+      background: rgba(0,0,0,.75); z-index: 40; pointer-events: auto; }
+    #ledger-panel { width: 480px; max-height: 70vh; overflow-y: auto; padding: 22px 30px; }
+    #ledger-panel h2 { margin: 0 0 12px; text-align: center; letter-spacing: 6px; color: #e8c85a; font-weight: normal; }
+    #ledger-rows div { display: flex; justify-content: space-between; font-size: 13px; padding: 4px 0;
+      border-bottom: 1px solid rgba(107,90,52,.35); color: #d8c9a0; }
+    #ledger-panel .close-hint { text-align: center; margin-top: 14px; font-size: 12px; color: #8a7a54; }
+    /* ---------- overlays: title / loading / death / menu ---------- */
+    .overlay { position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+      flex-direction: column; z-index: 30; color: #e8dcc0; text-align: center; }
+    .overlay.visible { display: flex; }
+    #title-overlay h1 { font-size: 72px; letter-spacing: 14px; margin: 0 0 8px; color: #e8c85a;
+      text-shadow: 0 0 30px rgba(232,200,90,.4); font-weight: normal; }
+    #title-overlay .subtitle { font-size: 15px; letter-spacing: 4px; color: #9a8a60; margin-bottom: 36px; }
+    .menu-btn { pointer-events: auto; cursor: pointer; font-family: inherit; font-size: 17px; letter-spacing: 2px;
+      color: #e8dcc0; background: linear-gradient(160deg, rgba(30,24,16,.9), rgba(14,10,8,.95));
+      border: 1px solid #6b5a34; padding: 13px 44px; margin: 7px; min-width: 380px; }
+    .menu-btn:hover { border-color: #c8a84e; color: #ffe9a0; box-shadow: 0 0 14px rgba(200,168,78,.25); }
+    .menu-btn .key { color: #c8a84e; }
+    #loading-overlay { background: rgba(4,3,2,.82); }
+    #loading-level { font-size: 46px; letter-spacing: 8px; color: #e8c85a; }
+    #loading-biome { font-size: 17px; letter-spacing: 5px; color: #cdb87a; margin-top: 8px; }
+    #loading-buff { font-size: 13px; color: #9ecbe0; margin-top: 14px; max-width: 520px; }
+    #loading-stats { font-size: 13px; color: #d8c9a0; margin-top: 20px; line-height: 1.8; white-space: pre; }
+    #death-overlay { background: rgba(8,2,2,.72); }
+    #death-title { font-size: 52px; letter-spacing: 10px; color: #b03030; margin: 0 0 14px; font-weight: normal; }
+    #death-stats { font-size: 17px; color: #d8c9a0; margin-bottom: 30px; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <div id="hud" class="hud">
+    <div class="danger-edge" id="danger-top"></div>
+    <div class="danger-edge" id="danger-bottom"></div>
+    <div class="danger-edge" id="danger-left"></div>
+    <div class="danger-edge" id="danger-right"></div>
+
+    <div id="hp-wrap" class="panel">
+      <div id="hp-label">VITALITY</div>
+      <div id="hp-bar"><div id="hp-fill"></div></div>
+      <div id="hp-num">3 / 3</div>
+      <div id="sprint-bonus"></div>
+    </div>
+
+    <div id="souls-wrap" class="panel">
+      <div id="souls-label">SOULS</div>
+      <div id="orb-count">0</div>
+      <div id="weapon-slot">DAGGER</div>
+      <div id="buff-badge"></div>
+    </div>
+
+    <div id="top-center" class="panel">
+      <div id="biome-label">STONE DUNGEON</div>
+      <div id="timer">3:00</div>
+    </div>
+
+    <div id="combo-pips"><div class="pip"></div><div class="pip"></div><div class="pip"></div></div>
+    <div id="stats-panel" class="panel"></div>
+    <div id="messages"></div>
+    <div id="exit-prompt"></div>
+    <div id="prompt"></div>
+    <div id="safe-spawn"></div>
+    <div id="perf-warning">⚠ DEGRADED MODE — decorations reduced for performance</div>
+    <div id="hint-line">WASD move · Shift sprint · LMB orb · RMB dagger · E descend · Tab ledger · P bloom</div>
+
+    <div id="boss-bar-wrap" class="panel">
+      <div id="boss-label">SPECTRAL LORD</div>
+      <div id="boss-bar"><div id="boss-fill"></div></div>
+    </div>
+  </div>
+
+  <div id="damage-flash"></div>
+
+  <div id="leaderboard" class="hud">
+    <div id="ledger-panel" class="panel">
+      <h2>DEPTH LEDGER</h2>
+      <div id="ledger-rows"></div>
+      <div class="close-hint">[Tab] close</div>
+    </div>
+  </div>
+
+  <div id="title-overlay" class="overlay hud">
+    <h1>THE DEPTHS</h1>
+    <div class="subtitle">A SOULS DESCENT</div>
+    <button class="menu-btn" id="btn-new">New Game <span class="key">[N]</span></button>
+    <button class="menu-btn" id="btn-load" style="display:none">Load Last Save <span class="key">[L]</span></button>
+  </div>
+
+  <div id="loading-overlay" class="overlay hud">
+    <div id="loading-level">LEVEL 1</div>
+    <div id="loading-biome">STONE DUNGEON</div>
+    <div id="loading-buff">No active buff</div>
+    <div id="loading-stats"></div>
+  </div>
+
+  <div id="death-overlay" class="overlay hud">
+    <h1 id="death-title">The dead claim you</h1>
+    <div id="death-stats"></div>
+    <button class="menu-btn" id="btn-restart">Restart — Level 1 <span class="key">[N]</span></button>
+    <button class="menu-btn" id="btn-ngplus">New Game+ <span class="key">[Y]</span></button>
+    <button class="menu-btn" id="btn-save">Save for later <span class="key">[S]</span></button>
+    <button class="menu-btn" id="btn-ledger2">Depth Ledger <span class="key">[Tab]</span></button>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

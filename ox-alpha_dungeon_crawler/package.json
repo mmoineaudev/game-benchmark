@@ -1,0 +1,19 @@
+{
+  "name": "ox-alpha-dungeon-crawler",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "check:dungeon": "node scripts/dungeon-check.mjs",
+    "check:formulas": "node scripts/formula-check.mjs",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "three": "^0.169.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0"
+  }
+}

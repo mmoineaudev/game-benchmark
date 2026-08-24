@@ -316,13 +316,13 @@ export default class SkeletonSystem {
         else if (e.def.kiteStop && distP < e.def.retreatUnder) {
           this._moveToward(e, e.pos.x + (e.pos.x - P.x), e.pos.z + (e.pos.z - P.z), ctx, e.def.retreatSpeed / e.speed);
         }
-        if (distP <= e.def.range && seesLOS && e.cooldown <= 0 && !ctx.safeSpawn) {
+        if (distP <= e.def.range && seesLOS && e.cooldown <= 0 && e.state !== 'ATTACK' && !ctx.safeSpawn) {
           e.startAttack();
         }
         if (e.state === 'ATTACK') this._tickAttack(e, dt, ctx, () => this._fireRanged(e, P, ctx));
       } else {
         // melee cycle
-        if (inRange && e.cooldown <= 0 && !ctx.safeSpawn) e.startAttack();
+        if (inRange && e.cooldown <= 0 && e.state !== 'ATTACK' && !ctx.safeSpawn) e.startAttack();
         else if (!inRange) this._chaseMove(e, P, ctx, seesLOS);
         if (e.state === 'ATTACK') this._tickAttack(e, dt, ctx, () => {
           // melee hit lands at swing progress ≥ 0.35 via cone check

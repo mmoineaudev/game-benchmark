@@ -55,9 +55,15 @@ export default class SkeletonSystem {
   }
 
   _makeProjectile(color, radius) {
-    const m = new THREE.Mesh(new THREE.SphereGeometry(radius, 8, 6),
-      new THREE.MeshBasicMaterial({ color }));
-    // additive glow halo so projectiles are visible at distance / in dark corridors
+    // shared static materials: created once per session, survive level disposal,
+    // so the glow program compiles once and is reused on every later level
+    const key = color;
+    if (!SkeletonSystem._coreMats) SkeletonSystem._coreMats = new Map();
+    let coreMat = SkeletonSystem._coreMats.get(key);
+    if (!coreMat) {
+      coreMat = new THREE.MeshBasicMaterial({ color });
+      SkeletonSystem._coreMats.set(key, coreMat);
+    }
     if (!SkeletonSystem._glowTex) {
       const c = document.createElement('canvas');
       c.width = c.height = 64;
@@ -70,16 +76,31 @@ export default class SkeletonSystem {
       g.fillRect(0, 0, 64, 64);
       SkeletonSystem._glowTex = new THREE.CanvasTexture(c);
     }
-    const glowMat = new THREE.SpriteMaterial({
-      map: SkeletonSystem._glowTex, color,
-      blending: THREE.AdditiveBlending, depthWrite: false, transparent: true
-    });
+    let glowMat = SkeletonSystem._glowMats?.get(key);
+    if (!glowMat) {
+      glowMat = new THREE.SpriteMaterial({
+        map: SkeletonSystem._glowTex, color: key,
+        blending: THREE.AdditiveBlending, depthWrite: false, transparent: true
+      });
+      (SkeletonSystem._glowMats ??= new Map()).set(key, glowMat);
+    }
+    const m = new THREE.Mesh(SkeletonSystem._projGeo(radius), coreMat);
+    m.scale.setScalar(radius); // shared unit geometry, scaled per type
+    // additive glow halo so projectiles are visible at distance / in dark corridors
     const glow = new THREE.Sprite(glowMat);
     glow.scale.set(radius * 8, radius * 8, 1);
     m.add(glow);
     m.visible = false;
     this.scene.add(m);
     return { mesh: m, vel: new THREE.Vector3(), life: -1, dmg: 1 };
+  }
+
+  static _projGeoCache = new Map();
+  static _projGeo(radius) {
+    // shared unit geometry scaled per-mesh — one geometry for all projectiles
+    let g = SkeletonSystem._projGeoCache.get('unit');
+    if (!g) { g = new THREE.SphereGeometry(1, 8, 6); SkeletonSystem._projGeoCache.set('unit', g); }
+    return g;
   }
 
   // ---- spawn plan (§16.1) ----
@@ -668,7 +689,7 @@ export default class SkeletonSystem {
     if (this.boss) { this.boss.dispose(scene); this.boss = null; }
     this.enemies = []; this.minions = []; this.queue = [];
     for (const set of [this.projectiles.arrows, this.projectiles.orbs])
-      for (const p of set) { scene.remove(p.mesh); p.mesh.geometry.dispose(); p.mesh.material.dispose(); }
+      for (const p of set) { scene.remove(p.mesh); /* geo/mat are shared statics — do NOT dispose */ }
     for (const s of this.shockwaves) { scene.remove(s.mesh); s.mesh.geometry.dispose(); s.mesh.material.dispose(); }
     for (const s of this.blinkTelegraphFx) scene.remove(s);
     for (const p of this.firePatches) { scene.remove(p.mesh); p.mesh.geometry.dispose(); p.mesh.material.dispose(); }

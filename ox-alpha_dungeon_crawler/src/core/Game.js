@@ -383,6 +383,16 @@ export default class Game {
     this._isRunning = true;
     this._lastTime = performance.now();
     this._fpsWindow = [];
+    // precompile ALL shader programs while the loading overlay is still up —
+    // without this, first contact with each material (first orb, first torch
+    // combo) stalls the frame on a synchronous GLSL compile mid-combat
+    try {
+      this.renderer.compile(this.scene, this.camera);
+      await frame();
+      // post.compile() precompiles the effect chain (bloom etc.) too
+      this.post?.compile?.();
+      await frame();
+    } catch { /* non-fatal — worst case we compile lazily as before */ }
     this._hideLevelTitleWhenReady();
     this._updateHUD();
     if (!this._loopStarted) { this._loopStarted = true; this._animate(); }

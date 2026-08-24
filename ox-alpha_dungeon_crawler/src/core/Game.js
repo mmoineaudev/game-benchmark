@@ -1397,25 +1397,25 @@ export default class Game {
     requestAnimationFrame(check);
   }
 
+  // adaptive resolution: tiered pixel-ratio drops when sustained fps < 30.
+  // Runs from level start (no 10s/15s grace) so weak GPUs get relief DURING the
+  // first seconds of play instead of after the player is already dead.
   _trackFps(dt) {
     this._fpsWindow.push(1 / Math.max(dt, 0.0001));
     if (this._fpsWindow.length > 90) this._fpsWindow.shift(); // ~3 s at 30 fps
-    // degraded mode: sustained fps < 30 for more than 10 s (EMA; hitches and titles excluded)
     if (this._avgFps() < 30) {
       this._lowFpsTimer += dt;
-      if (this._lowFpsTimer > 10 && !this._degraded) {
-        this._degraded = true;
-        this.props?.reduceDecorations(0.5);
-        this.world?.setDegraded(0.5);
-        document.getElementById('perf-warning').style.display = 'block';
-      }
-      // adaptive resolution tier 2 (before decoration cuts help enough):
-      // drop the framebuffer to 75% — fill-rate is the usual software-GL/igpu cost
-      if (this._degraded && this._lowFpsTimer > 15 && !this._resScaled) {
+      if (this._lowFpsTimer > 2 && !this._resScaled) {
         this._resScaled = true;
         const s = Math.min(devicePixelRatio, 2) * 0.75;
         this.renderer.setPixelRatio(s);
         this.post.setSize(Math.round(innerWidth * s), Math.round(innerHeight * s));
+      }
+      if (this._lowFpsTimer > 6 && !this._degraded) {
+        this._degraded = true;
+        this.props?.reduceDecorations(0.5);
+        this.world?.setDegraded(0.5);
+        document.getElementById('perf-warning').style.display = 'block';
       }
     } else this._lowFpsTimer = Math.max(0, this._lowFpsTimer - dt);
   }

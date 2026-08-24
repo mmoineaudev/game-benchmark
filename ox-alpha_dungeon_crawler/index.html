@@ -36,6 +36,15 @@
     #biome-label { font-size: 13px; letter-spacing: 3px; color: #cdb87a; }
     #timer { font-size: 18px; color: #e8dcc0; }
     #timer.low { color: #d84a35; }
+    /* crosshair — white aiming dot dead-center */
+    #crosshair { position: absolute; top: 50%; left: 50%; width: 5px; height: 5px;
+      margin: -2.5px 0 0 -2.5px; background: #fff; border-radius: 50%;
+      box-shadow: 0 0 0 1px rgba(0,0,0,.65), 0 0 5px rgba(255,255,255,.55); }
+    /* side stats panel */
+    #side-stats { position: absolute; top: 128px; right: 14px; padding: 10px 14px;
+      font-size: 12px; line-height: 1.75; white-space: pre; color: #d8c9a0;
+      text-align: right; }
+    #side-stats .ss-title { letter-spacing: 3px; color: #b09a62; font-size: 11px; }
     /* combo pips */
     #combo-pips { position: absolute; bottom: 120px; right: 26px; display: flex; gap: 6px; }
     .pip { width: 10px; height: 10px; border: 1px solid #6b5a34; background: rgba(0,0,0,.5); transform: rotate(45deg); }
@@ -130,6 +139,11 @@
     </div>
 
     <div id="combo-pips"><div class="pip"></div><div class="pip"></div><div class="pip"></div></div>
+    <div id="crosshair"></div>
+
+    <div id="side-stats" class="panel">
+      <div class="ss-title">COMBAT</div>
+    </div>
     <div id="stats-panel" class="panel"></div>
     <div id="messages"></div>
     <div id="exit-prompt"></div>

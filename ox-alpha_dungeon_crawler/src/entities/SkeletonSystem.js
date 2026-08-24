@@ -57,6 +57,26 @@ export default class SkeletonSystem {
   _makeProjectile(color, radius) {
     const m = new THREE.Mesh(new THREE.SphereGeometry(radius, 8, 6),
       new THREE.MeshBasicMaterial({ color }));
+    // additive glow halo so projectiles are visible at distance / in dark corridors
+    if (!SkeletonSystem._glowTex) {
+      const c = document.createElement('canvas');
+      c.width = c.height = 64;
+      const g = c.getContext('2d');
+      const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+      grad.addColorStop(0, 'rgba(255,255,255,1)');
+      grad.addColorStop(0.35, 'rgba(255,255,255,0.45)');
+      grad.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = grad;
+      g.fillRect(0, 0, 64, 64);
+      SkeletonSystem._glowTex = new THREE.CanvasTexture(c);
+    }
+    const glowMat = new THREE.SpriteMaterial({
+      map: SkeletonSystem._glowTex, color,
+      blending: THREE.AdditiveBlending, depthWrite: false, transparent: true
+    });
+    const glow = new THREE.Sprite(glowMat);
+    glow.scale.set(radius * 8, radius * 8, 1);
+    m.add(glow);
     m.visible = false;
     this.scene.add(m);
     return { mesh: m, vel: new THREE.Vector3(), life: -1, dmg: 1 };

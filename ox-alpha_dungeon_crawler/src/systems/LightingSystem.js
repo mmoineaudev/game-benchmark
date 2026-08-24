@@ -71,30 +71,60 @@ export default class LightingSystem {
     const seen = new Set();
     const torchGeo = new THREE.CylinderGeometry(0.05, 0.07, 0.7, 6);
     const bracketGeo = new THREE.BoxGeometry(0.3, 0.3, 0.05);
+    const poleGeo = new THREE.CylinderGeometry(0.06, 0.09, 1.6, 6);
     const flameGeo = new THREE.SphereGeometry(0.12, 6, 5);
     const torchMat = new THREE.MeshStandardMaterial({ color: 0x4a3018, roughness: 1 });
     const flameMat = new THREE.MeshBasicMaterial({ color: pal.torchColor });
-    this._disposables.push(torchGeo, bracketGeo, flameGeo, torchMat, flameMat);
+    this._disposables.push(torchGeo, bracketGeo, poleGeo, flameGeo, torchMat, flameMat);
 
     for (const t of torchPositions) {
       const dedupeKey = `${Math.round(t.wx)}:${Math.round(t.wz)}:${t.key}`;
       if (seen.has(dedupeKey)) continue;
       seen.add(dedupeKey);
-      // wall-mounted: bracket plate against the wall, stick below it, flame on top,
-      // light exactly at the flame (nothing floats)
-      const bracket = new THREE.Mesh(bracketGeo, torchMat);
-      bracket.position.set(t.wx, 2.1, t.wz);
-      if (t.dx !== undefined && t.horiz === false) bracket.rotation.y = Math.PI / 2;
-      const stick = new THREE.Mesh(torchGeo, torchMat);
-      stick.position.set(t.wx, 1.75, t.wz);
-      const flame = new THREE.Mesh(flameGeo, flameMat);
-      flame.position.set(t.wx, 2.12, t.wz);
-      const light = new THREE.PointLight(pal.torchColor, LIGHT_SOURCES.TORCH.intensity, LIGHT_SOURCES.TORCH.distance, LIGHT_SOURCES.TORCH.decay);
-      light.position.set(t.wx, 2.12, t.wz);
-      light.castShadow = false; // assigned once below
-      group.add(bracket, stick, flame, light);
-      this.lights.push(light);
-      this.torchLights.push(light);
+      const gx = Math.round(t.wx / cellSize), gz = Math.round(t.wz / cellSize);
+      const isOpen = (x, z) => x >= 0 && z >= 0 && x < gridSize && z < gridSize && grid[z][x] !== 'empty';
+      // find an adjacent wall to mount against (N/E/S/W); open cells get a floor-standing torch
+      const wallDirs = [
+        { dx: 0, dz: -1, rot: 0,          ox: 0,          oz: -cellSize / 2 },  // wall to north
+        { dx: 1, dz: 0,  rot: Math.PI / 2, ox: cellSize / 2,  oz: 0 },          // wall to east
+        { dx: 0, dz: 1,  rot: 0,          ox: 0,          oz: cellSize / 2 },   // wall to south
+        { dx: -1, dz: 0, rot: Math.PI / 2, ox: -cellSize / 2, oz: 0 },          // wall to west
+      ].filter(d => !isOpen(gx + d.dx, gz + d.dz));
+      const group2 = new THREE.Group();
+      if (wallDirs.length) {
+        // wall-mounted: bracket plate ON the wall face, stick below it, flame just
+        // proud of the wall, light exactly at the flame (nothing floats)
+        const d = wallDirs[0];
+        const bx = t.wx + d.ox * 0.94, bz = t.wz + d.oz * 0.94; // just inside the wall face
+        const fx = t.wx + d.ox * 0.78, fz = t.wz + d.oz * 0.78; // flame proud of the wall
+        const bracket = new THREE.Mesh(bracketGeo, torchMat);
+        bracket.position.set(bx, 2.1, bz);
+        bracket.rotation.y = d.rot;
+        const stick = new THREE.Mesh(torchGeo, torchMat);
+        stick.position.set(fx, 1.75, fz);
+        const flame = new THREE.Mesh(flameGeo, flameMat);
+        flame.position.set(fx, 2.12, fz);
+        const light = new THREE.PointLight(pal.torchColor, LIGHT_SOURCES.TORCH.intensity, LIGHT_SOURCES.TORCH.distance, LIGHT_SOURCES.TORCH.decay);
+        light.position.set(fx, 2.12, fz);
+        light.castShadow = false; // assigned once below
+        group2.add(bracket, stick, flame, light);
+        this.lights.push(light);
+        this.torchLights.push(light);
+      } else {
+        // no adjacent wall (open room): standing torch — pole from the floor,
+        // flame + light on top. Reads as intentional, never floating.
+        const pole = new THREE.Mesh(poleGeo, torchMat);
+        pole.position.set(t.wx, 0.8, t.wz);
+        const flame = new THREE.Mesh(flameGeo, flameMat);
+        flame.position.set(t.wx, 1.75, t.wz);
+        const light = new THREE.PointLight(pal.torchColor, LIGHT_SOURCES.TORCH.intensity, LIGHT_SOURCES.TORCH.distance, LIGHT_SOURCES.TORCH.decay);
+        light.position.set(t.wx, 1.75, t.wz);
+        light.castShadow = false;
+        group2.add(pole, flame, light);
+        this.lights.push(light);
+        this.torchLights.push(light);
+      }
+      group.add(group2);
       torchCount++;
     }
     // ONE shadow-casting torch, nearest the entrance, assigned ONCE at level build

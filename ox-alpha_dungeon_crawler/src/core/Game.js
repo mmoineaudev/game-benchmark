@@ -1271,6 +1271,17 @@ export default class Game {
     // stats panel content (live coefficients)
     const sp = document.getElementById('stats-panel');
     if (sp.style.display === 'block') sp.textContent = this._liveStats();
+    // persistent right-side combat panel
+    const side = document.getElementById('side-stats');
+    if (side) {
+      const txt = this._liveStats();
+      if (side.dataset.txt !== txt) {
+        side.dataset.txt = txt;
+        let body = side.querySelector('.ss-body');
+        if (!body) { body = document.createElement('div'); body.className = 'ss-body'; side.appendChild(body); }
+        body.textContent = txt;
+      }
+    }
   }
 
   _liveStats() {

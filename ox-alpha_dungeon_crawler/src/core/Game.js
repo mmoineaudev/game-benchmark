@@ -315,6 +315,8 @@ export default class Game {
   async _regenerateDungeon({ newRun = false, nextState = null, startMessage = null } = {}) {
     this._isRunning = false;
     this._showLevelTitle(this.state.level + (nextState ? 1 : 0));
+    document.getElementById('perf-warning').style.display = 'none'; // re-hide on every level load
+    clearTimeout(this._loadWindowTimer);
 
     // teardown every level-owned system in order
     this._teardownLevel();
@@ -393,9 +395,27 @@ export default class Game {
       this.post?.compile?.();
       await frame();
     } catch { /* non-fatal — worst case we compile lazily as before */ }
+    // low-res load window: the first seconds of a new level are fill-rate-bound
+    // (all-new geometry/textures rasterized at once). Start at 75% resolution and
+    // restore full res once the overlay lifts and fps has settled (or after 8 s).
+    this._loadWindowRes();
     this._hideLevelTitleWhenReady();
     this._updateHUD();
     if (!this._loopStarted) { this._loopStarted = true; this._animate(); }
+  }
+
+  // low-res load window helper: drop to 75% res now, restore when settled
+  _loadWindowRes() {
+    if (this._resScaled) return; // adaptive tier already owns the resolution
+    const full = Math.min(devicePixelRatio, 2);
+    this.renderer.setPixelRatio(full * 0.75);
+    this.post.setSize(Math.round(innerWidth * full * 0.75), Math.round(innerHeight * full * 0.75));
+    clearTimeout(this._loadWindowTimer);
+    this._loadWindowTimer = setTimeout(() => {
+      if (this._resScaled) return; // adaptive tier took over meanwhile
+      this.renderer.setPixelRatio(full);
+      this.post.setSize(Math.round(innerWidth * full), Math.round(innerHeight * full));
+    }, 8000);
   }
 
   _generateDungeon() {
@@ -1417,7 +1437,13 @@ export default class Game {
         this.world?.setDegraded(0.5);
         document.getElementById('perf-warning').style.display = 'block';
       }
-    } else this._lowFpsTimer = Math.max(0, this._lowFpsTimer - dt);
+    } else {
+      this._lowFpsTimer = Math.max(0, this._lowFpsTimer - dt);
+      // recovered: hide the warning again
+      if (this._degraded && this._avgFps() >= 30) {
+        document.getElementById('perf-warning').style.display = 'none';
+      }
+    }
   }
 
   _avgFps() {

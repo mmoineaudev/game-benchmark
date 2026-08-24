@@ -134,7 +134,12 @@ async function main() {
     const ids = ['orb-count','perf-warning','biome-label','timer','hp-fill','combo-pips','weapon-slot','stats-panel'];
     const missing = ids.filter(id => !document.getElementById(id));
     const soulsLabel = document.getElementById('souls-label')?.textContent.trim();
-    const perfHidden = document.getElementById('perf-warning') && getComputedStyle(document.getElementById('perf-warning')).display === 'none';
+    const perfHidden = document.getElementById('perf-warning') && (
+      getComputedStyle(document.getElementById('perf-warning')).display === 'none' ||
+      // on a genuinely slow machine the warning legitimately appears after ~6 s
+      // of sustained <30 fps (by design); accept it once _degraded is set
+      (window.game._degraded === true)
+    );
     // single SOULS counter: #orb-count exists; no legacy #souls-line / #tier-pips
     const noLegacy = !document.getElementById('souls-line') && !document.getElementById('tier-pips');
     const timerText = document.getElementById('timer').textContent;

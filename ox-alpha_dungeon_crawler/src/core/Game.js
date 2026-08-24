@@ -657,6 +657,8 @@ export default class Game {
 
     // ---- buffs ----
     if (dt > 0 && this.state.updateBuff(dt)) this._onBuffExpired();
+    // BRIGHT visual: ambient ×2 while active (applyBRIGHT is edge-safe, cheap to call every frame)
+    this.lighting?.applyBRIGHT?.(this.state.buffEffect === 1, BIOMES[this.state.biome]);
 
     // ---- skeletons / boss / hunter ----
     const brightActive = this.state.buffEffect === 1;

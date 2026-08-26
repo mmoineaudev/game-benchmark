@@ -404,18 +404,28 @@ export default class Game {
     if (!this._loopStarted) { this._loopStarted = true; this._animate(); }
   }
 
-  // low-res load window helper: drop to 75% res now, restore when settled
+  // low-res load window helper: drop to 75% res now, restore ONLY when fps is
+  // healthy — a fixed timeout restored res mid-combat (setSize reallocates the
+  // framebuffer + all post targets = multi-hundred-ms freeze at the worst moment)
   _loadWindowRes() {
     if (this._resScaled) return; // adaptive tier already owns the resolution
     const full = Math.min(devicePixelRatio, 2);
     this.renderer.setPixelRatio(full * 0.75);
     this.post.setSize(Math.round(innerWidth * full * 0.75), Math.round(innerHeight * full * 0.75));
     clearTimeout(this._loadWindowTimer);
-    this._loadWindowTimer = setTimeout(() => {
+    const tryRestore = () => {
       if (this._resScaled) return; // adaptive tier took over meanwhile
-      this.renderer.setPixelRatio(full);
-      this.post.setSize(Math.round(innerWidth * full), Math.round(innerHeight * full));
-    }, 8000);
+      // restore only when the machine can clearly afford it (or after 25s hard cap)
+      const waitedTooLong = performance.now() - this._loadWindowStart > 25000;
+      if (this._avgFps() >= 45 || waitedTooLong) {
+        this.renderer.setPixelRatio(full);
+        this.post.setSize(Math.round(innerWidth * full), Math.round(innerHeight * full));
+      } else {
+        this._loadWindowTimer = setTimeout(tryRestore, 2000);
+      }
+    };
+    this._loadWindowStart = performance.now();
+    this._loadWindowTimer = setTimeout(tryRestore, 8000);
   }
 
   _generateDungeon() {
@@ -766,7 +776,10 @@ export default class Game {
     }
 
     // ---- HUD & evolution ----
-    this._updateHUD();
+    // HUD writes are DOM-heavy (pips, styles, danger sectors); 10 Hz is plenty
+    // for readable numbers and keeps the rAF frame lean during heavy combat
+    this._hudAccum = (this._hudAccum ?? 1) + rawDt;
+    if (this._hudAccum >= 0.1) { this._hudAccum = 0; this._updateHUD(); }
     this._checkWeaponEvolution();
 
     // enemy glow targets

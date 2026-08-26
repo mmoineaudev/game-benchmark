@@ -53,7 +53,7 @@ gate('boss 5 hearts (+5 past base → 118)', bossHp(7, 0, 0, 8) === 118);
 gate('boss 100 souls + 5 hearts → 154', bossHp(7, 0, 100, 8) === 154);
 
 // BOSS constants
-gate('BOSS constants', BOSS.INTERVAL === 7 && BOSS.HP_MULT === 22.5 && BOSS.MAX_MINIONS === 25 && BOSS.CHARGE_DMG === 2);
+gate('BOSS constants', BOSS.INTERVAL === 7 && BOSS.HP_MULT === 22.5 && BOSS.MAX_MINIONS === 10 && BOSS.CHARGE_DMG === 2);
 
 // BURN — v2 ruling: 30 flat on NG0
 gate('burn NG0 = 30', burnHp(0) === 30);

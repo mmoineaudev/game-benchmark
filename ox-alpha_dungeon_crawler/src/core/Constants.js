@@ -118,7 +118,7 @@ export const BOSS = {
   SMOKE_DMG: 1,
   SUMMON_INTERVAL: 6,
   SUMMON_HEARTS_MULT: 1.5,
-  MAX_MINIONS: 25,
+  MAX_MINIONS: 10,
   DRIFT_SPEED: 2.2,
   DRIFT_KEEP: 2.5,
   RADIUS: 0.9
@@ -239,6 +239,9 @@ export const ENEMY_SPAWN = {
   MAX_ALIVE: 200,
   SPAWN_CAP: 100,          // spawnMult capped at ×100
   EXCESS_HP_PER_10: 1.5,   // past cap: +150% HP per 10 excess (linear)
+  HARD_CAP: 24,             // planned-mob cap (§16.1) — excess slots convert to mob HP
+  EXCESS_HP_PER: 0.1,       // each planned slot beyond HARD_CAP: +10% mob HP
+  LIVE_CAP: 30,             // hard live-body cap (mobs + boss minions); queue pauses at cap
   SPAWN_PLAYER_DIST: 30,   // spawns only > 30 m from player
   DEFER_PLAYER_DIST: 30,   // queued spawn within 30 m rotates back
   FROZEN_DIST: 40,         // mobs > 40 m frozen immobile

@@ -13,6 +13,7 @@ import { circleHitsBox, resolveCircleCollisions } from '../core/Collision.js';
 export default class SkeletonSystem {
   constructor(scene) {
     this.scene = scene;
+    this.excessHpMult = 1;   // planned-mob excess → HP multiplier (§16.1)
     this.enemies = [];        // live mobs (Skeleton instances)
     this.boss = null;
     this.minions = [];        // summoned wraiths
@@ -108,6 +109,11 @@ export default class SkeletonSystem {
     const spawnMult = Math.min(1 + (level + souls) / 10, ENEMY_SPAWN.SPAWN_CAP);
     let slots = Math.min(Math.round((2 + (level - 1)) * spawnMult), ENEMY_SPAWN.MAX_ALIVE);
     if (hasArena) slots += 2;
+    // §16.1 hard cap: planned bodies capped at HARD_CAP; the excess converts to
+    // mob health so late levels stay dense-feeling without unbounded bodies.
+    const excess = Math.max(0, slots - ENEMY_SPAWN.HARD_CAP);
+    this.excessHpMult = 1 + excess * ENEMY_SPAWN.EXCESS_HP_PER;
+    slots = Math.min(slots, ENEMY_SPAWN.HARD_CAP);
     // candidate cells: BFS distance ≥ 6 from entrance, excluding exit room
     const cells = this._candidateCells(dungeon);
     if (!cells.length) return;
@@ -169,6 +175,9 @@ export default class SkeletonSystem {
     // reveal one mob every SPAWN_INTERVAL; queued spawns within 30 m rotate to back
     this.revealTimer -= dt;
     while (this.revealTimer <= 0 && this.queue.length) {
+      // §16.1 live-body cap: pause the reveal queue at LIVE_CAP live bodies
+      // (minions count toward it); the queue resumes as bodies die.
+      if (this._liveCount() >= ENEMY_SPAWN.LIVE_CAP) break;
       const entry = this.queue.shift();
       const cellPos = { x: entry.cell.x * 6, z: entry.cell.z * 6 };
       const dpx = cellPos.x - playerPos.x, dpz = cellPos.z - playerPos.z;
@@ -194,7 +203,7 @@ export default class SkeletonSystem {
 
   _spawnOne(entry, level, ngPlus, souls, bossKills, jitter) {
     const def = ENEMY_TYPES[entry.typeKey];
-    const hpMult = enemyHpMultiplier(ngPlus, level, souls);
+    const hpMult = enemyHpMultiplier(ngPlus, level, souls) * this.excessHpMult;
     let hp = Math.ceil(def.hp * hpMult);
     let drops = def.drops;
     let elite = null;

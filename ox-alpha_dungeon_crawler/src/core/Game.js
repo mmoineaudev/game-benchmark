@@ -467,7 +467,7 @@ export default class Game {
     this.skeletons.onPlayerDamaged = (dmg, source) => this._damagePlayer(dmg);
     this.skeletons.onBurn = () => this._message('Something stirs in the ashes...');
     this.skeletons.onBlinkHit = (x, z, radius, dmg) => {
-      const p = this.playerPos();
+      const p = this.state.player;
       if ((p.x - x) ** 2 + (p.z - z) ** 2 < radius ** 2) this._damagePlayer(dmg);
     };
     this.skeletons.onSmokeTick = (dmg) => this._damagePlayer(dmg);

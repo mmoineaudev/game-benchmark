@@ -60,8 +60,6 @@ export default class GameState {
     this.sprintHoldTime += dt;
     while (this.sprintHoldTime >= PLAYER.SPRINT_ACCEL_WINDOW) {
       this.sprintHoldTime -= PLAYER.SPRINT_ACCEL_WINDOW;
-      const next = 1 + (this.sprintMult() - 1 + PLAYER.SPRINT_ACCEL_STEP) / PLAYER.SPRINT_MULT;
-      // tier accumulates multiplicatively on the base; cap total ×3
       this.sprintTier += 1;
     }
   }

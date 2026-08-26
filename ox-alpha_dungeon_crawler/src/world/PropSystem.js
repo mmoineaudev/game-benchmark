@@ -203,8 +203,22 @@ export default class PropSystem {
         const nw = biomeId === 'FLOODED_RUINS' ? 1 : (1 + (rng() < 0.5 ? 1 : 0));
         const wispColor = biomeId === 'FLOODED_RUINS' ? 0x4adfc8 : 0x88aaff;
         for (let i = 0; i < nw; i++) {
+          // soft radial glow texture (shared) — was `map: rng()` which passed a
+          // bare float as the texture and hard-crashed SpriteMaterial rendering
+          if (!PropSystem._wispTex) {
+            const c = document.createElement('canvas');
+            c.width = c.height = 64;
+            const g = c.getContext('2d');
+            const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+            grad.addColorStop(0, 'rgba(255,255,255,1)');
+            grad.addColorStop(0.4, 'rgba(255,255,255,0.5)');
+            grad.addColorStop(1, 'rgba(255,255,255,0)');
+            g.fillStyle = grad;
+            g.fillRect(0, 0, 64, 64);
+            PropSystem._wispTex = new THREE.CanvasTexture(c);
+          }
           const spriteMat = new THREE.SpriteMaterial({
-            map: rng(), color: wispColor,
+            map: PropSystem._wispTex, color: wispColor,
             blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.85
           });
           const spr = new THREE.Sprite(spriteMat);

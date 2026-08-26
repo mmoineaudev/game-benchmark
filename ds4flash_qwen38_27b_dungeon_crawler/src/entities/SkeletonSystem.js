@@ -143,8 +143,8 @@ export class SkeletonSystem {
     this._planSlots = 0;
     // --- Sustained spawning: the §16.1 slot formula is the floor's TARGET
     // --- population, not a one-shot grant. When kills drain the floor below
-    // target, the queue refills from the original recipe on a regen timer so
-    // the level keeps pressure until you descend (see _sustainSpawns).
+    // --- target, the queue refills from the original recipe on a regen timer so
+    // --- the level keeps pressure until you descend (see _sustainSpawns).
     this._targetPop = 0;
     this._spawnRecipe = [];     // the original finite plan, reused to refill
     this._recipeCycle = 0;      // round-robin index into _spawnRecipe
@@ -154,6 +154,7 @@ export class SkeletonSystem {
     this._disposed = false;
     this._burnSpawned = false;
     this._burnDone = false;
+    this._deadThisFrame = new Set();
 
     // Boss
     this.boss = null;
@@ -194,6 +195,27 @@ export class SkeletonSystem {
     for (let i = 0; i < SHOCK_POOL; i++) {
       this._shockwaves.push({ active: false, t: 0, x: 0, z: 0, mesh: null, mat: null });
     }
+
+    // Death burst visual rings (one pooled mesh, reused per kill).
+    this._deathRing = null;
+    this._deathRingMat = null;
+    if (scene) {
+      this._deathRingMat = new THREE.MeshBasicMaterial({
+        color: 0x9966ff,
+        transparent: true,
+        opacity: 0,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+      this._deathRingGeo = new THREE.RingGeometry(0.15, 0.22, 16);
+      this._deathRing = new THREE.Mesh(this._deathRingGeo, this._deathRingMat);
+      this._deathRing.rotation.x = -Math.PI / 2;
+      this._deathRing.position.y = 0.05;
+      this._deathRing.visible = false;
+      this._deathRing.userData.noGround = true;
+      scene.add(this._deathRing);
+    }
+    this._deathRingT = 0;
 
     // Compute scaling for the level (§16.1/§20).
     this._speedMult = ENEMY.speedMult(this.level, this.bossKills);
@@ -445,6 +467,7 @@ export class SkeletonSystem {
     s.onAttackHit = (enemy) => this._onEnemyAttackHit(enemy);
     s.onProjectile = (info) => this._fireEnemyProjectile(info);
     s.onDeath = (enemy) => this._onEnemyDeath(enemy);
+    s._spawnTimer = 1.5; // 1.5s no-collision grace so close spawns can drift apart
     if (type === 'BURN') {
       s.onFirePatch = (x, z) => { if (this.onFirePatch) this.onFirePatch(x, z); };
     }
@@ -541,7 +564,7 @@ export class SkeletonSystem {
       this._onEnemyDeath(enemy);
       this._burnDone = true;
     };
-    this.burn.onFirePatch = (x, z) => { if (this.onFirePatch) this.onFirePatch(x, z); };
+    s.onFirePatch = (x, z) => { if (this.onFirePatch) this.onFirePatch(x, z); };
     this.living.push(this.burn);
     if (this.onToast) this.onToast('The BURN rises — the level is cleared!');
   }
@@ -815,6 +838,20 @@ export class SkeletonSystem {
     return this.spawnQueue.length === 0;
   }
 
+  /** Force all dormant living skeletons into CHASE. */
+  _forceWake(player) {
+    for (const s of this.living) {
+      if (!s._disposed && s.alive && s.state === 'DORMANT') {
+        s.wakeTimer = 0;
+        s.state = 'CHASE';
+      }
+    }
+    // If the boss exists and has a wake gate, nudge it too.
+    if (this.boss && typeof this.boss.wakeTimer === 'number') {
+      this.boss.wakeTimer = 0;
+    }
+  }
+
   /** No living non-boss enemies AND queue drained. */
   fullyCleared() {
     if (!this.queueDrained()) return false;
@@ -838,6 +875,7 @@ export class SkeletonSystem {
 
     const frozen = !!opts.frozen;
     const fleeing = !!opts.fleeing;
+    const postCountdown = !!opts.postCountdown;
 
     // --- Reveal queued spawns (§16.1) ---
     if (!frozen && this.spawnQueue.length > 0) {
@@ -847,6 +885,9 @@ export class SkeletonSystem {
         this._revealNext(player);
       }
     }
+    // Force-dormant wake after the initial countdown: any mobs still in
+    // DORMANT are forced to CHASE so they actually move instead of idling.
+    if (postCountdown) this._forceWake(player);
     // --- Sustained spawning: refill the queue after kills so the floor holds
     //     its target population (see _sustainSpawns). No-op on boss levels. ---
     if (!frozen) this._sustainSpawns(dt, player);
@@ -855,6 +896,7 @@ export class SkeletonSystem {
     // Perf: cached opts object (was allocated per enemy per frame).
     const eopts = this._enemyOpts;
     eopts.grid = this.boxGrid;
+    eopts.forcePathfind = postCountdown;
     for (let i = this.living.length - 1; i >= 0; i--) {
       const s = this.living[i];
       if (s._disposed) { this.living.splice(i, 1); continue; }

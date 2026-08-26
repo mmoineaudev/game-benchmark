@@ -6,22 +6,38 @@
 //
 // Rig: named bones root / ribcage / head / armL / armR / forearmL / forearmR /
 // legL / legR / shinL / shinR as a THREE.Group hierarchy of thin box/cylinder
-// segments (skeletal look: thin limbs, skull head, rib cage). Pose keyframes
-// are driven by a state machine DORMANT/WAKING/CHASE/ATTACK/DEAD. Materials
-// are transparent by construction; grounding via Box3 so the feet rest at y 0.
+// segments. Pose keyframes are driven by a state machine DORMANT/WAKING/CHASE/ATTACK/DEAD.
 //
-// Movement: sub-stepped at ≤0.08 u per step, each step resolved against the
-// collision AABBs with resolveCircleCollisions (radius 0.35). Phasing types
-// (Wraith) skip collision and pathing and fly straight.
+// FRAGILE: WAKING pose only keys head/armL/armR. forearmL/R, legL/R, shinL/R keep
+// bind-pose rotations during the 0.9 s wake transition. If the state machine stalls
+// in WAKING, those limbs appear missing/static. See _applyPose() and §6 below.
 //
-// Attack cycle: windup → swing → recover → cooldown. The hit lands at swing
-// progress ≥ 0.35 via `this.onAttackHit(this)` (Game resolves damage,
-// i-frames). Ranged types instead fire a projectile via `this.onProjectile`
-// at the same moment.
+// Movement: sub-stepped at ≤0.08 u per step, resolved against collision AABBs.
+// Phasing types (Wraith) skip collision and pathing and fly straight.
 //
-// Death: hp ≤ 0 → state DEAD → corpse held then faded (~0.6 s) → dispose().
-// `this.onDeath` is fired immediately for Game to credit orbs + 15% health
-// drop + purple burst.
+// Attack cycle: windup → swing → recover → cooldown. Hit lands at swing progress ≥ 0.35
+// via `this.onAttackHit(this)` (Game resolves damage, i-frames). Ranged types fire
+// a projectile via `this.onProjectile` at the same moment.
+//
+// Death: hp ≤ 0 → alive=false, state=DEAD → corpse hold 0.15 s → fade 0.45 s →
+// mesh.visible=false → dispose(). `this.onDeath` fires IMMEDIATELY at the moment
+// hp hits 0 (not at fade end). _deathFired guard ensures it fires exactly once.
+//
+// CALLBACK CONTRACT: onDeath/onAttackHit/onProjectile are set by _spawnMob() and
+// MUST NOT be overwritten. If a system needs to observe kills, wrap the existing
+// callback rather than replacing it.
+//
+// FIXED 2026-08-21: _updateDeath() previously set _disposed=true before dispose(),
+// which short-circuited dispose()'s guard and left meshes in the scene. dispose()
+// now runs first; its internal guard handles idempotency.
+//
+// §6 Fragility register
+// - DEAD pose assumes all 12 bone groups exist. A subclass that removes a bone must
+//   also prune POSES[DEAD] or _applyPose() will skip that bone silently (no crash).
+// - _updateDeath fades ALL tracked materials. If a subclass adds a non-fadeable
+//   material, it will be dimmed too. Track fadeable materials separately to fix.
+// - hit() sets _deathFired=true BEFORE calling onDeath. If onDeath ever becomes
+//   async, the guard must be rethought.
 
 import * as THREE from 'three';
 import { ENEMY } from '../core/Constants.js';
@@ -214,6 +230,7 @@ export class Skeleton {
     // LOS_REEVAL s; between checks reuse `_losVerdict`.
     this._losNext = 0;
     this._losVerdict = true;
+    this._spawnTimer = 0;     // invincible + no-collision grace after spawn
 
     // Ranged config (magician / archer variants override)
     this.projectileKind = null;   // 'orb' | 'arrow'
@@ -366,6 +383,14 @@ export class Skeleton {
       this._boneBases[name] = { x: node.rotation.x, y: node.rotation.y, z: node.rotation.z };
     }
     this.halo = halo;
+
+    // --- HP bar sprite (hidden by default, shown on hit) ---
+    this._hpBarSprite = null;
+    this._hpBarCanvas = null;
+    this._hpBarCtx = null;
+    this._hpBarDirty = true;
+    this._hpBarVisible = false;
+    this._lastHpFrac = 1;
 
     const scale = opts.scale || 1;
     this.mesh.scale.setScalar(scale);
@@ -525,6 +550,7 @@ export class Skeleton {
       }
       return true;
     }
+    this.showHpBar();
     return false;
   }
 
@@ -559,8 +585,11 @@ export class Skeleton {
     if (this.halo && this.halo.material) {
       this.halo.material.opacity = Math.max(0, 0.8 * (1 - fade));
     }
-    if (t >= DEATH_HOLD + DEATH_FADE) {
-      this._disposed = true; // mark first so dispose() doesn't early-return
+    if (this._hpBarSprite && this._hpBarSprite.material) {
+      this._hpBarSprite.material.opacity = Math.max(0, 1 - fade);
+    }
+    if (t >= DEATH_HOLD + DEATH_FADE && !this._disposed) {
+      this.mesh.visible = false;
       this.dispose();
     }
   }
@@ -571,10 +600,16 @@ export class Skeleton {
     this._disposed = true;
     if (this.scene && this.mesh.parent) this.scene.remove(this.mesh);
     else if (this.mesh.parent) this.mesh.parent.remove(this.mesh);
+    if (this._hpBarSprite && this._hpBarSprite.parent) this._hpBarSprite.parent.remove(this._hpBarSprite);
     for (const g of this._geometries) g.dispose();
     for (const m of this._materials) {
       if (m.map) m.map.dispose();
       m.dispose();
+    }
+    if (this._hpBarCanvas) {
+      this._hpBarCanvas.width = 0;
+      this._hpBarCanvas = null;
+      this._hpBarCtx = null;
     }
     this._geometries.length = 0;
     this._materials.length = 0;
@@ -688,6 +723,7 @@ export class Skeleton {
    */
   _resolve(p) {
     const grid = this._grid;
+    if (grid && this._spawnTimer > 0) return; // spawn grace: no pushes
     if (grid) { grid.resolve(p, RADIUS); return; }
     const boxes = this._boxes;
     if (boxes && boxes.length) resolveCircleCollisions(boxes, p, RADIUS);
@@ -696,7 +732,7 @@ export class Skeleton {
   /** Circle-vs-boxes hit test (grid accelerated when available). */
   _hits(x, z, r) {
     const grid = this._grid;
-    if (grid) return grid.circleHits(x, z, r);
+    if (grid && this._spawnTimer > 0) return false; // spawn grace: no blockers
     const boxes = this._boxes;
     return boxes && boxes.length && circleHitsBox(boxes, x, z, r);
   }
@@ -742,6 +778,76 @@ export class Skeleton {
     if (Math.abs(diff) <= maxTurn) this.facing = yaw;
     else this.facing += Math.sign(diff) * maxTurn;
     this.mesh.rotation.y = this.facing;
+  }
+
+  /** Show the HP bar, draw it for the current hp fraction, and keep it synced. */
+  showHpBar() {
+    if (!this.scene) return;
+    if (!this._hpBarSprite) this._buildHpBar();
+    this._hpBarVisible = true;
+    if (this._hpBarSprite) this._hpBarSprite.visible = true;
+    this._drawHpBar(this.maxHp > 0 ? Math.max(0, this.hp / this.maxHp) : 0);
+  }
+
+  /** Update HP bar visibility/opacity. Call from per-frame enemy update. */
+  _updateHpBar(dt) {
+    if (!this._hpBarVisible) return;
+    if (!this.alive) {
+      this._hideHpBar();
+      return;
+    }
+    const frac = this.maxHp > 0 ? Math.max(0, this.hp / this.maxHp) : 0;
+    this._drawHpBar(frac);
+    const s = this.mesh;
+    if (s && this._hpBarSprite) {
+      this._hpBarSprite.position.copy(s.position);
+      this._hpBarSprite.position.y += 1.9;
+    }
+  }
+
+  _hideHpBar() {
+    this._hpBarVisible = false;
+    if (this._hpBarSprite) this._hpBarSprite.visible = false;
+  }
+
+  _buildHpBar() {
+    const W = 128, H = 14;
+    const c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    this._hpBarCanvas = c;
+    this._hpBarCtx = c.getContext('2d');
+    const tex = new THREE.CanvasTexture(c);
+    const mat = this._trackMat(new THREE.SpriteMaterial({
+      transparent: true,
+      depthTest: false,
+      map: tex,
+    }));
+    const sp = new THREE.Sprite(mat);
+    sp.name = 'hp-bar';
+    sp.scale.set(0.7, 0.08, 1);
+    sp.renderOrder = 9;
+    this.mesh.add(sp);
+    this._hpBarSprite = sp;
+    this._hpBarTex = tex;
+    this._drawHpBar(this.maxHp > 0 ? Math.max(0, this.hp / this.maxHp) : 0);
+  }
+
+  _drawHpBar(frac) {
+    if (!this._hpBarCtx) return;
+    const q = Math.max(0, Math.min(1, frac));
+    if (q === this._lastHpFrac) return;
+    this._lastHpFrac = q;
+    const ctx = this._hpBarCtx;
+    const W = this._hpBarCanvas.width;
+    const H = this._hpBarCanvas.height;
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = 'rgba(10,8,8,0.82)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#7f1f1f';
+    ctx.fillRect(2, 2, W - 4, H - 4);
+    ctx.fillStyle = '#d42a2a';
+    ctx.fillRect(2, 2, (W - 4) * q, H - 4);
+    if (this._hpBarTex) this._hpBarTex.needsUpdate = true;
   }
 
   _syncMesh() {
@@ -1005,6 +1111,7 @@ export class Skeleton {
     // Hit-flash decay — runs in every state (live, frozen, fleeing, dying) so
     // a flash triggered by a hit always animates out, even mid-death-fade.
     this._updateHitFlash(dt);
+    this._updateHpBar(dt);
     // Perf: cache the per-update collision source (shared BoxGrid when
     // SkeletonSystem provides one, else the raw box array) so the movement
     // helpers avoid re-deriving it.
@@ -1077,15 +1184,16 @@ export class Skeleton {
       if (this._phase === 'cd') {
         // Movement.
         const distBudget = this.speed * dt;
+        const forcePathfind = !!opts.forcePathfind;
         if (this.isRanged()) {
           this._rangedMovement(dt, px, pz, dist, collisionBoxes, distBudget);
         } else if (this.phases) {
           // Straight flight, no pathing/LOS.
           this._moveToward(px, pz, distBudget, dt, collisionBoxes, { noPhase: false });
-        } else if (hasLOS) {
-          this._moveToward(px, pz, distBudget, dt, collisionBoxes);
-        } else {
+        } else if (forcePathfind || !hasLOS) {
           this._pathTowardPlayer(px, pz, dt, collisionBoxes);
+        } else {
+          this._moveToward(px, pz, distBudget, dt, collisionBoxes);
         }
       }
       this._applyPose();

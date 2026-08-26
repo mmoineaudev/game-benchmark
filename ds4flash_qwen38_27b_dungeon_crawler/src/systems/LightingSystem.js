@@ -276,15 +276,28 @@ export class LightingSystem {
         if (biome.torchMode === 'vaultOnly' && !vaultByCell.has(e.cx + ',' + e.cz)) continue;
         if (e.axis === 'X') {
           const z = e.boundary + cellSize / 2;
-          // nudge slightly off the wall line into the open cell
-          const westOpen = (e.cx === 0) || grid[e.cx - 1][e.cz] === 'empty';
-          const off = (westOpen ? -1 : 1) * 0.25;
-          positions.push(new THREE.Vector3(e.boundary + off, LIGHTING.TORCH_Y, z));
+          // Nudge further into the open cell so the light lands in walkable space.
+          const westOpen = grid[e.cx - 1] && grid[e.cx - 1][e.cz] === 'empty';
+          const off = (westOpen ? -1 : 1) * 0.7;
+          const px = e.boundary + off;
+          const pz = z;
+          // Only keep positions inside an empty cell to avoid wall-clipped lights.
+          const cx = Math.floor(px / cellSize);
+          const cz = Math.floor(pz / cellSize);
+          if (cx >= 0 && cx < gridSize && cz >= 0 && cz < gridSize && grid[cx][cz] === 'empty') {
+            positions.push(new THREE.Vector3(px, LIGHTING.TORCH_Y, pz));
+          }
         } else {
           const x = e.boundary + cellSize / 2;
-          const northOpen = (e.cz === 0) || grid[e.cx][e.cz - 1] === 'empty';
-          const off = (northOpen ? -1 : 1) * 0.25;
-          positions.push(new THREE.Vector3(x, LIGHTING.TORCH_Y, e.boundary + off));
+          const northOpen = grid[e.cx] && grid[e.cx][e.cz - 1] === 'empty';
+          const off = (northOpen ? -1 : 1) * 0.7;
+          const px = x;
+          const pz = e.boundary + off;
+          const cx = Math.floor(px / cellSize);
+          const cz = Math.floor(pz / cellSize);
+          if (cx >= 0 && cx < gridSize && cz >= 0 && cz < gridSize && grid[cx][cz] === 'empty') {
+            positions.push(new THREE.Vector3(px, LIGHTING.TORCH_Y, pz));
+          }
         }
       }
     }

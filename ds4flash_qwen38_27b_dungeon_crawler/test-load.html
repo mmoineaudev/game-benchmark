@@ -1,0 +1,34 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Load test</title>
+  <style>
+    body { margin: 0; background:#0b0b0b; color:#e8e3d4; font:14px/1.45 monospace; }
+    #log { white-space: pre-wrap; padding: 12px; }
+    .err { color:#ff5f5f; } .ok { color:#5fff5f; }
+  </style>
+</head>
+<body>
+  <div id="log">Starting...</div>
+  <script type="module">
+    const log = document.getElementById('log');
+    const out = (...args) => { log.textContent += args.join(' ') + '\n'; };
+
+    try {
+      out('[1] Importing main.js...');
+      const m = await import('/src/main.js');
+      out('[2] main.js loaded OK');
+      if (typeof m.game?.init === 'function') {
+        out('[3] game.init exists, calling...');
+        m.game.init().catch((e) => out('[ERR] init rejected:', e));
+      } else {
+        out('[3] No game.init; entry may not auto-start. window.game=', !!m.game);
+      }
+    } catch (e) {
+      out('[ERR] Import failed:', e && e.message ? e.message : e);
+      console.error(e);
+    }
+  </script>
+</body>
+</html>

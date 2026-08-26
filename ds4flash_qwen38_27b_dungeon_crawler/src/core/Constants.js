@@ -235,7 +235,7 @@ export const ENEMY = {
   // alive+queued == target. This turns "one-shot 2/4/7 mobs, then an empty
   // floor" into steady pressure without changing the formula's per-level scaling.
   REGEN_INTERVAL: 2.0,        // seconds between sustained respawns
-  SPAWN_PLAYER_DIST: 30,      // spawns only > 30 m from the player
+  SPAWN_PLAYER_DIST: 60,      // spawns only > 60 m from the player
   FROZEN_DIST: 40,            // mobs > 40 m frozen immobile
   SPAWN_CAP: 100,             // spawnMult capped at ×100
   SPAWN_HP_OVERFLOW_PER_10: 1.5, // +150% HP per 10 excess points past the cap

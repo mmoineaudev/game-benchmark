@@ -140,6 +140,8 @@ export class Game {
     this._fbHeld = false;
     this._originV = null;
     this._forwardV = null;
+    this._prevSafeSpawn = 0;
+    this._headlight = null;
   }
 
   // =========================================================================
@@ -217,10 +219,17 @@ export class Game {
     // renderer.render(scene, camera) and nothing camera-attached draws.
     this.scene.add(this.camera);
 
-    // Headlight (§10.1) — camera-attached fill light
-    const head = new THREE.PointLight(0xffd9a0, 2.4, 34, 1.2);
-    head.position.set(0, -0.2, 0);
+    // Headlight (§10.1) — camera-attached forward cone light
+    const head = new THREE.SpotLight(0xffd9a0, 3.2, 40, Math.PI / 5, 0.35, 1);
+    head.position.set(0, -0.25, 0);
+    head.target.position.set(0, -0.05, -1);
     this.camera.add(head);
+    this.camera.add(head.target);
+    this._headlight = head;
+
+    const fill = new THREE.PointLight(0xffd9a0, 1.1, 14, 1.4);
+    fill.position.set(0, -0.2, 0);
+    this.camera.add(fill);
 
     // Sword (camera-attached, §20)
     this.sword = new PlayerSword(this.camera, {
@@ -412,8 +421,17 @@ export class Game {
     s.health = s.maxHealth;
     s.runTime = 0;
     s.levelTime = 0;
-    this._bossPortalOpen = false;
+    s.collectedOrbs = 0;
+    s.weaponTier = 0;
+    s.activeBuff = null;
+    s.activeBuffTimer = 0;
+    s.invulnTimer = 0;
+    s.swordCombo = 0;
+    s.hitStop = 0;
     this._regenAcc = 0;
+    this._bossPortalOpen = false;
+    this._degraded = false;
+    this._prevSafeSpawn = 0;
     this._isRunning = true;
     this._regenerateDungeon();
   }
@@ -901,8 +919,21 @@ export class Game {
       this.state.pointerLocked = this.input.isPointerLocked();
     }
 
-    // Player movement
-    this._updatePlayer(sdt);
+    // Player movement — blocked during the initial safe-spawn countdown.
+    const safeSpawnEnded = this.state.safeSpawn <= 0;
+    const prevSafeSpawn = this._prevSafeSpawn > 0;
+    if (safeSpawnEnded && prevSafeSpawn) {
+      this._wakeDormantMobs();
+      this._forcePostCountdownPathfind();
+    }
+    this._prevSafeSpawn = this.state.safeSpawn;
+    if (safeSpawnEnded) this._updatePlayer(sdt);
+
+    // Player light: boost base illumination so props/skeletons read clearly.
+    if (this.lighting && this.lighting.ambient) {
+      const target = this._degraded ? 0.55 : 1.1;
+      this.lighting.ambient.intensity += (target - this.lighting.ambient.intensity) * 0.05;
+    }
 
     // Fireball charge (buff #2)
     this._updateFireballCharge(dt);
@@ -914,9 +945,10 @@ export class Game {
     if (this.skeletons) {
       const frozen = this.state.safeSpawn > 0;
       const fleeing = this.state.activeBuff === BUFF.EFFECTS.BRIGHT;
+      const postCountdown = !frozen && this._prevSafeSpawn > 0;
       this.skeletons.update(sdt,
         { x: this.state.x, z: this.state.z, invulnTimer: this.state.invulnTimer },
-        { frozen, fleeing });
+        { frozen, fleeing, postCountdown });
     }
     if (this.orbs) {
       this.orbs.update(sdt, {
@@ -1003,6 +1035,17 @@ export class Game {
     return f;
   }
 
+  /** Aim direction with pitch preserved.
+   *  Used for orb/fireball launch so you can aim up/down.
+   *  Movement/sword cones still use `_forward()` (XZ only). */
+  _aimDirection() {
+    const f = this._aimV || (this._aimV = new THREE.Vector3());
+    this.camera.getWorldDirection(f);
+    if (f.lengthSq() < 1e-6) f.set(0, 0, -1);
+    f.normalize();
+    return f;
+  }
+
   // =========================================================================
   // Player movement + collision (§8, §6)
   // =========================================================================
@@ -1010,6 +1053,7 @@ export class Game {
     const s = this.state;
     const i = this.input;
     if (!i) return;
+    if (s.safeSpawn > 0) return; // absolutely no motion during initial countdown
 
     let speedMult = 1;
     if (s.activeBuff === BUFF.EFFECTS.GODSPEED) speedMult *= BUFF.GODSPEED.moveMult;
@@ -1076,6 +1120,28 @@ export class Game {
       if (dx * dx + dz * dz <= w.r * w.r) return true;
     }
     return false;
+  }
+
+  /** Wake all dormant skeletons so they pursue the player after countdown. */
+  _wakeDormantMobs() {
+    if (!this.skeletons) return;
+    for (const s of this.skeletons.living) {
+      if (!s._disposed && s.alive && s.state === DORMANT) {
+        s.wakeTimer = 0;
+        s.state = WAKING;
+      }
+    }
+  }
+
+  /** Force A* pathfinding for non-phasing enemies after initial countdown. */
+  _forcePostCountdownPathfind() {
+    if (!this.skeletons) return;
+    for (const s of this.skeletons.living) {
+      if (!s._disposed && s.alive && !s.phases) {
+        s._path = [];
+        s._pathT = 0;
+      }
+    }
   }
 
   // =========================================================================
@@ -1163,12 +1229,12 @@ export class Game {
 
   _fireOrb() {
     if (!this.shooter) return;
-    this.shooter.fire(this._forward(), this._origin(), this._now);
+    this.shooter.fire(this._aimDirection(), this._origin(), this._now);
   }
 
   _fireFireball() {
     if (!this.shooter) return;
-    this.shooter.fireFireball(this._forward(), this._origin(), this._now);
+    this.shooter.fireFireball(this._aimDirection(), this._origin(), this._now);
   }
 
   _spendOrb() {

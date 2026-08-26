@@ -1,17 +1,24 @@
 {
-  "level": 14,
-  "runTime": 342.5,
-  "souls": 137,
-  "weaponTier": 3,
-  "maxHealth": 5,
-  "ngPlus": 1,
-  "bossKills": 2,
-  "lastDeath": {
-    "reason": "dead",
-    "level": 14,
-    "time": 342.5,
-    "orbs": 137,
-    "ngPlus": 1,
-    "date": "2026-01-01T00:00:00Z"
+  "level": 2,
+  "runTime": 195.98810000000054,
+  "levelTime": 31.873700000000156,
+  "ngPlus": 0,
+  "bossKills": 0,
+  "kills": 5,
+  "collectedOrbs": 13,
+  "weaponTier": 0,
+  "totalOrbs": 0,
+  "maxHealth": 3,
+  "health": 0,
+  "activeBuff": "GODSPEED",
+  "activeBuffTimer": 41.02000000000001,
+  "biome": null,
+  "biomeIndex": 0,
+  "player": {
+    "x": 0,
+    "y": 0,
+    "z": 0,
+    "yaw": 0,
+    "pitch": 0
   }
 }

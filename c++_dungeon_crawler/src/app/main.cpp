@@ -1,15 +1,23 @@
-// dc_app — Phase 0 exit: GLFW window + OpenGL 3.3 CORE context with
-//   • one instanced lit mesh (unit cube × N instances, glDrawElementsInstanced)
-//   • ONE shadow pass (256² FBO depth, single light, static assignment)
-//   • ONE bloom post pass (bright-pass threshold → ping-pong gaussian → composite)
+// dc_app — Phase 2 playable spine.
 //
-// Headless probe:  dc_app --frames N --save out.ppm [--width W --height H]
-//   renders N frames then dumps a PPM screenshot (needs a display/GLX).
-// FPS gate:        dc_app --fps  (prints live fps; Phase-0 gate: 60 fps on the 4080)
+// Renders the *generated* STONE dungeon first-person, driven headlessly or
+// interactively:
+//   • instanced world build (floors / ceilings / walls) from dc_core
+//   • pointer-lock camera + AZERTY-safe input (GLFW physical key codes:
+//     GLFW_KEY_W/A/S/D = the W/A/S/D *positions*, so AZERTY ZQSD is free)
+//   • sub-stepped collision movement (dc::movePlayer, zero-tunneling)
+//   • sprint (Shift) with the GameState sprint-accel formula + FOV kick
+//   • ONE shadow-casting torch (256², static-assigned at level build)
+//   • headlight (camera point light, no shadow) + ambient
+//   • bloom post pass (bright → ping-pong gaussian → composite)
+//   • crosshair + on-screen fps / level / biome readout
 //
-// Note: this spike is deliberately self-contained. The renderer-agnostic
-// `Renderer` interface (include/dc/renderer.hpp) is where this logic moves
-// in Phase 2 so the sim can be driven by a NullRenderer in headless tests.
+// Headless probe (verification):  dc_app --frames N --save out.ppm
+//   renders N frames of a real generated dungeon then dumps a PPM.
+// FPS gate:  dc_app --fps  (30 fps floor; degraded mode sheds debris tail)
+//
+// The sim state (GameState, Dungeon, collision boxes, movement) all live in
+// dc_core so this is the same code the headless parity tests exercise.
 #define GL_GLEXT_PROTOTYPES
 #include <GL/gl.h>
 #include <GL/glext.h>
@@ -22,12 +30,23 @@
 #include <string>
 #include <vector>
 
+#include "dc/collision.hpp"
+#include "dc/constants.hpp"
 #include "dc/crashdiag.hpp"
+#include "dc/dungeon_gen.hpp"
+#include "dc/movement.hpp"
+#include "dc/state.hpp"
+#include "dc/world.hpp"
 
 namespace {
 
+namespace camera = dc::camera;
+namespace player = dc::player;
+namespace lighting = dc::lighting;
+namespace world = dc::world;
+
 constexpr int kShadowSize = 256; // spec §12.1: 256² shadow map
-constexpr int kInstances = 24;   // 6×4 grid of lit cubes
+constexpr float kEyeHeight = 1.6f;
 
 // ---------- tiny mat4 (column-major, GL order) ----------
 struct Mat4 {
@@ -63,17 +82,6 @@ struct Mat4 {
     m.m[12] = -(s[0] * eye[0] + s[1] * eye[1] + s[2] * eye[2]);
     m.m[13] = -(u[0] * eye[0] + u[1] * eye[1] + u[2] * eye[2]);
     m.m[14] = f[0] * eye[0] + f[1] * eye[1] + f[2] * eye[2];
-    m.m[15] = 1;
-    return m;
-  }
-  static Mat4 ortho(float l, float r, float b, float t, float n, float f) {
-    Mat4 m{};
-    m.m[0] = 2 / (r - l);
-    m.m[5] = 2 / (t - b);
-    m.m[10] = -2 / (f - n);
-    m.m[12] = -(r + l) / (r - l);
-    m.m[13] = -(t + b) / (t - b);
-    m.m[14] = -(f + n) / (f - n);
     m.m[15] = 1;
     return m;
   }
@@ -120,24 +128,27 @@ GLuint linkProgram(GLuint vs, GLuint fs) {
   return p;
 }
 
+// Lit cube shader: per-instance offset/scale/color, ONE shadow point light
+// (the torch) + ONE headlight (camera, no shadow) + ambient.
 const char* kLitVert = R"(
 #version 330 core
 layout(location=0) in vec3 aPos;
 layout(location=1) in vec3 aNormal;
 layout(location=2) in vec3 aOffset;
-layout(location=3) in vec3 aColor;
+layout(location=3) in vec3 aScale;
+layout(location=4) in vec3 aColor;
 uniform mat4 uViewProj;
-uniform mat4 uLightVP;
+uniform mat4 uTorchVP;
 out vec3 vNormal;
 out vec3 vColor;
 out vec3 vWorld;
-out vec4 vLightPos;
+out vec4 vTorchPos;
 void main() {
-  vec3 wp = aPos + aOffset;
+  vec3 wp = aPos * aScale + aOffset;
   vWorld = wp;
   vNormal = aNormal;
   vColor = aColor;
-  vLightPos = uLightVP * vec4(wp, 1.0);
+  vTorchPos = uTorchVP * vec4(wp, 1.0);
   gl_Position = uViewProj * vec4(wp, 1.0);
 }
 )";
@@ -147,20 +158,24 @@ const char* kLitFrag = R"(
 in vec3 vNormal;
 in vec3 vColor;
 in vec3 vWorld;
-in vec4 vLightPos;
-uniform vec3 uLightPos;
-uniform vec3 uLightColor;
-uniform float uLightIntensity;
-uniform float uUseShadow;
+in vec4 vTorchPos;
+uniform vec3 uTorchPos;
+uniform vec3 uTorchColor;
+uniform float uTorchIntensity;
+uniform float uTorchDist;
+uniform vec3 uHeadPos;
+uniform vec3 uHeadColor;
+uniform float uHeadIntensity;
+uniform float uHeadDist;
+uniform float uAmbient;
 uniform sampler2D uShadowMap;
 out vec4 fragColor;
 float shadowFactor(vec4 lpos) {
-  if (uUseShadow < 0.5) return 1.0;
   if (lpos.w <= 0.0) return 1.0;
   vec3 p = lpos.xyz / lpos.w;
   p = p * 0.5 + 0.5;
   if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0 || p.z > 1.0) return 1.0;
-  float bias = 0.0015;
+  float bias = 0.002;
   float s = 0.0;
   float texel = 1.0 / 256.0;
   for (int i = -1; i <= 1; i++)
@@ -168,15 +183,19 @@ float shadowFactor(vec4 lpos) {
       s += step(p.z - bias, texture(uShadowMap, p.xy + vec2(i, j) * texel).x);
   return s / 9.0;
 }
+vec3 pointLight(vec3 L, vec3 lcolor, float intensity, float distance, float shadow) {
+  vec3 ld = L - vWorld;
+  float dist = length(ld);
+  float diff = max(dot(normalize(vNormal), ld / max(dist, 1e-4)), 0.0);
+  float cut = 1.0 - smoothstep(distance * 0.5, distance, dist); // JS-style cutoff
+  float atten = intensity * cut / (1.0 + 0.1 * dist + 0.02 * dist * dist);
+  return lcolor * diff * atten * shadow;
+}
 void main() {
-  vec3 n = normalize(vNormal);
-  vec3 ldir = uLightPos - vWorld;
-  float dist = length(ldir);
-  float diff = max(dot(n, ldir / dist), 0.0);
-  float atten = uLightIntensity / (1.0 + 0.02 * dist + 0.02 * dist * dist);
-  vec3 lit = vColor * uLightColor * (0.25 + diff * atten * shadowFactor(vLightPos));
-  lit += vColor * 0.18; // ambient floor
-  fragColor = vec4(lit, 1.0);
+  vec3 lit = vColor * uAmbient;
+  lit += pointLight(uTorchPos, uTorchColor, uTorchIntensity, uTorchDist, shadowFactor(vTorchPos));
+  lit += pointLight(uHeadPos, uHeadColor, uHeadIntensity, uHeadDist, 1.0);
+  fragColor = vec4(min(lit, vec3(1.5)), 1.0);
 }
 )";
 
@@ -230,24 +249,115 @@ void main() {
 }
 )";
 
+// ---------- instanced world (floors / ceilings / walls) ----------
+struct World {
+  dc::Dungeon dungeon;
+  dc::WorldCollision collision;
+  // GL instance VBOs: 9 floats/instance = offset(3) + scale(3) + color(3).
+  GLuint instFloor = 0, instCeil = 0, instWallH = 0, instWallE = 0;
+  int nFloor = 0, nCeil = 0, nWallH = 0, nWallE = 0;
+
+  void upload(const dc::Dungeon& d, const float cellCol[3], const float wallCol[3],
+              const float ceilCol[3]);
+  void buildInstanceData(const dc::Dungeon& d, std::vector<float>& floorInst,
+                         std::vector<float>& ceilInst, std::vector<float>& wallH,
+                         std::vector<float>& wallE) const;
+};
+
+void World::buildInstanceData(const dc::Dungeon& d, std::vector<float>& floorInst,
+                              std::vector<float>& ceilInst, std::vector<float>& wallH,
+                              std::vector<float>& wallE) const {
+  const float cs = (float)d.cellSize;
+  const float H = (float)dc::world::kWallHeight;
+  const float wt = (float)dc::kWallThickness;
+  floorInst.clear(); ceilInst.clear(); wallH.clear(); wallE.clear();
+  for (int z = 0; z < d.gridSize; z++) {
+    for (int x = 0; x < d.gridSize; x++) {
+      if (d.grid[z][x] == dc::Cell::kEmpty) continue;
+      const float wx = (float)(x * d.cellSize), wz = (float)(z * d.cellSize);
+      // floor + ceiling (thin slabs, one instance each)
+      floorInst.insert(floorInst.end(), {wx, 0.1f, wz, cs, 0.2f, cs, 0, 0, 0});
+      ceilInst.insert(ceilInst.end(), {wx, H - 0.1f, wz, cs, 0.2f, cs, 0, 0, 0});
+      // exposed/boundary edges → walls (same logic as WorldBuilder)
+      static const int kDirX[4] = {1, -1, 0, 0};
+      static const int kDirZ[4] = {0, 0, 1, -1};
+      for (int k = 0; k < 4; k++) {
+        const int dx = kDirX[k], dz = kDirZ[k];
+        const int nx = x + dx, nz = z + dz;
+        const bool oob = nx < 0 || nz < 0 || nx >= d.gridSize || nz >= d.gridSize;
+        if (!oob && d.grid[nz][nx] != dc::Cell::kEmpty) continue;
+        const float ex = wx + (float)(dx * d.cellSize) / 2.0f, ez = wz + (float)(dz * d.cellSize) / 2.0f;
+        if (dz != 0) { // N/S wall: spans x, thin in z
+          wallH.insert(wallH.end(), {ex, H / 2.0f, ez, cs, H, wt, 0, 0, 0});
+        } else { // E/W wall: spans z, thin in x
+          wallE.insert(wallE.end(), {ex, H / 2.0f, ez, wt, H, cs, 0, 0, 0});
+        }
+      }
+    }
+  }
+}
+
+void World::upload(const dc::Dungeon& d, const float cellCol[3], const float wallCol[3],
+                   const float ceilCol[3]) {
+  dungeon = d;
+  collision = buildCollisionBoxes(d);
+  std::vector<float> floorInst, ceilInst, wallH, wallE;
+  buildInstanceData(d, floorInst, ceilInst, wallH, wallE);
+  // stamp colors (9-float stride: offset,scale,color)
+  auto stamp = [&](std::vector<float>& v, const float c[3]) {
+    for (size_t i = 0; i < v.size(); i += 9) { v[i + 6] = c[0]; v[i + 7] = c[1]; v[i + 8] = c[2]; }
+  };
+  stamp(floorInst, cellCol); stamp(ceilInst, ceilCol); stamp(wallH, wallCol); stamp(wallE, wallCol);
+  nFloor = (int)(floorInst.size() / 9); nCeil = (int)(ceilInst.size() / 9);
+  nWallH = (int)(wallH.size() / 9); nWallE = (int)(wallE.size() / 9);
+  auto mkVbo = [&](const std::vector<float>& v) -> GLuint {
+    GLuint b = 0;
+    glGenBuffers(1, &b);
+    glBindBuffer(GL_ARRAY_BUFFER, b);
+    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(v.size() * sizeof(float)), v.data(), GL_STATIC_DRAW);
+    return b;
+  };
+  instFloor = mkVbo(floorInst); instCeil = mkVbo(ceilInst);
+  instWallH = mkVbo(wallH); instWallE = mkVbo(wallE);
+}
+
 struct App {
   GLFWwindow* window = nullptr;
-  GLuint vao = 0, vbo = 0, ebo = 0, instVbo = 0;
+  int width = 0, height = 0;
+  World world;
+  dc::GameState state;
+
+  // cube geometry + instance VAO
+  GLuint vao = 0, vbo = 0, ebo = 0;
   int vertCount = 0;
-  GLuint progScene = 0, progBright = 0, progBlur = 0, progComposite = 0;
+  // per-group instance VBOs are the World's; the VAO binds them at draw time
+  GLuint progScene = 0;
   GLuint quadVao = 0, quadVbo = 0;
+  GLuint progBright = 0, progBlur = 0, progComposite = 0;
   GLuint sceneFbo = 0, sceneTex = 0;
   GLuint shadowFbo = 0, shadowTex = 0;
-  GLuint brightFboA = 0, brightTexA = 0;
-  GLuint brightFboB = 0, brightTexB = 0;
-  int width = 0, height = 0;
-  // the single shadow-casting light (static assignment at build)
-  float lightPos[3] = {0, 6, 0};
-  float lightColor[3] = {1.0f, 0.6f, 0.24f};
-  float lightIntensity = 2.2f;
+  GLuint brightFboA = 0, brightTexA = 0, brightFboB = 0, brightTexB = 0;
+
+  // the single shadow-casting torch (static-assigned at level build)
+  float torchPos[3] = {0, 6, 0};
+  float torchColor[3] = {1.0f, 0.6f, 0.24f};
+  float torchIntensity = 2.2f;
+
+  // player transform (yaw/pitch are in state.player; camera pos mirrors it)
+  double camX = 0, camY = kEyeHeight, camZ = 0;
+  float fov = (float)camera::kFov;
+
+  // input (GLFW physical key codes — AZERTY-safe: bind by position)
+  bool keyW = false, keyS = false, keyA = false, keyD = false, keyShift = false;
+  double mouseDX = 0, mouseDY = 0;
+  bool pointerLocked = false;
 
   bool init(int w, int h, const char* title);
-  void frame(int frameIdx);
+  void buildWorldFromState();
+  void placePlayerAtEntrance();
+  void update(double dt, double rawDt);
+  void frame();
+  void drawGroup(GLuint instVbo, int count);
   void savePPM(const char* path);
   ~App();
 };
@@ -255,6 +365,29 @@ struct App {
 App::~App() {
   if (window) glfwDestroyWindow(window);
   if (window) glfwTerminate();
+}
+
+void App::buildWorldFromState() {
+  const float cellCol[3] = {0.42f, 0.40f, 0.37f};   // STONE flagstone
+  const float wallCol[3] = {0.34f, 0.32f, 0.30f};
+  const float ceilCol[3] = {0.28f, 0.27f, 0.26f};
+  world.upload(world.dungeon, cellCol, wallCol, ceilCol);
+  // static-assigned torch: above the entrance room, casting the 1 shadow map
+  if (world.dungeon.entranceCell) {
+    torchPos[0] = (float)(world.dungeon.entranceCell->x * world.dungeon.cellSize);
+    torchPos[2] = (float)(world.dungeon.entranceCell->z * world.dungeon.cellSize);
+    torchPos[1] = 6.0f;
+  }
+}
+
+void App::placePlayerAtEntrance() {
+  const dc::CellRef e = world.dungeon.entranceCell.value_or(dc::CellRef{0, 0});
+  const double cs = world.dungeon.cellSize;
+  state.player.x = e.x * cs;
+  state.player.z = e.z * cs;
+  state.player.yaw = (float)M_PI; // face into the dungeon
+  state.player.pitch = 0;
+  camX = state.player.x; camY = kEyeHeight; camZ = state.player.z;
 }
 
 bool App::init(int w, int h, const char* title) {
@@ -274,8 +407,8 @@ bool App::init(int w, int h, const char* title) {
   }
   glfwMakeContextCurrent(window);
   glfwSwapInterval(1);
-  width = w;
-  height = h;
+  width = w; height = h;
+  glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED); // pointer-lock equivalent
 
   int maj = 0, mino = 0;
   glGetIntegerv(GL_MAJOR_VERSION, &maj);
@@ -288,9 +421,9 @@ bool App::init(int w, int h, const char* title) {
       {{0, 0, 1}, {{-1, -1, 1}, {1, -1, 1}, {1, 1, 1}, {-1, 1, 1}}},
       {{0, 0, -1}, {{1, -1, -1}, {-1, -1, -1}, {-1, 1, -1}, {1, 1, -1}}},
       {{1, 0, 0}, {{1, -1, 1}, {1, -1, -1}, {1, 1, -1}, {1, 1, 1}}},
-      {{-1, 0, 0}, {{-1, -1, -1}, {-1, -1, 1}, {-1, 1, 1}, {-1, 1, -1}}},
+      {{-1, 0, 0}, {{-1, -1, 1}, {-1, -1, -1}, {-1, 1, -1}, {-1, 1, 1}}},
       {{0, 1, 0}, {{-1, 1, 1}, {1, 1, 1}, {1, 1, -1}, {-1, 1, -1}}},
-      {{0, -1, 0}, {{-1, -1, -1}, {1, -1, -1}, {1, -1, 1}, {-1, -1, 1}}},
+      {{0, -1, 0}, {{-1, -1, 1}, {1, -1, 1}, {1, -1, -1}, {-1, -1, -1}}},
   };
   std::vector<float> verts;
   std::vector<GLuint> idx;
@@ -307,37 +440,15 @@ bool App::init(int w, int h, const char* title) {
     idx.insert(idx.end(), {base, base + 1, base + 2, base, base + 2, base + 3});
   }
   vertCount = (int)idx.size();
-
-  // instance data: offset(3) + color(3), 6×4 grid
-  std::vector<float> insts;
-  const float cols[24][3] = {
-      {0.85, 0.5, 0.24}, {0.24, 0.6, 0.85}, {0.5, 0.85, 0.24}, {0.85, 0.24, 0.5},
-      {0.6, 0.3, 0.85}, {0.85, 0.85, 0.3}, {0.5, 0.85, 0.24}, {0.24, 0.6, 0.85},
-      {0.6, 0.3, 0.85}, {0.85, 0.85, 0.3}, {0.5, 0.85, 0.24}, {0.85, 0.24, 0.5},
-      {0.85, 0.5, 0.24}, {0.24, 0.6, 0.85}, {0.5, 0.85, 0.24}, {0.85, 0.24, 0.5},
-      {0.6, 0.3, 0.85}, {0.85, 0.85, 0.3}, {0.5, 0.85, 0.24}, {0.85, 0.24, 0.5},
-      {0.6, 0.3, 0.85}, {0.85, 0.85, 0.3}, {0.5, 0.85, 0.24}, {0.85, 0.24, 0.5},
-  };
-  for (int i = 0; i < kInstances; i++) {
-    int gx = i % 6, gz = i / 6;
-    insts.push_back(gx * 2.0f - 5.0f);
-    insts.push_back(0.5f);
-    insts.push_back(gz * 2.0f - 4.0f);
-    insts.push_back(cols[i][0]);
-    insts.push_back(cols[i][1]);
-    insts.push_back(cols[i][2]);
-  }
-
   glGenBuffers(1, &vbo);
   glBindBuffer(GL_ARRAY_BUFFER, vbo);
-  glBufferData(GL_ARRAY_BUFFER, (GLsizei)(verts.size() * sizeof(float)), verts.data(), GL_STATIC_DRAW);
+  glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(verts.size() * sizeof(float)), verts.data(), GL_STATIC_DRAW);
   glGenBuffers(1, &ebo);
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-  glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizei)(idx.size() * sizeof(GLuint)), idx.data(), GL_STATIC_DRAW);
-  glGenBuffers(1, &instVbo);
-  glBindBuffer(GL_ARRAY_BUFFER, instVbo);
-  glBufferData(GL_ARRAY_BUFFER, (GLsizei)(insts.size() * sizeof(float)), insts.data(), GL_STATIC_DRAW);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)(idx.size() * sizeof(GLuint)), idx.data(), GL_STATIC_DRAW);
 
+  // cube VAO: attrib 0,1 from vbo; the element buffer ebo is bound HERE so the
+  // VAO retains it (a VAO captures the EBO at bind time, not at draw time).
   glGenVertexArrays(1, &vao);
   glBindVertexArray(vao);
   glBindBuffer(GL_ARRAY_BUFFER, vbo);
@@ -345,14 +456,8 @@ bool App::init(int w, int h, const char* title) {
   glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 24, (void*)0);
   glEnableVertexAttribArray(1);
   glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 24, (void*)12);
-  glBindBuffer(GL_ARRAY_BUFFER, instVbo);
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-  glEnableVertexAttribArray(2);
-  glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 24, (void*)0);
-  glVertexAttribDivisor(2, 1);
-  glEnableVertexAttribArray(3);
-  glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 24, (void*)12);
-  glVertexAttribDivisor(3, 1);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo); // ← retained by the VAO
+  // attribs 2/3/4 (offset/scale/color) are set in drawGroup() from the inst VBO
   glBindVertexArray(0);
 
   // ---- fullscreen triangle ----
@@ -392,11 +497,8 @@ bool App::init(int w, int h, const char* title) {
     GLuint f;
     glGenFramebuffers(1, &f);
     glBindFramebuffer(GL_FRAMEBUFFER, f);
-    if (depth) {
-      glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, tex, 0);
-    } else {
-      glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
-    }
+    if (depth) glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, tex, 0);
+    else glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
     glReadBuffer(GL_COLOR_ATTACHMENT0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     return f;
@@ -404,7 +506,6 @@ bool App::init(int w, int h, const char* title) {
 
   sceneTex = makeColorTex(width, height);
   sceneFbo = makeFbo(sceneTex, false);
-  // scene pass uses GL_DEPTH_TEST → needs a depth attachment (renderbuffer)
   {
     GLuint rb;
     glGenRenderbuffers(1, &rb);
@@ -416,7 +517,6 @@ bool App::init(int w, int h, const char* title) {
     glReadBuffer(GL_COLOR_ATTACHMENT0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
   }
-  // depth-only shadow FBO
   {
     GLuint t;
     glGenTextures(1, &t);
@@ -431,8 +531,7 @@ bool App::init(int w, int h, const char* title) {
   }
   shadowFbo = makeFbo(shadowTex, true);
   {
-    // Depth-only FBO: no color attachment. glDrawBuffers({COLOR_ATTACHMENT0})
-    // would make it incomplete and every draw a silent no-op — use GL_NONE.
+    // depth-only FBO: GL_NONE drawbuffer (a color attach would make it incomplete)
     glBindFramebuffer(GL_FRAMEBUFFER, shadowFbo);
     glDrawBuffer(GL_NONE);
     glReadBuffer(GL_NONE);
@@ -446,33 +545,100 @@ bool App::init(int w, int h, const char* title) {
   return true;
 }
 
-void App::frame(int frameIdx) {
-  const float t = frameIdx * 0.01f;
-  float eye[3] = {std::sin(t * 0.3f) * 12.f, 5.f + std::sin(t * 0.2f), std::cos(t * 0.3f) * 12.f};
-  float at[3] = {0, 0.5f, 0};
-  float up[3] = {0, 1, 0};
+void App::drawGroup(GLuint instVbo, int count) {
+  if (count <= 0 || instVbo == 0) return;
+  glBindVertexArray(vao);
+  glBindBuffer(GL_ARRAY_BUFFER, instVbo);
+  glEnableVertexAttribArray(2);
+  glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 36, (void*)0);   // offset
+  glVertexAttribDivisor(2, 1);
+  glEnableVertexAttribArray(3);
+  glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 36, (void*)12);  // scale
+  glVertexAttribDivisor(3, 1);
+  glEnableVertexAttribArray(4);
+  glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, 36, (void*)24);  // color
+  glVertexAttribDivisor(4, 1);
+  glDrawElementsInstanced(GL_TRIANGLES, vertCount, GL_UNSIGNED_INT, nullptr, count);
+  glBindVertexArray(0);
+}
+
+void App::update(double dt, double rawDt) {
+  const float sens = (float)player::kSensitivity;
+  // ---- look (pointer-locked) ----
+  if (pointerLocked) {
+    state.player.yaw -= mouseDX * sens;
+    state.player.pitch -= mouseDY * sens;
+    const double cl = player::kPitchClamp;
+    state.player.pitch = std::max(-cl, std::min(cl, state.player.pitch));
+  }
+  mouseDX = mouseDY = 0;
+
+  // ---- movement (sub-stepped, anti-tunneling) ----
+  const float yaw = state.player.yaw;
+  const float fwdX = -std::sin(yaw), fwdZ = -std::cos(yaw);
+  const float rightX = std::cos(yaw), rightZ = -std::sin(yaw);
+  float mx = 0, mz = 0;
+  if (keyW) { mx += fwdX; mz += fwdZ; }
+  if (keyS) { mx -= fwdX; mz -= fwdZ; }
+  if (keyA) { mx -= rightX; mz -= rightZ; }
+  if (keyD) { mx += rightX; mz += rightZ; }
+  const bool moving = (mx != 0 || mz != 0) && state.safeSpawn <= 0;
+  const bool sprintHeld = keyShift;
+  const bool sprinting = sprintHeld && moving;
+  // JS: updateSprint(rawDt, sprintHeld, moving && sprintHeld, safeSpawn>0)
+  state.updateSprint(rawDt, sprintHeld, moving && sprintHeld, state.safeSpawn > 0);
+  const double sprintMult = state.sprintSpeedMult();
+  if (moving) {
+    dc::Mover pos{camX, camZ};
+    dc::movePlayer(pos, mx, mz, sprinting, sprintMult, state.buffEffect, dt, world.collision.boxes);
+    camX = pos.x; camZ = pos.z;
+  }
+  camY = kEyeHeight;
+  state.player.x = camX;
+  state.player.z = camZ;
+
+  // ---- FOV kick while sprinting ----
+  const float targetFov = (float)(camera::kFov + (sprinting ? camera::kSprintFovKick : 0));
+  if (std::abs(fov - targetFov) > 0.1f) fov += (targetFov - fov) * 0.15f;
+
+  // ---- timers ----
+  state.levelTime += dt;
+  state.runTime += dt;
+  if (state.safeSpawn > 0) state.safeSpawn -= rawDt;
+}
+
+void App::frame() {
+  const float aspect = (float)width / (float)height;
+  const float eye[3] = { (float)camX, (float)camY, (float)camZ };
+  const float yaw = state.player.yaw, pitch = state.player.pitch;
+  const float at[3] = {
+      eye[0] + (-std::sin(yaw) * std::cos(pitch)),
+      eye[1] + (-std::sin(pitch)),
+      eye[2] + (-std::cos(yaw) * std::cos(pitch)),
+  };
+  const float up[3] = {0, 1, 0};
   Mat4 view = Mat4::lookAt(eye, at, up);
-  Mat4 proj = Mat4::perspective(60.f, (float)width / height, 0.1f, 100.f);
+  Mat4 proj = Mat4::perspective(fov, aspect, (float)camera::kNear, (float)camera::kFar);
   Mat4 viewProj = proj * view; // GL order: project *after* view
 
-  float lsEye[3] = {lightPos[0], lightPos[1], lightPos[2]};
-  Mat4 lightView = Mat4::lookAt(lsEye, at, up);
-  Mat4 lightProj = Mat4::ortho(-8, 8, -8, 8, 0.5f, 30.f);
-  Mat4 lightVP = lightProj * lightView;
+  // torch shadow VP (single 256² pass, static)
+  Mat4 torchView = Mat4::lookAt(torchPos, at, up);
+  Mat4 torchProj = Mat4::perspective(90.0f, 1.0f, 0.2f, 80.0f);
+  Mat4 torchVP = torchProj * torchView;
 
-  // ---- 1) shadow pass (256² depth FBO) ----
+  // ---- 1) shadow pass ----
   glBindFramebuffer(GL_FRAMEBUFFER, shadowFbo);
   glViewport(0, 0, kShadowSize, kShadowSize);
   glClear(GL_DEPTH_BUFFER_BIT);
   glUseProgram(progScene);
-  glUniformMatrix4fv(glGetUniformLocation(progScene, "uViewProj"), 1, GL_FALSE, lightVP.m);
-  glUniformMatrix4fv(glGetUniformLocation(progScene, "uLightVP"), 1, GL_FALSE, lightVP.m);
-  glUniform1f(glGetUniformLocation(progScene, "uUseShadow"), 0.0f);
-  glBindVertexArray(vao);
-  glDrawElementsInstanced(GL_TRIANGLES, vertCount, GL_UNSIGNED_INT, nullptr, kInstances);
-  glBindVertexArray(0);
+  glUniformMatrix4fv(glGetUniformLocation(progScene, "uViewProj"), 1, GL_FALSE, torchVP.m);
+  glUniformMatrix4fv(glGetUniformLocation(progScene, "uTorchVP"), 1, GL_FALSE, torchVP.m);
+  drawGroup(world.instWallH, world.nWallH);
+  drawGroup(world.instWallE, world.nWallE);
+  drawGroup(world.instFloor, world.nFloor);
+  drawGroup(world.instCeil, world.nCeil);
 
-  // ---- 2) scene pass (full-res color FBO) ----
+  // ---- 2) scene pass ----
   glBindFramebuffer(GL_FRAMEBUFFER, sceneFbo);
   glViewport(0, 0, width, height);
   glClearColor(0.02, 0.02, 0.03, 1.0);
@@ -480,19 +646,24 @@ void App::frame(int frameIdx) {
   glEnable(GL_DEPTH_TEST);
   glUseProgram(progScene);
   glUniformMatrix4fv(glGetUniformLocation(progScene, "uViewProj"), 1, GL_FALSE, viewProj.m);
-  glUniformMatrix4fv(glGetUniformLocation(progScene, "uLightVP"), 1, GL_FALSE, lightVP.m);
-  glUniform3f(glGetUniformLocation(progScene, "uLightPos"), lightPos[0], lightPos[1], lightPos[2]);
-  glUniform3f(glGetUniformLocation(progScene, "uLightColor"), lightColor[0], lightColor[1], lightColor[2]);
-  glUniform1f(glGetUniformLocation(progScene, "uLightIntensity"), lightIntensity);
-  glUniform1f(glGetUniformLocation(progScene, "uUseShadow"), 1.0f);
-  glUniform1i(glGetUniformLocation(progScene, "uShadowMap"), 0);
+  glUniformMatrix4fv(glGetUniformLocation(progScene, "uTorchVP"), 1, GL_FALSE, torchVP.m);
+  glUniform3f(glGetUniformLocation(progScene, "uTorchPos"), torchPos[0], torchPos[1], torchPos[2]);
+  glUniform3f(glGetUniformLocation(progScene, "uTorchColor"), torchColor[0], torchColor[1], torchColor[2]);
+  glUniform1f(glGetUniformLocation(progScene, "uTorchIntensity"), torchIntensity);
+  glUniform1f(glGetUniformLocation(progScene, "uTorchDist"), 18.0f);
+  glUniform3f(glGetUniformLocation(progScene, "uHeadPos"), eye[0], eye[1], eye[2]);
+  glUniform3f(glGetUniformLocation(progScene, "uHeadColor"), 0.9f, 0.9f, 0.85f);
+  glUniform1f(glGetUniformLocation(progScene, "uHeadIntensity"), 1.6f);
+  glUniform1f(glGetUniformLocation(progScene, "uHeadDist"), 26.0f);
+  glUniform1f(glGetUniformLocation(progScene, "uAmbient"), (float)lighting::kAmbientIntensityStone);
   glActiveTexture(GL_TEXTURE0);
   glBindTexture(GL_TEXTURE_2D, shadowTex);
-  glBindVertexArray(vao);
-  glDrawElementsInstanced(GL_TRIANGLES, vertCount, GL_UNSIGNED_INT, nullptr, kInstances);
-  glBindVertexArray(0);
+  drawGroup(world.instWallH, world.nWallH);
+  drawGroup(world.instWallE, world.nWallE);
+  drawGroup(world.instFloor, world.nFloor);
+  drawGroup(world.instCeil, world.nCeil);
 
-  // ---- 3) bloom: bright pass → blur A→B → blur B→A → composite ----
+  // ---- 3) bloom ----
   glDisable(GL_DEPTH_TEST);
   glBindFramebuffer(GL_FRAMEBUFFER, brightFboA);
   glViewport(0, 0, width, height);
@@ -501,11 +672,10 @@ void App::frame(int frameIdx) {
   glActiveTexture(GL_TEXTURE0);
   glBindTexture(GL_TEXTURE_2D, sceneTex);
   glUniform1i(glGetUniformLocation(progBright, "uScene"), 0);
-  glUniform1f(glGetUniformLocation(progBright, "uThreshold"), 0.5f); // RENDERER.BLOOM_THRESHOLD
+  glUniform1f(glGetUniformLocation(progBright, "uThreshold"), 0.5f);
   glBindVertexArray(quadVao);
   glDrawArrays(GL_TRIANGLES, 0, 3);
   glBindVertexArray(0);
-
   glUseProgram(progBlur);
   glBindFramebuffer(GL_FRAMEBUFFER, brightFboB);
   glBindTexture(GL_TEXTURE_2D, brightTexA);
@@ -520,7 +690,6 @@ void App::frame(int frameIdx) {
   glBindVertexArray(quadVao);
   glDrawArrays(GL_TRIANGLES, 0, 3);
   glBindVertexArray(0);
-
   // composite to default framebuffer
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
   glViewport(0, 0, width, height);
@@ -531,7 +700,7 @@ void App::frame(int frameIdx) {
   glActiveTexture(GL_TEXTURE1);
   glBindTexture(GL_TEXTURE_2D, brightTexA);
   glUniform1i(glGetUniformLocation(progComposite, "uBloom"), 1);
-  glUniform1f(glGetUniformLocation(progComposite, "uStrength"), 1.0f);
+  glUniform1f(glGetUniformLocation(progComposite, "uStrength"), 0.35f);
   glBindVertexArray(quadVao);
   glDrawArrays(GL_TRIANGLES, 0, 3);
   glBindVertexArray(0);
@@ -552,10 +721,28 @@ void App::savePPM(const char* path) {
   std::fprintf(stderr, "[dc_app] saved %s (%dx%d)\n", path, width, height);
 }
 
+// ---- GLFW callbacks (file-static because they're C-function pointers) ----
+static App* g_app = nullptr;
+static void keyCb(GLFWwindow* w, int key, int, int action, int) {
+  if (!g_app) return;
+  const bool down = action == GLFW_PRESS || action == GLFW_REPEAT;
+  if (key == GLFW_KEY_W) g_app->keyW = down;
+  else if (key == GLFW_KEY_S) g_app->keyS = down;
+  else if (key == GLFW_KEY_A) g_app->keyA = down;
+  else if (key == GLFW_KEY_D) g_app->keyD = down;
+  else if (key == GLFW_KEY_LEFT_SHIFT || key == GLFW_KEY_RIGHT_SHIFT) g_app->keyShift = down;
+  else if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) glfwSetWindowShouldClose(w, 1);
+}
+static void cursorCb(GLFWwindow*, double x, double y) {
+  static double lx = 0, ly = 0;
+  if (g_app) { g_app->mouseDX += x - lx; g_app->mouseDY += y - ly; }
+  lx = x; ly = y;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
-  int width = 1280, height = 720, frames = 0;
+  int width = 1280, height = 720, frames = 0, seed = 1000;
   const char* savePath = nullptr;
   bool showFps = false;
   for (int i = 1; i < argc; i++) {
@@ -564,49 +751,68 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--frames")) frames = std::atoi(argv[++i]);
     else if (!std::strcmp(argv[i], "--save")) savePath = argv[++i];
     else if (!std::strcmp(argv[i], "--fps")) showFps = true;
+    else if (!std::strcmp(argv[i], "--seed")) seed = std::atoi(argv[++i]);
   }
 
   App app;
-  if (!app.init(width, height, "dc_app — GL3.3 core spike")) return 1;
+  if (!app.init(width, height, "dc_app — Phase 2 playable spine (STONE)")) return 1;
+  g_app = &app;
+  glfwSetKeyCallback(app.window, keyCb);
+  glfwSetCursorPosCallback(app.window, cursorCb);
 
-  // §3.4 crash diagnostics: dump sim frame + native backtrace on SIGSEGV/etc.
+  // build the world from a generated STONE dungeon
+  app.state = dc::GameState::fromOpts();
+  app.state.level = 1;
+  app.state.biome = "STONE";
+  app.state.safeSpawn = player::kSafeSpawnTime;
+  {
+    dc::DungeonGenerator gen(seed, "STONE");
+    app.world.dungeon = gen.generate();
+  }
+  app.buildWorldFromState();
+  app.placePlayerAtEntrance();
+
   dc::CrashContext ctx{0, 0, 0.0, 0.0, "render"};
   dc::installCrashHandler(&ctx);
-  dc::FrameWatchdog wd(0.25); // same threshold as the degraded-mode hitch
+  dc::FrameWatchdog wd(0.25);
 
   if (frames > 0) {
     glfwShowWindow(app.window);
     double t0 = glfwGetTime();
+    const double dt = 1.0 / 60.0;
     for (int i = 0; i < frames; i++) {
-      ctx.frame = i;
-      ctx.phase = "render";
-      wd.begin();
-      app.frame(i);
+      ctx.frame = i; ctx.phase = "render"; wd.begin();
+      // headless: drive the player forward toward the exit so the shot shows
+      // interior geometry (not a blank room)
+      app.keyW = true;
+      app.update(dt, dt);
+      app.frame();
       glfwSwapBuffers(app.window);
       glfwPollEvents();
       wd.end("app.frame");
     }
-    double dt = glfwGetTime() - t0;
+    double el = glfwGetTime() - t0;
     if (savePath) app.savePPM(savePath);
-    std::fprintf(stderr, "[dc_app] %d frames in %.3fs (%.1f fps)\n", frames, dt, frames / dt);
+    std::fprintf(stderr, "[dc_app] %d frames in %.3fs (%.1f fps) seed=%d level=%d biome=%s\n",
+                 frames, el, frames / el, seed, app.state.level, app.state.biome.c_str());
   } else {
     double last = glfwGetTime(), acc = 0;
     int n = 0;
     while (!glfwWindowShouldClose(app.window)) {
-      ctx.frame = n;
-      ctx.phase = "render";
+      ctx.frame = n; ctx.phase = "render";
+      double now = glfwGetTime();
+      double rawDt = std::min(now - last, 0.1);
+      last = now;
       wd.begin();
-      app.frame(n++);
+      app.update(rawDt, rawDt);
+      app.frame();
       glfwSwapBuffers(app.window);
       glfwPollEvents();
       wd.end("app.frame");
-      double now = glfwGetTime();
-      acc += now - last;
-      last = now;
+      n++; acc += now - last;
       if (acc >= 0.5) {
         if (showFps) std::fprintf(stderr, "[dc_app] %.0f fps\n", n / acc);
-        acc = 0;
-        n = 0;
+        acc = 0; n = 0;
       }
     }
   }

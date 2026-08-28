@@ -458,7 +458,7 @@ export default class Game {
     this.shooter = new OrbShooter(this.scene);
     this.shooter.onExplode = (x, y, z, dmg, radius) => this._applyExplosion(x, y, z, dmg, radius);
     this.shooter.onHitEnemy = (enemy, dmg) => this._hitSkeleton(enemy, dmg, 'orb');
-    this.shooter.enemiesRef = () => this.skeletons.enemies;
+    this.shooter.enemiesRef = () => this._hitTargets();
     this.shooter.collisionBoxesRef = () => this.world.collisionBoxes;
 
     // skeleton system
@@ -709,14 +709,14 @@ export default class Game {
       swordBreakCheck: (pos) => this._swordBreaksProjectile(pos)
     });
     if (this.hunter && this.state.buffEffect === 5) {
-      this.hunter.update(dt, camPos, this.skeletons?.enemies ?? [],
+      this.hunter.update(dt, camPos, this._hitTargets(),
         (x1, z1, x2, z2) => this._hasLineOfSight(x1, z1, x2, z2),
         (e, dmg) => this._hitSkeleton(e, dmg, 'hunter'),
         this.state.collectedOrbs);
     } else if (this.hunter && this.state.buffEffect !== 5) {
       this.hunter.dispose(this.scene); this.hunter = null;
     }
-    this.shooter?.update(dt, this.skeletons?.enemies ?? []);
+    this.shooter?.update(dt, this._hitTargets());
 
     // BURN spawn: entire level cleared (non-boss, non-arena)
     if (!this._bossLevel() && !this._hasArena() && !this._burnSpawnedThisLevel &&
@@ -856,7 +856,7 @@ export default class Game {
   }
 
   _applyExplosion(x, y, z, dmg, radius) {
-    for (const e of this.skeletons?.enemies ?? []) {
+    for (const e of this._hitTargets()) {
       if (e.state === 'DEAD') continue;
       if ((e.pos.x - x) ** 2 + (e.pos.z - z) ** 2 < radius ** 2) this._hitSkeleton(e, dmg, 'explosion');
     }
@@ -881,7 +881,7 @@ export default class Game {
       const sizePart = (1 + (scale - 1) * 0.5);
       const dmgMult = sizePart * Math.pow(1.1, tier) * Math.pow(1.1, Math.floor(this.state.level / 5));
       const currentDamage = dmgBase * dmgMult;
-      for (const e of this.skeletons?.enemies ?? []) {
+      for (const e of this._hitTargets()) {
         if (e.state === 'DEAD' || e.frozen) continue;
         const toE = new THREE.Vector3(e.pos.x - origin.x, 0, e.pos.z - origin.z);
         const d = toE.length();
@@ -929,7 +929,7 @@ export default class Game {
       const blast = 5 * (1 + 0.02 * this.state.collectedOrbs) * 2; // ×5 orb damage (base 2)
       let count = 0;
       const p = this.camera.position;
-      for (const e of this.skeletons?.enemies ?? []) {
+      for (const e of this._hitTargets()) {
         if (e.state === 'DEAD') continue;
         if ((e.pos.x - p.x) ** 2 + (e.pos.z - p.z) ** 2 < 20 ** 2) { this._hitSkeleton(e, blast, 'electric'); count++; }
       }
@@ -959,7 +959,7 @@ export default class Game {
       }
     }
     const p = this.camera.position;
-    const candidates = (this.skeletons?.enemies ?? []).filter(e =>
+    const candidates = this._hitTargets().filter(e =>
       e.state !== 'DEAD' && (e.pos.x - p.x) ** 2 + (e.pos.z - p.z) ** 2 < 20 ** 2)
       .sort((a, b) => (a.pos.x - p.x) ** 2 + (a.pos.z - p.z) ** 2 - ((b.pos.x - p.x) ** 2 + (b.pos.z - p.z) ** 2));
     const dmg = Math.round((1 + 0.02 * this.state.collectedOrbs) * 2);
@@ -986,7 +986,7 @@ export default class Game {
       if (!bolt.target || bolt.target.state === 'DEAD') {
         // re-target nearest alive enemy
         const p = this.camera.position;
-        bolt.target = (this.skeletons?.enemies ?? []).filter(e => e.state !== 'DEAD')
+        bolt.target = this._hitTargets().filter(e => e.state !== 'DEAD')
           .sort((a, b) => ((a.pos.x - p.x) ** 2 + (a.pos.z - p.z) ** 2) - ((b.pos.x - p.x) ** 2 + (b.pos.z - p.z) ** 2))[0] || null;
         if (!bolt.target) { bolt.life = -1; bolt.mesh.visible = false; continue; }
       }
@@ -1005,7 +1005,22 @@ export default class Game {
   }
 
   _hitSkeleton(enemy, damage, sourceKind) {
-    this.skeletons?.hitEnemy(enemy, damage, sourceKind);
+    const s = this.skeletons;
+    if (!s) return;
+    if (enemy === s.boss) { s.hitBoss(damage, sourceKind); return; }
+    s.hitEnemy(enemy, damage, sourceKind);
+  }
+
+  // The boss lives outside skeletons.enemies (separate AI/lifecycle). Return the
+  // full set of live, player-damage-able targets so sword/proc/shot/explosion
+  // can reach the lord, not just the mobs.
+  _hitTargets() {
+    const s = this.skeletons;
+    if (!s) return [];
+    const list = s.enemies.slice();
+    const b = s.boss;
+    if (b && b.state !== 'DEAD') list.push(b);
+    return list;
   }
 
   _swordBreaksProjectile(pos) {

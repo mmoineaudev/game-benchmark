@@ -379,7 +379,17 @@ export default class SkeletonSystem {
     }
 
     // boss AI
-    if (this.boss && this.boss.state !== 'DEAD') this._updateBoss(dt, ctx);
+    if (this.boss) {
+      if (this.boss.state === 'DEAD') {
+        // drive the death fade, then clean up (bosses live outside this.enemies)
+        if (this.boss.updateDeath(dt)) {
+          this.boss.dispose(this.scene);
+          this.boss = null;
+        }
+      } else {
+        this._updateBoss(dt, ctx);
+      }
+    }
 
     // projectiles
     this._updateProjectiles(dt, ctx);
@@ -503,6 +513,20 @@ export default class SkeletonSystem {
         e.beginDeath();
         this.onKill?.(e, sourceKind);
       }
+    }
+  }
+
+  // Bosses live outside this.enemies (separate AI/lifecycle). Route a direct hit
+  // so sword/proc/shot/explosion damage can reach the lord.
+  hitBoss(damage, sourceKind) {
+    const b = this.boss;
+    if (!b || b.state === 'DEAD') return;
+    b.hp -= damage;
+    b.hitFlash = 0.08;
+    if (b.hp <= 0) {
+      b.hp = 0;
+      b.beginDeath();
+      this.onKill?.(b, sourceKind);
     }
   }
 

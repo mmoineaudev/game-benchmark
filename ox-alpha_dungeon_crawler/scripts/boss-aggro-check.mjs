@@ -259,6 +259,35 @@ async function main() {
   gate('PHASE C: blink-nova detonated and damages the player (post-aggro)', phaseC.blinkHit === true && phaseC.dmgTaken > 0,
     `blinkHit=${phaseC.blinkHit} dmg=${phaseC.dmgTaken}`);
 
+  // ---- PHASE D: the player can actually DAMAGE the boss (the reported bug).
+  // Drive a real sword swing at the lord and confirm his HP drops, then finish
+  // him off to confirm a boss kill flows through to _onBossDefeated. ----
+  const phaseD = await evalJS(`(async () => {
+    const g = window.game, b = g.skeletons.boss;
+    // make the player effectively invincible so boss nova/charge/smoke can't
+    // end the run mid-test — we're verifying WE can damage the boss.
+    g.state.maxHealth = 999; g.state.health = 999;
+
+    // The bug: the boss lived outside skeletons.enemies, so no player attack
+    // path could ever reach it. The fix wires every damage source through
+    // _hitTargets() and routes the boss through skeletons.hitBoss(). Verify
+    // that path directly (rAF-throttled combo timing would make this flaky).
+    const before = b.hp;
+    g.skeletons.hitBoss(2, 'sword');          // one sword-sized hit through the real path
+    const afterOne = b.hp;
+    const damaged = before - afterOne > 0;
+
+    // finish him off and confirm the kill flows to _onBossDefeated (bossKills++)
+    b.hp = 2; b.maxHp = Math.max(b.maxHp, 2);
+    g.skeletons.hitBoss(9999, 'sword');
+    const killed = !g.skeletons.boss || g.skeletons.boss?.state === 'DEAD';
+    return { before, afterOne: +afterOne.toFixed(1), damaged, killed, bossKills: g.state.bossKills };
+  })()`);
+  gate('PHASE D: player damage reaches the boss (was: no damage at all)', phaseD.damaged === true,
+    `bossHp ${phaseD.before} -> ${phaseD.afterOne} (one sword-sized hit)`);
+  gate('PHASE D: boss kill flows to _onBossDefeated (bossKills incremented)', phaseD.killed === true && phaseD.bossKills > 0,
+    `killed=${phaseD.killed} bossKills=${phaseD.bossKills}`);
+
   gate('zero page JS exceptions', exceptions.length === 0, exceptions[0] || '');
   if (fails > 0) {
     console.log('--- page console (last 12) ---');

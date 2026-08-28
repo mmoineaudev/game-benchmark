@@ -11,18 +11,6 @@ namespace dc {
 // ---- minimal JSON (de)serialization for the entry array ----------------------
 // Shape: [{"ngPlus":n,"level":n,"time":n,"orbs":n,"date":n}, ...]
 
-static std::string escapeJson(const std::string& s) {
-  std::string out;
-  for (char c : s) {
-    if (c == '"' || c == '\\') out.push_back('\\'), out.push_back(c);
-    else if (c == '\n') out += "\\n";
-    else if (c == '\r') out += "\\r";
-    else if (c == '\t') out += "\\t";
-    else out.push_back(c);
-  }
-  return out;
-}
-
 static std::string serializeEntries(const std::vector<ScoreEntry>& es) {
   std::ostringstream os;
   os << '[';

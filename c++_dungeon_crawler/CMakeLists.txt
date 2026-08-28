@@ -10,6 +10,17 @@ endif()
 
 add_compile_options(-Wall -Wextra)
 
+# ---- Sanitizers (crash-diagnostics build, §3.4) -----------------------------
+# -DDC_SANITIZERS=On adds AddressSanitizer + UBSan to every target. This is
+# the build that catches a synthetic UAF/OOB injected into the sim (via
+# dc_repro --fault) and names the exact crashing line, proving a real crash
+# is a debuggable bug. Use a Debug build for a readable report.
+option(DC_SANITIZERS "Build all targets with -fsanitize=address,undefined" OFF)
+if(DC_SANITIZERS)
+  add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer -fno-optimize-sibling-calls)
+  add_link_options(-fsanitize=address,undefined)
+endif()
+
 # ---- dc_core: deterministic, no GPU ------------------------------------------
 # All gameplay data + sim. This is where parity lives; GPU-free and testable.
 file(GLOB DC_CORE_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/core/*.cpp)
@@ -56,3 +67,6 @@ endif()
 
 enable_testing()
 add_test(NAME dc_tests COMMAND dc_tests)
+# Headless sim gate: spawn/move/resolve a player through a generated dungeon
+# with zero tunneling (no GPU). A real sim bug trips the ZERO-TUNNELING check.
+add_test(NAME dc_repro_headless COMMAND dc_repro --seed 1000 --frames 120)

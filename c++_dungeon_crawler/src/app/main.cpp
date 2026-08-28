@@ -22,6 +22,8 @@
 #include <string>
 #include <vector>
 
+#include "dc/crashdiag.hpp"
+
 namespace {
 
 constexpr int kShadowSize = 256; // spec §12.1: 256² shadow map
@@ -567,13 +569,22 @@ int main(int argc, char** argv) {
   App app;
   if (!app.init(width, height, "dc_app — GL3.3 core spike")) return 1;
 
+  // §3.4 crash diagnostics: dump sim frame + native backtrace on SIGSEGV/etc.
+  dc::CrashContext ctx{0, 0, 0.0, 0.0, "render"};
+  dc::installCrashHandler(&ctx);
+  dc::FrameWatchdog wd(0.25); // same threshold as the degraded-mode hitch
+
   if (frames > 0) {
     glfwShowWindow(app.window);
     double t0 = glfwGetTime();
     for (int i = 0; i < frames; i++) {
+      ctx.frame = i;
+      ctx.phase = "render";
+      wd.begin();
       app.frame(i);
       glfwSwapBuffers(app.window);
       glfwPollEvents();
+      wd.end("app.frame");
     }
     double dt = glfwGetTime() - t0;
     if (savePath) app.savePPM(savePath);
@@ -582,9 +593,13 @@ int main(int argc, char** argv) {
     double last = glfwGetTime(), acc = 0;
     int n = 0;
     while (!glfwWindowShouldClose(app.window)) {
+      ctx.frame = n;
+      ctx.phase = "render";
+      wd.begin();
       app.frame(n++);
       glfwSwapBuffers(app.window);
       glfwPollEvents();
+      wd.end("app.frame");
       double now = glfwGetTime();
       acc += now - last;
       last = now;

@@ -352,6 +352,7 @@ struct App {
 
   // input (GLFW physical key codes — AZERTY-safe: bind by position)
   bool keyW = false, keyS = false, keyA = false, keyD = false, keyShift = false;
+  bool keyLMB = false, keyRMB = false;
   double mouseDX = 0, mouseDY = 0;
   bool pointerLocked = false;
 
@@ -360,7 +361,7 @@ struct App {
   dc::Boss boss;
   bool bossReady = false;
   // App-local skeleton chasers (dc_core movement: moveToward + pathStep).
-  struct Skel { dc::Vec2 pos{0, 0}; double hitCd = 0; bool alive = true; };
+  struct Skel { dc::Vec2 pos{0, 0}; double hp = 2, maxHp = 2, hitCd = 0; int drops = 1; bool alive = true; };
   std::vector<Skel> skels;
   dc::Rng rng{12345u};
   double simHealth = 3.0;   // boss/skeleton damage mutates this; mirrors JS
@@ -369,11 +370,36 @@ struct App {
   bool playerDead = false;
   bool bossKillCounted = false;
 
+  // ---- sword combo (RMB, §9) ----
+  int   swordStep = 0;          // 0 idle; 1..3 active
+  const char* swordPhase = nullptr; // "windup"|"swing"|"recover"|"cooldown"|nullptr
+  double swordPhaseT = 0, swordWindowT = 0, swordCooldownT = 0;
+  bool swordBuffered = false;
+  double hitStop = 0;           // freezes the sim while > 0
+  int   swordHitsLanded = 0;   // debug: total cone hits
+
+  // ---- orb weapon (LMB, §10) ----
+  struct Orb { double x=0,y=0,z=0,vx=0,vy=0,vz=0,life=-1,dmg=1; int step=1; bool alive=false; };
+  std::vector<Orb> orbs;        // pooled (POOL_NORMAL 48)
+  int  orbSeqStep = 0;         // 0 idle; 1..3 in a 3-step sequence
+  double orbSeqLast = -1e9;    // last fire time (s) for the sequence window
+  double lmbAccum = 0;
+  bool prevLMB = false, prevRMB = false;
+
   bool init(int w, int h, const char* title);
   void buildWorldFromState();
   void placePlayerAtEntrance();
   void spawnEntities();
   void updateEntities(double dt);
+  void updateCombat(double dt);
+  void pressSword();
+  void beginSwordStep(int step);
+  void applySwordCone(int stepIdx);
+  void fireOrb(int step);
+  void _fireOrbStep(bool isClick);
+  void hitBossOrSkel(int idx, double dmg, const char* src); // idx -1 = boss
+  void orbExplode(const Orb& o);
+  void collectSkelDrops(int idx);
   void uploadDynamic(std::vector<float>& dyn);
   void update(double dt, double rawDt);
   void frame();
@@ -419,6 +445,10 @@ void App::spawnEntities() {
   simHealth = state.maxHealth > 0 ? (double)state.maxHealth : 3.0;
   playerDead = false;
   skels.clear();
+  // skeleton HP: ceil(def.hp * enemyHpMultiplier) — JS _spawnOne (level 7 slice)
+  const double hpMult = dc::enemyHpMultiplier(state.ngPlus, 7, state.collectedOrbs);
+  const double skelBaseHp = 2.0; // SKELETON.hp
+  const int skelDrops = 1;       // SKELETON.drops
   const double cs = world.dungeon.cellSize;
   const int gs = world.dungeon.gridSize;
   const int ex = world.dungeon.entranceCell ? world.dungeon.entranceCell->x : 0;
@@ -431,7 +461,9 @@ void App::spawnEntities() {
       const double wx = x * cs, wz = z * cs;
       if (std::hypot(wx - ex * cs, wz - ez * cs) < 10.0) continue; // room to run
       if (dc::circleHitsBox(world.collision.boxes, wx, wz, player::kRadius)) continue;
-      skels.push_back(Skel{dc::Vec2{wx, wz}, 0.0, true});
+      Skel s; s.pos = dc::Vec2{wx, wz}; s.alive = true;
+      s.maxHp = s.hp = std::ceil(skelBaseHp * hpMult); s.drops = skelDrops; s.hitCd = 0;
+      skels.push_back(std::move(s));
       spawned++;
     }
 }
@@ -480,6 +512,155 @@ void App::updateEntities(double dt) {
   if (simHealth <= 0.0 && !playerDead) playerDead = true;
 }
 
+// ---- §9 sword combo (RMB) ----
+void App::pressSword() {
+  if (swordPhase) {
+    if (std::strcmp(swordPhase, "recover") == 0 && swordWindowT > 0 && swordStep < 3)
+      swordBuffered = true;   // buffered: chains on recover start
+    return;                   // busy
+  }
+  swordBuffered = false;
+  beginSwordStep(1);
+}
+void App::beginSwordStep(int step) {
+  swordStep = step;
+  swordPhase = "windup";
+  swordPhaseT = 0;
+}
+void App::updateCombat(double dt) {
+  if (state.safeSpawn > 0 || playerDead) { prevLMB = keyLMB; prevRMB = keyRMB; return; }
+  const double souls = state.collectedOrbs;
+
+  // RMB edge → sword press
+  if (keyRMB && !prevRMB) pressSword();
+
+  // ---- sword combo advance ----
+  if (swordPhase) {
+    if (std::strcmp(swordPhase, "cooldown") == 0) {
+      swordCooldownT -= dt;
+      if (swordCooldownT <= 0) { swordPhase = nullptr; swordStep = 0; swordWindowT = 0; }
+    } else {
+      const auto& def = dc::kSwordCombo[std::max(0, swordStep - 1)];
+      const double speedMult = dc::attackSpeedFromSouls(souls);
+      const double wu = def.windup / speedMult;
+      const double sw = def.swing / speedMult;
+      const double rc = def.recover / speedMult;
+      swordPhaseT += dt;
+      if (std::strcmp(swordPhase, "windup") == 0 && swordPhaseT >= wu) {
+        swordPhase = "swing"; swordPhaseT = 0;
+        applySwordCone(swordStep - 1);
+      } else if (std::strcmp(swordPhase, "swing") == 0 && swordPhaseT >= sw) {
+        swordPhase = "recover"; swordPhaseT = 0; swordWindowT = dc::kComboWindow;
+      } else if (std::strcmp(swordPhase, "recover") == 0) {
+        swordWindowT -= dt;
+        if (swordBuffered && swordStep < 3) { swordBuffered = false; beginSwordStep(swordStep + 1); }
+        else if (swordPhaseT >= rc) {
+          swordPhase = "cooldown"; swordCooldownT = dc::kComboCooldown;
+        }
+      }
+    }
+  }
+
+  // ---- §10 orb weapon (LMB) ----
+  if (orbSeqStep > 0 && state.runTime - orbSeqLast > dc::orbWeapon::kSequenceWindow) orbSeqStep = 0;
+  if (keyLMB && !prevLMB) { _fireOrbStep(true); }
+  else if (keyLMB) {
+    lmbAccum += dt;
+    if (lmbAccum >= dc::orbWeapon::kStepInterval) { lmbAccum = 0; _fireOrbStep(false); }
+  } else {
+    lmbAccum = dc::orbWeapon::kStepInterval;
+  }
+
+  // ---- advance orb projectiles ----
+  for (auto& o : orbs) {
+    if (!o.alive) continue;
+    o.life -= dt;
+    if (o.life <= 0) { if (o.step == 3) orbExplode(o); o.alive = false; continue; }
+    o.x += o.vx * dt; o.y += o.vy * dt; o.z += o.vz * dt;
+    bool hit = false;
+    if (bossReady && !boss.dead) {
+      const double db = std::hypot(o.x - boss.pos.x, o.z - boss.pos.z);
+      if (db < 1.5) { hitBossOrSkel(-1, o.dmg, "orb"); hit = true; }
+    }
+    if (!hit) {
+      for (size_t i = 0; i < skels.size(); i++) {
+        if (!skels[i].alive) continue;
+        if (std::hypot(o.x - skels[i].pos.x, o.z - skels[i].pos.z) < 0.6) {
+          hitBossOrSkel(i, o.dmg, "orb"); hit = true; break;
+        }
+      }
+    }
+    if (hit) { if (o.step == 3) orbExplode(o); o.alive = false; }
+  }
+
+  prevLMB = keyLMB; prevRMB = keyRMB;
+}
+void App::applySwordCone(int stepIdx) {
+  const double souls = state.collectedOrbs;
+  const int tier = dc::weaponTier((int)souls);
+  const double scale = dc::totalSwordScale(tier);
+  const double range = 2.2 * scale * (1 + 0.04 * tier) * (stepIdx == 2 ? 1.25 : 1.0);
+  const double arcDot = dc::kSwordCombo[stepIdx].arcDot;
+  const float yaw = state.player.yaw;
+  const double dirx = -std::sin(yaw), dirz = -std::cos(yaw);
+  const double ox = state.player.x, oz = state.player.z;
+  int hitCount = 0;
+  const double dmgBase = dc::kSwordCombo[stepIdx].damage + tier;
+  const double sizePart = (1 + (scale - 1) * 0.5);
+  const double dmgMult = sizePart * std::pow(1.1, tier) * std::pow(1.1, std::floor(state.level / 5));
+  const double dmg = dmgBase * dmgMult;
+  auto inCone = [&](double ex, double ez) {
+    double tx = ex - ox, tz = ez - oz;
+    double d = std::hypot(tx, tz);
+    if (d > range + 0.5) return false;
+    tx /= d; tz /= d;
+    return (dirx * tx + dirz * tz) >= arcDot;
+  };
+  if (bossReady && !boss.dead && inCone(boss.pos.x, boss.pos.z)) { hitBossOrSkel(-1, dmg, "sword"); hitCount++; }
+  for (size_t i = 0; i < skels.size(); i++)
+    if (skels[i].alive && inCone(skels[i].pos.x, skels[i].pos.z)) { hitBossOrSkel(i, dmg, "sword"); hitCount++; }
+  if (hitCount > 0) { hitStop = std::max(hitStop, dc::sword::kHitStop); swordHitsLanded += hitCount; }
+}
+void App::_fireOrbStep(bool /*isClick*/) {
+  if (orbSeqStep == 0 || state.runTime - orbSeqLast > dc::orbWeapon::kSequenceWindow) {
+    if (state.collectedOrbs <= 0) return;          // no souls → no fire
+    state.collectedOrbs -= 1;                      // first step of a new sequence costs 1
+    orbSeqStep = 1;
+  } else {
+    orbSeqStep = std::min(3, orbSeqStep + 1);
+  }
+  orbSeqLast = state.runTime;
+  fireOrb(orbSeqStep);
+}
+void App::fireOrb(int step) {
+  if ((int)orbs.size() >= dc::orbWeapon::kPoolNormal) return; // pool cap
+  const float yaw = state.player.yaw, pitch = state.player.pitch;
+  const double cp = std::cos(pitch);
+  const double dirx = -std::sin(yaw) * cp, dirz = -std::cos(yaw) * cp, diry = std::sin(pitch);
+  Orb o;
+  o.x = state.player.x + dirx * 0.6; o.y = camY + diry * 0.6; o.z = state.player.z + dirz * 0.6;
+  o.vx = dirx * dc::orbWeapon::kSpeed; o.vy = diry * dc::orbWeapon::kSpeed; o.vz = dirz * dc::orbWeapon::kSpeed;
+  o.life = dc::orbWeapon::kLife; o.step = step; o.alive = true;
+  const double soulsAmt = state.collectedOrbs;
+  o.dmg = step == 3 ? dc::orbExplodeDamage(soulsAmt) : dc::orbDirectDamage(soulsAmt);
+  orbs.push_back(o);
+}
+void App::hitBossOrSkel(int idx, double dmg, const char* src) {
+  if (idx < 0) { if (bossReady && !boss.dead) boss.hitBoss(dmg, src); return; }
+  if (idx >= (int)skels.size() || !skels[idx].alive) return;
+  skels[idx].hp -= dmg;
+  if (skels[idx].hp <= 0) { skels[idx].alive = false; collectSkelDrops(idx); }
+}
+void App::orbExplode(const Orb& o) {
+  if (bossReady && !boss.dead && std::hypot(o.x - boss.pos.x, o.z - boss.pos.z) < 2.0) hitBossOrSkel(-1, o.dmg, "explosion");
+  for (size_t i = 0; i < skels.size(); i++)
+    if (skels[i].alive && std::hypot(o.x - skels[i].pos.x, o.z - skels[i].pos.z) < 2.0) hitBossOrSkel(i, o.dmg, "explosion");
+}
+void App::collectSkelDrops(int idx) {
+  if (idx < 0 || idx >= (int)skels.size()) return;
+  state.collectedOrbs += skels[idx].drops;   // souls = orbs (ammo + wealth)
+}
+
 void App::uploadDynamic(std::vector<float>& dyn) {
   dyn.clear();
   auto push = [&](float ox, float oy, float oz, float sx, float sy, float sz,
@@ -496,6 +677,18 @@ void App::uploadDynamic(std::vector<float>& dyn) {
   // skeletons (bone white)
   for (const auto& s : skels)
     if (s.alive) push((float)s.pos.x, 0.9f, (float)s.pos.z, 0.6f, 1.7f, 0.6f, 0.85f, 0.85f, 0.8f);
+  // soul-fire orbs (blue-white)
+  for (const auto& o : orbs)
+    if (o.alive) push((float)o.x, (float)o.y, (float)o.z, 0.3f, 0.3f, 0.3f, 0.6f, 0.8f, 1.0f);
+  // floating sword (no hands) — a pale blade in front of the camera during a combo
+  if (swordPhase && std::strcmp(swordPhase, "cooldown") != 0) {
+    const float yaw = state.player.yaw;
+    const double fx = -std::sin(yaw), fz = -std::cos(yaw);
+    const double reach = std::strcmp(swordPhase, "swing") == 0 ? 0.7 : 0.45;
+    const double sx = state.player.x + fx * reach, sz = state.player.z + fz * reach;
+    const double sy = camY - 0.15;
+    push((float)sx, (float)sy, (float)sz, 0.06f, 0.9f, 0.06f, 0.85f, 0.9f, 1.0f);
+  }
 }
 
 bool App::init(int w, int h, const char* title) {
@@ -680,6 +873,8 @@ void App::drawGroup(GLuint instVbo, int count, float emissive) {
 }
 
 void App::update(double dt, double rawDt) {
+  // hit-stop: freeze the whole sim (movement + entities + combat) for kHitStop
+  if (hitStop > 0) { hitStop -= rawDt; mouseDX = mouseDY = 0; return; }
   const float sens = (float)player::kSensitivity;
   // ---- look (pointer-locked) ----
   if (pointerLocked) {
@@ -716,6 +911,9 @@ void App::update(double dt, double rawDt) {
 
   // ---- entities: boss (state machine) + skeleton chasers ----
   updateEntities(dt);
+
+  // ---- combat: sword combo (RMB) + orb weapon (LMB) + projectiles ----
+  updateCombat(dt);
 
   // ---- FOV kick while sprinting ----
   const float targetFov = (float)(camera::kFov + (sprinting ? camera::kSprintFovKick : 0));
@@ -872,13 +1070,19 @@ static void cursorCb(GLFWwindow*, double x, double y) {
   if (g_app) { g_app->mouseDX += x - lx; g_app->mouseDY += y - ly; }
   lx = x; ly = y;
 }
+static void mouseButtonCb(GLFWwindow* w, int button, int action, int) {
+  if (!g_app) return;
+  const bool down = action == GLFW_PRESS || action == GLFW_REPEAT;
+  if (button == GLFW_MOUSE_BUTTON_LEFT) g_app->keyLMB = down;
+  else if (button == GLFW_MOUSE_BUTTON_RIGHT) g_app->keyRMB = down;
+}
 
 } // namespace
 
 int main(int argc, char** argv) {
-  int width = 1280, height = 720, frames = 0, seed = 1000;
+  int width = 1280, height = 720, frames = 0, seed = 1000, saveFrame = -1;
   const char* savePath = nullptr;
-  bool showFps = false, bossView = false;
+  bool showFps = false, bossView = false, combatView = false;
   for (int i = 1; i < argc; i++) {
     if (!std::strcmp(argv[i], "--width")) width = std::atoi(argv[++i]);
     else if (!std::strcmp(argv[i], "--height")) height = std::atoi(argv[++i]);
@@ -886,7 +1090,9 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--save")) savePath = argv[++i];
     else if (!std::strcmp(argv[i], "--fps")) showFps = true;
     else if (!std::strcmp(argv[i], "--seed")) seed = std::atoi(argv[++i]);
+    else if (!std::strcmp(argv[i], "--save-frame")) saveFrame = std::atoi(argv[++i]);
     else if (!std::strcmp(argv[i], "--boss-view")) bossView = true;
+    else if (!std::strcmp(argv[i], "--combat-view")) combatView = true;
   }
 
   App app;
@@ -894,6 +1100,7 @@ int main(int argc, char** argv) {
   g_app = &app;
   glfwSetKeyCallback(app.window, keyCb);
   glfwSetCursorPosCallback(app.window, cursorCb);
+  glfwSetMouseButtonCallback(app.window, mouseButtonCb);
 
   // build the world from a generated STONE dungeon
   app.state = dc::GameState::fromOpts();
@@ -938,6 +1145,28 @@ int main(int argc, char** argv) {
       std::fprintf(stderr, "[dc_app] boss-view placed player %s throne (boss %s, hp %.0f)\n",
                    found ? "beside" : "FALLBACK", app.boss.state.c_str(), app.boss.hp);
     }
+    // --combat-view: stand ~3u from the throne, face the boss, grant souls,
+    // then the frame loop drives LMB (orbs) + RMB taps (sword) so the weapons
+    // actually fire and land — a headless combat check.
+    if (combatView) {
+      const dc::Vec2 b = app.boss.pos;
+      static const double dirs[6][2] = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}, {0.7, 0.7}, {-0.7, 0.7}};
+      bool found = false;
+      for (double dist = 2.5; dist <= 5.0 && !found; dist += 0.5)
+        for (const auto& d : dirs) {
+          const double wx = b.x + d[0] * dist, wz = b.z + d[1] * dist;
+          if (dc::circleHitsBox(app.world.collision.boxes, wx, wz, player::kRadius)) continue;
+          if (!dc::hasLineOfSight(app.world.collision.boxes, b.x, b.z, wx, wz)) continue;
+          app.camX = wx; app.camZ = wz;
+          app.state.player.x = wx; app.state.player.z = wz;
+          found = true; break;
+        }
+      app.state.collectedOrbs = 25; // enough souls for a full 3-step orb seq + tier 1
+      app.state.safeSpawn = 0;    // skip the spawn protection so combat runs immediately
+      app.state.player.yaw = (float)std::atan2(-(b.x - app.state.player.x), -(b.z - app.state.player.z));
+      std::fprintf(stderr, "[dc_app] combat-view placed player %s throne (boss hp %.0f, souls %d)\n",
+                   found ? "at" : "FALLBACK", app.boss.hp, app.state.collectedOrbs);
+    }
     for (int i = 0; i < frames; i++) {
       ctx.frame = i; ctx.phase = "render"; wd.begin();
       if (!bossView) app.keyW = true; // interior-walk shot: drive forward
@@ -946,14 +1175,25 @@ int main(int argc, char** argv) {
         const double dz = app.boss.pos.z - app.state.player.z;
         app.state.player.yaw = (float)std::atan2(-dx, -dz);
       }
+      if (combatView) {
+        // face the boss, then drive the weapons:
+        //  LMB hold for ~1s → a full 3-step soul-orb sequence (+ repeats)
+        //  RMB short taps → sword combo cones (each tap = 1 cone at tier dmg)
+        const double dx = app.boss.pos.x - app.state.player.x;
+        const double dz = app.boss.pos.z - app.state.player.z;
+        app.state.player.yaw = (float)std::atan2(-dx, -dz);
+        app.keyLMB = (i >= 5 && i < 65);
+        app.keyRMB = (i % 30 >= 10 && i % 30 < 13);
+      }
       app.update(dt, dt);
       app.frame();
+      if (savePath && saveFrame == i) app.savePPM(savePath); // capture an in-flight frame
       glfwSwapBuffers(app.window);
       glfwPollEvents();
       wd.end("app.frame");
     }
     double el = glfwGetTime() - t0;
-    if (savePath) app.savePPM(savePath);
+    if (savePath && saveFrame < 0) app.savePPM(savePath); // final frame (or use --save-frame)
     std::fprintf(stderr, "[dc_app] %d frames in %.3fs (%.1f fps) seed=%d level=%d biome=%s boss=%s(%.0fhp) skels=%zu\n",
                  frames, el, frames / el, seed, app.state.level, app.state.biome.c_str(),
                  app.boss.state.c_str(), app.boss.hp, app.skels.size());

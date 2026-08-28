@@ -95,8 +95,9 @@ export const BIOME_SEQUENCE = [
 
 export const BOSS = {
   INTERVAL: 7,
-  HP_MULT: 22.5,
-  BASE_HP: 4,             // ceil(4 × 22.5) = 90
+  BASE_HP: 90,            // base boss HP at level 7, NG0, empty bank
+  HP_LEVEL_CAP: 2,       // level/NG+ pressure caps at ×2 (see bossHp)
+  AGGRO_RANGE: 25,       // the lord wakes when the player is seen within 25 u
   CHARGE_DMG: 2,
   CHARGE_SPEED: 14,
   CHARGE_TIME: 0.9,
@@ -139,15 +140,19 @@ export function enemyHpMultiplier(ngPlus, level, souls) {
     * (1 + 1.5 * Math.floor(Math.max(0, level + souls - 990) / 10));
 }
 
-// Boss HP with the halved wealth/hearts stack. §17.
+// Boss HP. §17.
+// Boss fights must stay achievable regardless of how deep/far the player is:
+// the level/NG+ pressure is CAPPED at ×2 (a level-100 boss has twice the
+// health of a level-7 boss, not 11×), and the wealth/hearts stack is halved
+// per the user ruling. LINEAR overall — no cliffs.
 export function bossHp(level, ngPlus, souls, maxHealth) {
-  const heartsExtra = Math.max(0, maxHealth - 3);
-  const soulsPart = (1 + SOULS_HP_BONUS * Math.floor(souls / 50));
+  const heartsExtra = Math.max(0, Math.min(maxHealth - 3, 10));
+  const soulsPart = 1 + SOULS_HP_BONUS * Math.floor(souls / 50);
   const heartsPart = Math.pow(1 + HEARTS_HP_BONUS, heartsExtra);
-  return Math.ceil(BOSS.BASE_HP * BOSS.HP_MULT
-    * (1 + 3 * ngPlus)
-    * (1 + Math.floor(level / 10))
-    * (1 + (soulsPart * heartsPart - 1) / 2));
+  // level/NG+ pressure, capped: a deep boss has at most ×2 the base HP
+  const pressure = Math.min((1 + 3 * ngPlus) * (1 + Math.floor(level / 10)), BOSS.HP_LEVEL_CAP);
+  const wealth = 1 + (soulsPart * heartsPart - 1) / 2;
+  return Math.ceil(BOSS.BASE_HP * pressure * wealth);
 }
 
 // BURN HP — v2 ruling: 30 flat at NG0 every level, then ×(1 + 3·ngPlus).

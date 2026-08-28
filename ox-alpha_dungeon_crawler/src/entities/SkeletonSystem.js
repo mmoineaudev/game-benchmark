@@ -519,17 +519,29 @@ export default class SkeletonSystem {
     if (b.state === 'DEAD') return;
     if (ctx.frozenAll) { return; }
 
+    const distP = Math.hypot(P.x - b.pos.x, P.z - b.pos.z);
+    const seesLOS = ctx.losFn(b.pos.x, b.pos.z, P.x, P.z);
+
+    // Aggro: the lord stays dormant in his throne room until he SEES the
+    // player. Before that: no drift, no charge, no blink, no smoke, no summons.
+    if (!b.awake) {
+      if (seesLOS && distP < BOSS.AGGRO_RANGE) {
+        b.awake = true;
+        b.state = 'CHASE';
+      }
+      // dormant idle: face the player, no movement
+      b.faceTo(P.x, P.z);
+      return;
+    }
+
     b.chargeCooldown -= dt;
     b.blinkCooldown -= dt;
     b.smokeCooldown -= dt;
     b.summonTimer -= dt;
 
-    const distP = Math.hypot(P.x - b.pos.x, P.z - b.pos.z);
-
     // drift toward the player beyond 2.5 u (pathing when wall blocks; only charges on wall-free paths)
     if (b.state === 'CHASE') {
       if (distP > BOSS.DRIFT_KEEP) {
-        const seesLOS = ctx.losFn(b.pos.x, b.pos.z, P.x, P.z);
         if (seesLOS) this._moveBoss(b, P.x, P.z, ctx, BOSS.DRIFT_SPEED);
         else {
           b.pathTimer = (b.pathTimer ?? 0) - ctx.dt;
@@ -542,7 +554,7 @@ export default class SkeletonSystem {
         b.faceTo(P.x, P.z);
       }
       // charge: off cooldown, within 14 u, wall-free path
-      if (b.chargeCooldown <= 0 && distP < BOSS.CHARGE_RANGE && ctx.losFn(b.pos.x, b.pos.z, P.x, P.z)) {
+      if (b.chargeCooldown <= 0 && distP < BOSS.CHARGE_RANGE && seesLOS) {
         b.state = 'CHARGING';
         b.chargeT = 0;
         b.chargeHitDone = false;

@@ -9,7 +9,8 @@ export default class GhostBoss {
     this.variant = opts.variant;
     this.label = BOSS_LABELS[opts.variant] || 'SPECTRAL LORD';
     this.hp = opts.hp; this.maxHp = opts.hp;
-    this.state = 'CHASE';   // CHASE / CHARGING / BLINKING / DEAD
+    this.state = 'SLEEPING';  // SLEEPING / CHASE / CHARGING / BLINKING / DEAD
+    this.awake = false;       // false until the lord first sees the player
     this.pos = new THREE.Vector3();
     this.radius = BOSS.RADIUS;
     this.chargeCooldown = BOSS.CHARGE_COOLDOWN * BOSS.CHARGE_FIRST_MULT;

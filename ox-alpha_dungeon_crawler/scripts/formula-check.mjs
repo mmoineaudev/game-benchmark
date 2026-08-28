@@ -45,25 +45,25 @@ gate('explosion 5@2u', ORB_WEAPON.EXPLODE_DAMAGE === 5 && ORB_WEAPON.EXPLODE_RAD
 gate('electric chance/range/mult', SWORD.ELECTRIC_CHANCE === 0.05 && SWORD.ELECTRIC_RANGE === 20 && SWORD.ELECTRIC_DAMAGE_MULT === 5);
 
 // boss HP gates (§17, rebalanced: level/NG+ pressure caps at ×2, wealth halved)
-gate('boss base 90', bossHp(7, 0, 0, 3) === 90);
-gate('boss 49 souls → 90', bossHp(7, 0, 49, 3) === 90);
-gate('boss 100 souls → 113', bossHp(7, 0, 100, 3) === 113);
-gate('boss 300 souls → 158', bossHp(7, 0, 300, 3) === 158);
-gate('boss 5 hearts (+5 past base → 118)', bossHp(7, 0, 0, 8) === 118);
-gate('boss 100 souls + 5 hearts → 154', bossHp(7, 0, 100, 8) === 154);
-gate('boss level 14 → 180', bossHp(14, 0, 0, 3) === 180);
-gate('boss level 21 → 180', bossHp(21, 0, 0, 3) === 180);
-gate('boss level 49 → 180', bossHp(49, 0, 0, 3) === 180);
-gate('boss level 84 capped ×2 → 180', bossHp(84, 0, 0, 3) === 180);
-gate('boss level 1000 capped ×2 → 180', bossHp(1000, 0, 0, 3) === 180);
-gate('boss NG2 capped ×2 → 180', bossHp(7, 2, 0, 3) === 180);
-gate('boss NG5 + level 21 capped → 180', bossHp(21, 5, 0, 3) === 180);
-gate('boss 1000 souls capped wealth → 315', bossHp(7, 0, 1000, 3) === 315);
-gate('boss all-capped (L84 NG2 1000 souls 8 hearts) → 960', bossHp(84, 2, 1000, 8) === 960);
+gate('boss base 25', bossHp(7, 0, 0, 3) === 25);
+gate('boss 49 souls → 25', bossHp(7, 0, 49, 3) === 25);
+gate('boss 100 souls → 32', bossHp(7, 0, 100, 3) === 32);
+gate('boss 300 souls → 44', bossHp(7, 0, 300, 3) === 44);
+gate('boss 5 hearts (+5 past base → 33)', bossHp(7, 0, 0, 8) === 33);
+gate('boss 100 souls + 5 hearts → 43', bossHp(7, 0, 100, 8) === 43);
+gate('boss level 14 → 50', bossHp(14, 0, 0, 3) === 50);
+gate('boss level 21 → 50', bossHp(21, 0, 0, 3) === 50);
+gate('boss level 49 → 50', bossHp(49, 0, 0, 3) === 50);
+gate('boss level 84 capped ×2 → 50', bossHp(84, 0, 0, 3) === 50);
+gate('boss level 1000 capped ×2 → 50', bossHp(1000, 0, 0, 3) === 50);
+gate('boss NG2 capped ×2 → 50', bossHp(7, 2, 0, 3) === 50);
+gate('boss NG5 + level 21 capped → 50', bossHp(21, 5, 0, 3) === 50);
+gate('boss 1000 souls capped wealth → 88', bossHp(7, 0, 1000, 3) === 88);
+gate('boss all-capped (L84 NG2 1000 souls 8 hearts) → 267', bossHp(84, 2, 1000, 8) === 267);
 gate('boss HP monotone in level', bossHp(14, 0, 0, 3) <= bossHp(21, 0, 0, 3) && bossHp(21, 0, 0, 3) <= bossHp(49, 0, 0, 3) && bossHp(49, 0, 0, 3) <= bossHp(84, 0, 0, 3));
 
 // BOSS constants
-gate('BOSS constants', BOSS.INTERVAL === 7 && BOSS.BASE_HP === 90 && BOSS.HP_LEVEL_CAP === 2 && BOSS.MAX_MINIONS === 10 && BOSS.CHARGE_DMG === 2);
+gate('BOSS constants', BOSS.INTERVAL === 7 && BOSS.BASE_HP === 25 && BOSS.HP_LEVEL_CAP === 2 && BOSS.MAX_MINIONS === 10 && BOSS.CHARGE_DMG === 2);
 
 // BURN — v2 ruling: 30 flat on NG0
 gate('burn NG0 = 30', burnHp(0) === 30);

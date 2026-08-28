@@ -141,7 +141,7 @@ async function main() {
   const expectedHp = bossHp(hpCheck.level, hpCheck.ngPlus, hpCheck.souls, hpCheck.maxHealth);
   gate('boss HP matches bossHp() contract', hpCheck.bossHp === expectedHp,
     `live=${hpCheck.bossHp} expected=${expectedHp} (L${hpCheck.level} NG${hpCheck.ngPlus} souls=${hpCheck.souls} hearts=${hpCheck.maxHealth})`);
-  gate('boss HP ≤ 180 base at NG0 (cap works, old formula gave 180+×wealth only)', hpCheck.bossHp <= 180 + 100, `hp=${hpCheck.bossHp}`);
+  gate('boss HP ≤ 88 at L7 NG0 (25 base × max wealth 3.5)', hpCheck.bossHp <= 88, `hp=${hpCheck.bossHp}`);
   gate('boss bar visible on boss level', hpCheck.barVisible === true);
 
   // ---- PHASE A: no pre-aggro behavior. Player sits at the entrance; the boss

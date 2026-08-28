@@ -95,7 +95,7 @@ export const BIOME_SEQUENCE = [
 
 export const BOSS = {
   INTERVAL: 7,
-  BASE_HP: 90,            // base boss HP at level 7, NG0, empty bank
+  BASE_HP: 25, // base boss HP at level 7, NG0, empty bank
   HP_LEVEL_CAP: 2,       // level/NG+ pressure caps at ×2 (see bossHp)
   AGGRO_RANGE: 25,       // the lord wakes when the player is seen within 25 u
   CHARGE_DMG: 2,

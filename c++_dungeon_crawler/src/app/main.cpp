@@ -34,6 +34,7 @@
 #include "dc/constants.hpp"
 #include "dc/crashdiag.hpp"
 #include "dc/dungeon_gen.hpp"
+#include "dc/boss.hpp"
 #include "dc/movement.hpp"
 #include "dc/state.hpp"
 #include "dc/world.hpp"
@@ -168,6 +169,7 @@ uniform vec3 uHeadColor;
 uniform float uHeadIntensity;
 uniform float uHeadDist;
 uniform float uAmbient;
+uniform float uEmissive;
 uniform sampler2D uShadowMap;
 out vec4 fragColor;
 float shadowFactor(vec4 lpos) {
@@ -188,13 +190,14 @@ vec3 pointLight(vec3 L, vec3 lcolor, float intensity, float distance, float shad
   float dist = length(ld);
   float diff = max(dot(normalize(vNormal), ld / max(dist, 1e-4)), 0.0);
   float cut = 1.0 - smoothstep(distance * 0.5, distance, dist); // JS-style cutoff
-  float atten = intensity * cut / (1.0 + 0.1 * dist + 0.02 * dist * dist);
+  float atten = intensity * cut / (1.0 + 0.2 * dist + 0.06 * dist * dist); // JS decay ~1.05-1.2
   return lcolor * diff * atten * shadow;
 }
 void main() {
   vec3 lit = vColor * uAmbient;
   lit += pointLight(uTorchPos, uTorchColor, uTorchIntensity, uTorchDist, shadowFactor(vTorchPos));
   lit += pointLight(uHeadPos, uHeadColor, uHeadIntensity, uHeadDist, 1.0);
+  if (uEmissive > 0.5) lit = vColor * 1.4; // unlit emissive (boss / skeletons)
   fragColor = vec4(min(lit, vec3(1.5)), 1.0);
 }
 )";
@@ -341,7 +344,7 @@ struct App {
   // the single shadow-casting torch (static-assigned at level build)
   float torchPos[3] = {0, 6, 0};
   float torchColor[3] = {1.0f, 0.6f, 0.24f};
-  float torchIntensity = 2.2f;
+  float torchIntensity = 0.9f; // JS LIGHT_SOURCES.TORCH.intensity
 
   // player transform (yaw/pitch are in state.player; camera pos mirrors it)
   double camX = 0, camY = kEyeHeight, camZ = 0;
@@ -352,12 +355,29 @@ struct App {
   double mouseDX = 0, mouseDY = 0;
   bool pointerLocked = false;
 
+  // ---- entities (Phase 2 slice) ----
+  // The Spectral Lord, aggro-on-sight, 25 HP at level 7, SPECTRAL_COURT.
+  dc::Boss boss;
+  bool bossReady = false;
+  // App-local skeleton chasers (dc_core movement: moveToward + pathStep).
+  struct Skel { dc::Vec2 pos{0, 0}; double hitCd = 0; bool alive = true; };
+  std::vector<Skel> skels;
+  dc::Rng rng{12345u};
+  double simHealth = 3.0;   // boss/skeleton damage mutates this; mirrors JS
+  GLuint dynVbo = 0;        // dynamic instance VBO (boss + skeletons, 9 floats)
+  int dynCount = 0;
+  bool playerDead = false;
+  bool bossKillCounted = false;
+
   bool init(int w, int h, const char* title);
   void buildWorldFromState();
   void placePlayerAtEntrance();
+  void spawnEntities();
+  void updateEntities(double dt);
+  void uploadDynamic(std::vector<float>& dyn);
   void update(double dt, double rawDt);
   void frame();
-  void drawGroup(GLuint instVbo, int count);
+  void drawGroup(GLuint instVbo, int count, float emissive = 0.0f);
   void savePPM(const char* path);
   ~App();
 };
@@ -388,6 +408,94 @@ void App::placePlayerAtEntrance() {
   state.player.yaw = (float)M_PI; // face into the dungeon
   state.player.pitch = 0;
   camX = state.player.x; camY = kEyeHeight; camZ = state.player.z;
+}
+
+void App::spawnEntities() {
+  const int level = 7; // slice boss: the Spectral Lord at the exit throne
+  boss = dc::Boss::spawn(world.dungeon, level, state.ngPlus, state.collectedOrbs,
+                        state.maxHealth, "Skeleton");
+  bossReady = true;
+  bossKillCounted = false;
+  simHealth = state.maxHealth > 0 ? (double)state.maxHealth : 3.0;
+  playerDead = false;
+  skels.clear();
+  const double cs = world.dungeon.cellSize;
+  const int gs = world.dungeon.gridSize;
+  const int ex = world.dungeon.entranceCell ? world.dungeon.entranceCell->x : 0;
+  const int ez = world.dungeon.entranceCell ? world.dungeon.entranceCell->z : 0;
+  int spawned = 0;
+  for (int z = 1; z < gs && spawned < 2; z += 2)
+    for (int x = 1; x < gs && spawned < 2; x += 3) {
+      if (world.dungeon.grid[z][x] != dc::Cell::kEmpty) continue;
+      if (x == ex && z == ez) continue;
+      const double wx = x * cs, wz = z * cs;
+      if (std::hypot(wx - ex * cs, wz - ez * cs) < 10.0) continue; // room to run
+      if (dc::circleHitsBox(world.collision.boxes, wx, wz, player::kRadius)) continue;
+      skels.push_back(Skel{dc::Vec2{wx, wz}, 0.0, true});
+      spawned++;
+    }
+}
+
+void App::updateEntities(double dt) {
+  if (!bossReady || playerDead) return;
+  const dc::Vec2 pp{state.player.x, state.player.z};
+  // ---- boss (real state machine) ----
+  dc::BossCtx bctx;
+  bctx.dungeon = &world.dungeon;
+  bctx.boxes = &world.collision.boxes;
+  bctx.playerPos = pp;
+  bctx.playerMaxHealth = state.maxHealth > 0 ? (double)state.maxHealth : 3.0;
+  bctx.level = 7;
+  bctx.ngPlus = state.ngPlus;
+  bctx.souls = state.collectedOrbs;
+  bctx.bossKills = state.bossKills;
+  bctx.frozenAll = false;
+  bctx.rng = &rng;
+  bctx.playerHealth = &simHealth;
+  boss.update(dt, bctx);
+  if (boss.dead) state.bossKills += 1;
+  // ---- skeletons (dc_core chasers) ----
+  for (auto& s : skels) {
+    if (!s.alive) continue;
+    if (s.hitCd > 0) s.hitCd -= dt;
+    const double d = std::hypot(pp.x - s.pos.x, pp.z - s.pos.z);
+    // chase: pathStep toward the player when a wall blocks, else direct
+    dc::Mover m = s.pos;
+    double tx = pp.x, tz = pp.z;
+    if (d > 1.0 && !dc::hasLineOfSight(world.collision.boxes, s.pos.x, s.pos.z, pp.x, pp.z)) {
+      if (auto step = dc::pathStep(world.dungeon, world.collision.boxes, s.pos.x, s.pos.z, pp.x, pp.z)) {
+        tx = step->x; tz = step->z;
+      }
+    }
+    const double sp = 3.2; // skeleton speed (slower than player sprint)
+    dc::moveToward(m, tx, tz, sp, dt, world.collision.boxes, 0.4);
+    s.pos = m;
+    // contact damage (1 heart, 1s cooldown per skeleton)
+    if (s.hitCd <= 0 && d < 1.0) { simHealth -= 1.0; s.hitCd = 1.0; }
+    // death (next step: on 0 hp) — clamp for now
+  }
+  // ---- sync to GameState + death ----
+  simHealth = std::max(0.0, simHealth);
+  state.health = (int)std::lround(simHealth);
+  if (simHealth <= 0.0 && !playerDead) playerDead = true;
+}
+
+void App::uploadDynamic(std::vector<float>& dyn) {
+  dyn.clear();
+  auto push = [&](float ox, float oy, float oz, float sx, float sy, float sz,
+                  float r, float g, float b) {
+    dyn.insert(dyn.end(), {ox, oy, oz, sx, sy, sz, r, g, b});
+  };
+  // boss (glowing SPECTRAL_COURT accent ~0xaa88ff): pulse while awake
+  if (bossReady && !boss.dead) {
+    const float s = 1.6f + 0.15f * (float)std::sin(state.runTime * 6.0);
+    push((float)boss.pos.x, 1.1f, (float)boss.pos.z, s, 2.2f, s, 0.66f, 0.53f, 1.0f);
+  } else if (bossReady) {
+    push((float)boss.pos.x, 0.4f, (float)boss.pos.z, 1.4f, 0.2f, 1.4f, 0.4f, 0.3f, 0.5f); // corpse
+  }
+  // skeletons (bone white)
+  for (const auto& s : skels)
+    if (s.alive) push((float)s.pos.x, 0.9f, (float)s.pos.z, 0.6f, 1.7f, 0.6f, 0.85f, 0.85f, 0.8f);
 }
 
 bool App::init(int w, int h, const char* title) {
@@ -542,11 +650,20 @@ bool App::init(int w, int h, const char* title) {
   brightTexB = makeColorTex(width, height);
   brightFboB = makeFbo(brightTexB, false);
 
+  // ---- dynamic entity VBO (boss + skeletons), streamed each frame ----
+  glGenBuffers(1, &dynVbo);
+  glBindBuffer(GL_ARRAY_BUFFER, dynVbo);
+  { std::vector<float> tmp(64 * 9, 0.0f);
+    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(tmp.size() * sizeof(float)), tmp.data(), GL_DYNAMIC_DRAW); }
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+
   return true;
 }
 
-void App::drawGroup(GLuint instVbo, int count) {
+void App::drawGroup(GLuint instVbo, int count, float emissive) {
   if (count <= 0 || instVbo == 0) return;
+  glUseProgram(progScene);
+  glUniform1f(glGetUniformLocation(progScene, "uEmissive"), emissive);
   glBindVertexArray(vao);
   glBindBuffer(GL_ARRAY_BUFFER, instVbo);
   glEnableVertexAttribArray(2);
@@ -597,6 +714,9 @@ void App::update(double dt, double rawDt) {
   state.player.x = camX;
   state.player.z = camZ;
 
+  // ---- entities: boss (state machine) + skeleton chasers ----
+  updateEntities(dt);
+
   // ---- FOV kick while sprinting ----
   const float targetFov = (float)(camera::kFov + (sprinting ? camera::kSprintFovKick : 0));
   if (std::abs(fov - targetFov) > 0.1f) fov += (targetFov - fov) * 0.15f;
@@ -626,6 +746,18 @@ void App::frame() {
   Mat4 torchProj = Mat4::perspective(90.0f, 1.0f, 0.2f, 80.0f);
   Mat4 torchVP = torchProj * torchView;
 
+  // ---- dynamic entities (boss + skeletons) → streamed VBO, drawn in both passes ----
+  {
+    std::vector<float> dyn;
+    uploadDynamic(dyn);
+    dynCount = (int)(dyn.size() / 9);
+    if (dynCount > 0) {
+      glBindBuffer(GL_ARRAY_BUFFER, dynVbo);
+      glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(dyn.size() * sizeof(float)), dyn.data());
+      glBindBuffer(GL_ARRAY_BUFFER, 0);
+    }
+  }
+
   // ---- 1) shadow pass ----
   glBindFramebuffer(GL_FRAMEBUFFER, shadowFbo);
   glViewport(0, 0, kShadowSize, kShadowSize);
@@ -637,6 +769,7 @@ void App::frame() {
   drawGroup(world.instWallE, world.nWallE);
   drawGroup(world.instFloor, world.nFloor);
   drawGroup(world.instCeil, world.nCeil);
+  drawGroup(dynVbo, dynCount); // boss/skeletons cast the torch shadow
 
   // ---- 2) scene pass ----
   glBindFramebuffer(GL_FRAMEBUFFER, sceneFbo);
@@ -650,11 +783,11 @@ void App::frame() {
   glUniform3f(glGetUniformLocation(progScene, "uTorchPos"), torchPos[0], torchPos[1], torchPos[2]);
   glUniform3f(glGetUniformLocation(progScene, "uTorchColor"), torchColor[0], torchColor[1], torchColor[2]);
   glUniform1f(glGetUniformLocation(progScene, "uTorchIntensity"), torchIntensity);
-  glUniform1f(glGetUniformLocation(progScene, "uTorchDist"), 18.0f);
+  glUniform1f(glGetUniformLocation(progScene, "uTorchDist"), 16.0f);
   glUniform3f(glGetUniformLocation(progScene, "uHeadPos"), eye[0], eye[1], eye[2]);
   glUniform3f(glGetUniformLocation(progScene, "uHeadColor"), 0.9f, 0.9f, 0.85f);
-  glUniform1f(glGetUniformLocation(progScene, "uHeadIntensity"), 1.6f);
-  glUniform1f(glGetUniformLocation(progScene, "uHeadDist"), 26.0f);
+  glUniform1f(glGetUniformLocation(progScene, "uHeadIntensity"), 1.0f);
+  glUniform1f(glGetUniformLocation(progScene, "uHeadDist"), 30.0f);
   glUniform1f(glGetUniformLocation(progScene, "uAmbient"), (float)lighting::kAmbientIntensityStone);
   glActiveTexture(GL_TEXTURE0);
   glBindTexture(GL_TEXTURE_2D, shadowTex);
@@ -662,6 +795,7 @@ void App::frame() {
   drawGroup(world.instWallE, world.nWallE);
   drawGroup(world.instFloor, world.nFloor);
   drawGroup(world.instCeil, world.nCeil);
+  drawGroup(dynVbo, dynCount, 1.0f); // boss/skeletons: unlit emissive spectral figures
 
   // ---- 3) bloom ----
   glDisable(GL_DEPTH_TEST);
@@ -744,7 +878,7 @@ static void cursorCb(GLFWwindow*, double x, double y) {
 int main(int argc, char** argv) {
   int width = 1280, height = 720, frames = 0, seed = 1000;
   const char* savePath = nullptr;
-  bool showFps = false;
+  bool showFps = false, bossView = false;
   for (int i = 1; i < argc; i++) {
     if (!std::strcmp(argv[i], "--width")) width = std::atoi(argv[++i]);
     else if (!std::strcmp(argv[i], "--height")) height = std::atoi(argv[++i]);
@@ -752,6 +886,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--save")) savePath = argv[++i];
     else if (!std::strcmp(argv[i], "--fps")) showFps = true;
     else if (!std::strcmp(argv[i], "--seed")) seed = std::atoi(argv[++i]);
+    else if (!std::strcmp(argv[i], "--boss-view")) bossView = true;
   }
 
   App app;
@@ -771,6 +906,7 @@ int main(int argc, char** argv) {
   }
   app.buildWorldFromState();
   app.placePlayerAtEntrance();
+  app.spawnEntities();
 
   dc::CrashContext ctx{0, 0, 0.0, 0.0, "render"};
   dc::installCrashHandler(&ctx);
@@ -780,11 +916,36 @@ int main(int argc, char** argv) {
     glfwShowWindow(app.window);
     double t0 = glfwGetTime();
     const double dt = 1.0 / 60.0;
+    // --boss-view: stand 8u in front of the throne so the boss wakes,
+    // charges/blinks and the skeletons converge — a live combat shot.
+    if (bossView) {
+      const dc::Dungeon& dg = app.world.dungeon;
+      const double cs = dg.cellSize;
+      const dc::Vec2 b = app.boss.pos;
+      // ring-scan a walkable spot with clear LOS (mirror of the aggro-check)
+      static const double dirs[6][2] = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}, {0.7, 0.7}, {-0.7, 0.7}};
+      bool found = false;
+      for (double dist = 6.0; dist <= 12.0 && !found; dist += 1.0)
+        for (const auto& d : dirs) {
+          const double wx = b.x + d[0] * dist, wz = b.z + d[1] * dist;
+          if (dc::circleHitsBox(app.world.collision.boxes, wx, wz, player::kRadius)) continue;
+          if (!dc::hasLineOfSight(app.world.collision.boxes, b.x, b.z, wx, wz)) continue;
+          app.camX = wx; app.camZ = wz;
+          app.state.player.x = wx; app.state.player.z = wz;
+          app.state.player.yaw = (float)std::atan2(-(b.x - wx), -(b.z - wz));
+          found = true; break;
+        }
+      std::fprintf(stderr, "[dc_app] boss-view placed player %s throne (boss %s, hp %.0f)\n",
+                   found ? "beside" : "FALLBACK", app.boss.state.c_str(), app.boss.hp);
+    }
     for (int i = 0; i < frames; i++) {
       ctx.frame = i; ctx.phase = "render"; wd.begin();
-      // headless: drive the player forward toward the exit so the shot shows
-      // interior geometry (not a blank room)
-      app.keyW = true;
+      if (!bossView) app.keyW = true; // interior-walk shot: drive forward
+      else { // face the live boss each frame so it stays on screen
+        const double dx = app.boss.pos.x - app.state.player.x;
+        const double dz = app.boss.pos.z - app.state.player.z;
+        app.state.player.yaw = (float)std::atan2(-dx, -dz);
+      }
       app.update(dt, dt);
       app.frame();
       glfwSwapBuffers(app.window);
@@ -793,8 +954,9 @@ int main(int argc, char** argv) {
     }
     double el = glfwGetTime() - t0;
     if (savePath) app.savePPM(savePath);
-    std::fprintf(stderr, "[dc_app] %d frames in %.3fs (%.1f fps) seed=%d level=%d biome=%s\n",
-                 frames, el, frames / el, seed, app.state.level, app.state.biome.c_str());
+    std::fprintf(stderr, "[dc_app] %d frames in %.3fs (%.1f fps) seed=%d level=%d biome=%s boss=%s(%.0fhp) skels=%zu\n",
+                 frames, el, frames / el, seed, app.state.level, app.state.biome.c_str(),
+                 app.boss.state.c_str(), app.boss.hp, app.skels.size());
   } else {
     double last = glfwGetTime(), acc = 0;
     int n = 0;

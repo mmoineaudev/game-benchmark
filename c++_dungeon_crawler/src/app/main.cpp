@@ -439,6 +439,7 @@ struct App {
   int dynCount = 0;
   bool playerDead = false;
   bool bossKillCounted = false;
+  bool probeInvuln = false; // --hud-view probe: keep the play screen (not death)
   bool bossPortalOpen = false; // open when !bossLevel, or on boss defeat
   bool prevE = false;
   int  dungeonSeed = 0;        // per-level seed (JS Date.now()^rand, re-rolled per level)
@@ -499,6 +500,12 @@ struct App {
   // Pick a buff effect that is NOT the current one (never back-to-back).
   int _pickBuffNotCurrent();
   void _fireFireball();
+
+  // ---- HUD toasts (#messages) — JS _message(): 3.3 s life, max 4 stacked ----
+  struct Toast { std::string text; double ttl = 0; };
+  std::vector<Toast> toasts;
+  bool noAmmoShown = false; // "No orbs!" toast latch (JS _noAmmoShown)
+  void toast(const std::string& text);
 
   bool init(int w, int h, const char* title, const char* fontPath = nullptr);
   void buildWorldFromState();
@@ -639,7 +646,7 @@ void App::spawnEntities() {
     };
     // enemy/projectile damage (i-frames respected, mirrors JS _damagePlayer)
     skelsys.onPlayerDamaged = [this](double dmg, dc::Enemy*) {
-      if (invulnTimer > 0 || playerDead) return;
+      if (invulnTimer > 0 || playerDead || probeInvuln) return;
       simHealth -= dmg;
       invulnTimer = player::kInvulnTime;
     };
@@ -758,7 +765,8 @@ void App::updateEntities(double dt) {
   bctx.bossKills = state.bossKills;
   bctx.frozenAll = false;
   bctx.rng = &rng;
-  bctx.playerHealth = &simHealth;
+  // probe-invulnerable: boss damage no-ops (keep the play screen, not death)
+  bctx.playerHealth = probeInvuln ? nullptr : &simHealth;
   boss.update(dt, bctx);
   if (boss.dead && !bossKillCounted) { bossKillCounted = true; _onBossDefeated(); }
   } // end if (bossReady)
@@ -919,9 +927,14 @@ void App::applySwordCone(int stepIdx) {
 }
 void App::_fireOrbStep(bool /*isClick*/) {
   if (orbSeqStep == 0 || state.runTime - orbSeqLast > dc::orbWeapon::kSequenceWindow) {
-    if (state.collectedOrbs <= 0) return;          // no souls → no fire
+    if (state.collectedOrbs <= 0) {
+      // no-ammo: JS shows "No orbs! Slay skeletons to gather orbs" once per dry stretch
+      if (!noAmmoShown) { toast("No orbs! Slay skeletons to gather orbs"); noAmmoShown = true; }
+      return;
+    }
     state.collectedOrbs -= 1;                      // first step of a new sequence costs 1
     orbSeqStep = 1;
+    noAmmoShown = false;                           // JS resets on a successful fire
   } else {
     orbSeqStep = std::min(3, orbSeqStep + 1);
   }
@@ -1280,9 +1293,17 @@ void App::drawGroup(GLuint instVbo, int count, float emissive) {
   glBindVertexArray(0);
 }
 
+void App::toast(const std::string& text) {
+  toasts.push_back(Toast{text, 3.3}); // JS _message: 3.3 s life
+  while (toasts.size() > 4) toasts.erase(toasts.begin()); // JS keeps max 4
+}
+
 void App::update(double dt, double rawDt) {
   // ---- adaptive performance: rolling fps + 30 fps floor + degraded mode ----
   trackFps(rawDt);
+  // ---- HUD toasts tick in real time (JS setTimeout 3.3 s) — all screens ----
+  for (auto& t : toasts) t.ttl -= rawDt;
+  while (!toasts.empty() && toasts.front().ttl <= 0) toasts.erase(toasts.begin());
   // ---- title / death bookends (sim frozen, screen keys only) ----
   if (screen == Screen::Title) {
     if (keyN && !prevN) startRun(seed);
@@ -1687,6 +1708,58 @@ void App::drawHud() {
   };
   std::vector<float> t; // text verts
 
+  // diamond (rotated square) — 4 triangles, centered at (cx,cy), half-diagonal d
+  auto diamond = [&](float cx, float cy, float d, float r, float g, float b, float a) {
+    P(cx, cy - d, r, g, b, a); P(cx - d, cy, r, g, b, a); P(cx, cy, r, g, b, a);
+    P(cx, cy + d, r, g, b, a); P(cx + d, cy, r, g, b, a); P(cx, cy, r, g, b, a);
+    P(cx, cy - d, r, g, b, a); P(cx, cy, r, g, b, a); P(cx + d, cy, r, g, b, a);
+    P(cx - d, cy, r, g, b, a); P(cx, cy, r, g, b, a); P(cx, cy - d, r, g, b, a);
+  };
+  // vertical gradient band (4-vertex per-vertex alpha): a0 at top → a1 at bottom
+  auto vgrad = [&](float x, float y, float w, float h, float r, float g, float b, float a0, float a1) {
+    if (w <= 0 || h <= 0) return;
+    float x1 = x + w, y1 = y + h;
+    P(x, y, r, g, b, a0); P(x1, y, r, g, b, a0); P(x1, y1, r, g, b, a1);
+    P(x, y, r, g, b, a0); P(x1, y1, r, g, b, a1); P(x, y1, r, g, b, a1);
+  };
+  // horizontal gradient band (per-vertex alpha): a0 at left → a1 at right
+  auto hgrad = [&](float x, float y, float w, float h, float r, float g, float b, float a0, float a1) {
+    if (w <= 0 || h <= 0) return;
+    float x1 = x + w, y1 = y + h;
+    P(x, y, r, g, b, a0); P(x1, y, r, g, b, a1); P(x1, y1, r, g, b, a1);
+    P(x, y, r, g, b, a0); P(x1, y1, r, g, b, a1); P(x, y1, r, g, b, a0);
+  };
+
+  // ---- DANGER GLOW: 4 screen-edge red gradients, alpha = min(1, Σ(1/d)/2) ----
+  // living enemies within 40 m, sector-relative to view yaw (JS _updateHUD)
+  {
+    const float px = camX, pz = camZ;
+    const float yaw = state.player.yaw;
+    double sTop = 0, sBottom = 0, sLeft = 0, sRight = 0;
+    for (const dc::Enemy& e : skelsys.enemies()) {
+      if (e.state == dc::EnemyState::kDead) continue;
+      const double dx = e.pos.x - px, dz = e.pos.z - pz;
+      const double d = std::hypot(dx, dz);
+      if (d > 40 || d < 0.5) continue;
+      const double rel = std::atan2(dx, dz) - (yaw + 3.14159265358979323846);
+      const double twoPi = 6.2831853071795864769;
+      double a = fmod(rel, twoPi);
+      if (a < 0) a += twoPi; // 0..2π, 0 = front
+      const double contrib = 1.0 / d;
+      if (a < 0.7853981633974483 || a > 5.497787143782138) sTop += contrib;
+      else if (a < 2.3561944901923449) sRight += contrib;
+      else if (a < 3.9269908169872415) sBottom += contrib;
+      else sLeft += contrib;
+    }
+    const float band = 110.0f; // JS .danger-edge thickness
+    const float dr = 0.784f, dg = 0.118f, db = 0.078f; // #c81e14
+    auto op = [](double s) { return (float)std::min(1.0, s / 2.0); };
+    if (sBottom > 0) vgrad(0, H - band, W, band, dr, dg, db, 0, 0.85f * op(sBottom));
+    if (sTop > 0) vgrad(0, 0, W, band, dr, dg, db, 0.85f * op(sTop), 0);
+    if (sLeft > 0) hgrad(0, 0, band, H, dr, dg, db, 0.85f * op(sLeft), 0);
+    if (sRight > 0) hgrad(W - band, 0, band, H, dr, dg, db, 0, 0.85f * op(sRight));
+  }
+
   // ---- top-left: VITALITY (hearts) ----
   {
     float pw = 196.0f;
@@ -1701,11 +1774,15 @@ void App::drawHud() {
     drawTextLine(t, m + 10, by + bh + 5, 0.45f, hpNum, num);
   }
 
-  // ---- top-right: SOULS + weapon slot (right-aligned) ----
+  // ---- top-right: SOULS + weapon slot + buff badge + sprint-bonus ----
   {
     float xR = W - m;
     const float pw = 150.0f;
-    rect(xR - pw, m, pw, 74, panel[0], panel[1], panel[2], panel[3]);
+    // buff badge (#9ecbe0) + sprint-bonus (#8fae7e) hang below the slot
+    const bool hasBuff = state.buffEffect > 0;
+    const bool hasSprint = state.sprintTier > 0;
+    const float ph = 74.0f + (hasBuff ? 16.0f : 0.0f) + (hasSprint ? 14.0f : 0.0f);
+    rect(xR - pw, m, pw, ph, panel[0], panel[1], panel[2], panel[3]);
     auto drawRight = [&](float y, float size, const float c[3], const char* s) {
       drawTextLine(t, xR - 12 - lineW(s, size), y, size, c, s);
     };
@@ -1719,6 +1796,55 @@ void App::drawHud() {
     // separator line under the souls count
     rect(xR - 12, m + 50, pw - 24, 1, 0.29f, 0.25f, 0.16f, 1.0f); // #4a3f28
     drawRight(m + 55, 0.5f, weapon, wslot);
+    float yy = m + 76;
+    if (hasBuff) {
+      // #buff-badge: "<NAME> <ceil(s)>s" in #9ecbe0
+      const float buffBadge[3] = {0.62f, 0.80f, 0.88f}; // #9ecbe0
+      char bb[40];
+      std::snprintf(bb, sizeof(bb), "%s %ds", dc::GameState::kBuffNames[state.buffEffect], (int)std::ceil(state.buffTime));
+      drawRight(yy, 0.42f, buffBadge, bb);
+      yy += 16;
+    }
+    if (hasSprint) {
+      // #sprint-bonus: acceleration above the base ×1.55 (tier 0 hidden)
+      const float sprintC[3] = {0.56f, 0.68f, 0.49f}; // #8fae7e
+      char sb[24];
+      std::snprintf(sb, sizeof(sb), "SPRINT +%d%%", (int)std::lround((state.sprintSpeedMult() / dc::player::kSprintMult - 1.0) * 100.0));
+      drawRight(yy, 0.42f, sprintC, sb);
+    }
+  }
+
+  // ---- combo pips (bottom-right, above boss bar): 3 diamonds, i < swordStep lit ----
+  {
+    const float px0 = W - 26.0f, py0 = H - 120.0f; // JS #combo-pips anchor
+    for (int i = 2; i >= 0; i--) { // leftmost first (JS flex row order)
+      const float cx = px0 - (2 - i) * 16.0f, cy = py0;
+      if (i < swordStep) diamond(cx, cy, 7.0f, 0.784f, 0.659f, 0.306f, 1.0f); // #c8a84e
+      else diamond(cx, cy, 7.0f, 0.420f, 0.353f, 0.204f, 1.0f);                 // #6b5a34 border
+    }
+  }
+
+  // ---- right side: COMBAT live-stats panel (JS #side-stats, always on) ----
+  {
+    const float pw = 172.0f, xR = W - m, y0 = 128.0f;
+    char lines[7][48];
+    const double scale = dc::totalSwordScale(state.weaponTier, state.buffEffect == 3 ? 1.5 : 1.0);
+    const double dmgMult = dc::damageMult(scale, state.weaponTier, state.level);
+    std::snprintf(lines[0], sizeof(lines[0]), "DMG \xc3\x97%.2f", dmgMult);
+    std::snprintf(lines[1], sizeof(lines[1]), "Orb DMG %.2f", 1.0 + 0.02 * state.collectedOrbs);
+    std::snprintf(lines[2], sizeof(lines[2]), "Reach %.1f", 2.2 * scale * (1.0 + 0.04 * state.weaponTier));
+    std::snprintf(lines[3], sizeof(lines[3]), "Enemy HP \xc3\x97%.1f", 1.0 + 3.0 * state.ngPlus);
+    std::snprintf(lines[4], sizeof(lines[4]), "Mob speed \xc3\x97%.2f",
+                   (1.0 + 0.02 * (state.level - 1)) * (1.0 + 0.1 * state.bossKills));
+    std::snprintf(lines[5], sizeof(lines[5]), "Spawns \xc3\x97%.2f",
+                   std::min(1.0 + (state.level + state.collectedOrbs) / 10.0, 100.0));
+    std::snprintf(lines[6], sizeof(lines[6]), "Regen +1/%ds", (int)dc::player::kRegenInterval);
+    const float lineH = 14.0f;
+    const float ph = 24.0f + 7 * lineH + 6.0f;
+    rect(xR - pw, y0, pw, ph, panel[0], panel[1], panel[2], panel[3]);
+    drawTextLine(t, xR - pw / 2 - lineW("COMBAT", 0.4f) / 2, y0 + 8, 0.4f, label, "COMBAT");
+    const float statC[3] = {0.85f, 0.79f, 0.63f}; // #d8c9a0
+    for (int i = 0; i < 7; i++) drawTextLine(t, xR - pw + 12, y0 + 24 + i * lineH, 0.42f, statC, lines[i]);
   }
 
   // ---- top-center: LEVEL · BIOME + timer ----
@@ -1753,6 +1879,17 @@ void App::drawHud() {
     const char* w = "DEGRADED MODE — bloom off for performance";
     const float perfWarn[4] = {0.85f, 0.63f, 0.23f, 1.0f};
     drawTextLine(t, W - m - lineW(w, 0.4f), H - 24, 0.4f, perfWarn, w);
+  }
+
+  // ---- toasts (#messages): bottom-center stack, oldest on top, newest at
+  //      bottom:170 — JS _message() 3.3 s life, max 4, color #efe0ac ----
+  {
+    const float toastC[3] = {0.937f, 0.878f, 0.675f}; // #efe0ac
+    const float baseY = H - 170.0f, lineH = 24.0f;
+    for (size_t i = toasts.size(); i-- > 0; ) {
+      const float y = baseY - (int)(toasts.size() - 1 - i) * lineH;
+      drawTextLine(t, W / 2.0f - lineW(toasts[i].text.c_str(), 0.6f) / 2, y, 0.6f, toastC, toasts[i].text.c_str());
+    }
   }
 
   drawRects(v);
@@ -2003,6 +2140,43 @@ int main(int argc, char** argv) {
       app.state.weaponTier = dc::weaponTier(app.state.collectedOrbs);
       app.simHealth = 2.0;           // partial hearts bar (of maxHealth 3)
       app.state.health = 2;
+      // probe player is invulnerable: the boss charges/blinks and would kill
+      // the standing probe before the frame capture, hiding the HUD under the
+      // death overlay. Keep the hearts readout at 2/3 but make simHealth
+      // effectively immortal so the PLAY screen (with the boss bar) is shot.
+      app.probeInvuln = true;
+      // p3-hud-full: force the new HUD elements visible
+      app.state.buffEffect = 1; app.state.buffTime = 4.7; // → "BRIGHT 5s" badge
+      app.state.sprintTier = 3;                           // → "SPRINT +15%" line
+      app.swordStep = 2;                                  // → 2/3 combo pips lit
+      app.toast("Something stirs in the ashes...");      // #messages toast
+      app.toast("No orbs! Slay skeletons to gather orbs"); // no-ammo toast
+      // danger glow: boss levels spawn no regular skeletons, so push a small
+      // cluster of living SKELETONs in FRONT of the player (view dir = -sin,-cos)
+      // to light the TOP edge (a=0 → top). 6 mobs @ d≈6 → Σ(1/d)≈1.0, opacity 0.5.
+      // JS iterates skeletons.enemies, not the boss — parity. def set so
+      // skelsys.update is safe; the glow reads only pos/state.
+      {
+        const float yw = app.state.player.yaw;
+        // FRONT of view = (-sin(yaw), -cos(yaw)); fan the cluster across it.
+        for (int k = 0; k < 6; k++) {
+          dc::Enemy sk;
+          sk.type = "SKELETON";
+          sk.def = &dc::kEnemyTypes.at("SKELETON");
+          sk.hp = sk.maxHp = 2;
+          sk.speed = 2.6; sk.dmg = 1; sk.drops = 1;
+          sk.state = dc::EnemyState::kChase;
+          const float spread = (float)(k - 2.5f) * 0.4f; // fan across the front
+          const float off = 6.0f + 0.4f * spread;
+          // front view dir (-sin,-cos), lateral offset along right dir (cos,-sin)
+          sk.pos.x = app.state.player.x + off * -std::sin(yw) + spread * std::cos(yw);
+          sk.pos.z = app.state.player.z + off * -std::cos(yw) + spread * -std::sin(yw);
+          app.skelsys.enemies().push_back(std::move(sk));
+        }
+      }
+      // hold Shift so updateSprint keeps the tier (probe stands still, so it
+      // decays to 0 otherwise) — the sprint-bonus line stays up for the shot
+      app.keyShift = true;
       const double dx = b.x - app.state.player.x, dz = b.z - app.state.player.z;
       app.state.player.yaw = (float)std::atan2(-dx, -dz);
       std::fprintf(stderr, "[dc_app] hud-view: player %s throne (souls %d → T%d, hp %d/%d)\n",
@@ -2102,6 +2276,13 @@ int main(int argc, char** argv) {
     for (int i = 0; i < frames; i++) {
       ctx.frame = i; ctx.phase = "render"; wd.begin();
       if (!bossView && !descendView && !deathView && !hudView && !enemyView && !dropView && !burnView) app.keyW = true; // interior-walk shot: drive forward
+      else if (hudView) { // sprint toward the boss: keeps the SPRINT bonus line up
+        // (updateSprint decays sprintTier to 0 when not moving+Shift)
+        app.keyW = true; app.keyShift = true;
+        const double dx = app.boss.pos.x - app.state.player.x;
+        const double dz = app.boss.pos.z - app.state.player.z;
+        app.state.player.yaw = (float)std::atan2(-dx, -dz);
+      }
       else if (enemyView) { // stand still, face the nearest live mob (roster showcase)
         const dc::Vec2 p2{app.state.player.x, app.state.player.z};
         const auto near = app.skelsys.nearby(p2.x, p2.z, 60.0);

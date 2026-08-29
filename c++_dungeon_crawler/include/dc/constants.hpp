@@ -282,6 +282,9 @@ inline const std::unordered_map<std::string, EnemyTypeDef> kEnemyTypes = {
   {"RAT", {1, 4.2, 1, 0.9, false, "", 0, 0, 0, 0, {8, 3, 0.15}, {0.35, 0.25, 0.4, 1.2}, 0, true, 0.8, false, false, 0, {2, 3}, false, std::nullopt}},
   {"BRUTE", {8, 1.2, 3, 2.4, false, "", 0, 0, 0, 0, {8, 3, 0.15}, {1.2, 0.3, 1.2, 2.5}, 3, false, 0, false, true, 0.87, {}, true, EliteDef{"Ogre", 16, 1.2, 4, 1.9}}},
   {"WRAITH", {2, 2.4, 1, 0.9, false, "", 0, 0, 0, 0, {8, 3, 0.15}, {0.35, 0.25, 0.4, 1.2}, 2, true, 1.0, true, false, 0, {}, true, EliteDef{"Banshee", 4, 1.4, 3}}},
+  // BURN — final-foe ash wraith (§18): WRAITH shape but a MELEE cycle (no
+  // phases/instant), range 1.3, drops 2, hp overridden to burnHp(ngPlus).
+  {"BURN", {1, 2.6, 1, 1.3, false, "", 0, 0, 0, 0, {8, 3, 0.15}, {0.4, 0.25, 0.35, 1.4}, 2, false, 0, false, false, 0, {}, false, std::nullopt}},
 };
 
 // Spawn weights per biome (sum 100): Skeleton, Magician, Armored, Archer, Rat, Brute, Wraith

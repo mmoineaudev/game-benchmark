@@ -152,12 +152,22 @@ public:
                    int bossKills, Rng& rng);
   // Count of live summoned minions (ranged wraiths) — the MAX_MINIONS cap.
   int liveMinionCount() const;
+  // BURN — the final-foe ash wraith (§16.4): spawned ONCE per cleared level at
+  // the walkable cell farthest (Euclidean) from the player. Own def: WRAITH
+  // shape, MELEE cycle (0.4/0.25/0.35, cd 1.4), range 1.3, hp burnHp(ngPlus),
+  // drops 2, speed 2.6, floats. Returns the new enemy index or -1 if the
+  // dungeon has no walkable cell.
+  int spawnBURN(const Dungeon& dungeon, const Vec2& playerPos, int ngPlus);
 
   // ---- callbacks (Game.js ↔ System) ----
   // onKill: a mob reached 0 hp this frame (source = "sword"/"orb"/"explosion").
   std::function<void(Enemy*, const char*)> onKill;
   // onPlayerDamaged: a mob's attack/projectile hit the player (pre-i-frame).
   std::function<void(double, Enemy*)> onPlayerDamaged;
+  // onFirePatch: BURN emits a ground fire patch here (visual only; the app
+  // owns the 6-slot pool + grow/fade render). Fires every 0.6 s while BURN
+  // is awake (matches JS SkeletonSystem firePatch).
+  std::function<void(double, double)> onFirePatch;
 
   // ---- private ----
 private:

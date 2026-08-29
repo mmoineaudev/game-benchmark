@@ -97,6 +97,40 @@ int SkeletonSystem::liveMinionCount() const {
   return n;
 }
 
+int SkeletonSystem::spawnBURN(const Dungeon& d, const Vec2& playerPos, int ngPlus) {
+  // Walkable cell farthest (Euclidean) from the player — mirror spawnBURN.
+  const int gs = d.gridSize;
+  int bestX = -1, bestZ = -1;
+  double bestD = -1;
+  for (int z = 0; z < gs; z++)
+    for (int x = 0; x < gs; x++) {
+      if (d.grid[z][x] == Cell::kEmpty) continue;
+      const double dx = static_cast<double>(x) * 6.0 - playerPos.x;
+      const double dz = static_cast<double>(z) * 6.0 - playerPos.z;
+      const double dd = dx * dx + dz * dz;
+      if (dd > bestD) { bestD = dd; bestX = x; bestZ = z; }
+    }
+  if (bestX < 0) return -1; // no walkable cell
+
+  const EnemyTypeDef* def = defOf("BURN");
+  Enemy e;
+  e.type = "BURN";
+  e.def = def;
+  e.hp = e.maxHp = burnHp(ngPlus);
+  e.dmg = def->dmg;
+  e.drops = 2;
+  e.speed = 2.6;
+  e.floats = true;
+  e.isBURN = true;
+  e.state = EnemyState::kWaking;
+  e.wakeTimer = 0.8;
+  e.pos = {static_cast<double>(bestX) * 6.0, static_cast<double>(bestZ) * 6.0};
+  e.facing = 0;
+  e.cooldown = 0;
+  enemies_.push_back(std::move(e));
+  return static_cast<int>(enemies_.size()) - 1;
+}
+
 std::vector<CellRef> SkeletonSystem::candidateCells(const Dungeon& d) const {
   // BFS from the entrance over non-empty cells (mirror _candidateCells).
   const int gs = d.gridSize;
@@ -490,6 +524,15 @@ void SkeletonSystem::update(double dt, const EnemyCtx& ctx) {
             }
           }
         });
+      }
+    }
+
+    // BURN ground fire (visual): emit a fire patch every 0.6 s while awake.
+    if (e.isBURN) {
+      e.fireAcc += dt;
+      if (e.fireAcc >= 0.6) {
+        e.fireAcc = 0;
+        if (onFirePatch) onFirePatch(e.pos.x, e.pos.z);
       }
     }
   }

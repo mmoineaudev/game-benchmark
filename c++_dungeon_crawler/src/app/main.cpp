@@ -429,6 +429,12 @@ struct App {
   double simHealth = 3.0;   // boss/enemy damage mutates this; mirrors JS
   double invulnTimer = 0;  // i-frames (PLAYER.INVULN_TIME 0.8) — enemy damage
   bool hasArenaNow = false; // §16.1/§16.4: current level has an ARENA room
+  // ---- BURN final-foe (§16.4): ash wraith spawns once when the level clears ----
+  bool burnSpawnedThisLevel = false;
+  // BURN ground-fire patches: visual-only 6-slot round-robin pool (§16.4).
+  struct FirePatch { double x = 0, z = 0, t = 0; bool active = false; };
+  std::vector<FirePatch> firePatches;
+  int firePatchIdx = 0;
   GLuint dynVbo = 0;        // dynamic instance VBO (boss + enemies, 9 floats)
   int dynCount = 0;
   bool playerDead = false;
@@ -560,6 +566,16 @@ void App::spawnEntities() {
   const bool bossLevel = (level % dc::boss::kInterval == 0);
   skelsys.clear(); // drop previous level's mobs + projectiles
   drops.clear();  // breakables/sarcophagi/drops reset per level
+  // BURN final-foe state resets per level (§16.4)
+  burnSpawnedThisLevel = false;
+  firePatches.clear(); firePatchIdx = 0;
+  skelsys.onFirePatch = [this](double x, double z) {
+    // round-robin 6-slot pool (JS firePatch): BURN leaves a fire trail
+    if (firePatches.empty()) { firePatches.resize(6); for (auto& p : firePatches) p.active = false; }
+    FirePatch& p = firePatches[firePatchIdx];
+    firePatchIdx = (firePatchIdx + 1) % (int)firePatches.size();
+    p.x = x; p.z = z; p.t = 0; p.active = true;
+  };
   simHealth = state.maxHealth > 0 ? (double)state.maxHealth : 3.0;
   invulnTimer = 0;
   playerDead = false;
@@ -717,6 +733,12 @@ void App::updateEntities(double dt) {
   drops.tickBreakables(pp, state.collectedOrbs, rng);
   drops.tickSarcophagi(pp);
   drops.update(dt, pp);
+  // BURN ground-fire patches: advance + expire (visual only, §16.4)
+  for (auto& p : firePatches) {
+    if (!p.active) continue;
+    p.t += dt;
+    if (p.t >= 10.0) p.active = false;
+  }
 
   // ---- boss (real state machine) — only on boss levels ----
   if (bossReady) {
@@ -753,6 +775,12 @@ void App::updateEntities(double dt) {
     ctx.souls = state.collectedOrbs;
     ctx.bossKills = state.bossKills;
     skelsys.update(dt, ctx);
+    // BURN final foe: entire level cleared (non-boss, non-arena) → spawn once.
+    if (!hasArenaNow && !burnSpawnedThisLevel && skelsys.queue().empty() &&
+        skelsys.liveCount() == 0) {
+      burnSpawnedThisLevel = true;
+      skelsys.spawnBURN(world.dungeon, pp, state.ngPlus);
+    }
   }
   if (invulnTimer > 0) invulnTimer -= dt;
   // ---- sync to GameState + death ----
@@ -990,6 +1018,15 @@ void App::uploadDynamic(std::vector<float>& dyn) {
     const double sx = state.player.x + fx * reach, sz = state.player.z + fz * reach;
     const double sy = camY - 0.15;
     push((float)sx, (float)sy, (float)sz, 0.06f, 0.9f, 0.06f, 0.85f, 0.9f, 1.0f);
+  }
+  // ---- BURN ground-fire patches (visual, §16.4): grow 0.3 s, fade last 1 s ----
+  for (const auto& p : firePatches) {
+    if (!p.active) continue;
+    const float grow = (float)std::min(1.0, p.t / 0.3);
+    const float fade = (p.t > 9.0) ? (float)std::max(0.0, 10.0 - p.t) : 1.0f;
+    const float s = 0.5f * grow * fade;
+    if (s <= 0.001f) continue;
+    push((float)p.x, 0.04f, (float)p.z, s, 0.06f, s, 1.0f, 0.45f, 0.1f);
   }
   // ---- breakables (barrels/crates) — warm brown, emissive ----
   for (const auto& b : drops.breakables())
@@ -1795,7 +1832,7 @@ int main(int argc, char** argv) {
   const char* savePath = nullptr;
   bool showFps = false, bossView = false, combatView = false, descendView = false;
   bool titleView = false, deathView = false, hudView = false, degradedView = false;
-  bool enemyView = false, dropView = false;
+  bool enemyView = false, dropView = false, burnView = false;
   for (int i = 1; i < argc; i++) {
     if (!std::strcmp(argv[i], "--width")) width = std::atoi(argv[++i]);
     else if (!std::strcmp(argv[i], "--height")) height = std::atoi(argv[++i]);
@@ -1814,6 +1851,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--degraded")) degradedView = true;
     else if (!std::strcmp(argv[i], "--enemy-view")) enemyView = true;
     else if (!std::strcmp(argv[i], "--drop-view")) dropView = true;
+    else if (!std::strcmp(argv[i], "--burn-view")) burnView = true;
   }
 
   App app;
@@ -2022,6 +2060,33 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "[dc_app] drop-view: no breakables/sarcophagi this level\n");
       }
     }
+    // --burn-view: showcase the BURN final-foe + its ground-fire patches.
+    // Force-spawn BURN at the farthest cell (bypassing the clear trigger), then
+    // stand adjacent (LOS) facing it; fire patches emit every 0.6 s.
+    if (burnView) {
+      app.state.safeSpawn = 0;
+      app.burnSpawnedThisLevel = true; // suppress the natural (duplicate) trigger
+      const int bi = app.skelsys.spawnBURN(app.world.dungeon,
+                                           {app.camX, app.camZ}, app.state.ngPlus);
+      if (bi >= 0) {
+        const dc::Vec2& bp = app.skelsys.enemies()[bi].pos;
+        static const double dirs[8][2] = {{1,0},{-1,0},{0,1},{0,-1},{0.7,0.7},{-0.7,0.7},{0.7,-0.7},{-0.7,-0.7}};
+        bool found = false;
+        for (const auto& d : dirs) {
+          const double wx = bp.x + d[0] * 3.0, wz = bp.z + d[1] * 3.0;
+          if (dc::circleHitsBox(app.world.collision.boxes, wx, wz, player::kRadius)) continue;
+          if (!dc::hasLineOfSight(app.world.collision.boxes, bp.x, bp.z, wx, wz)) continue;
+          app.camX = wx; app.camZ = wz;
+          app.state.player.x = wx; app.state.player.z = wz;
+          app.state.player.yaw = (float)std::atan2(-(bp.x - wx), -(bp.z - wz));
+          found = true; break;
+        }
+        std::fprintf(stderr, "[dc_app] burn-view: BURN at (%.1f,%.1f) %s\n",
+                     bp.x, bp.z, found ? "" : "(FALLBACK: no LOS spot)");
+      } else {
+        std::fprintf(stderr, "[dc_app] burn-view: spawnBURN failed (no walkable cell)\n");
+      }
+    }
     // --degraded: force the degraded-mode state (bloom off) for the 30 fps gate
     if (degradedView) { app.degraded = true; app.forcedDegraded = true; app.lowFpsTimer = 0; }
     // watch level transitions (descend-view) so a descent is provable headlessly
@@ -2031,7 +2096,7 @@ int main(int argc, char** argv) {
     bool restartSeen = false;
     for (int i = 0; i < frames; i++) {
       ctx.frame = i; ctx.phase = "render"; wd.begin();
-      if (!bossView && !descendView && !deathView && !hudView && !enemyView && !dropView) app.keyW = true; // interior-walk shot: drive forward
+      if (!bossView && !descendView && !deathView && !hudView && !enemyView && !dropView && !burnView) app.keyW = true; // interior-walk shot: drive forward
       else if (enemyView) { // stand still, face the nearest live mob (roster showcase)
         const dc::Vec2 p2{app.state.player.x, app.state.player.z};
         const auto near = app.skelsys.nearby(p2.x, p2.z, 60.0);
@@ -2041,6 +2106,7 @@ int main(int argc, char** argv) {
         }
       }
       else if (dropView) { /* stand still, face the prop (yaw set at placement) */ }
+      else if (burnView) { /* stand still, face BURN (yaw set at placement) */ }
       else { // face the live boss each frame so it stays on screen
         const double dx = app.boss.pos.x - app.state.player.x;
         const double dz = app.boss.pos.z - app.state.player.z;

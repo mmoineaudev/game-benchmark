@@ -66,7 +66,7 @@ TEST_CASE("breakProp: 6% buff roll first, then 20% 1-5 orbs; deterministic per s
   // Statistical check over many breaks at zero souls: ~6% buff, ~18.8% orb drops.
   DropSystem drops;
   Rng rng{123u};
-  int buffDrops = 0, orbDrops = 0, souls = 0;
+  int buffDrops = 0, souls = 0;
   drops.onOrbCollected = [&] { souls++; };
   for (int i = 0; i < 4000; i++) {
     auto& b = drops.breakables();

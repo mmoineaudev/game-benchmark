@@ -310,3 +310,74 @@ TEST_CASE("elite ARMORED: Warlord scales hp/drops/speed", "[skeleton_system][spa
     }
   }
 }
+
+TEST_CASE("BURN: spawnBURN places the ash wraith on the farthest walkable cell", "[skeleton_system][burn]") {
+  const Fixture f;
+  SkeletonSystem sys;
+  const int idx = sys.spawnBURN(f.dungeon, f.player, 0);
+  REQUIRE(idx >= 0);
+  const Enemy& e = sys.enemies()[idx];
+  CHECK(e.type == "BURN");
+  CHECK(e.isBURN);
+  CHECK(e.floats);
+  CHECK(e.hp == burnHp(0));   // 30 flat at NG0
+  CHECK(e.drops == 2);
+  CHECK(e.dmg == 1);
+  CHECK(e.speed == Catch::Approx(2.6));
+  // Farthest walkable cell (Euclidean) from the player.
+  const int gs = f.dungeon.gridSize;
+  int bx = 0, bz = 0;
+  double bd = -1;
+  for (int z = 0; z < gs; z++)
+    for (int x = 0; x < gs; x++) {
+      if (f.dungeon.grid[z][x] == Cell::kEmpty) continue;
+      const double dd = (x * 6.0 - f.player.x) * (x * 6.0 - f.player.x) +
+                        (z * 6.0 - f.player.z) * (z * 6.0 - f.player.z);
+      if (dd > bd) { bd = dd; bx = x; bz = z; }
+    }
+  CHECK(e.pos.x == Catch::Approx(static_cast<double>(bx) * 6.0));
+  CHECK(e.pos.z == Catch::Approx(static_cast<double>(bz) * 6.0));
+}
+
+TEST_CASE("BURN: melee cycle + fire patches every 0.6 s", "[skeleton_system][burn][ai]") {
+  const Fixture f;
+  SkeletonSystem sys;
+  int patches = 0;
+  sys.onFirePatch = [&](double, double) { patches++; };
+  const int idx = sys.spawnBURN(f.dungeon, f.player, 0);
+  REQUIRE(idx >= 0);
+  Enemy* b = &sys.enemies()[idx];
+  CHECK(b->state == EnemyState::kWaking);
+  EnemyCtx ctx = f.makeCtx();
+  ctx.playerPos = {b->pos.x, b->pos.z}; // stand on it: attacks + fires
+  const double dt = 1.0 / 60.0;
+  for (int i = 0; i < 60 * 2; i++) sys.update(dt, ctx); // 2 s awake
+  CHECK(b->state != EnemyState::kWaking);
+  // 0.6 s cadence over ~2 s awake → 2-3 patches (wake 0.8 s + first at 0.6 after)
+  CHECK(patches >= 1);
+  CHECK(patches <= 4);
+  // fireAcc never exceeds one cadence
+  CHECK(b->fireAcc < 0.6 + 1e-9);
+}
+
+TEST_CASE("BURN: dies, drops 2 orbs via onKill, then is culled", "[skeleton_system][burn]") {
+  const Fixture f;
+  SkeletonSystem sys;
+  Enemy* killed = nullptr;
+  sys.onKill = [&](Enemy* e, const char*) { killed = e; };
+  const int idx = sys.spawnBURN(f.dungeon, f.player, 2); // NG+2: 30*(1+6) = 210
+  REQUIRE(idx >= 0);
+  Enemy* b = &sys.enemies()[idx];
+  CHECK(b->maxHp == burnHp(2)); // 210
+  const bool died = sys.hitEnemy(b, 210.0, "sword");
+  CHECK(died);
+  CHECK(killed == b);
+  CHECK(killed->drops == 2);
+  // cull after 1.3 s hold
+  EnemyCtx ctx = f.makeCtx();
+  for (int i = 0; i < 120; i++) sys.update(1.0 / 60.0, ctx);
+  int live = 0;
+  for (const auto& e : sys.enemies())
+    if (e.state != EnemyState::kDead) live++;
+  CHECK(live == 0);
+}

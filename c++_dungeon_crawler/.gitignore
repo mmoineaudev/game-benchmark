@@ -3,3 +3,8 @@ build_asan/
 out/
 *.o
 *.a
+
+# runtime save/leaderboard (JS localStorage equivalent — §23)
+*.json.save
+leaderboard.json
+save.json

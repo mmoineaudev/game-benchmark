@@ -126,6 +126,8 @@ void DropSystem::clear() {
   breakables_.clear();
   sarcophagi_.clear();
   pickups_.clear();
+  hazards_.clear();
+  hazardAccum_ = 0.0;
   for (auto& v : orbVisuals_) v.t = -1;
   nextVisual_ = 0;
 }
@@ -136,6 +138,60 @@ std::vector<Sarcophagus>& DropSystem::sarcophagi() { return sarcophagi_; }
 const std::vector<Sarcophagus>& DropSystem::sarcophagi() const { return sarcophagi_; }
 const std::vector<DropPickup>& DropSystem::pickups() const { return pickups_; }
 const std::vector<DropOrbVisual>& DropSystem::orbVisuals() const { return orbVisuals_; }
+const std::vector<Hazard>& DropSystem::hazards() const { return hazards_; }
+std::vector<Hazard>& DropSystem::hazards() { return hazards_; }
 int DropSystem::livePickupCount() const { return (int)pickups_.size(); }
+
+// ---- hazards (lava/acid) — PropSystem.build hazard block + Game._tickHazards ----
+
+// lava: VOLCANIC_DEPTHS/EMBER_FORGE; acid: POISON_SWAMP; else none.
+static bool hazardKindFor(const std::string& biomeId, int& kind) {
+  if (biomeId == "VOLCANIC_DEPTHS" || biomeId == "EMBER_FORGE") { kind = 0; return true; }
+  if (biomeId == "POISON_SWAMP") { kind = 1; return true; }
+  return false;
+}
+
+void DropSystem::buildHazards(const Dungeon& d, const std::string& biomeId, Rng& rng) {
+  int kind = 0;
+  if (!hazardKindFor(biomeId, kind)) return; // biome without hazards: no-op
+  const double cs = d.cellSize;
+  const double ex = d.exitCell ? d.exitCell->x * cs : 0.0;
+  const double ez = d.exitCell ? d.exitCell->z * cs : 0.0;
+  for (const auto& room : d.rooms) {
+    const double cx = (room.cx + (room.w - 1) / 2.0) * cs;
+    const double cz = (room.cz + (room.h - 1) / 2.0) * cs;
+    const double rw = room.w * cs * 0.4;
+    const double rh = room.h * cs * 0.4;
+    // no hazards in the exit room (JS: roomContains(room, exitCell)).
+    if (d.exitCell) {
+      const auto& e = *d.exitCell;
+      if (e.x >= room.cx && e.x < room.cx + room.w && e.z >= room.cz && e.z < room.cz + room.h)
+        continue;
+    }
+    const int nh = 1 + (rng.next() < 0.5 ? 1 : 0); // 1-2 per room
+    for (int i = 0; i < nh; i++) {
+      const double hx = cx + (rng.next() - 0.5) * rw * 1.6;
+      const double hz = cz + (rng.next() - 0.5) * rh * 1.6;
+      // never within EXIT_CLEARANCE (3 u) of the exit marker.
+      const double ddx = hx - ex, ddz = hz - ez;
+      if (ddx * ddx + ddz * ddz < hazard::kExitClearance * hazard::kExitClearance) continue;
+      hazards_.push_back({{hx, hz}, kind, 1.0 + rng.next() * 0.6});
+    }
+  }
+}
+
+void DropSystem::tickHazards(double dt, const Vec2& playerPos) {
+  hazardAccum_ += dt;
+  if (hazardAccum_ < hazard::kTick) return;
+  hazardAccum_ = 0.0;
+  for (const auto& h : hazards_) {
+    const double dx = playerPos.x - h.pos.x;
+    const double dz = playerPos.z - h.pos.z;
+    if (dx * dx + dz * dz < hazard::kInnerRadius * hazard::kInnerRadius) {
+      if (onHazardHit) onHazardHit(hazard::kDamage); // i-frames in the app
+      break; // first hazard hit wins (JS `break`)
+    }
+  }
+}
 
 } // namespace dc

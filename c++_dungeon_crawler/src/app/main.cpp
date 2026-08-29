@@ -177,8 +177,11 @@ uniform vec3 uHeadPos;
 uniform vec3 uHeadColor;
 uniform float uHeadIntensity;
 uniform float uHeadDist;
-uniform float uAmbient;
+uniform vec3 uAmbient;   // per-biome AmbientLight color (JS BIOMES.ambient lerp white 0.6)
 uniform float uEmissive;
+uniform vec3 uFogColor;  // per-biome fog color (JS BIOMES.fog lerp gray 0.55)
+uniform float uFogDensity;
+uniform vec3 uEyePos;
 uniform sampler2D uShadowMap;
 out vec4 fragColor;
 float shadowFactor(vec4 lpos) {
@@ -207,7 +210,11 @@ void main() {
   lit += pointLight(uTorchPos, uTorchColor, uTorchIntensity, uTorchDist, shadowFactor(vTorchPos));
   lit += pointLight(uHeadPos, uHeadColor, uHeadIntensity, uHeadDist, 1.0);
   if (uEmissive > 0.5) lit = vColor * 0.9; // unlit emissive (boss / skeletons) — keep ≤1 to avoid bloom blowout
-  fragColor = vec4(min(lit, vec3(1.5)), 1.0);
+  // per-biome exponential fog (JS FogExp2; density pre-scaled for the C++ scene)
+  float fd = length(vWorld - uEyePos);
+  float fogF = 1.0 - exp(-uFogDensity * fd);
+  vec3 c = mix(lit, uFogColor, clamp(fogF, 0.0, 1.0));
+  fragColor = vec4(min(c, vec3(1.5)), 1.0);
 }
 )";
 
@@ -276,9 +283,13 @@ struct World {
   // GL instance VBOs: 9 floats/instance = offset(3) + scale(3) + color(3).
   GLuint instFloor = 0, instCeil = 0, instWallH = 0, instWallE = 0;
   int nFloor = 0, nCeil = 0, nWallH = 0, nWallE = 0;
+  // floor debris (JS WorldBuilder): ONE InstancedMesh of pebbles, purely cosmetic;
+  // degraded mode sheds the tail instances (count halved, spec §22 rule 1).
+  GLuint instDebris = 0;
+  int nDebris = 0;
 
   void upload(const dc::Dungeon& d, const float cellCol[3], const float wallCol[3],
-              const float ceilCol[3]);
+              const float ceilCol[3], std::uint32_t seed);
   void buildInstanceData(const dc::Dungeon& d, std::vector<float>& floorInst,
                          std::vector<float>& ceilInst, std::vector<float>& wallH,
                          std::vector<float>& wallE) const;
@@ -318,7 +329,7 @@ void World::buildInstanceData(const dc::Dungeon& d, std::vector<float>& floorIns
 }
 
 void World::upload(const dc::Dungeon& d, const float cellCol[3], const float wallCol[3],
-                   const float ceilCol[3]) {
+                   const float ceilCol[3], std::uint32_t seed) {
   dungeon = d;
   collision = buildCollisionBoxes(d);
   std::vector<float> floorInst, ceilInst, wallH, wallE;
@@ -330,6 +341,31 @@ void World::upload(const dc::Dungeon& d, const float cellCol[3], const float wal
   stamp(floorInst, cellCol); stamp(ceilInst, ceilCol); stamp(wallH, wallCol); stamp(wallE, wallCol);
   nFloor = (int)(floorInst.size() / 9); nCeil = (int)(ceilInst.size() / 9);
   nWallH = (int)(wallH.size() / 9); nWallE = (int)(wallE.size() / 9);
+  // Floor debris — JS WorldBuilder: ONE InstancedMesh of pebbles, floor(cells * 0.2).
+  // Purely cosmetic (no shadow, own budget track); degraded mode sheds the tail
+  // instances at draw time (count halved, spec §22 rule 1).
+  std::vector<float> debrisInst;
+  {
+    std::vector<int> cells; // flat z*gridSize+x of non-empty cells
+    for (int z = 0; z < d.gridSize; z++)
+      for (int x = 0; x < d.gridSize; x++)
+        if (d.grid[z][x] != dc::Cell::kEmpty) cells.push_back(z * d.gridSize + x);
+    const int nDeb = (int)std::floor((double)cells.size() * dc::props::kDebrisPerCell);
+    dc::Rng drng{seed ^ 0x5EEDu}; // deterministic-by-design (JS used unseeded Math.random)
+    for (int i = 0; i < nDeb && !cells.empty(); i++) {
+      const int c = cells[drng.nextInt((int)cells.size())];
+      const int cx = c % d.gridSize, cz = c / d.gridSize;
+      const float s = 0.2f + 0.2f * (float)drng.next(); // small pebble (JS dodeca r=0.12)
+      const float sy = s * 0.6f; // flattened
+      const float wx = (float)(cx * d.cellSize) +
+                       ((float)drng.next() - 0.5f) * (float)d.cellSize * 0.7f;
+      const float wz = (float)(cz * d.cellSize) +
+                       ((float)drng.next() - 0.5f) * (float)d.cellSize * 0.7f;
+      const float wy = 0.2f + 0.5f * sy; // sit on the floor slab (top y=0.2)
+      debrisInst.insert(debrisInst.end(), {wx, wy, wz, s, sy, s, 0.333f, 0.314f, 0.282f}); // 0x555048
+    }
+  }
+  nDebris = (int)(debrisInst.size() / 9);
   auto mkVbo = [&](const std::vector<float>& v) -> GLuint {
     GLuint b = 0;
     glGenBuffers(1, &b);
@@ -339,6 +375,39 @@ void World::upload(const dc::Dungeon& d, const float cellCol[3], const float wal
   };
   instFloor = mkVbo(floorInst); instCeil = mkVbo(ceilInst);
   instWallH = mkVbo(wallH); instWallE = mkVbo(wallE);
+  instDebris = mkVbo(debrisInst);
+}
+
+// Per-biome light/prop palette (JS BIOMES → normalized material/fog/ambient/torch).
+// The app renders one biome's identity per level; all values are the binding
+// BIOMES data from Constants.js (material + fog + ambient color + torch color).
+struct BiomeLight {
+  float floorCol[3], wallCol[3], ceilCol[3];
+  float fogColor[3];
+  float fogDensity;
+  float ambientCol[3]; // JS AmbientLight color = pal.ambient lerp white 0.6
+  float torchCol[3];
+  float torchIntensity;
+};
+static inline float cpx(int c, int shift) { return (float)((c >> shift) & 255) / 255.0f; }
+static inline float lerpf(float a, float b, float t) { return a + (b - a) * t; }
+static BiomeLight biomeLight(const std::string& biome) {
+  const auto& b = dc::kBiomes.at(biome);
+  BiomeLight L;
+  L.floorCol[0] = cpx(b.floor, 16); L.floorCol[1] = cpx(b.floor, 8); L.floorCol[2] = cpx(b.floor, 0);
+  L.wallCol[0] = cpx(b.wall, 16); L.wallCol[1] = cpx(b.wall, 8); L.wallCol[2] = cpx(b.wall, 0);
+  L.ceilCol[0] = cpx(b.ceiling, 16); L.ceilCol[1] = cpx(b.ceiling, 8); L.ceilCol[2] = cpx(b.ceiling, 0);
+  const int liftC = 0x8a8478; // biome-tinted gray (JS fogLifted)
+  L.fogColor[0] = lerpf(cpx(b.fog, 16), cpx(liftC, 16), 0.55f);
+  L.fogColor[1] = lerpf(cpx(b.fog, 8), cpx(liftC, 8), 0.55f);
+  L.fogColor[2] = lerpf(cpx(b.fog, 0), cpx(liftC, 0), 0.55f);
+  L.fogDensity = (float)(b.fogDensity * 1.2); // tuned for the (darker) C++ scene
+  L.ambientCol[0] = lerpf(cpx(b.ambient, 16), 1.0f, 0.6f);
+  L.ambientCol[1] = lerpf(cpx(b.ambient, 8), 1.0f, 0.6f);
+  L.ambientCol[2] = lerpf(cpx(b.ambient, 0), 1.0f, 0.6f);
+  L.torchCol[0] = cpx(b.torchColor, 16); L.torchCol[1] = cpx(b.torchColor, 8); L.torchCol[2] = cpx(b.torchColor, 0);
+  L.torchIntensity = (float)dc::kLightSources.at("TORCH").intensity;
+  return L;
 }
 
 // ---------- pixel font (stb_truetype + KenPixel.ttf) + screen-space text ----------
@@ -405,6 +474,10 @@ struct App {
   float torchPos[3] = {0, 6, 0};
   float torchColor[3] = {1.0f, 0.6f, 0.24f};
   float torchIntensity = 0.9f; // JS LIGHT_SOURCES.TORCH.intensity
+  // per-biome light/prop identity (BIOMES) — set in buildWorldFromState
+  float fogColor[3] = {0.05f, 0.05f, 0.04f};
+  float fogDensity = 0.036f;
+  float ambientCol[3] = {0.70f, 0.69f, 0.67f};
 
   // player transform (yaw/pitch are in state.player; camera pos mirrors it)
   double camX = 0, camY = kEyeHeight, camZ = 0;
@@ -468,6 +541,7 @@ struct App {
   double lowFpsTimer = 0;
   bool degraded = false;
   bool forcedDegraded = false; // --degraded: hold the state for the fps gate
+  double curFps = 60.0; // last measured avg fps (label visibility, JS _avgFps)
   double avgFps() const {
     if (fpsWindow.empty()) return 60.0;
     double s = 0;
@@ -546,10 +620,17 @@ App::~App() {
 }
 
 void App::buildWorldFromState() {
-  const float cellCol[3] = {0.42f, 0.40f, 0.37f};   // STONE flagstone
-  const float wallCol[3] = {0.34f, 0.32f, 0.30f};
-  const float ceilCol[3] = {0.28f, 0.27f, 0.26f};
-  world.upload(world.dungeon, cellCol, wallCol, ceilCol);
+  // per-biome material palette + light/prop identity (JS BIOMES — binding data)
+  const BiomeLight L = biomeLight(state.biome);
+  const float cellCol[3] = {L.floorCol[0], L.floorCol[1], L.floorCol[2]};
+  const float wallCol[3] = {L.wallCol[0], L.wallCol[1], L.wallCol[2]};
+  const float ceilCol[3] = {L.ceilCol[0], L.ceilCol[1], L.ceilCol[2]};
+  world.upload(world.dungeon, cellCol, wallCol, ceilCol, (std::uint32_t)state.dungeonSeed);
+  fogColor[0] = L.fogColor[0]; fogColor[1] = L.fogColor[1]; fogColor[2] = L.fogColor[2];
+  fogDensity = L.fogDensity;
+  ambientCol[0] = L.ambientCol[0]; ambientCol[1] = L.ambientCol[1]; ambientCol[2] = L.ambientCol[2];
+  torchColor[0] = L.torchCol[0]; torchColor[1] = L.torchCol[1]; torchColor[2] = L.torchCol[2];
+  torchIntensity = L.torchIntensity;
   // static-assigned torch: above the entrance room, casting the 1 shadow map
   if (world.dungeon.entranceCell) {
     torchPos[0] = (float)(world.dungeon.entranceCell->x * world.dungeon.cellSize);
@@ -597,6 +678,8 @@ void App::spawnEntities() {
   // ---- breakables / sarcophagi / drops (§16.5/§19) — every level ----
   // Deterministic placement via the shared rng (JS used unseeded Math.random).
   drops.buildLevel(world.dungeon, rng);
+  // ground hazards (lava/acid): biome-driven, per-room (PropSystem.build).
+  drops.buildHazards(world.dungeon, state.biome, rng);
   for (auto& s : drops.sarcophagi()) world.collision.boxes.push_back(s.box); // block
   drops.onOrbCollected = [this] { state.collectedOrbs += 1; }; // a soul orb = 1 soul
   drops.onHealthCollected = [this] {
@@ -614,6 +697,12 @@ void App::spawnEntities() {
       skelsys.summonMinion(c, state.level, state.ngPlus, state.collectedOrbs,
                           state.bossKills, rng);
     }
+  };
+  // ground hazard (lava/acid): 1 dmg per 0.8 s tick, i-frames respected.
+  drops.onHazardHit = [this](double dmg) {
+    if (invulnTimer > 0 || playerDead || probeInvuln) return;
+    simHealth -= dmg;
+    invulnTimer = player::kInvulnTime;
   };
 
   if (bossLevel) {
@@ -744,6 +833,7 @@ void App::updateEntities(double dt) {
   // ---- breakables / sarcophagi / drops (§16.5/§19) — even during safeSpawn ----
   drops.tickBreakables(pp, state.collectedOrbs, rng);
   drops.tickSarcophagi(pp);
+  drops.tickHazards(dt, pp); // lava/acid: 1 dmg per 0.8 s (i-frames in the app)
   drops.update(dt, pp);
   // BURN ground-fire patches: advance + expire (visual only, §16.4)
   for (auto& p : firePatches) {
@@ -1053,6 +1143,13 @@ void App::uploadDynamic(std::vector<float>& dyn) {
   for (const auto& s : drops.sarcophagi()) {
     const float r = s.opened ? 0.3f : 0.55f;
     push((float)s.pos.x, 0.6f, (float)s.pos.z, 1.1f, 1.2f, 2.3f, r, r, r + 0.05f);
+  }
+  // ---- ground hazards (lava/acid) — flat emissive pools (§16.5) ----
+  // lava 0xff5a1e / acid 0x99ff33, y 0.03, radius 1.0..1.6 (JS PropSystem).
+  for (const auto& hz : drops.hazards()) {
+    const float r = (float)hz.radius;
+    if (hz.kind == 0) push((float)hz.pos.x, 0.03f, (float)hz.pos.z, r, 0.08f, r, 1.0f, 0.353f, 0.118f); // lava
+    else              push((float)hz.pos.x, 0.03f, (float)hz.pos.z, r, 0.08f, r, 0.6f, 1.0f, 0.2f); // acid
   }
   // ---- drop pickups: health = red cross, buff = gold orb (bob) ----
   for (const auto& p : drops.pickups()) {
@@ -1378,12 +1475,16 @@ void App::trackFps(double dt) {
   fpsWindow.push_back(1.0 / std::max(dt, 1e-4));
   if (fpsWindow.size() > 90) fpsWindow.erase(fpsWindow.begin()); // ~3 s at 30 fps
   const double a = avgFps();
+  curFps = a;
   if (a < 30.0) {
     lowFpsTimer += dt;
     if (lowFpsTimer > 6.0 && !degraded) degraded = true; // sustained low fps → shed bloom
   } else {
+    // JS _trackFps: degraded is STICKY (spec §22 rule 4 — "once triggered, the run
+    // STAYS degraded"). Recovery only hides the warning label; it never re-enables
+    // the shed cost (bloom here). lowFpsTimer just decays so a fresh <30 s window
+    // is re-measured, but `degraded` itself is never reset mid-run.
     lowFpsTimer = std::max(0.0, lowFpsTimer - dt);
-    if (degraded && a >= 30.0 && !forcedDegraded) degraded = false; // recovered
   }
 }
 
@@ -1448,13 +1549,21 @@ void App::frame() {
   glUniform3f(glGetUniformLocation(progScene, "uHeadColor"), 0.9f, 0.9f, 0.85f);
   glUniform1f(glGetUniformLocation(progScene, "uHeadIntensity"), 1.0f);
   glUniform1f(glGetUniformLocation(progScene, "uHeadDist"), 30.0f);
-  glUniform1f(glGetUniformLocation(progScene, "uAmbient"), (float)lighting::kAmbientIntensityStone);
+  glUniform3f(glGetUniformLocation(progScene, "uAmbient"),
+              ambientCol[0], ambientCol[1], ambientCol[2]); // per-biome ambient color
+  glUniform3f(glGetUniformLocation(progScene, "uFogColor"), fogColor[0], fogColor[1], fogColor[2]);
+  glUniform1f(glGetUniformLocation(progScene, "uFogDensity"), fogDensity);
+  glUniform3f(glGetUniformLocation(progScene, "uEyePos"), eye[0], eye[1], eye[2]);
   glActiveTexture(GL_TEXTURE0);
   glBindTexture(GL_TEXTURE_2D, shadowTex);
   drawGroup(world.instWallH, world.nWallH);
   drawGroup(world.instWallE, world.nWallE);
   drawGroup(world.instFloor, world.nFloor);
   drawGroup(world.instCeil, world.nCeil);
+  // floor debris (cosmetic pebbles, no shadow) — degraded mode sheds the tail
+  // instances: draw count halved (spec §22 rule 1, JS WorldBuilder.setDegraded).
+  const int debrisDraw = degraded ? (world.nDebris / 2) : world.nDebris;
+  drawGroup(world.instDebris, debrisDraw);
   drawGroup(dynVbo, dynCount, 1.0f); // boss/skeletons: unlit emissive spectral figures
 
   // ---- 3) bloom (skipped in degraded mode — the single biggest GPU cost) ----
@@ -1874,8 +1983,9 @@ void App::drawHud() {
     rect(cx - bw / 2, by, (float)(bw * frac), bh, bossFill[0], bossFill[1], bossFill[2], bossFill[3]);
   }
 
-  // degraded-mode perf warning (bottom-right, gold) — mirrors JS #perf-warning
-  if (degraded) {
+  // degraded-mode perf warning (bottom-right, gold) — mirrors JS #perf-warning.
+  // Sticky state (bloom stays off), but the LABEL hides on fps recovery (JS does the same).
+  if (degraded && (curFps < 30.0 || forcedDegraded)) {
     const char* w = "DEGRADED MODE — bloom off for performance";
     const float perfWarn[4] = {0.85f, 0.63f, 0.23f, 1.0f};
     drawTextLine(t, W - m - lineW(w, 0.4f), H - 24, 0.4f, perfWarn, w);

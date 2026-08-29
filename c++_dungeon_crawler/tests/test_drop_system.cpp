@@ -195,3 +195,124 @@ TEST_CASE("clear resets breakables, sarcophagi, pickups and orb visuals", "[drop
   CHECK(drops.livePickupCount() == 0);
   for (const auto& v : drops.orbVisuals()) CHECK(v.t < 0);
 }
+
+// ---- ground hazards (lava/acid) ----
+namespace {
+// Two rooms + a far exit cell: room 0 = big chamber (hazard host), room 1 = the
+// exit room (must receive no hazard). cellSize 2, exit at grid (40,2).
+Dungeon hazardDungeon() {
+  Dungeon d;
+  d.gridSize = 48;
+  d.cellSize = 2;
+  d.rooms = {
+      {2, 2, 10, 10, "CHAMBER"}, // room 0: hazards here (center ~(11,11))
+      {40, 2, 6, 6, "CHAMBER"},  // room 1: exit room (no hazards)
+  };
+  d.exitCell = CellRef{42, 4}; // inside room 1, world (84,8)
+  return d;
+}
+} // namespace
+
+TEST_CASE("buildHazards: lava for volcanic biomes, acid for poison, none elsewhere", "[hazard]") {
+  // volcanic → lava (kind 0)
+  DropSystem lava;
+  Rng rl{11u};
+  lava.buildHazards(hazardDungeon(), "VOLCANIC_DEPTHS", rl);
+  CHECK(lava.hazards().size() >= 1);
+  for (const auto& h : lava.hazards()) CHECK(h.kind == 0);
+
+  // ember → lava (kind 0)
+  DropSystem ember;
+  Rng el{12u};
+  ember.buildHazards(hazardDungeon(), "EMBER_FORGE", el);
+  for (const auto& h : ember.hazards()) CHECK(h.kind == 0);
+
+  // poison → acid (kind 1)
+  DropSystem acid;
+  Rng al{13u};
+  acid.buildHazards(hazardDungeon(), "POISON_SWAMP", al);
+  CHECK(acid.hazards().size() >= 1);
+  for (const auto& h : acid.hazards()) CHECK(h.kind == 1);
+
+  // a biome with no hazard kind → no hazards (no-op)
+  DropSystem none;
+  Rng nl{14u};
+  none.buildHazards(hazardDungeon(), "STONE", nl);
+  CHECK(none.hazards().empty());
+}
+
+TEST_CASE("buildHazards skips the exit room and the 3 u exit clearance", "[hazard]") {
+  DropSystem drops;
+  Rng rng{21u};
+  drops.buildHazards(hazardDungeon(), "VOLCANIC_DEPTHS", rng);
+  // exit world pos
+  const double ex = 42 * 2.0, ez = 4 * 2.0; // (84,8)
+  for (const auto& h : drops.hazards()) {
+    const double dx = h.pos.x - ex, dz = h.pos.z - ez;
+    CHECK(dx * dx + dz * dz >= hazard::kExitClearance * hazard::kExitClearance); // >= 9
+    // none in the exit room (room 1 spans x 40..45, z 2..7 in grid)
+    const int gx = (int)std::lround(h.pos.x / 2.0), gz = (int)std::lround(h.pos.z / 2.0);
+    CHECK(!(gx >= 40 && gx < 46 && gz >= 2 && gz < 8));
+  }
+}
+
+TEST_CASE("buildHazards places 1-2 per host room with a 1.0-1.6 u pool radius", "[hazard]") {
+  DropSystem drops;
+  Rng rng{31u};
+  drops.buildHazards(hazardDungeon(), "VOLCANIC_DEPTHS", rng);
+  // only room 0 hosts → 1-2 hazards total (room 1 is the exit room)
+  CHECK(drops.hazards().size() >= 1);
+  CHECK(drops.hazards().size() <= 2);
+  for (const auto& h : drops.hazards()) {
+    CHECK(h.radius >= 1.0);
+    CHECK(h.radius <= 1.6);
+  }
+}
+
+TEST_CASE("tickHazards deals 1 dmg per 0.8 s within 1.2 u, none outside", "[hazard]") {
+  DropSystem drops;
+  int hits = 0;
+  double lastDmg = 0;
+  drops.onHazardHit = [&](double dmg) { hits++; lastDmg = dmg; };
+  drops.hazards().push_back({{0, 0}, 0, 1.0});
+
+  // player inside the pool at (0.5,0) → within 1.2 u.
+  const Vec2 inside{0.5, 0.0};
+  // sub-tick: no damage yet (accumulator < 0.8)
+  drops.tickHazards(0.2, inside);
+  CHECK(hits == 0);
+  // cross the 0.8 s boundary → exactly one tick, 1 dmg
+  drops.tickHazards(0.6, inside);
+  CHECK(hits == 1);
+  CHECK(lastDmg == 1);
+  // another full tick later → second hit
+  drops.tickHazards(0.8, inside);
+  CHECK(hits == 2);
+
+  // a hazard 2 u away (beyond 1.2) never deals damage
+  DropSystem far;
+  int fhits = 0;
+  far.onHazardHit = [&](double) { fhits++; };
+  far.hazards().push_back({{0, 0}, 0, 1.0});
+  for (int i = 0; i < 10; i++) far.tickHazards(0.8, {2.0, 0.0});
+  CHECK(fhits == 0);
+}
+
+TEST_CASE("tickHazards: first hazard hit wins, then breaks (one dmg per tick)", "[hazard]") {
+  DropSystem drops;
+  int hits = 0;
+  drops.onHazardHit = [&](double) { hits++; };
+  // two overlapping hazards at the same spot; player on top of both.
+  drops.hazards().push_back({{0, 0}, 0, 1.0});
+  drops.hazards().push_back({{0, 0}, 1, 1.0});
+  drops.tickHazards(0.8, {0, 0});
+  CHECK(hits == 1); // one damage per 0.8 s tick, not one per pool
+}
+
+TEST_CASE("clear resets hazards and the hazard tick accumulator", "[hazard]") {
+  DropSystem drops;
+  drops.hazards().push_back({{1, 1}, 0, 1.2});
+  drops.tickHazards(0.1, {1, 1}); // partial accumulator
+  drops.clear();
+  CHECK(drops.hazards().empty());
+}

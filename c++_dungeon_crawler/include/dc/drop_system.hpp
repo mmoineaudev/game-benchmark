@@ -46,6 +46,15 @@ struct DropOrbVisual {
   double t = -1; // -1 = idle; >= 0 = seconds since spawn (life 1.0)
 };
 
+// A ground hazard pool: kind 0 = lava (VOLCANIC_DEPTHS/EMBER_FORGE),
+// 1 = acid (POISON_SWAMP). One 0.8 s tick deals 1 dmg within 1.2 u (i-frames
+// respected); never placed within 3 u of the exit marker nor in the exit room.
+struct Hazard {
+  Vec2 pos{0, 0};
+  int kind = 0; // 0 lava, 1 acid
+  double radius = 1.0; // visual pool radius (1.0 + rng()*0.6) — damage radius is 1.2
+};
+
 class DropSystem {
 public:
   DropSystem() {
@@ -67,6 +76,16 @@ public:
   // Sarcophagi within SARCOPHAGUS.TRIGGER (2.5 u) open (once).
   void tickSarcophagi(const Vec2& playerPos);
 
+  // Place ground hazards for a biome: lava (VOLCANIC_DEPTHS/EMBER_FORGE) or
+  // acid (POISON_SWAMP), 1-2 per non-exit room, never within 3 u of the exit
+  // marker. Returns nullptr if the biome has no hazard kind. Consumes `rng`.
+  void buildHazards(const Dungeon& d, const std::string& biomeId, Rng& rng);
+
+  // Hazard damage tick: every 0.8 s, if the player is within 1.2 u of any
+  // hazard, deal 1 dmg (i-frames respected by the caller via onPlayerDamaged).
+  // Mirrors Game._tickHazards (first hazard hit wins, then break).
+  void tickHazards(double dt, const Vec2& playerPos);
+
   // Drops. `souls` = collectedOrbs (the excess-orb bonus for breakables).
   void spawnOrbs(double x, double z, int n, Rng& rng);
   void spawnHealth(double x, double z, Rng& rng);
@@ -84,6 +103,8 @@ public:
   const std::vector<Sarcophagus>& sarcophagi() const;
   const std::vector<DropPickup>& pickups() const;
   const std::vector<DropOrbVisual>& orbVisuals() const;
+  const std::vector<Hazard>& hazards() const;
+  std::vector<Hazard>& hazards(); // test placement / app culling
   int livePickupCount() const;
 
   // ---- callbacks (wired by the app, mirroring Game ↔ OrbSystem/PropSystem) ----
@@ -95,6 +116,8 @@ public:
   std::function<void(const Vec2&)> onBuffCollected;
   // A sarcophagus opened — the app rolls the 30% wraith summon.
   std::function<void(Sarcophagus&)> onSarcophagusOpened;
+  // The player stood in a hazard this tick — the app applies damage (i-frames).
+  std::function<void(double dmg)> onHazardHit;
 
 private:
   void spawnOrbVisual(double x, double z);
@@ -102,6 +125,8 @@ private:
   std::vector<Sarcophagus> sarcophagi_;
   std::vector<DropPickup> pickups_;
   std::vector<DropOrbVisual> orbVisuals_;
+  std::vector<Hazard> hazards_;
+  double hazardAccum_ = 0.0; // 0.8 s tick accumulator
   int nextVisual_ = 0;
 };
 

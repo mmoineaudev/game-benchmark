@@ -237,6 +237,7 @@ constexpr bool kHalfRes = true;
 
 constexpr int kSmokeParticles = 9;
 constexpr int kAmbientDustParticles = 30;
+constexpr int kMaxRunes = 10; // JS RuneSystem: placed < 10
 
 // Legacy per-type stat consts (kept for parity with the JS contract).
 namespace skeletonStat { constexpr int kHp = 2; constexpr double kSpeed = 2.6; constexpr int kDmg = 1; constexpr double kRange = 1.6; }

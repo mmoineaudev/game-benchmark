@@ -219,6 +219,142 @@ void main() {
 }
 )";
 
+// ---- §13 decorative systems: smoke / ambient dust / wall runes / water ----
+
+// SmokeSystem (9 pooled GPU points, puff on breakable break): soft dark puffs
+// that rise and fade. gl_PointSize = 90.0 / -mv.z (JS SmokeSystem).
+const char* kSmokeVert = R"(
+#version 330 core
+layout(location=0) in vec3 aPos;
+layout(location=1) in float aAlpha;
+uniform mat4 uViewProj;
+uniform mat4 uView;
+out float vA;
+void main() {
+  vA = aAlpha;
+  vec4 mv = uView * vec4(aPos, 1.0);
+  gl_PointSize = 90.0 / max(0.1, -mv.z);
+  gl_Position = uViewProj * vec4(aPos, 1.0);
+}
+)";
+
+const char* kSmokeFrag = R"(
+#version 330 core
+in float vA;
+uniform vec3 uColor;
+out vec4 fragColor;
+void main() {
+  vec2 d = gl_PointCoord - 0.5;
+  float a = smoothstep(0.5, 0.1, length(d)) * vA * 0.5;
+  if (a < 0.01) discard;
+  fragColor = vec4(uColor, a);
+}
+)";
+
+// ParticleSystem (30 ambient dust motes, torch-adjacent, additive 0.45).
+const char* kDustVert = R"(
+#version 330 core
+layout(location=0) in vec3 aPos;
+uniform mat4 uViewProj;
+uniform float uSizePx;
+void main() {
+  gl_Position = uViewProj * vec4(aPos, 1.0);
+  gl_PointSize = clamp(uSizePx / gl_Position.w, 1.0, 8.0); // JS: 0.045*(h/2)/z, up to ~8px up close
+}
+)";
+
+const char* kDustFrag = R"(
+#version 330 core
+uniform vec3 uColor;
+uniform float uOpacity;
+out vec4 fragColor;
+void main() {
+  vec2 d = gl_PointCoord - 0.5;
+  float a = smoothstep(0.5, 0.0, length(d)) * uOpacity;
+  if (a < 0.01) discard;
+  fragColor = vec4(uColor, a);
+}
+)";
+
+// RuneSystem (<=10 wall quads, pulsing opacity 0.55+0.45*sin).
+// 8-glyph procedural atlas (1/8-width slot each), instanced quad.
+const char* kRuneVert = R"(
+#version 330 core
+layout(location=0) in vec2 aPos;
+layout(location=1) in vec2 aUv;
+layout(location=2) in vec3 aOffset;
+layout(location=3) in float aPhase;
+layout(location=4) in float aUvX;
+layout(location=5) in float aRot;
+layout(location=6) in vec3 aColor;
+uniform mat4 uViewProj;
+out vec2 vUv;
+out vec3 vColor;
+out float vPhase;
+void main() {
+  // vertical quad standing on the floor, facing a horizontal direction aRot.
+  // local: aPos.x = horizontal, aPos.y = vertical (world Y). Rotate the
+  // horizontal extent about the vertical Y axis (a real wall-facing spin).
+  vec3 wp;
+  wp.x = aOffset.x + cos(aRot) * aPos.x;
+  wp.y = aOffset.y + aPos.y;
+  wp.z = aOffset.z - sin(aRot) * aPos.x;
+  vUv = vec2(aUvX + aUv.x / 8.0, aUv.y);
+  vColor = aColor;
+  vPhase = aPhase;
+  gl_Position = uViewProj * vec4(wp, 1.0);
+}
+)";
+
+const char* kRuneFrag = R"(
+#version 330 core
+in vec2 vUv;
+in vec3 vColor;
+in float vPhase;
+uniform sampler2D uAtlas;
+uniform float uTime;
+out vec4 fragColor;
+void main() {
+  vec4 t = texture(uAtlas, vUv);
+  float pulse = 0.55 + 0.45 * sin(uTime * 2.0 + vPhase);
+  float a = t.a * pulse;
+  if (a < 0.01) discard;
+  fragColor = vec4(vColor * t.rgb, a);
+}
+)";
+
+// Water: VAULT-room planes, y just above the floor, sine-wave vertex wave
+// (JS _placeWaterPuddles: 8x8 subdivided plane, per-frame z displacement).
+const char* kWaterVert = R"(
+#version 330 core
+layout(location=0) in vec2 aPos;
+layout(location=1) in vec3 aOffset;
+layout(location=2) in vec2 aScale;
+layout(location=3) in float aPhase;
+uniform mat4 uViewProj;
+uniform float uTime;
+out vec3 vWorld;
+void main() {
+  vec3 wp = vec3(aOffset.x + aPos.x * aScale.x, aOffset.y, aOffset.z + aPos.y * aScale.y);
+  wp.y += sin(uTime * 1.5 + aPhase + dot(aPos, vec2(2.0))) * 0.03;
+  vWorld = wp;
+  gl_Position = uViewProj * vec4(wp, 1.0);
+}
+)";
+
+const char* kWaterFrag = R"(
+#version 330 core
+in vec3 vWorld;
+uniform vec3 uEyePos;
+out vec4 fragColor;
+void main() {
+  vec3 col = vec3(0.227, 0.416, 0.541); // 0x3a6a8a
+  float d = distance(vWorld, uEyePos);
+  float vis = clamp(1.0 - d * 0.04, 0.3, 1.0);
+  fragColor = vec4(col * vis, 0.75);
+}
+)";
+
 const char* kFullscreenVert = R"(
 #version 330 core
 layout(location=0) in vec2 aPos;
@@ -551,6 +687,28 @@ struct App {
   int dynCount = 0;
   GLuint enemVbo = 0;       // §12.2 enemy-only instance VBO (skeleton roster, 9 floats)
   int enemCount = 0;
+
+  // ---- §13 decorative systems: smoke / ambient dust / wall runes / water ----
+  // SmokeSystem port: 9 pooled GPU points, puff on breakable break, rise+fade.
+  struct SmokePuff { float x=0, y=-100, z=0, life=0, ttl=1; float alpha=0; bool active=false; };
+  std::array<SmokePuff, dc::kSmokeParticles> smoke{};
+  int smokeNext = 0;
+  // ParticleSystem port: 30 ambient dust motes (x,y,z), gentle per-frame drift.
+  std::array<float, dc::kAmbientDustParticles * 3> dust{};
+  double dustT = 0;
+  // RuneSystem port: <=10 wall quads (9 floats/inst: off3, phase, uvX, rot, col3).
+  std::vector<float> runeData;
+  // Water: VAULT-room planes (6 floats/inst: off3, scale2, phase).
+  std::vector<float> waterData;
+  // breakable-alive snapshot: transition true→false triggers the smoke puff.
+  std::vector<bool> prevBreakableAlive;
+  // GL handles for the four decorative passes (created in init).
+  GLuint progSmoke = 0, progDust = 0, progRune = 0, progWater = 0;
+  GLuint smokeVao = 0, smokeVbo = 0;
+  GLuint dustVao = 0, dustVbo = 0;
+  GLuint runeVao = 0, runeVbo = 0, runeEbo = 0, runeInst = 0;
+  GLuint waterVao = 0, waterVbo = 0, waterEbo = 0, waterInst = 0;
+  GLuint runeAtlas = 0;
   bool playerDead = false;
   bool bossKillCounted = false;
   bool probeInvuln = false; // --hud-view probe: keep the play screen (not death)
@@ -651,6 +809,10 @@ struct App {
   void hitBoss(double dmg, const char* src);
   void orbExplode(const Orb& o);
   void uploadDynamic(std::vector<float>& dyn, std::vector<float>& enem);
+  // §13 decorative systems
+  void buildDecor();        // per-level: dust positions, rune quads, water pools
+  void updateDecor(double dt); // per-frame: smoke rise/fade, dust drift
+  void smokePuff(float x, float y, float z);
   void update(double dt, double rawDt);
   void frame();
   void drawGroup(GLuint instVbo, int count, float emissive = 0.0f);
@@ -690,6 +852,7 @@ void App::buildWorldFromState() {
     torchPos[2] = (float)(world.dungeon.entranceCell->z * world.dungeon.cellSize);
     torchPos[1] = 6.0f;
   }
+  buildDecor();
 }
 
 void App::placePlayerAtEntrance() {
@@ -700,6 +863,102 @@ void App::placePlayerAtEntrance() {
   state.player.yaw = (float)M_PI; // face into the dungeon
   state.player.pitch = 0;
   camX = state.player.x; camY = kEyeHeight; camZ = state.player.z;
+}
+
+// ---- §13 decorative systems ---------------------------------------------
+// Per-level placement (deterministic-by-design, like prop placement): the JS
+// used unseeded Math.random, so placement here is NOT bit-parity gated; only
+// the pools/sizes/colors/opacities are binding (spec §13/§24).
+void App::buildDecor() {
+  const dc::Dungeon& d = world.dungeon;
+  const float cs = (float)d.cellSize;
+  // Deterministic decor RNG derived from the level seed (same level → same decor).
+  dc::Rng drng((std::uint32_t)state.dungeonSeed ^ 0x5DEECEA5u);
+
+  // Ambient dust (ParticleSystem: 30 motes, torch-adjacent, y 0.5–4.0).
+  for (int i = 0; i < dc::kAmbientDustParticles; i++) {
+    dust[i * 3 + 0] = torchPos[0] + (float)(drng.next() - 0.5) * 4.0f;
+    dust[i * 3 + 1] = 0.5f + (float)drng.next() * 3.5f;
+    dust[i * 3 + 2] = torchPos[2] + (float)(drng.next() - 0.5) * 4.0f;
+  }
+  dustT = 0;
+
+  // Smoke pool reset (puffs are transient — cleared per level).
+  for (auto& p : smoke) p.active = false;
+  smokeNext = 0;
+
+  // Wall runes (RuneSystem: 8% of room cells, cap 10, y 2.2–3.2).
+  runeData.clear();
+  float cr = 1.0f, cg = 0.78f, cb = 0.29f; // 0xffc84a default
+  if (state.biome == "HAUNTED_CRYPT" || state.biome == "SPECTRAL_COURT") {
+    cr = 0x88 / 255.0f; cg = 0xaa / 255.0f; cb = 0xff / 255.0f; // 0x88aaff
+  } else if (state.biome == "CRYSTAL_DEPTHS") {
+    cr = 0xb0 / 255.0f; cg = 0x7a / 255.0f; cb = 0xff / 255.0f; // 0xb07aff
+  }
+  int placed = 0;
+  for (int z = 1; z < d.gridSize - 1 && placed < dc::kMaxRunes; z++) {
+    for (int x = 1; x < d.gridSize - 1 && placed < dc::kMaxRunes; x++) {
+      if (d.grid[z][x] != dc::Cell::kRoom) continue;
+      if (drng.next() > 0.08) continue;
+      // JS: PlaneGeometry(0.9,0.9) at (x*cs, 2.2+rand, z*cs), NO rotation (faces
+      // +Z). C++ cell centers are also x*cs (player spawn/torch/exit all use it).
+      const float px = (float)x * cs, pz = (float)z * cs;
+      runeData.insert(runeData.end(), {
+          px, 2.2f + (float)drng.next(), pz,       // offset (y = center of 0.9 quad)
+          (float)drng.next() * 6.0f,              // phase (JS: Math.random()*6)
+          (float)(placed % 8) / 8.0f,             // glyph slot (uvX)
+          0.0f,                                   // rot (JS: none, faces +Z)
+          cr, cg, cb});
+      placed++;
+    }
+  }
+
+  // Water (VAULT rooms only, 80% room size, cap kWaterPools=24).
+  waterData.clear();
+  for (const dc::Room& r : d.rooms) {
+    if (r.type != "VAULT") continue;
+    if ((int)waterData.size() / 6 >= dc::props::kWaterPools) break;
+    const float cx = (float)(r.cx + (r.w - 1) / 2) * cs;
+    const float cz = (float)(r.cz + (r.h - 1) / 2) * cs;
+    waterData.insert(waterData.end(), {
+        cx, 0.22f, cz,                         // floor slab top (0.2) + 0.02 (JS y=0.02)
+        (float)(r.w * cs * 0.8), (float)(r.h * cs * 0.8),
+        (float)drng.next() * 6.28318f});
+  }
+
+  // Breakable-alive snapshot (smoke puffs fire on true→false transitions).
+  prevBreakableAlive.assign(drops.breakables().size(), true);
+}
+
+void App::updateDecor(double dt) {
+  // Smoke: rise + fade (JS SmokeSystem: vy 0.5, life 0.8).
+  for (auto& p : smoke) {
+    if (!p.active) continue;
+    p.life += dt;
+    p.y += 0.5f * (float)dt;
+    p.alpha = std::max(0.0f, 1.0f - p.life / p.ttl);
+    if (p.life >= p.ttl) p.active = false;
+  }
+  // Dust: gentle drift (JS ParticleSystem: y sin 0.7/1.2, x cos 0.4/1.7).
+  dustT += dt;
+  for (int i = 0; i < dc::kAmbientDustParticles; i++) {
+    dust[i * 3 + 1] += 0.0015f * std::sin((float)dustT * 0.7f + (float)i);
+    dust[i * 3 + 0] += 0.0012f * std::cos((float)dustT * 0.4f + (float)(i * 1.7));
+  }
+}
+
+void App::smokePuff(float x, float y, float z) {
+  // Round-robin pool (JS SmokeSystem.puff): read the slot at _next, THEN
+  // increment _next. First usable slot is !active or >= 70% through its life.
+  for (int tries = 0; tries < dc::kSmokeParticles; tries++) {
+    SmokePuff& p = smoke[smokeNext];
+    if (!p.active || p.life >= p.ttl * 0.7) {
+      p.x = x; p.y = y; p.z = z; p.life = 0; p.ttl = 0.8; p.alpha = 1; p.active = true;
+      smokeNext = (smokeNext + 1) % dc::kSmokeParticles;
+      return;
+    }
+    smokeNext = (smokeNext + 1) % dc::kSmokeParticles;
+  }
 }
 
 void App::spawnEntities() {
@@ -1529,6 +1788,181 @@ bool App::init(int w, int h, const char* title, const char* fontPath) {
     glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(tmp.size() * sizeof(float)), tmp.data(), GL_DYNAMIC_DRAW); }
   glBindBuffer(GL_ARRAY_BUFFER, 0);
 
+  // ---- §13 decorative systems: smoke / ambient dust / wall runes / water ----
+  // Programs (each a tiny point/quad/instanced-quad pass, all drawn into the
+  // scene FBO before the enemy-glow mask so they read the lit scene depth).
+  progSmoke = linkProgram(compileShader(GL_VERTEX_SHADER, kSmokeVert),
+                          compileShader(GL_FRAGMENT_SHADER, kSmokeFrag));
+  progDust  = linkProgram(compileShader(GL_VERTEX_SHADER, kDustVert),
+                         compileShader(GL_FRAGMENT_SHADER, kDustFrag));
+  progRune  = linkProgram(compileShader(GL_VERTEX_SHADER, kRuneVert),
+                         compileShader(GL_FRAGMENT_SHADER, kRuneFrag));
+  progWater = linkProgram(compileShader(GL_VERTEX_SHADER, kWaterVert),
+                         compileShader(GL_FRAGMENT_SHADER, kWaterFrag));
+
+  // Smoke: 9 pooled points (x,y,z + alpha).
+  glGenVertexArrays(1, &smokeVao);
+  glGenBuffers(1, &smokeVbo);
+  {
+    std::vector<float> tmp(dc::kSmokeParticles * 4, 0.0f);
+    for (int i = 0; i < dc::kSmokeParticles; i++) tmp[i * 4 + 1] = -100.0f; // hidden
+    glBindVertexArray(smokeVao);
+    glBindBuffer(GL_ARRAY_BUFFER, smokeVbo);
+    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(tmp.size() * sizeof(float)), tmp.data(), GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 16, (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, 16, (void*)12);
+    glBindVertexArray(0);
+  }
+
+  // Ambient dust: 30 points (x,y,z).
+  glGenVertexArrays(1, &dustVao);
+  glGenBuffers(1, &dustVbo);
+  {
+    std::vector<float> tmp(dc::kAmbientDustParticles * 3, 0.0f);
+    glBindVertexArray(dustVao);
+    glBindBuffer(GL_ARRAY_BUFFER, dustVbo);
+    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(tmp.size() * sizeof(float)), tmp.data(), GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 12, (void*)0);
+    glBindVertexArray(0);
+  }
+
+  // Runes: instanced quad (pos2+uv2 per-vertex) + per-instance (offset3,phase,uvX,rot,color3).
+  {
+    // quad standing 0.9×0.9, centered (aPos.x horizontal, aPos.y vertical), 0.5–0.5 extent
+    const unsigned int qidx[6] = {0, 1, 2, 0, 2, 3};
+    glGenVertexArrays(1, &runeVao);
+    glGenBuffers(1, &runeVbo);
+    glGenBuffers(1, &runeEbo);
+    glGenBuffers(1, &runeInst);
+    glBindVertexArray(runeVao);
+    {
+      // interleaved pos2+uv2 = 16B/vertex, 4 verts
+      const float inter[16] = {
+          -0.5f, -0.5f, 0.0f, 1.0f,
+           0.5f, -0.5f, 1.0f, 1.0f,
+          -0.5f,  0.5f, 0.0f, 0.0f,
+           0.5f,  0.5f, 1.0f, 0.0f};
+      glBindBuffer(GL_ARRAY_BUFFER, runeVbo);
+      glBufferData(GL_ARRAY_BUFFER, sizeof(inter), inter, GL_STATIC_DRAW);
+      glEnableVertexAttribArray(0);
+      glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 16, (void*)0);
+      glEnableVertexAttribArray(1);
+      glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, (void*)8);
+    }
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, runeEbo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(qidx), qidx, GL_STATIC_DRAW);
+    // instance buffer (9 floats/inst = 36B): offset3, phase, uvX, rot, color3
+    glBindBuffer(GL_ARRAY_BUFFER, runeInst);
+    glBufferData(GL_ARRAY_BUFFER, dc::kMaxRunes * 9 * (GLsizeiptr)sizeof(float), nullptr, GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(2); glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 36, (void*)0);  glVertexAttribDivisor(2, 1);
+    glEnableVertexAttribArray(3); glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, 36, (void*)12); glVertexAttribDivisor(3, 1);
+    glEnableVertexAttribArray(4); glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, 36, (void*)16); glVertexAttribDivisor(4, 1);
+    glEnableVertexAttribArray(5); glVertexAttribPointer(5, 1, GL_FLOAT, GL_FALSE, 36, (void*)20); glVertexAttribDivisor(5, 1);
+    glEnableVertexAttribArray(6); glVertexAttribPointer(6, 3, GL_FLOAT, GL_FALSE, 36, (void*)24); glVertexAttribDivisor(6, 1);
+    glBindVertexArray(0);
+  }
+
+  // Water: instanced subdivided quad (pos2 per-vertex) + per-instance (offset3,scale2,phase).
+  {
+    const int N = 9; // 9×9 grid verts (JS PlaneGeometry(…,8,8))
+    std::vector<float> grid(N * N * 2);
+    for (int gz = 0; gz < N; gz++)
+      for (int gx = 0; gx < N; gx++) {
+        grid[(gz * N + gx) * 2 + 0] = (float)gx / (N - 1) - 0.5f;
+        grid[(gz * N + gx) * 2 + 1] = (float)gz / (N - 1) - 0.5f;
+      }
+    // indexed: N-1 × N-1 quads × 2 tris
+    std::vector<unsigned int> widx;
+    for (int gz = 0; gz < N - 1; gz++)
+      for (int gx = 0; gx < N - 1; gx++) {
+        const unsigned int a = (unsigned int)(gz * N + gx), b = a + 1, c = (unsigned int)((gz + 1) * N + gx), d = c + 1;
+        widx.insert(widx.end(), {a, c, b, b, c, d});
+      }
+    glGenVertexArrays(1, &waterVao);
+    glGenBuffers(1, &waterVbo);
+    glGenBuffers(1, &waterEbo);
+    glGenBuffers(1, &waterInst);
+    glBindVertexArray(waterVao);
+    glBindBuffer(GL_ARRAY_BUFFER, waterVbo);
+    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(grid.size() * sizeof(float)), grid.data(), GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, (void*)0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, waterEbo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)(widx.size() * sizeof(unsigned int)), widx.data(), GL_STATIC_DRAW);
+    // per-instance: aOffset(3) + aScale(2) + aPhase(1) = 6 floats (24B)
+    glBindBuffer(GL_ARRAY_BUFFER, waterInst);
+    glBufferData(GL_ARRAY_BUFFER, dc::props::kWaterPools * 6 * (GLsizeiptr)sizeof(float), nullptr, GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(1); glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 24, (void*)0);  glVertexAttribDivisor(1, 1);
+    glEnableVertexAttribArray(2); glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 24, (void*)12); glVertexAttribDivisor(2, 1);
+    glEnableVertexAttribArray(3); glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, 24, (void*)20); glVertexAttribDivisor(3, 1);
+    glBindVertexArray(0);
+  }
+
+  // Rune glyph atlas: 8 procedural runic strokes (ᚠᚢᚦᚨᚱᚲᛃᛇ), 1/8-width slot each.
+  glGenTextures(1, &runeAtlas);
+  glBindTexture(GL_TEXTURE_2D, runeAtlas);
+  {
+    // 8 slots × 32×32 white alpha; build a thin-stroke glyph per slot (rune-ish strokes)
+    const int S = 32, slots = 8;
+    std::vector<unsigned char> px(S * slots * S * 4, 0);
+    auto stamp = [&](int sx, int sy, int r) {
+      // stamp a soft disc at (sx,sy) radius r in the 32-wide slot
+      for (int dy = -r; dy <= r; dy++) for (int dx = -r; dx <= r; dx++) {
+        int x = sx + dx, y = sy + dy;
+        if (x < 0 || x >= S * slots || y < 0 || y >= S) continue;
+        if (dx * dx + dy * dy <= r * r) {
+          unsigned char& a = px[(y * S * slots + x) * 4 + 3];
+          if (a < 255) a = 255;
+          px[(y * S * slots + x) * 4] = 255;
+          px[(y * S * slots + x) * 4 + 1] = 255;
+          px[(y * S * slots + x) * 4 + 2] = 255;
+        }
+      }
+    };
+    auto line = [&](int slot, int x0, int y0, int x1, int y1, int r) {
+      // stamp along a line in slot coords (0..31)
+      const int steps = 64;
+      for (int i = 0; i <= steps; i++) {
+        float t = (float)i / steps;
+        int x = (int)std::round(x0 + (x1 - x0) * t);
+        int y = (int)std::round(y0 + (y1 - y0) * t);
+        stamp(slot * S + x, y, r);
+      }
+    };
+    // 8 distinct angular runic glyphs (2-3 strokes each), 1px radius
+    line(0, 8, 2, 8, 30, 1);            // ᚠ-ish: vertical
+    line(0, 8, 8, 22, 2, 1);
+    line(0, 8, 16, 22, 22, 1);
+    line(1, 24, 2, 24, 30, 1);          // ᚢ-ish
+    line(1, 24, 8, 10, 14, 1);
+    line(1, 24, 22, 10, 28, 1);
+    line(2, 10, 4, 10, 28, 1);          // ᚦ-ish
+    line(2, 10, 10, 22, 16, 1);
+    line(3, 16, 2, 16, 30, 1);          // ᚨ-ish
+    line(3, 16, 10, 4, 16, 1);
+    line(3, 16, 10, 28, 16, 1);
+    line(4, 6, 6, 6, 28, 1);            // ᚱ-ish
+    line(4, 6, 10, 20, 4, 1);
+    line(4, 6, 18, 20, 24, 1);
+    line(5, 22, 4, 10, 16, 1);          // ᚲ-ish
+    line(5, 22, 4, 22, 28, 1);
+    line(6, 6, 6, 20, 16, 1);           // ᛃ-ish
+    line(6, 6, 26, 20, 16, 1);
+    line(6, 20, 16, 20, 28, 1);
+    line(7, 8, 4, 8, 28, 1);            // ᛇ-ish
+    line(7, 24, 4, 24, 28, 1);
+    line(7, 8, 16, 24, 16, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, S * slots, S, 0, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  }
+  glBindTexture(GL_TEXTURE_2D, 0);
+
   // ---- pixel font + screen-space text (title / death screens) ----
   if (fontPath) bakeFont(fontPath);
   progText = linkProgram(compileShader(GL_VERTEX_SHADER, kTextVert),
@@ -1658,6 +2092,22 @@ void App::update(double dt, double rawDt) {
   // ---- combat: sword combo (RMB) + orb weapon (LMB) + projectiles ----
   updateCombat(dt);
 
+  // ---- §13 decorative systems: smoke puffs on breakable breaks + motion ----
+  // The breakable vector is stable within a level (only `alive` flips), so a
+  // true→false transition = a break this frame (step/cone/orb-blast all land
+  // before this point). JS: smoke.puff(x, 0.6, z) in _breakProp.
+  if (prevBreakableAlive.size() == drops.breakables().size()) {
+    for (size_t i = 0; i < drops.breakables().size(); i++) {
+      const auto& br = drops.breakables()[i];
+      if (prevBreakableAlive[i] && !br.alive)
+        smokePuff((float)br.pos.x, 0.6f, (float)br.pos.z);
+      prevBreakableAlive[i] = br.alive;
+    }
+  } else {
+    prevBreakableAlive.assign(drops.breakables().size(), true);
+  }
+  updateDecor(dt);
+
   // ---- FOV kick while sprinting ----
   const float targetFov = (float)(camera::kFov + (sprinting ? camera::kSprintFovKick : 0));
   if (std::abs(fov - targetFov) > 0.1f) fov += (targetFov - fov) * 0.15f;
@@ -1774,6 +2224,86 @@ void App::frame() {
   // instances: draw count halved (spec §22 rule 1, JS WorldBuilder.setDegraded).
   const int debrisDraw = degraded ? (world.nDebris / 2) : world.nDebris;
   drawGroup(world.instDebris, debrisDraw);
+
+  // ---- §13 decorative passes (JS SmokeSystem / ParticleSystem / RuneSystem
+  //      + water puddles): transparent, depth-tested, no depth write. Degraded
+  //      mode sheds the tail: draw count halved (spec §22 rule 1). ----
+  glDepthMask(GL_FALSE);
+  {
+    const float tDec = (float)state.runTime;
+    // (a) water: VAULT-room puddles (0x3a6a8a, opacity 0.75, sine wave).
+    if (!waterData.empty()) {
+      int wn = (int)(waterData.size() / 6);
+      if (degraded) wn /= 2;
+      if (wn > 0) {
+        glBindBuffer(GL_ARRAY_BUFFER, waterInst);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(wn * 6 * sizeof(float)), waterData.data());
+        glUseProgram(progWater);
+        glUniformMatrix4fv(glGetUniformLocation(progWater, "uViewProj"), 1, GL_FALSE, viewProj.m);
+        glUniform1f(glGetUniformLocation(progWater, "uTime"), tDec);
+        glUniform3f(glGetUniformLocation(progWater, "uEyePos"), eye[0], eye[1], eye[2]);
+        glBindVertexArray(waterVao);
+        glDrawElementsInstanced(GL_TRIANGLES, 384, GL_UNSIGNED_INT, nullptr, wn); // 8×8 grid ×2 tris
+        glBindVertexArray(0);
+      }
+    }
+    // (b) ambient dust: 30 motes, additive (JS opacity 0.45).
+    {
+      int dn = degraded ? (dc::kAmbientDustParticles / 2) : dc::kAmbientDustParticles;
+      glBindBuffer(GL_ARRAY_BUFFER, dustVbo);
+      glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(dn * 3 * sizeof(float)), dust.data());
+      glUseProgram(progDust);
+      glUniformMatrix4fv(glGetUniformLocation(progDust, "uViewProj"), 1, GL_FALSE, viewProj.m);
+      // JS PointsMaterial size 0.045: px = 0.045 * (height/2) / -mv.z
+      glUniform1f(glGetUniformLocation(progDust, "uSizePx"), 0.045f * (float)height * 0.5f);
+      glUniform3f(glGetUniformLocation(progDust, "uColor"), 0.784f, 0.722f, 0.533f); // 0xc8b888
+      glUniform1f(glGetUniformLocation(progDust, "uOpacity"), 0.45f);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE); // additive (JS blending: AdditiveBlending)
+      glBindVertexArray(dustVao);
+      glDrawArrays(GL_POINTS, 0, dn);
+      glBindVertexArray(0);
+    }
+    // (c) wall runes: <=10 quads, per-biome color, pulsing opacity.
+    if (!runeData.empty()) {
+      int rn = (int)(runeData.size() / 9);
+      if (degraded) rn /= 2;
+      if (rn > 0) {
+        glBindBuffer(GL_ARRAY_BUFFER, runeInst);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(rn * 9 * sizeof(float)), runeData.data());
+        glUseProgram(progRune);
+        glUniformMatrix4fv(glGetUniformLocation(progRune, "uViewProj"), 1, GL_FALSE, viewProj.m);
+        glUniform1f(glGetUniformLocation(progRune, "uTime"), tDec);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, runeAtlas);
+        glBindVertexArray(runeVao);
+        glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, nullptr, rn);
+        glBindVertexArray(0);
+        glBindTexture(GL_TEXTURE_2D, 0);
+      }
+    }
+    // (d) smoke: 9 pooled puffs (breakable breaks), 0.8 s rise+fade.
+    {
+      int sn = degraded ? (dc::kSmokeParticles / 2) : dc::kSmokeParticles;
+      std::vector<float> sp(dc::kSmokeParticles * 4);
+      for (int i = 0; i < dc::kSmokeParticles; i++) {
+        sp[i * 4 + 0] = smoke[i].x; sp[i * 4 + 1] = smoke[i].y;
+        sp[i * 4 + 2] = smoke[i].z; sp[i * 4 + 3] = smoke[i].active ? smoke[i].alpha : 0.0f;
+      }
+      glBindBuffer(GL_ARRAY_BUFFER, smokeVbo);
+      glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(sn * 4 * sizeof(float)), sp.data());
+      glUseProgram(progSmoke);
+      glUniformMatrix4fv(glGetUniformLocation(progSmoke, "uViewProj"), 1, GL_FALSE, viewProj.m);
+      glUniformMatrix4fv(glGetUniformLocation(progSmoke, "uView"), 1, GL_FALSE, view.m);
+      glUniform3f(glGetUniformLocation(progSmoke, "uColor"), 0.2f, 0.2f, 0.251f); // 0x333340
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // JS: transparent (normal blend)
+      glBindVertexArray(smokeVao);
+      glDrawArrays(GL_POINTS, 0, sn);
+      glBindVertexArray(0);
+    }
+  }
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  glDepthMask(GL_TRUE);
+
   drawGroup(dynVbo, dynCount, 1.0f); // boss/skeletons: unlit emissive spectral figures
 
   // ---- 2.5) §12.2 enemy-glow: flat red-orange enemy mask → half-res → blur H/V ----
@@ -2356,6 +2886,7 @@ int main(int argc, char** argv) {
   bool showFps = false, bossView = false, combatView = false, descendView = false;
   bool titleView = false, deathView = false, hudView = false, degradedView = false;
   bool enemyView = false, dropView = false, burnView = false;
+  bool vaultView = false;
   for (int i = 1; i < argc; i++) {
     if (!std::strcmp(argv[i], "--width")) width = std::atoi(argv[++i]);
     else if (!std::strcmp(argv[i], "--height")) height = std::atoi(argv[++i]);
@@ -2374,6 +2905,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--degraded")) degradedView = true;
     else if (!std::strcmp(argv[i], "--enemy-view")) enemyView = true;
     else if (!std::strcmp(argv[i], "--drop-view")) dropView = true;
+    else if (!std::strcmp(argv[i], "--vault-view")) vaultView = true;
     else if (!std::strcmp(argv[i], "--burn-view")) burnView = true;
   }
 
@@ -2647,6 +3179,44 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "[dc_app] burn-view: spawnBURN failed (no walkable cell)\n");
       }
     }
+    // --vault-view: showcase the §13 decorative systems — teleport into the
+    // first VAULT room (water pool) facing room center; dust + runes are
+    // ambient around the room.
+    if (vaultView) {
+      const dc::Room* vault = nullptr;
+      for (const auto& r : app.world.dungeon.rooms)
+        if (r.type == "VAULT") { vault = &r; break; }
+      if (vault) {
+        const float cs = (float)app.world.dungeon.cellSize;
+        const float cx = (float)(vault->cx + (vault->w - 1) / 2) * cs;
+        const float cz = (float)(vault->cz + (vault->h - 1) / 2) * cs;
+        app.camX = cx; app.camZ = cz;
+        app.state.player.x = cx; app.state.player.z = cz;
+        app.state.player.yaw = 0.0f;
+        // face the nearest wall rune (showcase water + dust + rune together);
+        // with no runes, face -Z.
+        if (!app.runeData.empty()) {
+          size_t best = 0; double bd = 1e9;
+          for (size_t i = 0; i < app.runeData.size(); i += 9) {
+            const double dx = app.runeData[i] - cx, dz = app.runeData[i + 2] - cz;
+            const double d2 = dx * dx + dz * dz;
+            if (d2 < bd) { bd = d2; best = i; }
+          }
+          const double dx = app.runeData[best] - cx, dz = app.runeData[best + 2] - cz;
+          app.state.player.yaw = (float)std::atan2(-dx, -dz);
+        }
+        std::fprintf(stderr, "[dc_app] vault-view: VAULT %dx%d at (%.1f,%.1f) yaw=%.2f\n",
+                     vault->w, vault->h, cx, cz, app.state.player.yaw);
+        // TEMP-verify: force a smoke puff 2u ahead of the eye (smoke is
+        // event-driven by breakable breaks; this isolates the point-sprite pass)
+        {
+          const float fw = -std::sin(app.state.player.yaw), fwz = -std::cos(app.state.player.yaw);
+          app.smokePuff(cx + fw * 2.0f, 1.2f, cz + fwz * 2.0f);
+        }
+      } else {
+        std::fprintf(stderr, "[dc_app] vault-view: no VAULT room this level\n");
+      }
+    }
     // --degraded: force the degraded-mode state (bloom off) for the 30 fps gate
     if (degradedView) { app.degraded = true; app.forcedDegraded = true; app.lowFpsTimer = 0; }
     // watch level transitions (descend-view) so a descent is provable headlessly
@@ -2656,7 +3226,7 @@ int main(int argc, char** argv) {
     bool restartSeen = false;
     for (int i = 0; i < frames; i++) {
       ctx.frame = i; ctx.phase = "render"; wd.begin();
-      if (!bossView && !descendView && !deathView && !hudView && !enemyView && !dropView && !burnView) app.keyW = true; // interior-walk shot: drive forward
+      if (!bossView && !descendView && !deathView && !hudView && !enemyView && !dropView && !burnView && !vaultView) app.keyW = true; // interior-walk shot: drive forward
       else if (hudView) { // sprint toward the boss: keeps the SPRINT bonus line up
         // (updateSprint decays sprintTier to 0 when not moving+Shift)
         app.keyW = true; app.keyShift = true;
@@ -2674,6 +3244,7 @@ int main(int argc, char** argv) {
       }
       else if (dropView) { /* stand still, face the prop (yaw set at placement) */ }
       else if (burnView) { /* stand still, face BURN (yaw set at placement) */ }
+      else if (vaultView) { /* stand still, face room center (yaw set at placement) */ }
       else { // face the live boss each frame so it stays on screen
         const double dx = app.boss.pos.x - app.state.player.x;
         const double dz = app.boss.pos.z - app.state.player.z;

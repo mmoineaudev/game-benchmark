@@ -64,6 +64,39 @@ int SkeletonSystem::liveProjectileCount() const {
   return n;
 }
 
+int SkeletonSystem::summonMinion(const CellRef& cell, int level, int ngPlus,
+                                double souls, int bossKills, Rng& rng) {
+  if (liveMinionCount() >= boss::kMaxMinions) return -1; // MAX_MINIONS cap
+  const EnemyTypeDef* def = defOf("WRAITH");
+  const double hpMult = enemyHpMultiplier(ngPlus, std::max(1, level), souls);
+  Enemy e;
+  e.type = "WRAITH";
+  e.def = def;
+  e.hp = e.maxHp = static_cast<int>(std::ceil(def->hp * hpMult));
+  e.dmg = def->dmg;
+  e.drops = 0; // minions drop nothing (JS Skeleton(..., drops: 0))
+  e.speed = (1.0 + kSpeedPerLevel * (level - 1)) *
+             (1.0 + kBossKillBuff * bossKills) * def->speed;
+  e.floats = true;
+  e.rangedFiring = true; // projectile-firing wraiths
+  e.isMinion = true;
+  e.state = EnemyState::kWaking;
+  e.wakeTimer = 0.8;
+  e.pos = {static_cast<double>(cell.x) * 6.0 + (rng.next() - 0.5) * 3.0,
+           static_cast<double>(cell.z) * 6.0 + (rng.next() - 0.5) * 3.0};
+  e.facing = 0;
+  e.cooldown = 0;
+  enemies_.push_back(std::move(e));
+  return static_cast<int>(enemies_.size()) - 1;
+}
+
+int SkeletonSystem::liveMinionCount() const {
+  int n = 0;
+  for (const auto& e : enemies_)
+    if (e.isMinion && e.state != EnemyState::kDead) n++;
+  return n;
+}
+
 std::vector<CellRef> SkeletonSystem::candidateCells(const Dungeon& d) const {
   // BFS from the entrance over non-empty cells (mirror _candidateCells).
   const int gs = d.gridSize;

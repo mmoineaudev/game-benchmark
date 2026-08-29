@@ -442,6 +442,8 @@ constexpr double kVisualLife = 1.0;
 constexpr double kHealthChance = 0.15;
 constexpr int kHealthRestore = 3;
 constexpr double kPickupRadius = 1.4;
+constexpr double kOrbScatter = 0.8;  // soul orbs scatter ±0.4 around the drop point
+constexpr int kOrbVisualPool = 24;   // JS OrbSystem visual pool size
 } // namespace drop
 
 namespace props {

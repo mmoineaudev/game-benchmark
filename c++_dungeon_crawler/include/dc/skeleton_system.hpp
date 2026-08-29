@@ -52,6 +52,7 @@ struct Enemy {
   std::optional<Vec2> pathStepPos;
   double wakeTimer = 0;
   bool floats = false;        // wraith (renders hovering)
+  bool isMinion = false;      // summoned (sarcophagus/boss) — MAX_MINIONS cap
   bool isBURN = false;
   bool rangedFiring = false; // summoned wraiths fire projectiles
   double fireAcc = 0;        // BURN ground-fire accumulator
@@ -145,6 +146,12 @@ public:
   const std::vector<Projectile>& orbs() const { return orbs_; }
   // Clear all (level regen). Drops nothing.
   void clear();
+  // Summon a minion wraith at a cell (sarcophagus / boss summon, §16/§17).
+  // Capped at live BOSS.MAX_MINIONS; returns the new enemy index or -1.
+  int summonMinion(const CellRef& cell, int level, int ngPlus, double souls,
+                   int bossKills, Rng& rng);
+  // Count of live summoned minions (ranged wraiths) — the MAX_MINIONS cap.
+  int liveMinionCount() const;
 
   // ---- callbacks (Game.js ↔ System) ----
   // onKill: a mob reached 0 hp this frame (source = "sword"/"orb"/"explosion").

@@ -39,6 +39,7 @@
 #include "dc/boss.hpp"
 #include "dc/skeleton_system.hpp"
 #include "dc/hunter.hpp"
+#include "dc/drop_system.hpp"
 #include "dc/movement.hpp"
 #include "dc/state.hpp"
 #include "dc/world.hpp"
@@ -423,6 +424,7 @@ struct App {
   bool bossReady = false;
   // Full enemy roster (§16): spawner + shared AI (dc_core, headless-tested).
   dc::SkeletonSystem skelsys;
+  dc::DropSystem drops;   // breakables/sarcophagi/drops (§16.5/§19)
   dc::Rng rng{12345u};
   double simHealth = 3.0;   // boss/enemy damage mutates this; mirrors JS
   double invulnTimer = 0;  // i-frames (PLAYER.INVULN_TIME 0.8) — enemy damage
@@ -557,6 +559,7 @@ void App::spawnEntities() {
   const int level = state.level;
   const bool bossLevel = (level % dc::boss::kInterval == 0);
   skelsys.clear(); // drop previous level's mobs + projectiles
+  drops.clear();  // breakables/sarcophagi/drops reset per level
   simHealth = state.maxHealth > 0 ? (double)state.maxHealth : 3.0;
   invulnTimer = 0;
   playerDead = false;
@@ -567,6 +570,29 @@ void App::spawnEntities() {
   swordStep = 0; swordPhase = nullptr; hitStop = 0;
   orbSeqStep = 0; lmbAccum = 0; prevLMB = prevRMB = false;
   orbs.clear();
+
+  // ---- breakables / sarcophagi / drops (§16.5/§19) — every level ----
+  // Deterministic placement via the shared rng (JS used unseeded Math.random).
+  drops.buildLevel(world.dungeon, rng);
+  for (auto& s : drops.sarcophagi()) world.collision.boxes.push_back(s.box); // block
+  drops.onOrbCollected = [this] { state.collectedOrbs += 1; }; // a soul orb = 1 soul
+  drops.onHealthCollected = [this] {
+    simHealth = std::min((double)state.maxHealth, simHealth + dc::drop::kHealthRestore);
+    state.health = (int)std::lround(simHealth);
+  };
+  drops.onBuffCollected = [this](const dc::Vec2&) {
+    state.applyBuff(_pickBuffNotCurrent(), dc::buff::kMaxDuration);
+  };
+  drops.onSarcophagusOpened = [this](dc::Sarcophagus& s) {
+    drops.spawnOrbs(s.pos.x, s.pos.z, 1, rng); // guaranteed soul orb
+    if (rng.next() < dc::props::kSarcophagusWraith) { // 30% wraith minion
+    const dc::CellRef c{(int)std::lround(s.pos.x / world.dungeon.cellSize),
+                        (int)std::lround(s.pos.z / world.dungeon.cellSize)};
+      skelsys.summonMinion(c, state.level, state.ngPlus, state.collectedOrbs,
+                          state.bossKills, rng);
+    }
+  };
+
   if (bossLevel) {
     static const char* kVariants[7] = {"Skeleton", "Armored", "Archer", "Brute", "Rough", "Rat", "Magician"};
     const char* variant = kVariants[(level / dc::boss::kInterval - 1) % 7];
@@ -582,9 +608,11 @@ void App::spawnEntities() {
     skelsys.buildSpawnPlan(world.dungeon, level, state.collectedOrbs,
                           state.biome, {state.player.x, state.player.z},
                           hasArenaNow, rng);
-    // drops → souls (ammo + wealth); weapon evolution only upgrades.
+    // enemy kill → soul orbs (credit + visuals) + 15% health drop (§16.5)
     skelsys.onKill = [this](dc::Enemy* e, const char*) {
-      state.collectedOrbs += e->drops;
+      drops.spawnOrbs(e->pos.x, e->pos.z, e->drops, rng);
+      if (rng.next() < dc::drop::kHealthChance)
+        drops.spawnHealth(e->pos.x, e->pos.z, rng);
       const int t = dc::weaponTier((int)state.collectedOrbs);
       if (t > state.weaponTier) state.weaponTier = t;
     };
@@ -684,6 +712,11 @@ void App::updateEntities(double dt) {
                  [&](dc::Enemy* e) { skelsys.hitEnemy(e, dc::hunter::kBeamDmg, "beam"); },
                  state.collectedOrbs);
   }
+
+  // ---- breakables / sarcophagi / drops (§16.5/§19) — even during safeSpawn ----
+  drops.tickBreakables(pp, state.collectedOrbs, rng);
+  drops.tickSarcophagi(pp);
+  drops.update(dt, pp);
 
   // ---- boss (real state machine) — only on boss levels ----
   if (bossReady) {
@@ -841,6 +874,14 @@ void App::applySwordCone(int stepIdx) {
   if (bossReady && !boss.dead && inCone(boss.pos.x, boss.pos.z)) { hitBoss(dmg, "sword"); hitCount++; }
   for (dc::Enemy* e : skelsys.nearby(ox, oz, range + 0.5))
     if (inCone(e->pos.x, e->pos.z)) { skelsys.hitEnemy(e, dmg, "sword"); hitCount++; }
+  // breakables: slightly looser cone over full reach (arcDot - 0.12)
+  for (auto& br : drops.breakables()) {
+    if (!br.alive) continue;
+    const double tx = br.pos.x - ox, tz = br.pos.z - oz;
+    const double d = std::hypot(tx, tz);
+    if (d > range) continue;
+    if ((dirx * (tx / d) + dirz * (tz / d)) >= arcDot - 0.12) drops.breakProp(br, souls, rng);
+  }
   if (hitCount > 0) { hitStop = std::max(hitStop, dc::sword::kHitStop); swordHitsLanded += hitCount; }
 }
 void App::_fireOrbStep(bool /*isClick*/) {
@@ -895,6 +936,13 @@ void App::_fireFireball() {
 void App::orbExplode(const Orb& o) {
   if (bossReady && !boss.dead && std::hypot(o.x - boss.pos.x, o.z - boss.pos.z) < 2.0) hitBoss(o.dmg, "explosion");
   for (dc::Enemy* e : skelsys.nearby(o.x, o.z, 2.0)) skelsys.hitEnemy(e, o.dmg, "explosion");
+  // breakables in the blast radius too
+  const double souls = state.collectedOrbs;
+  for (auto& br : drops.breakables()) {
+    if (!br.alive) continue;
+    const double dx = br.pos.x - o.x, dz = br.pos.z - o.z;
+    if (dx * dx + dz * dz < 2.0 * 2.0) drops.breakProp(br, souls, rng);
+  }
 }
 
 void App::uploadDynamic(std::vector<float>& dyn) {
@@ -943,6 +991,26 @@ void App::uploadDynamic(std::vector<float>& dyn) {
     const double sy = camY - 0.15;
     push((float)sx, (float)sy, (float)sz, 0.06f, 0.9f, 0.06f, 0.85f, 0.9f, 1.0f);
   }
+  // ---- breakables (barrels/crates) — warm brown, emissive ----
+  for (const auto& b : drops.breakables())
+    if (b.alive) push((float)b.pos.x, 0.5f, (float)b.pos.z, 0.5f, 0.7f, 0.5f, 0.55f, 0.4f, 0.25f);
+  // ---- sarcophagi (CRYPT) — stone slab; lid dims once opened ----
+  for (const auto& s : drops.sarcophagi()) {
+    const float r = s.opened ? 0.3f : 0.55f;
+    push((float)s.pos.x, 0.6f, (float)s.pos.z, 1.1f, 1.2f, 2.3f, r, r, r + 0.05f);
+  }
+  // ---- drop pickups: health = red cross, buff = gold orb (bob) ----
+  for (const auto& p : drops.pickups()) {
+    const float y = 0.5f + 0.15f * (float)std::sin(p.bob);
+    if (p.kind == 0) push((float)p.pos.x, y, (float)p.pos.z, 0.3f, 0.3f, 0.3f, 0.9f, 0.2f, 0.2f);
+    else            push((float)p.pos.x, y, (float)p.pos.z, 0.3f, 0.3f, 0.3f, 1.0f, 0.85f, 0.3f);
+  }
+  // ---- soul-orb visuals (credit is instant; the orb floats ~1.0 s) ----
+  for (const auto& v : drops.orbVisuals())
+    if (v.t >= 0) {
+      const float y = 0.5f + 0.15f * (float)std::sin(v.t * 6.0);
+      push((float)v.pos.x, y, (float)v.pos.z, 0.18f, 0.18f, 0.18f, 0.5f, 0.7f, 1.0f);
+    }
 }
 
 bool App::init(int w, int h, const char* title, const char* fontPath) {
@@ -1097,12 +1165,14 @@ bool App::init(int w, int h, const char* title, const char* fontPath) {
   brightTexB = makeColorTex(width, height);
   brightFboB = makeFbo(brightTexB, false);
 
-  // ---- dynamic entity VBO (boss + full roster + projectiles), streamed each frame ----
-  // Capacity: 30 live mobs + 24 arrows + 16 enemy orbs + 48 soul orbs + boss +
-  // sword ≈ 120 instances (worst case).
+  // ---- dynamic entity VBO (boss + full roster + projectiles + props), streamed
+  //      each frame. Capacity: ~120 combat (30 mobs + 24 arrows + 16 orbs +
+  //      48 soul orbs + boss + sword) + 400 props (breakables/sarcophagi hard
+  //      cap) + headroom = 560 instances worst case. ----
+  constexpr int kDynCap = 560;
   glGenBuffers(1, &dynVbo);
   glBindBuffer(GL_ARRAY_BUFFER, dynVbo);
-  { std::vector<float> tmp(128 * 9, 0.0f);
+  { std::vector<float> tmp(kDynCap * 9, 0.0f);
     glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(tmp.size() * sizeof(float)), tmp.data(), GL_DYNAMIC_DRAW); }
   glBindBuffer(GL_ARRAY_BUFFER, 0);
 
@@ -1725,7 +1795,7 @@ int main(int argc, char** argv) {
   const char* savePath = nullptr;
   bool showFps = false, bossView = false, combatView = false, descendView = false;
   bool titleView = false, deathView = false, hudView = false, degradedView = false;
-  bool enemyView = false;
+  bool enemyView = false, dropView = false;
   for (int i = 1; i < argc; i++) {
     if (!std::strcmp(argv[i], "--width")) width = std::atoi(argv[++i]);
     else if (!std::strcmp(argv[i], "--height")) height = std::atoi(argv[++i]);
@@ -1743,6 +1813,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--hud-view")) hudView = true;
     else if (!std::strcmp(argv[i], "--degraded")) degradedView = true;
     else if (!std::strcmp(argv[i], "--enemy-view")) enemyView = true;
+    else if (!std::strcmp(argv[i], "--drop-view")) dropView = true;
   }
 
   App app;
@@ -1921,6 +1992,36 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "[dc_app] enemy-view: no live mob yet\n");
       }
     }
+    // --drop-view: showcase breakables/sarcophagi — stand adjacent (LOS) to the
+    // nearest breakable (or sarcophagus) so the prop cubes are on screen.
+    if (dropView) {
+      app.state.safeSpawn = 0;
+      // prefer a breakable; fall back to a sarcophagus
+      const dc::Vec2* target = nullptr;
+      for (const auto& b : app.drops.breakables())
+        if (b.alive) { target = &b.pos; break; }
+      const char* kind = "breakable";
+      if (!target) {
+        for (const auto& s : app.drops.sarcophagi()) { target = &s.pos; kind = "sarcophagus"; break; }
+      }
+      if (target) {
+        static const double dirs[8][2] = {{1,0},{-1,0},{0,1},{0,-1},{0.7,0.7},{-0.7,0.7},{0.7,-0.7},{-0.7,-0.7}};
+        bool found = false;
+        for (const auto& d : dirs) {
+          const double wx = target->x + d[0] * 2.5, wz = target->z + d[1] * 2.5;
+          if (dc::circleHitsBox(app.world.collision.boxes, wx, wz, player::kRadius)) continue;
+          if (!dc::hasLineOfSight(app.world.collision.boxes, target->x, target->z, wx, wz)) continue;
+          app.camX = wx; app.camZ = wz;
+          app.state.player.x = wx; app.state.player.z = wz;
+          app.state.player.yaw = (float)std::atan2(-(target->x - wx), -(target->z - wz));
+          found = true; break;
+        }
+        std::fprintf(stderr, "[dc_app] drop-view: beside %s at (%.1f,%.1f) %s\n",
+                     kind, target->x, target->z, found ? "" : "(FALLBACK: no LOS spot)");
+      } else {
+        std::fprintf(stderr, "[dc_app] drop-view: no breakables/sarcophagi this level\n");
+      }
+    }
     // --degraded: force the degraded-mode state (bloom off) for the 30 fps gate
     if (degradedView) { app.degraded = true; app.forcedDegraded = true; app.lowFpsTimer = 0; }
     // watch level transitions (descend-view) so a descent is provable headlessly
@@ -1930,7 +2031,7 @@ int main(int argc, char** argv) {
     bool restartSeen = false;
     for (int i = 0; i < frames; i++) {
       ctx.frame = i; ctx.phase = "render"; wd.begin();
-      if (!bossView && !descendView && !deathView && !hudView && !enemyView) app.keyW = true; // interior-walk shot: drive forward
+      if (!bossView && !descendView && !deathView && !hudView && !enemyView && !dropView) app.keyW = true; // interior-walk shot: drive forward
       else if (enemyView) { // stand still, face the nearest live mob (roster showcase)
         const dc::Vec2 p2{app.state.player.x, app.state.player.z};
         const auto near = app.skelsys.nearby(p2.x, p2.z, 60.0);
@@ -1939,6 +2040,7 @@ int main(int argc, char** argv) {
           app.state.player.yaw = (float)std::atan2(-(e->pos.x - p2.x), -(e->pos.z - p2.z));
         }
       }
+      else if (dropView) { /* stand still, face the prop (yaw set at placement) */ }
       else { // face the live boss each frame so it stays on screen
         const double dx = app.boss.pos.x - app.state.player.x;
         const double dz = app.boss.pos.z - app.state.player.z;

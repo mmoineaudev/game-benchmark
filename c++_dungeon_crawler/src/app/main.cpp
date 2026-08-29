@@ -225,27 +225,31 @@ void main() {
 // that rise and fade. gl_PointSize = 90.0 / -mv.z (JS SmokeSystem).
 const char* kSmokeVert = R"(
 #version 330 core
-layout(location=0) in vec3 aPos;
-layout(location=1) in float aAlpha;
+layout(location=0) in vec2 aC;      // corner -0.5..0.5 (per-vertex quad)
+layout(location=1) in vec4 aData;  // pos3 + alpha (per-instance)
 uniform mat4 uViewProj;
 uniform mat4 uView;
+uniform float uSmokeRad;
 out float vA;
+out vec2 vC;
 void main() {
-  vA = aAlpha;
-  vec4 mv = uView * vec4(aPos, 1.0);
-  gl_PointSize = 90.0 / max(0.1, -mv.z);
-  gl_Position = uViewProj * vec4(aPos, 1.0);
+  vec3 right = vec3(uView[0].x, uView[0].y, uView[0].z);
+  vec3 upv   = vec3(uView[1].x, uView[1].y, uView[1].z);
+  vA = aData.w;
+  vC = aC;
+  // JS gl_PointSize=90.0/-mv.z px <=> constant world radius (distance cancels).
+  gl_Position = uViewProj * vec4(aData.xyz + (right * aC.x + upv * aC.y) * uSmokeRad, 1.0);
 }
 )";
 
 const char* kSmokeFrag = R"(
 #version 330 core
 in float vA;
+in vec2 vC;
 uniform vec3 uColor;
 out vec4 fragColor;
 void main() {
-  vec2 d = gl_PointCoord - 0.5;
-  float a = smoothstep(0.5, 0.1, length(d)) * vA * 0.5;
+  float a = smoothstep(0.5, 0.1, length(vC)) * vA * 0.5;
   if (a < 0.01) discard;
   fragColor = vec4(uColor, a);
 }
@@ -254,23 +258,28 @@ void main() {
 // ParticleSystem (30 ambient dust motes, torch-adjacent, additive 0.45).
 const char* kDustVert = R"(
 #version 330 core
-layout(location=0) in vec3 aPos;
+layout(location=0) in vec2 aC;
+layout(location=1) in vec3 aPos;
 uniform mat4 uViewProj;
-uniform float uSizePx;
+uniform mat4 uView;
+uniform float uDustRad;
+out vec2 vC;
 void main() {
-  gl_Position = uViewProj * vec4(aPos, 1.0);
-  gl_PointSize = clamp(uSizePx / gl_Position.w, 1.0, 8.0); // JS: 0.045*(h/2)/z, up to ~8px up close
+  vec3 right = vec3(uView[0].x, uView[0].y, uView[0].z);
+  vec3 upv   = vec3(uView[1].x, uView[1].y, uView[1].z);
+  vC = aC;
+  gl_Position = uViewProj * vec4(aPos + (right * aC.x + upv * aC.y) * uDustRad, 1.0);
 }
 )";
 
 const char* kDustFrag = R"(
 #version 330 core
+in vec2 vC;
 uniform vec3 uColor;
 uniform float uOpacity;
 out vec4 fragColor;
 void main() {
-  vec2 d = gl_PointCoord - 0.5;
-  float a = smoothstep(0.5, 0.0, length(d)) * uOpacity;
+  float a = smoothstep(0.5, 0.0, length(vC)) * uOpacity;
   if (a < 0.01) discard;
   fragColor = vec4(uColor, a);
 }
@@ -704,8 +713,8 @@ struct App {
   std::vector<bool> prevBreakableAlive;
   // GL handles for the four decorative passes (created in init).
   GLuint progSmoke = 0, progDust = 0, progRune = 0, progWater = 0;
-  GLuint smokeVao = 0, smokeVbo = 0;
-  GLuint dustVao = 0, dustVbo = 0;
+  GLuint smokeVao = 0, smokeVbo = 0, smokeQuad = 0;
+  GLuint dustVao = 0, dustVbo = 0, dustQuad = 0;
   GLuint runeVao = 0, runeVbo = 0, runeEbo = 0, runeInst = 0;
   GLuint waterVao = 0, waterVbo = 0, waterEbo = 0, waterInst = 0;
   GLuint runeAtlas = 0;
@@ -1800,32 +1809,43 @@ bool App::init(int w, int h, const char* title, const char* fontPath) {
   progWater = linkProgram(compileShader(GL_VERTEX_SHADER, kWaterVert),
                          compileShader(GL_FRAGMENT_SHADER, kWaterFrag));
 
-  // Smoke: 9 pooled points (x,y,z + alpha).
-  glGenVertexArrays(1, &smokeVao);
-  glGenBuffers(1, &smokeVbo);
+  // Smoke: 9 pooled camera-facing billboards (corner2 + pos3 + alpha1 = 6f/inst).
   {
-    std::vector<float> tmp(dc::kSmokeParticles * 4, 0.0f);
-    for (int i = 0; i < dc::kSmokeParticles; i++) tmp[i * 4 + 1] = -100.0f; // hidden
+    static const float kQuad[8] = {-0.5f, -0.5f, 0.5f, -0.5f, 0.5f, 0.5f, -0.5f, 0.5f};
+    glGenVertexArrays(1, &smokeVao);
+    glGenBuffers(1, &smokeQuad);
+    glGenBuffers(1, &smokeVbo);
     glBindVertexArray(smokeVao);
-    glBindBuffer(GL_ARRAY_BUFFER, smokeVbo);
-    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(tmp.size() * sizeof(float)), tmp.data(), GL_DYNAMIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, smokeQuad);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(kQuad), kQuad, GL_STATIC_DRAW);
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 16, (void*)0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, (void*)0);
+    glBindBuffer(GL_ARRAY_BUFFER, smokeVbo);
+    std::vector<float> tmp(dc::kSmokeParticles * 4, 0.0f);
+    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(tmp.size() * sizeof(float)), tmp.data(), GL_DYNAMIC_DRAW);
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, 16, (void*)12);
+    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 16, (void*)0);
+    glVertexAttribDivisor(1, 1);
     glBindVertexArray(0);
   }
 
-  // Ambient dust: 30 points (x,y,z).
-  glGenVertexArrays(1, &dustVao);
-  glGenBuffers(1, &dustVbo);
+  // Ambient dust: 30 tiny camera-facing billboards (corner2 + pos3 = 5f/inst).
   {
-    std::vector<float> tmp(dc::kAmbientDustParticles * 3, 0.0f);
+    static const float kQuad[8] = {-0.5f, -0.5f, 0.5f, -0.5f, 0.5f, 0.5f, -0.5f, 0.5f};
+    glGenVertexArrays(1, &dustVao);
+    glGenBuffers(1, &dustQuad);
+    glGenBuffers(1, &dustVbo);
     glBindVertexArray(dustVao);
-    glBindBuffer(GL_ARRAY_BUFFER, dustVbo);
-    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(tmp.size() * sizeof(float)), tmp.data(), GL_DYNAMIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, dustQuad);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(kQuad), kQuad, GL_STATIC_DRAW);
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 12, (void*)0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, (void*)0);
+    glBindBuffer(GL_ARRAY_BUFFER, dustVbo);
+    std::vector<float> tmp(dc::kAmbientDustParticles * 3, 0.0f);
+    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(tmp.size() * sizeof(float)), tmp.data(), GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 12, (void*)0);
+    glVertexAttribDivisor(1, 1);
     glBindVertexArray(0);
   }
 
@@ -2250,17 +2270,26 @@ void App::frame() {
     // (b) ambient dust: 30 motes, additive (JS opacity 0.45).
     {
       int dn = degraded ? (dc::kAmbientDustParticles / 2) : dc::kAmbientDustParticles;
-      glBindBuffer(GL_ARRAY_BUFFER, dustVbo);
-      glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(dn * 3 * sizeof(float)), dust.data());
+      {
+        std::vector<float> dd(dc::kAmbientDustParticles * 3);
+        for (int i = 0; i < dc::kAmbientDustParticles; i++) {
+          dd[i * 3 + 0] = dust[i * 3 + 0];
+          dd[i * 3 + 1] = dust[i * 3 + 1];
+          dd[i * 3 + 2] = dust[i * 3 + 2];
+        }
+        glBindBuffer(GL_ARRAY_BUFFER, dustVbo);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(dd.size() * sizeof(float)), dd.data());
+      }
       glUseProgram(progDust);
       glUniformMatrix4fv(glGetUniformLocation(progDust, "uViewProj"), 1, GL_FALSE, viewProj.m);
-      // JS PointsMaterial size 0.045: px = 0.045 * (height/2) / -mv.z
-      glUniform1f(glGetUniformLocation(progDust, "uSizePx"), 0.045f * (float)height * 0.5f);
+      glUniformMatrix4fv(glGetUniformLocation(progDust, "uView"), 1, GL_FALSE, view.m);
+      // JS PointsMaterial size 0.045 world units => quad radius 0.045 (matches old 8px clamp)
+      glUniform1f(glGetUniformLocation(progDust, "uDustRad"), 0.045f);
       glUniform3f(glGetUniformLocation(progDust, "uColor"), 0.784f, 0.722f, 0.533f); // 0xc8b888
       glUniform1f(glGetUniformLocation(progDust, "uOpacity"), 0.45f);
       glBlendFunc(GL_SRC_ALPHA, GL_ONE); // additive (JS blending: AdditiveBlending)
       glBindVertexArray(dustVao);
-      glDrawArrays(GL_POINTS, 0, dn);
+      glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, dn);
       glBindVertexArray(0);
     }
     // (c) wall runes: <=10 quads, per-biome color, pulsing opacity.
@@ -2284,20 +2313,27 @@ void App::frame() {
     // (d) smoke: 9 pooled puffs (breakable breaks), 0.8 s rise+fade.
     {
       int sn = degraded ? (dc::kSmokeParticles / 2) : dc::kSmokeParticles;
-      std::vector<float> sp(dc::kSmokeParticles * 4);
-      for (int i = 0; i < dc::kSmokeParticles; i++) {
-        sp[i * 4 + 0] = smoke[i].x; sp[i * 4 + 1] = smoke[i].y;
-        sp[i * 4 + 2] = smoke[i].z; sp[i * 4 + 3] = smoke[i].active ? smoke[i].alpha : 0.0f;
+      {
+        std::vector<float> sp(dc::kSmokeParticles * 4);
+        for (int i = 0; i < dc::kSmokeParticles; i++) {
+          sp[i * 4 + 0] = smoke[i].x;
+          sp[i * 4 + 1] = smoke[i].y;
+          sp[i * 4 + 2] = smoke[i].z;
+          sp[i * 4 + 3] = smoke[i].active ? smoke[i].alpha : 0.0f;
+        }
+        glBindBuffer(GL_ARRAY_BUFFER, smokeVbo);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(sp.size() * sizeof(float)), sp.data());
       }
-      glBindBuffer(GL_ARRAY_BUFFER, smokeVbo);
-      glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(sn * 4 * sizeof(float)), sp.data());
       glUseProgram(progSmoke);
       glUniformMatrix4fv(glGetUniformLocation(progSmoke, "uViewProj"), 1, GL_FALSE, viewProj.m);
       glUniformMatrix4fv(glGetUniformLocation(progSmoke, "uView"), 1, GL_FALSE, view.m);
       glUniform3f(glGetUniformLocation(progSmoke, "uColor"), 0.2f, 0.2f, 0.251f); // 0x333340
+      // JS gl_PointSize = 90.0/-mv.z => world radius = 90 * tan(fov/2) / height
+      glUniform1f(glGetUniformLocation(progSmoke, "uSmokeRad"),
+                  90.0f * std::tan(fov * (float)M_PI / 360.0f) / (float)height);
       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // JS: transparent (normal blend)
       glBindVertexArray(smokeVao);
-      glDrawArrays(GL_POINTS, 0, sn);
+      glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, sn);
       glBindVertexArray(0);
     }
   }
@@ -3207,12 +3243,6 @@ int main(int argc, char** argv) {
         }
         std::fprintf(stderr, "[dc_app] vault-view: VAULT %dx%d at (%.1f,%.1f) yaw=%.2f\n",
                      vault->w, vault->h, cx, cz, app.state.player.yaw);
-        // TEMP-verify: force a smoke puff 2u ahead of the eye (smoke is
-        // event-driven by breakable breaks; this isolates the point-sprite pass)
-        {
-          const float fw = -std::sin(app.state.player.yaw), fwz = -std::cos(app.state.player.yaw);
-          app.smokePuff(cx + fw * 2.0f, 1.2f, cz + fwz * 2.0f);
-        }
       } else {
         std::fprintf(stderr, "[dc_app] vault-view: no VAULT room this level\n");
       }

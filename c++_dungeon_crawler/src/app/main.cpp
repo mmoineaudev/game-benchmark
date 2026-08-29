@@ -28,6 +28,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -39,6 +40,7 @@
 #include "dc/movement.hpp"
 #include "dc/state.hpp"
 #include "dc/world.hpp"
+#include "dc/leaderboard.hpp"
 
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "third_party/stb_truetype.h"
@@ -371,6 +373,14 @@ void main(){
 }
 )";
 
+// ---------- solid screen-space rects (hearts / souls / boss bars) ----------
+const char* kRectFrag = R"(
+#version 330 core
+in vec2 vUv; in vec4 vColor;
+out vec4 fragColor;
+void main(){ fragColor=vColor; }
+)";
+
 struct App {
   GLFWwindow* window = nullptr;
   int width = 0, height = 0;
@@ -427,9 +437,32 @@ struct App {
   Font font;
   GLuint progText = 0, textVbo = 0, textVao = 0;
   GLuint progOverlay = 0;
+  GLuint progRect = 0, rectVbo = 0, rectVao = 0;
+
+  // ---- save + leaderboard (JS localStorage → JSON files, §23) ----
+  std::string ledgerPath = "leaderboard.json";
+  std::string saveFile = "save.json";
+  std::unique_ptr<dc::Leaderboard> leaderboard;
+  bool saveWritten = false; // save-for-later already written at death
   enum class Screen { Title, Play, Dead };
   Screen screen = Screen::Play;
   bool prevN = false, prevY = false;
+
+  // ---- adaptive performance: 30 fps floor + degraded mode (JS _trackFps) ----
+  // Rolling ~3 s (90-frame) fps window. Sustained <30 fps for >6 s → degraded
+  // (bloom post-pass dropped = the single biggest GPU cost here) + perf warning;
+  // recovers when the average returns to ≥30.
+  std::vector<double> fpsWindow;
+  double lowFpsTimer = 0;
+  bool degraded = false;
+  bool forcedDegraded = false; // --degraded: hold the state for the fps gate
+  double avgFps() const {
+    if (fpsWindow.empty()) return 60.0;
+    double s = 0;
+    for (double f : fpsWindow) s += f;
+    return s / (double)fpsWindow.size();
+  }
+  void trackFps(double dt);
 
   // ---- sword combo (RMB, §9) ----
   int   swordStep = 0;          // 0 idle; 1..3 active
@@ -473,7 +506,10 @@ struct App {
   float lineW(const char* s, float size);
   void drawTextLine(std::vector<float>& v, float x, float y, float size, const float col[3], const char* s);
   void drawText(const std::vector<float>& v);
+  void drawRects(const std::vector<float>& v);
   void drawOverlay(float r, float g, float b, float a);
+  void drawHud();
+  void _endRun(const char* reason);
   void startRun(int seedToUse);
   ~App();
 };
@@ -654,7 +690,10 @@ void App::updateEntities(double dt) {
   // ---- sync to GameState + death ----
   simHealth = std::max(0.0, simHealth);
   state.health = (int)std::lround(simHealth);
-  if (simHealth <= 0.0 && !playerDead) { playerDead = true; if (screen == Screen::Play) screen = Screen::Dead; }
+  if (simHealth <= 0.0 && !playerDead) {
+    playerDead = true;
+    if (screen == Screen::Play) { screen = Screen::Dead; _endRun("dead"); }
+  }
 }
 
 // ---- §9 sword combo (RMB) ----
@@ -1001,6 +1040,10 @@ bool App::init(int w, int h, const char* title, const char* fontPath) {
                          compileShader(GL_FRAGMENT_SHADER, kTextFrag));
   progOverlay = linkProgram(compileShader(GL_VERTEX_SHADER, kFullscreenVert),
                             compileShader(GL_FRAGMENT_SHADER, kOverlayFrag));
+  progRect = linkProgram(compileShader(GL_VERTEX_SHADER, kTextVert),
+                         compileShader(GL_FRAGMENT_SHADER, kRectFrag));
+  // ---- save + leaderboard (JS localStorage → JSON files, §23) ----
+  leaderboard = std::make_unique<dc::Leaderboard>(ledgerPath);
   if (font.ok) {
     glGenVertexArrays(1, &textVao);
     glGenBuffers(1, &textVbo);
@@ -1008,6 +1051,20 @@ bool App::init(int w, int h, const char* title, const char* fontPath) {
     glBindBuffer(GL_ARRAY_BUFFER, textVbo);
     glBufferData(GL_ARRAY_BUFFER, 4096, nullptr, GL_DYNAMIC_DRAW);
     // 8 floats/vertex: pos2 | uv2 | color4
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 32, (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 32, (void*)8);
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, 32, (void*)16);
+    glBindVertexArray(0);
+
+    // solid-rect VAO (same vertex layout as text; fragment ignores the font)
+    glGenVertexArrays(1, &rectVao);
+    glGenBuffers(1, &rectVbo);
+    glBindVertexArray(rectVao);
+    glBindBuffer(GL_ARRAY_BUFFER, rectVbo);
+    glBufferData(GL_ARRAY_BUFFER, 4096, nullptr, GL_DYNAMIC_DRAW);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 32, (void*)0);
     glEnableVertexAttribArray(1);
@@ -1040,6 +1097,8 @@ void App::drawGroup(GLuint instVbo, int count, float emissive) {
 }
 
 void App::update(double dt, double rawDt) {
+  // ---- adaptive performance: rolling fps + 30 fps floor + degraded mode ----
+  trackFps(rawDt);
   // ---- title / death bookends (sim frozen, screen keys only) ----
   if (screen == Screen::Title) {
     if (keyN && !prevN) startRun(seed);
@@ -1107,6 +1166,20 @@ void App::update(double dt, double rawDt) {
 
   // ---- exit portal: in the exit room + portal open + E → descend ----
   _checkExitRoom();
+}
+
+void App::trackFps(double dt) {
+  if (dt <= 0) return;
+  fpsWindow.push_back(1.0 / std::max(dt, 1e-4));
+  if (fpsWindow.size() > 90) fpsWindow.erase(fpsWindow.begin()); // ~3 s at 30 fps
+  const double a = avgFps();
+  if (a < 30.0) {
+    lowFpsTimer += dt;
+    if (lowFpsTimer > 6.0 && !degraded) degraded = true; // sustained low fps → shed bloom
+  } else {
+    lowFpsTimer = std::max(0.0, lowFpsTimer - dt);
+    if (degraded && a >= 30.0 && !forcedDegraded) degraded = false; // recovered
+  }
 }
 
 void App::frame() {
@@ -1179,8 +1252,9 @@ void App::frame() {
   drawGroup(world.instCeil, world.nCeil);
   drawGroup(dynVbo, dynCount, 1.0f); // boss/skeletons: unlit emissive spectral figures
 
-  // ---- 3) bloom ----
+  // ---- 3) bloom (skipped in degraded mode — the single biggest GPU cost) ----
   glDisable(GL_DEPTH_TEST);
+  if (!degraded) {
   glBindFramebuffer(GL_FRAMEBUFFER, brightFboA);
   glViewport(0, 0, width, height);
   glClear(GL_COLOR_BUFFER_BIT);
@@ -1206,6 +1280,7 @@ void App::frame() {
   glBindVertexArray(quadVao);
   glDrawArrays(GL_TRIANGLES, 0, 3);
   glBindVertexArray(0);
+  } // end bloom (!degraded)
   // composite to default framebuffer
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
   glViewport(0, 0, width, height);
@@ -1216,7 +1291,7 @@ void App::frame() {
   glActiveTexture(GL_TEXTURE1);
   glBindTexture(GL_TEXTURE_2D, brightTexA);
   glUniform1i(glGetUniformLocation(progComposite, "uBloom"), 1);
-  glUniform1f(glGetUniformLocation(progComposite, "uStrength"), 0.35f);
+  glUniform1f(glGetUniformLocation(progComposite, "uStrength"), degraded ? 0.0f : 0.35f);
   glBindVertexArray(quadVao);
   glDrawArrays(GL_TRIANGLES, 0, 3);
   glBindVertexArray(0);
@@ -1252,6 +1327,9 @@ void App::frame() {
     }
     drawText(v);
   }
+
+  // ---- 5) in-game HUD (hearts / souls / timer / weapon slot / boss bar) ----
+  drawHud();
 }
 
 void App::savePPM(const char* path) {
@@ -1375,6 +1453,154 @@ void App::drawOverlay(float r, float g, float b, float a) {
   glBindVertexArray(0);
 }
 
+void App::drawRects(const std::vector<float>& v) {
+  if (v.empty() || !font.ok) return;
+  glUseProgram(progRect);
+  glUniform2f(glGetUniformLocation(progRect, "uRes"), (float)width, (float)height);
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, 0);
+  glBindBuffer(GL_ARRAY_BUFFER, rectVbo);
+  glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(v.size() * 4), v.data(), GL_DYNAMIC_DRAW);
+  glBindVertexArray(rectVao);
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  glDepthMask(false);
+  glDrawArrays(GL_TRIANGLES, 0, (GLsizei)(v.size() / 8));
+  glDepthMask(true);
+  glDisable(GL_BLEND);
+  glBindVertexArray(0);
+}
+
+void App::drawHud() {
+  if (screen != Screen::Play || !font.ok) return;
+  const float W = (float)width, H = (float)height, m = 14.0f;
+
+  // ---- colors (JS index.html palette) ----
+  const float label[3] = {0.69f, 0.60f, 0.38f};   // #b09a62
+  const float panel[4] = {0.08f, 0.055f, 0.03f, 0.55f};
+  const float hpBg[4] = {0.10f, 0.05f, 0.05f, 1.0f};  // #1a0c0c
+  const float hpFill[4] = {0.69f, 0.19f, 0.19f, 1.0f}; // #b03030
+  const float hpNum[3] = {0.85f, 0.79f, 0.63f};    // #d8c9a0
+  const float souls[3] = {0.91f, 0.78f, 0.35f};    // #e8c85a
+  const float weapon[3] = {0.85f, 0.79f, 0.63f};   // #d8c9a0
+  const float biome[3] = {0.80f, 0.72f, 0.48f};    // #cdb87a
+  const float timerC[3] = {0.91f, 0.86f, 0.75f};   // #e8dcc0
+  const float timerLow[3] = {0.85f, 0.29f, 0.21f}; // #d84a35
+  const float bossLbl[3] = {0.85f, 0.69f, 0.42f};  // #d8b06a
+  const float bossBg[4] = {0.08f, 0.04f, 0.04f, 1.0f}; // #140a0a
+  const float bossFill[4] = {0.75f, 0.28f, 0.22f, 1.0f}; // #c04838
+
+  std::vector<float> v; // 8 floats/vertex: pos2 | uv2 | color4
+  auto P = [&](float x, float y, float r, float g, float b, float a) {
+    v.insert(v.end(), {x, y, 0, 0, r, g, b, a});
+  };
+  // solid screen-space rect (y-down), 6 verts
+  auto rect = [&](float x, float y, float w, float h, float r, float g, float b, float a) {
+    if (w <= 0 || h <= 0) return;
+    float x1 = x + w, y1 = y + h;
+    P(x, y, r, g, b, a); P(x1, y, r, g, b, a); P(x1, y1, r, g, b, a);
+    P(x, y, r, g, b, a); P(x1, y1, r, g, b, a); P(x, y1, r, g, b, a);
+  };
+  std::vector<float> t; // text verts
+
+  // ---- top-left: VITALITY (hearts) ----
+  {
+    float pw = 196.0f;
+    rect(m, m, pw, 62, panel[0], panel[1], panel[2], panel[3]);
+    drawTextLine(t, m + 10, m + 8, 0.45f, label, "VITALITY");
+    const float bw = 178.0f, bh = 12.0f, bx = m + 10, by = m + 26;
+    rect(bx, by, bw, bh, hpBg[0], hpBg[1], hpBg[2], hpBg[3]);
+    const double frac = std::max(0.0, std::min(1.0, simHealth / std::max(1.0, (double)state.maxHealth)));
+    rect(bx, by, (float)(bw * frac), bh, hpFill[0], hpFill[1], hpFill[2], hpFill[3]);
+    char num[32];
+    std::snprintf(num, sizeof(num), "%d / %d", state.health, state.maxHealth);
+    drawTextLine(t, m + 10, by + bh + 5, 0.45f, hpNum, num);
+  }
+
+  // ---- top-right: SOULS + weapon slot (right-aligned) ----
+  {
+    float xR = W - m;
+    const float pw = 150.0f;
+    rect(xR - pw, m, pw, 74, panel[0], panel[1], panel[2], panel[3]);
+    auto drawRight = [&](float y, float size, const float c[3], const char* s) {
+      drawTextLine(t, xR - 12 - lineW(s, size), y, size, c, s);
+    };
+    drawRight(m + 8, 0.45f, label, "SOULS");
+    char cnt[16];
+    std::snprintf(cnt, sizeof(cnt), "%d", state.collectedOrbs);
+    drawRight(m + 20, 1.1f, souls, cnt);
+    char wslot[64];
+    const std::string& tn = dc::evolution::kTierNames[state.weaponTier];
+    std::snprintf(wslot, sizeof(wslot), "%s — T%d", tn.c_str(), state.weaponTier);
+    // separator line under the souls count
+    rect(xR - 12, m + 50, pw - 24, 1, 0.29f, 0.25f, 0.16f, 1.0f); // #4a3f28
+    drawRight(m + 55, 0.5f, weapon, wslot);
+  }
+
+  // ---- top-center: LEVEL · BIOME + timer ----
+  {
+    const float cx = W / 2.0f;
+    char lvl[64];
+    const auto& bd = dc::kBiomes.at(state.biome);
+    std::snprintf(lvl, sizeof(lvl), "LEVEL %d · %s", state.level, bd.label.c_str());
+    drawTextLine(t, cx - lineW(lvl, 0.55f) / 2, m + 6, 0.55f, biome, lvl);
+    const double remain = std::max(0.0, dc::kLevelTimeLimit - state.levelTime);
+    const int mm = (int)(remain / 60.0), ss = (int)(remain - 60.0 * mm);
+    char tm[24];
+    std::snprintf(tm, sizeof(tm), "%d:%02d%s", mm, ss,
+                  state.ngPlus > 0 ? " NG+" : "");
+    const float* tc = (remain < 30.0) ? timerLow : timerC;
+    drawTextLine(t, cx - lineW(tm, 0.85f) / 2, m + 26, 0.85f, tc, tm);
+  }
+
+  // ---- bottom-center: boss bar (only when a boss is live) ----
+  if (bossReady && !boss.dead) {
+    const float cx = W / 2.0f, bw = 420.0f, bh = 10.0f;
+    const float by = H - 64.0f;
+    const std::string lbl = dc::kBossLabels.count(boss.variant) ? dc::kBossLabels.at(boss.variant) : std::string("BOSS");
+    drawTextLine(t, cx - lineW(lbl.c_str(), 0.5f) / 2, by - 20, 0.5f, bossLbl, lbl.c_str());
+    rect(cx - bw / 2, by, bw, bh, bossBg[0], bossBg[1], bossBg[2], bossBg[3]);
+    const double frac = std::max(0.0, std::min(1.0, boss.hp / std::max(1.0, boss.maxHp)));
+    rect(cx - bw / 2, by, (float)(bw * frac), bh, bossFill[0], bossFill[1], bossFill[2], bossFill[3]);
+  }
+
+  // degraded-mode perf warning (bottom-right, gold) — mirrors JS #perf-warning
+  if (degraded) {
+    const char* w = "DEGRADED MODE — bloom off for performance";
+    const float perfWarn[4] = {0.85f, 0.63f, 0.23f, 1.0f};
+    drawTextLine(t, W - m - lineW(w, 0.4f), H - 24, 0.4f, perfWarn, w);
+  }
+
+  drawRects(v);
+  drawText(t);
+}
+
+void App::_endRun(const char* reason) {
+  (void)reason;
+  if (!leaderboard) return;
+  dc::ScoreEntry e;
+  e.level = state.level;
+  e.time = state.runTime;
+  e.orbs = state.collectedOrbs;
+  e.ngPlus = state.ngPlus;
+  e.date = (std::int64_t)(std::time(nullptr) * 1000);
+  leaderboard->submit(e);
+  // save-for-later (JS writes this at death; Load restores a full-health level)
+  const auto sv = state.toSave();
+  std::string j = std::string("{\"level\":") + std::to_string(sv.level) +
+                 ",\"runTime\":" + std::to_string(sv.runTime) +
+                 ",\"collectedOrbs\":" + std::to_string(sv.collectedOrbs) +
+                 ",\"weaponTier\":" + std::to_string(sv.weaponTier) +
+                 ",\"maxHealth\":" + std::to_string(sv.maxHealth) +
+                 ",\"ngPlus\":" + std::to_string(sv.ngPlus) +
+                 ",\"bossKills\":" + std::to_string(sv.bossKills) +
+                 ",\"health\":" + std::to_string(sv.health) + "}";
+  FILE* f = fopen(saveFile.c_str(), "w");
+  if (f) { std::fputs(j.c_str(), f); std::fclose(f); saveWritten = true; }
+  std::fprintf(stderr, "[dc_app] run ended — leaderboard rank #%d, save written (%s)\n",
+               leaderboard->rankOf(e), saveFile.c_str());
+}
+
 void App::startRun(int seedToUse) {
   state = dc::GameState::fromOpts();
   state.level = 1;
@@ -1426,7 +1652,7 @@ int main(int argc, char** argv) {
   int width = 1280, height = 720, frames = 0, seed = 1000, saveFrame = -1, level = 1;
   const char* savePath = nullptr;
   bool showFps = false, bossView = false, combatView = false, descendView = false;
-  bool titleView = false, deathView = false;
+  bool titleView = false, deathView = false, hudView = false, degradedView = false;
   for (int i = 1; i < argc; i++) {
     if (!std::strcmp(argv[i], "--width")) width = std::atoi(argv[++i]);
     else if (!std::strcmp(argv[i], "--height")) height = std::atoi(argv[++i]);
@@ -1441,6 +1667,8 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--descend-view")) descendView = true;
     else if (!std::strcmp(argv[i], "--title")) titleView = true;
     else if (!std::strcmp(argv[i], "--death-view")) deathView = true;
+    else if (!std::strcmp(argv[i], "--hud-view")) hudView = true;
+    else if (!std::strcmp(argv[i], "--degraded")) degradedView = true;
   }
 
   App app;
@@ -1480,7 +1708,7 @@ int main(int argc, char** argv) {
     double t0 = glfwGetTime();
     const double dt = 1.0 / 60.0;
     // boss/combat/death probes need a boss → force a level-7 dungeon if the run isn't there
-    if ((bossView || combatView || deathView) && app.state.level % dc::boss::kInterval != 0) {
+    if ((bossView || combatView || deathView || hudView) && app.state.level % dc::boss::kInterval != 0) {
       std::fprintf(stderr, "[dc_app] view: no boss at level %d — regenerating at level 7\n", app.state.level);
       app.state.level = 7;
       app.state.biome = dc::biomeForLevel(7);
@@ -1567,6 +1795,34 @@ int main(int argc, char** argv) {
       std::fprintf(stderr, "[dc_app] death-view: player at throne, no weapons (boss %s)\n",
                    app.boss.state.c_str());
     }
+    // --hud-view: showcase every HUD element at once — level 7 (boss bar),
+    // souls (weapon slot), and partial health (hearts bar) all visible.
+    if (hudView) {
+      const dc::Vec2 b = app.boss.pos;
+      static const double dirs[6][2] = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}, {0.7, 0.7}, {-0.7, 0.7}};
+      bool found = false;
+      for (double dist = 9.0; dist <= 14.0 && !found; dist += 1.0)
+        for (const auto& d : dirs) {
+          const double wx = b.x + d[0] * dist, wz = b.z + d[1] * dist;
+          if (dc::circleHitsBox(app.world.collision.boxes, wx, wz, player::kRadius)) continue;
+          if (!dc::hasLineOfSight(app.world.collision.boxes, b.x, b.z, wx, wz)) continue;
+          app.camX = wx; app.camZ = wz;
+          app.state.player.x = wx; app.state.player.z = wz;
+          found = true; break;
+        }
+      app.state.safeSpawn = 0;
+      app.state.collectedOrbs = 120; // souls → weapon tier 2 (Runic Greatsword)
+      app.state.weaponTier = dc::weaponTier(app.state.collectedOrbs);
+      app.simHealth = 2.0;           // partial hearts bar (of maxHealth 3)
+      app.state.health = 2;
+      const double dx = b.x - app.state.player.x, dz = b.z - app.state.player.z;
+      app.state.player.yaw = (float)std::atan2(-dx, -dz);
+      std::fprintf(stderr, "[dc_app] hud-view: player %s throne (souls %d → T%d, hp %d/%d)\n",
+                   found ? "beside" : "FALLBACK", app.state.collectedOrbs,
+                   app.state.weaponTier, app.state.health, app.state.maxHealth);
+    }
+    // --degraded: force the degraded-mode state (bloom off) for the 30 fps gate
+    if (degradedView) { app.degraded = true; app.forcedDegraded = true; app.lowFpsTimer = 0; }
     // watch level transitions (descend-view) so a descent is provable headlessly
     int prevLevel = app.state.level;
     bool deathSeen = false;
@@ -1574,7 +1830,7 @@ int main(int argc, char** argv) {
     bool restartSeen = false;
     for (int i = 0; i < frames; i++) {
       ctx.frame = i; ctx.phase = "render"; wd.begin();
-      if (!bossView && !descendView && !deathView) app.keyW = true; // interior-walk shot: drive forward
+      if (!bossView && !descendView && !deathView && !hudView) app.keyW = true; // interior-walk shot: drive forward
       else { // face the live boss each frame so it stays on screen
         const double dx = app.boss.pos.x - app.state.player.x;
         const double dz = app.boss.pos.z - app.state.player.z;
@@ -1624,9 +1880,9 @@ int main(int argc, char** argv) {
     }
     double el = glfwGetTime() - t0;
     if (savePath && saveFrame < 0) app.savePPM(savePath); // final frame (or use --save-frame)
-    std::fprintf(stderr, "[dc_app] %d frames in %.3fs (%.1f fps) seed=%d level=%d biome=%s boss=%s(%.0fhp) skels=%zu portalOpen=%d\n",
+    std::fprintf(stderr, "[dc_app] %d frames in %.3fs (%.1f fps) seed=%d level=%d biome=%s boss=%s(%.0fhp) skels=%zu portalOpen=%d degraded=%d\n",
                  frames, el, frames / el, seed, app.state.level, app.state.biome.c_str(),
-                 app.boss.state.c_str(), app.boss.hp, app.skels.size(), (int)app.bossPortalOpen);
+                 app.boss.state.c_str(), app.boss.hp, app.skels.size(), (int)app.bossPortalOpen, (int)app.degraded);
   } else {
     double last = glfwGetTime(), acc = 0;
     int n = 0;
@@ -1643,7 +1899,7 @@ int main(int argc, char** argv) {
       wd.end("app.frame");
       n++; acc += now - last;
       if (acc >= 0.5) {
-        if (showFps) std::fprintf(stderr, "[dc_app] %.0f fps\n", n / acc);
+        if (showFps) std::fprintf(stderr, "[dc_app] %.0f fps (degraded=%d)\n", n / acc, (int)app.degraded);
         acc = 0; n = 0;
       }
     }

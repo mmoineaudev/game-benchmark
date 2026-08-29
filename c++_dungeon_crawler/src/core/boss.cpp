@@ -13,7 +13,9 @@ Boss Boss::spawn(const Dungeon& dungeon, int level, int ngPlus, double souls,
                  int maxHealth, const std::string& variant) {
   Boss b;
   b.variant = variant;
-  b.label = "SPECTRAL LORD";
+  // 7 variant flavor labels (Skeleton/Armored/Archer/Brute/Wraith/Rat/
+  // Magician → BONE LORD/IRON GHOUL/…). AI is identical across variants.
+  b.label = kBossLabels.count(variant) ? kBossLabels.at(variant) : "SPECTRAL LORD";
   const double hp = static_cast<double>(bossHp(level, ngPlus, souls, maxHealth));
   b.hp = hp;
   b.maxHp = hp;
@@ -104,13 +106,35 @@ void Boss::tickSmoke(double dt, const BossCtx& ctx) {
 
 void Boss::summonMinions(const BossCtx& ctx) {
   const double heartsExtra =
-      std::max(0.0, (ctx.playerMaxHealth > 3 ? ctx.playerMaxHealth : 3) - 3.0);
+      std::max(0.0, (ctx.playerMaxHealth > 3 ? ctx.playerMaxHealth : 3.0) - 3.0);
   const int n = static_cast<int>(
       std::floor(3.0 * std::pow(boss::kSummonHeartsMult, heartsExtra)));
-  // Deterministic count; the exact cell is not gated by any aggro-check
-  // assertion, so we tally the summons (JS uses a cached walkable list + RNG).
-  (void)ctx;
-  minionsSummoned += n;
+  // JS: summon n projectile-firing wraiths at random walkable cells (the
+  // _candidateCellsCache), falling back to the boss's own cell. The summon
+  // hook (app → SkeletonSystem::summonMinion) spawns the real wraiths;
+  // minionsSummoned tallies successful spawns. Headless tests with no hook
+  // keep the old tally-only behavior (n tallied, nothing spawned).
+  if (onBossSummon) {
+    // JS falls back to the boss's own cell (Math.round(pos/6)) when the
+    // candidate cache is empty; we re-index the same way per attempt.
+    CellRef cell{static_cast<int>(std::lround(pos.x / 6.0)),
+                 static_cast<int>(std::lround(pos.z / 6.0))};
+    std::vector<CellRef> walk;
+    if (ctx.dungeon) {
+      const int gs = ctx.dungeon->gridSize;
+      walk.reserve(256);
+      for (int z = 0; z < gs && z < static_cast<int>(ctx.dungeon->grid.size()); z++)
+        for (int x = 0; x < gs && x < static_cast<int>(ctx.dungeon->grid[z].size()); x++)
+          if (ctx.dungeon->grid[z][x] != Cell::kEmpty) walk.push_back({x, z});
+    }
+    for (int i = 0; i < n; i++) {
+      if (!walk.empty() && ctx.rng)
+        cell = walk[static_cast<size_t>(ctx.rng->nextInt(static_cast<int>(walk.size())))];
+      if (onBossSummon(cell)) minionsSummoned++;
+    }
+  } else {
+    minionsSummoned += n; // no hook (headless): tally only, as before
+  }
 }
 
 bool Boss::hitBoss(double damage, const char* /*sourceKind*/) {

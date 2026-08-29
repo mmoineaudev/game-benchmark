@@ -19,6 +19,7 @@
 // can assert "the boss's attacks actually damage the player."
 #pragma once
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -98,6 +99,13 @@ public:
   int minionsSummoned = 0;
   bool enteredCharging = false;
   bool enteredBlinking = false;
+
+  // Boss summon hook: invoked per summon attempt (app wires it to
+  // SkeletonSystem::summonMinion so the wraiths are real, projectile-firing
+  // enemies). Return true when a wraith was actually spawned (false when
+  // capped at MAX_MINIONS); `minionsSummoned` tallies successful spawns.
+  // Leave null (headless tests) to tally-only, as in the aggro-check.
+  std::function<bool(const CellRef&)> onBossSummon;
 
 private:
   void moveBoss(double dt, double tx, double tz, const BossCtx& ctx, double speed);

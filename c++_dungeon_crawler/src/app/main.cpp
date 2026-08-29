@@ -610,10 +610,15 @@ void App::spawnEntities() {
   };
 
   if (bossLevel) {
-    static const char* kVariants[7] = {"Skeleton", "Armored", "Archer", "Brute", "Rough", "Rat", "Magician"};
+    static const char* kVariants[7] = {"Skeleton", "Armored", "Archer", "Brute", "Wraith", "Rat", "Magician"};
     const char* variant = kVariants[(level / dc::boss::kInterval - 1) % 7];
     boss = dc::Boss::spawn(world.dungeon, level, state.ngPlus, state.collectedOrbs,
                           state.maxHealth, variant);
+    // boss summons → real projectile-firing wraiths (§17)
+    boss.onBossSummon = [this](const dc::CellRef& c) {
+      return skelsys.summonMinion(c, state.level, state.ngPlus,
+                                 state.collectedOrbs, state.bossKills, rng) >= 0;
+    };
     bossReady = true;
     bossPortalOpen = false; // sealed until the lord falls
   }

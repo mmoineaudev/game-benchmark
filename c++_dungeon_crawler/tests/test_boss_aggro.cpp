@@ -225,3 +225,62 @@ TEST_CASE("boss_aggro: PHASE D — player damages the boss; kill flows to bossKi
   if (killed) sim.bossKills++; // _onBossDefeated
   CHECK(sim.bossKills > 0);
 }
+
+TEST_CASE("boss: SUMMON hook spawns real wraiths at random walkable cells",
+          "[boss_aggro][summon]") {
+  const std::string biome = biomeForLevel(kLevel);
+  DungeonGenerator gen(1000, biome);
+  Sim sim;
+  sim.dungeon = gen.generate();
+  sim.boxes = buildCollisionBoxes(sim.dungeon).boxes;
+  sim.boss = Boss::spawn(sim.dungeon, kLevel, 0, 0, 3, "Wraith");
+  // maxHealth 3 → heartsExtra 0 → n = floor(3 * 1.5^0) = 3 wraiths.
+  sim.playerMaxHealth = 3;
+  sim.playerHealth = 3;
+
+  // Force-awake (skip the dormant phase) so the 6 s summon timer runs.
+  sim.boss.awake = true;
+  sim.boss.state = "CHASE";
+  const Vec2 b = sim.boss.pos;
+  sim.player = {b.x + 10, b.z}; // close enough to aggro-chase
+
+  int spawned = 0;
+  std::vector<CellRef> cells;
+  sim.boss.onBossSummon = [&](const CellRef& c) {
+    CHECK(c.x >= 0);
+    CHECK(c.x < sim.dungeon.gridSize);
+    CHECK(c.z >= 0);
+    CHECK(c.z < sim.dungeon.gridSize);
+    CHECK(sim.dungeon.grid[c.z][c.x] != Cell::kEmpty); // walkable only
+    cells.push_back(c);
+    if (spawned >= 5) return false; // cap like MAX_MINIONS
+    spawned++;
+    return true;
+  };
+
+  // Run just over the first SUMMON_INTERVAL (6 s): the hook must fire 3×.
+  const int frames = static_cast<int>(6.1 / kDt);
+  for (int i = 0; i < frames; i++) sim.step(kDt);
+
+  CHECK(spawned == 3);
+  CHECK(sim.boss.minionsSummoned == 3);
+  CHECK(cells.size() == 3);
+}
+
+TEST_CASE("boss: 7 variants — same AI contract, distinct flavor labels",
+          "[boss_aggro][variant]") {
+  const std::string biome = biomeForLevel(kLevel);
+  DungeonGenerator gen(1000, biome);
+  const Dungeon d = gen.generate();
+  const std::vector<std::string> variants = {
+      "Skeleton", "Armored", "Archer", "Brute", "Wraith", "Rat", "Magician"};
+  const std::vector<std::string> labels = {
+      "BONE LORD", "IRON GHOUL", "SPECTRAL HUNTER", "ASH TITAN",
+      "SPECTRAL LORD", "VERMIN KING", "LICH ARCHMAGE"};
+  for (size_t i = 0; i < variants.size(); i++) {
+    Boss b = Boss::spawn(d, kLevel, 0, 0, 3, variants[i]);
+    CHECK(b.variant == variants[i]);
+    CHECK(b.label == labels[i]);
+    CHECK(b.maxHp == 25); // HP contract identical across all 7 variants
+  }
+}

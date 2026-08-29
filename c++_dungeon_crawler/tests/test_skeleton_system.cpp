@@ -155,6 +155,92 @@ TEST_CASE("reveal pacing: one mob per SPAWN_INTERVAL, deferral near player",
   CHECK(static_cast<int>(sys3.queue().size()) <= q3);
 }
 
+TEST_CASE("drainQueue: all-too-close multi-entry defers without spinning",
+         "[skeleton_system][spawn]") {
+  // Regression for a real infinite spin found via gdb: when TWO or more queued
+  // entries are ALL within kDeferPlayerDist of the player, the old port
+  // (field-comparison `allSame`) rotated the front entry to the back forever
+  // (revealTimer_ never advanced, queue never emptied) → 100% CPU hang. The
+  // JS reference (SkeletonSystem.js:186 `every(e => e === entry)`) shares the
+  // same latent spin, but only surfaces when a blind-walk probe parks the
+  // player within 30u of two distinct spawn cells (level 9, frame ~511).
+  // The rotation guard makes termination structural: a full rotation breaks.
+  const Fixture f;
+  SkeletonSystem sys;
+  Rng rng(1000);
+  const bool hasArena =
+      std::any_of(f.dungeon.rooms.begin(), f.dungeon.rooms.end(),
+                  [](const Room& r) { return r.type == "ARENA"; });
+  sys.buildSpawnPlan(f.dungeon, 5, 0, "FROZEN_HALLS", f.player, hasArena, rng);
+  const int q0 = static_cast<int>(sys.queue().size());
+  REQUIRE(q0 >= 2); // need at least two distinct entries to exercise the spin
+
+  // The spin requires 2+ entries REMAINING in the queue, all within 30u of the
+  // player, with revealTimer_ <= 0 (the real hang: frame ~511 of a level-9
+  // blind-walk, ~17 of 19 entries already revealed, 2 left, both within 30u).
+  // So: (1) drain all FARTHER entries with the player parked far away,
+  // (2) park the player at the midpoint of the two closest queued cells.
+  //
+  // Step 1: reveal every entry that is >30u from a "far" anchor. The closest
+  // pair (6-8u apart) stays queued. Reveal pacing is 0.5s, so loop a bounded
+  // number of calls; each call reveals at most one, and we stop when the
+  // queue holds exactly the closest pair (or fewer).
+  const double dt = 1.0 / 60.0;
+  const Vec2 far{-1000.0, -1000.0};
+  // Reveal pacing is one per SPAWN_INTERVAL (0.5 s) = 30 frames at dt=1/60.
+  // Drain until only 2 entries remain (the spin config); cap generously.
+  for (int i = 0; i < q0 * 30 + 60 && sys.queue().size() > 2; i++)
+    sys.drainQueue(dt, far, 5, 0, 0, 0, false, rng);
+  // Now the queue should hold exactly the 2 closest cells (they were the last
+  // to be revealed because they were nearest to the "far" anchor... actually
+  // the far anchor reveals in spawn order; the 2 closest cells are simply
+  // the ones still queued). Recompute the closest pair of what remains.
+  const auto& qv2 = sys.queue();
+  if (qv2.size() < 2) {
+    CHECK(true); // seed produced <2 remaining — termination already proven
+    return;
+  }
+  int ci = 0, cj = 1;
+  double bestD2 = 1e30;
+  for (size_t i = 0; i < qv2.size(); i++)
+    for (size_t j = i + 1; j < qv2.size(); j++) {
+      const double dx = (qv2[i].cell.x - qv2[j].cell.x) * 6.0;
+      const double dz = (qv2[i].cell.z - qv2[j].cell.z) * 6.0;
+      const double d2 = dx * dx + dz * dz;
+      if (d2 < bestD2) { bestD2 = d2; ci = (int)i; cj = (int)j; }
+    }
+  // The remaining queue's closest pair is the spin config: both within 30u of
+  // their midpoint (they're 6-40u apart → 3-20u each). Pre-fix: infinite spin.
+  const Vec2 p{(qv2[ci].cell.x + qv2[cj].cell.x) * 3.0, (qv2[ci].cell.z + qv2[cj].cell.z) * 3.0};
+  const double deferD2 = 30.0 * 30.0;
+  REQUIRE((qv2[ci].cell.x * 6.0 - p.x) * (qv2[ci].cell.x * 6.0 - p.x) +
+              (qv2[ci].cell.z * 6.0 - p.z) * (qv2[ci].cell.z * 6.0 - p.z) < deferD2);
+  REQUIRE((qv2[cj].cell.x * 6.0 - p.x) * (qv2[cj].cell.x * 6.0 - p.x) +
+              (qv2[cj].cell.z * 6.0 - p.z) * (qv2[cj].cell.z * 6.0 - p.z) < deferD2);
+
+  // 3) Walk the player to the midpoint and advance frames. On the frame where
+  //    revealTimer_ crosses <= 0, the pre-fix code spins forever: both entries
+  //    are too-close, both distinct (allSame never true), revealTimer_ never
+  //    advances, queue never empties → 100% CPU hang (gdb-confirmed at level 9
+  //    frame ~511). The rotation guard breaks after one full rotation,
+  //    deferring both. 120 frames is plenty to cross the 0.5 s reveal pacing.
+  for (int i = 0; i < 120; i++)
+    sys.drainQueue(dt, p, 5, 0, 0, 0, false, rng);
+
+  // Termination invariant: the 120-frame loop returned (no hang).
+  CHECK(sys.liveCount() <= q0);
+  CHECK(static_cast<int>(sys.queue().size()) <= q0);
+  // The two too-close entries were rotated (deferred) every frame, so both
+  // are still queued (never revealed).
+  int a = 0, b = 0;
+  for (const auto& e2 : sys.queue()) {
+    if (e2.cell.x == qv2[ci].cell.x && e2.cell.z == qv2[ci].cell.z) a++;
+    if (e2.cell.x == qv2[cj].cell.x && e2.cell.z == qv2[cj].cell.z) b++;
+  }
+  CHECK(a >= 1);
+  CHECK(b >= 1);
+}
+
 TEST_CASE("melee SKELETON: wakes, winds up, lands a hit", "[skeleton_system][ai]") {
   SkeletonSystem sys;
   double dealt = 0;

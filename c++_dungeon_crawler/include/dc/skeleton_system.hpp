@@ -32,6 +32,7 @@ enum class EnemyState : int { kDormant, kWaking, kChase, kAttack, kDead };
 // everything the sim needs: transform, AI state, attack cycle, HP/drops.
 struct Enemy {
   std::string type;            // SKELETON | MAGICIAN | ... (ENEMY_TYPES key)
+  int id = -1;                 // stable monotonic id (survives vector erase; for retargeting)
   const EnemyTypeDef* def = nullptr;
   double hp = 1, maxHp = 1;
   double speed = 0;
@@ -146,6 +147,7 @@ public:
   const std::vector<Projectile>& orbs() const { return orbs_; }
   // Clear all (level regen). Drops nothing.
   void clear();
+  int findId(int id) const;  // index of the live enemy with this id, or -1
   // Summon a minion wraith at a cell (sarcophagus / boss summon, §16/§17).
   // Capped at live BOSS.MAX_MINIONS; returns the new enemy index or -1.
   int summonMinion(const CellRef& cell, int level, int ngPlus, double souls,
@@ -183,6 +185,7 @@ private:
                        Rng& rng) const;
 
   std::vector<Enemy> enemies_;
+  int nextEnemyId_ = 0;       // monotonic per level; assigned to Enemy::id (stable across erase)
   std::vector<SpawnEntry> queue_;
   double revealTimer_ = 0;
   double excessHpMult_ = 1;

@@ -51,10 +51,17 @@ std::vector<Enemy*> SkeletonSystem::nearby(double x, double z, double dist) {
 void SkeletonSystem::clear() {
   enemies_.clear();
   queue_.clear();
+  nextEnemyId_ = 0;
   for (auto& p : arrows_) p.active = false;
   for (auto& p : orbs_) p.active = false;
   excessHpMult_ = 1;
   revealTimer_ = 0;
+}
+
+int SkeletonSystem::findId(int id) const {
+  for (int i = 0; i < (int)enemies_.size(); i++)
+    if (enemies_[i].id == id && enemies_[i].alive()) return i;
+  return -1;
 }
 
 int SkeletonSystem::liveProjectileCount() const {
@@ -80,6 +87,7 @@ int SkeletonSystem::summonMinion(const CellRef& cell, int level, int ngPlus,
   e.floats = true;
   e.rangedFiring = true; // projectile-firing wraiths
   e.isMinion = true;
+  e.id = nextEnemyId_++;
   e.state = EnemyState::kWaking;
   e.wakeTimer = 0.8;
   e.pos = {static_cast<double>(cell.x) * 6.0 + (rng.next() - 0.5) * 3.0,
@@ -122,6 +130,7 @@ int SkeletonSystem::spawnBURN(const Dungeon& d, const Vec2& playerPos, int ngPlu
   e.speed = 2.6;
   e.floats = true;
   e.isBURN = true;
+  e.id = nextEnemyId_++;
   e.state = EnemyState::kWaking;
   e.wakeTimer = 0.8;
   e.pos = {static_cast<double>(bestX) * 6.0, static_cast<double>(bestZ) * 6.0};
@@ -270,6 +279,7 @@ Enemy SkeletonSystem::spawnOne(const SpawnEntry& entry, int level, int ngPlus,
   e.eliteName = eliteName;
   e.eliteScale = eliteScale;
   e.baseScale = eliteScale; // (Ogre 1.9, BRUTE handled by def; app-side pop)
+  e.id = nextEnemyId_++;
   e.state = EnemyState::kWaking;
   e.wakeTimer = 0.8;
   e.floats = (entry.typeKey == "WRAITH");
@@ -287,6 +297,16 @@ void SkeletonSystem::drainQueue(double dt, const Vec2& playerPos, int level,
                                bool isTitleOrSafe, Rng& rng) {
   (void)isTitleOrSafe; // reveal pacing is the same; freezing is done in update
   revealTimer_ -= dt;
+  // Rotation guard: counts how many queue-front entries we've rotated (too-close)
+  // this pass without revealing. If it reaches the queue length, every queued
+  // entry is too close to the player → stop (JS 186 "all too close" intent).
+  // This is the C++-robust form of JS `this.queue.every(e => e === entry)`:
+  // JS relies on reference equality (each entry is a distinct object), which
+  // only breaks when the queue holds exactly one entry; the field-comparison
+  // port missed the multi-entry case and spun forever. The counter is O(1)
+  // and structurally guarantees termination (a spawn resets it, a full
+  // rotation breaks).
+  int rotated = 0;
   while (revealTimer_ <= 0 && !queue_.empty()) {
     if (liveCount() >= enemySpawn::kLiveCap) break;
     SpawnEntry entry = queue_.front();
@@ -296,15 +316,10 @@ void SkeletonSystem::drainQueue(double dt, const Vec2& playerPos, int level,
     const double dpx = cellX - playerPos.x, dpz = cellZ - playerPos.z;
     if (dpx * dpx + dpz * dpz < enemySpawn::kDeferPlayerDist * enemySpawn::kDeferPlayerDist) {
       queue_.push_back(entry); // rotate to back
-      // All queued entries are this same one and it's too close → stop (JS 186).
-      bool allSame = true;
-      for (const auto& q : queue_)
-        if (!(q.cell.x == entry.cell.x && q.cell.z == entry.cell.z &&
-              q.typeKey == entry.typeKey && q.elite == entry.elite &&
-              q.firstOfArena == entry.firstOfArena)) { allSame = false; break; }
-      if (allSame) break;
+      if (++rotated >= (int)queue_.size()) break; // all queued entries too-close → stop (JS 186)
       continue;
     }
+    rotated = 0; // revealed one → reset the rotation guard
     revealTimer_ += enemySpawn::kSpawnInterval;
     if (entry.typeKey == "RAT") {
       const int n = ratStat::kPackMin +

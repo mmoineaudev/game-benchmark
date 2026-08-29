@@ -24,6 +24,7 @@
 #include <GLFW/glfw3.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -260,11 +261,42 @@ in vec2 vUv;
 uniform sampler2D uScene;
 uniform sampler2D uBloom;
 uniform float uStrength;
+uniform sampler2D uGlowSharp;
+uniform sampler2D uGlowBlur;
+uniform float uGlowIntensity;
+uniform float uGlowPulse;
 out vec4 fragColor;
 void main() {
   vec3 scene = texture(uScene, vUv).rgb;
   vec3 bloom = texture(uBloom, vUv).rgb;
-  fragColor = vec4(scene + bloom * uStrength, 1.0);
+  vec3 sharp = texture(uGlowSharp, vUv).rgb;
+  vec3 blur  = texture(uGlowBlur, vUv).rgb;
+  vec3 glow = (blur * 1.6 * uGlowPulse + sharp * 0.5) * uGlowIntensity; // §12.2 EnemyGlowShader
+  fragColor = vec4(scene + bloom * uStrength + glow, 1.0);
+}
+)";
+
+// §12.2 enemy-glow: flat red-orange override material (JS GLOW_MAT 0xff4422)
+const char* kFlatMaskFrag = R"(
+#version 330 core
+out vec4 fragColor;
+void main() { fragColor = vec4(1.0, 0.267, 0.133, 1.0); } // 0xff4422
+)";
+
+// §12.2 enemy-glow separable gaussian: 5 taps, weights 0.227/0.194/0.121 at 0/1.4/3.4 texels
+const char* kEnemyBlurFrag = R"(
+#version 330 core
+in vec2 vUv;
+uniform sampler2D uTex;
+uniform vec2 uDir;
+out vec4 fragColor;
+void main() {
+  vec3 c = texture(uTex, vUv).rgb * 0.227;
+  c += texture(uTex, vUv + uDir * 1.4).rgb * 0.194;
+  c += texture(uTex, vUv - uDir * 1.4).rgb * 0.194;
+  c += texture(uTex, vUv + uDir * 3.4).rgb * 0.121;
+  c += texture(uTex, vUv - uDir * 3.4).rgb * 0.121;
+  fragColor = vec4(c, 1.0);
 }
 )";
 
@@ -466,9 +498,16 @@ struct App {
   GLuint progScene = 0;
   GLuint quadVao = 0, quadVbo = 0;
   GLuint progBright = 0, progBlur = 0, progComposite = 0;
+  // §12.2 enemy-glow pass programs (flat mask + separable gaussian + composite)
+  GLuint progMask = 0, progEnemyBlur = 0;
   GLuint sceneFbo = 0, sceneTex = 0;
   GLuint shadowFbo = 0, shadowTex = 0;
   GLuint brightFboA = 0, brightTexA = 0, brightFboB = 0, brightTexB = 0;
+  // §12.2 enemy-glow half-res render targets (sharp mask + 2 blur ping-pongs)
+  GLuint glowSharpFbo = 0, glowSharpTex = 0;
+  GLuint glowBlurAFbo = 0, glowBlurATex = 0;
+  GLuint glowBlurBFbo = 0, glowBlurBTex = 0;
+  int glowW = 0, glowH = 0; // half-res dims
 
   // the single shadow-casting torch (static-assigned at level build)
   float torchPos[3] = {0, 6, 0};
@@ -510,6 +549,8 @@ struct App {
   int firePatchIdx = 0;
   GLuint dynVbo = 0;        // dynamic instance VBO (boss + enemies, 9 floats)
   int dynCount = 0;
+  GLuint enemVbo = 0;       // §12.2 enemy-only instance VBO (skeleton roster, 9 floats)
+  int enemCount = 0;
   bool playerDead = false;
   bool bossKillCounted = false;
   bool probeInvuln = false; // --hud-view probe: keep the play screen (not death)
@@ -566,6 +607,15 @@ struct App {
   double lmbAccum = 0;
   bool prevLMB = false, prevRMB = false;
 
+  // ---- arc bolts (§9.3, T3–T5): pooled homing projectiles, orb dmg frozen at fire ----
+  struct ArcBolt {
+    double x = 0, y = 1.2, z = 0;
+    double life = -1;       // <0 inactive
+    int target = -1;       // -1 none, -2 boss, >=0 enemy id (stable across vector erase)
+    int dmg = 0;
+  };
+  std::array<ArcBolt, dc::sword::kArcPool> arcBolts; // §13: 8-slot pool, zero per-shot alloc
+
   // ---- buffs (§11) ----
   double fireballCd = 0;      // FIREBALL buff (effect 2): RMB hold cooldown
   dc::Hunter hunter;          // HUNTER buff (effect 5) companion
@@ -593,11 +643,14 @@ struct App {
   void pressSword();
   void beginSwordStep(int step);
   void applySwordCone(int stepIdx);
+  void _rollSwordProcs(int tier);   // §9.3: electric proc (all tiers) + arc bolts (T3–T5)
+  void _spawnArcBolts(int n);       // pooled homing bolts (orb dmg frozen at fire)
+  void _updateArcBolts(double dt);  // 24 u/s homing, retarget on target death
   void fireOrb(int step);
   void _fireOrbStep(bool isClick);
   void hitBoss(double dmg, const char* src);
   void orbExplode(const Orb& o);
-  void uploadDynamic(std::vector<float>& dyn);
+  void uploadDynamic(std::vector<float>& dyn, std::vector<float>& enem);
   void update(double dt, double rawDt);
   void frame();
   void drawGroup(GLuint instVbo, int count, float emissive = 0.0f);
@@ -871,7 +924,7 @@ void App::updateEntities(double dt) {
     ctx.dt = dt;
     ctx.frozenAll = false;
     ctx.safeSpawn = state.safeSpawn > 0;
-    ctx.brightActive = false; // Phase 3 buffs: BRIGHT (state.buffEffect == 1)
+    ctx.brightActive = state.buffEffect == 1; // BRIGHT: all enemies flee, no attacks (§11 effect 1)
     ctx.attackSpeedMult = 1.0 + dc::kAttackPer3Levels * std::floor((state.level - 1) / 3);
     ctx.level = state.level;
     ctx.ngPlus = state.ngPlus;
@@ -979,6 +1032,9 @@ void App::updateCombat(double dt) {
     if (hit) { if (o.step == 3) orbExplode(o); o.alive = false; }
   }
 
+  // ---- advance arc bolts (§9.3, T3–T5) ----
+  _updateArcBolts(dt);
+
   prevLMB = keyLMB; prevRMB = keyRMB;
 }
 void App::applySwordCone(int stepIdx) {
@@ -1013,7 +1069,123 @@ void App::applySwordCone(int stepIdx) {
     if (d > range) continue;
     if ((dirx * (tx / d) + dirz * (tz / d)) >= arcDot - 0.12) drops.breakProp(br, souls, rng);
   }
-  if (hitCount > 0) { hitStop = std::max(hitStop, dc::sword::kHitStop); swordHitsLanded += hitCount; }
+  if (hitCount > 0) {
+    hitStop = std::max(hitStop, dc::sword::kHitStop);
+    swordHitsLanded += hitCount;
+    _rollSwordProcs(tier); // §9.3: electric proc (all tiers) + arc bolts (T3–T5)
+  }
+}
+void App::_rollSwordProcs(int tier) {
+  const double souls = state.collectedOrbs;
+  const double px = state.player.x, pz = state.player.z;
+  // electric proc (all tiers): 5% chance, blast 5× orb damage within 20 u (JS _rollSwordProcs)
+  if (rng.next() < dc::sword::kElectricChance) {
+    const double blast = dc::sword::kElectricDamageMult * (1.0 + 0.02 * souls) * 2.0; // ×5 orb dmg
+    int count = 0;
+    if (bossReady && !boss.dead &&
+        std::hypot(boss.pos.x - px, boss.pos.z - pz) < dc::sword::kElectricRange) {
+      hitBoss(blast, "electric"); count++;
+    }
+    for (dc::Enemy* e : skelsys.nearby(px, pz, dc::sword::kElectricRange)) {
+      if (!e->alive()) continue;
+      skelsys.hitEnemy(e, blast, "electric"); count++;
+    }
+    if (count > 0) {
+      hitStop = dc::hitStop::electricChain; // 0.12 s (JS sets, not max)
+      char buf[64];
+      std::snprintf(buf, sizeof(buf), "ELECTRIC CHAIN — %d foes blasted!", count);
+      toast(buf);
+      if (!firePatches.empty()) { // fire patch at the player (JS firePatch)
+        FirePatch& p = firePatches[firePatchIdx];
+        firePatchIdx = (firePatchIdx + 1) % (int)firePatches.size();
+        p.x = px; p.z = pz; p.t = 0; p.active = true;
+      }
+    }
+  }
+  // arc bolts (T3–T5): pooled homing projectiles, orb dmg frozen at fire time
+  const double chance = dc::kArcChance[tier];
+  if (chance > 0 && rng.next() < chance) _spawnArcBolts(tier == 5 ? 2 : 1);
+}
+void App::_spawnArcBolts(int n) {
+  const double px = state.player.x, pz = state.player.z;
+  // candidates: alive enemies within 20 u + boss, nearest-first (JS _hitTargets sort)
+  struct Cand { double d2; int kind; int id; }; // kind 0=enemy, 1=boss
+  std::vector<Cand> cands;
+  for (const auto& e : skelsys.enemies()) {
+    if (!e.alive()) continue;
+    const double dx = e.pos.x - px, dz = e.pos.z - pz;
+    if (dx * dx + dz * dz < dc::sword::kArcTargetRange * dc::sword::kArcTargetRange)
+      cands.push_back({dx * dx + dz * dz, 0, e.id});
+  }
+  if (bossReady && !boss.dead) {
+    const double dx = boss.pos.x - px, dz = boss.pos.z - pz;
+    if (dx * dx + dz * dz < dc::sword::kArcTargetRange * dc::sword::kArcTargetRange)
+      cands.push_back({dx * dx + dz * dz, 1, -2});
+  }
+  std::sort(cands.begin(), cands.end(), [](const Cand& a, const Cand& b) { return a.d2 < b.d2; });
+  const int dmg = dc::orbDirectDamage(state.collectedOrbs); // frozen at fire time
+  int fired = 0;
+  for (auto& b : arcBolts) {
+    if (b.life >= 0 || fired >= n) continue;
+    if (cands.empty()) break;
+    const Cand& c = cands[fired % cands.size()];
+    b.x = px; b.y = camY; b.z = pz;
+    b.life = dc::sword::kArcLife; b.dmg = dmg;
+    b.target = c.id; // enemy id (>=0) or -2 (boss)
+    fired++;
+  }
+}
+void App::_updateArcBolts(double dt) {
+  const double px = state.player.x, pz = state.player.z;
+  for (auto& b : arcBolts) {
+    if (b.life < 0) continue;
+    b.life -= dt;
+    // resolve target (stable enemy id / boss), retarget nearest if it died
+    int kind = 0, idx = -1;
+    if (b.target == -2) {
+      if (bossReady && !boss.dead) kind = 1;
+    } else if (b.target >= 0) {
+      idx = skelsys.findId(b.target); // -1 if expired/erased
+      if (idx >= 0) kind = 0;
+    }
+    if (kind == 0 && idx < 0) {
+      // re-target nearest alive enemy OR boss (JS: _hitTargets includes boss)
+      double bd = 1e18; int bidx = -1; int bkind = 0;
+      for (size_t i = 0; i < skelsys.enemies().size(); i++) {
+        const auto& e = skelsys.enemies()[i];
+        if (!e.alive()) continue;
+        const double dx = e.pos.x - px, dz = e.pos.z - pz;
+        const double d2 = dx * dx + dz * dz;
+        if (d2 < bd) { bd = d2; bidx = (int)i; bkind = 0; }
+      }
+      if (bossReady && !boss.dead) {
+        const double dx = boss.pos.x - px, dz = boss.pos.z - pz;
+        const double d2 = dx * dx + dz * dz;
+        if (d2 < bd) { bd = d2; bidx = -2; bkind = 1; }
+      }
+      if (bidx < 0 && bkind == 0) { b.life = -1; continue; }
+      kind = bkind; idx = bidx;
+      b.target = (bkind == 1) ? -2 : skelsys.enemies()[bidx].id; // enemy id (stable) or -2 (boss)
+    }
+    double tx, tz, ty = 1.2;
+    if (kind == 1) { tx = boss.pos.x; tz = boss.pos.z; }
+    else { const auto& e = skelsys.enemies()[idx]; tx = e.pos.x; tz = e.pos.z; }
+    double dx = tx - b.x, dy = ty - b.y, dz = tz - b.z;
+    double d = std::hypot(dx, dy, dz);
+    if (d < 0.6) {
+      if (kind == 1) hitBoss(b.dmg, "arcBolt");
+      else {
+        if (idx < (int)skelsys.enemies().size())
+          skelsys.hitEnemy(&skelsys.enemies()[idx], b.dmg, "arcBolt");
+      }
+      b.life = -1;
+      continue;
+    }
+    b.x += (dx / d) * dc::sword::kArcSpeed * dt;
+    b.y += (dy / d) * dc::sword::kArcSpeed * dt;
+    b.z += (dz / d) * dc::sword::kArcSpeed * dt;
+    if (b.life <= 0) b.life = -1;
+  }
 }
 void App::_fireOrbStep(bool /*isClick*/) {
   if (orbSeqStep == 0 || state.runTime - orbSeqLast > dc::orbWeapon::kSequenceWindow) {
@@ -1081,11 +1253,17 @@ void App::orbExplode(const Orb& o) {
   }
 }
 
-void App::uploadDynamic(std::vector<float>& dyn) {
+void App::uploadDynamic(std::vector<float>& dyn, std::vector<float>& enem) {
   dyn.clear();
+  enem.clear();
   auto push = [&](float ox, float oy, float oz, float sx, float sy, float sz,
                   float r, float g, float b) {
     dyn.insert(dyn.end(), {ox, oy, oz, sx, sy, sz, r, g, b});
+  };
+  // §12.2 enemy-only push: same 9-float layout, appended to enem for the glow mask
+  auto epush = [&](float ox, float oy, float oz, float sx, float sy, float sz,
+                   float r, float g, float b) {
+    enem.insert(enem.end(), {ox, oy, oz, sx, sy, sz, r, g, b});
   };
   // boss (glowing SPECTRAL_COURT accent ~0xaa88ff): pulse while awake
   if (bossReady && !boss.dead) {
@@ -1109,6 +1287,7 @@ void App::uploadDynamic(std::vector<float>& dyn) {
     else if (e.isBURN) { r = 1.0f; g = 0.4f; b = 0.1f; sx = 1.2f; sy = 1.4f; sz = 1.2f; y = 0.7f; }
     const float sc = (float)(e.eliteScale * (1.0 + e.hitFlash * 0.3)); // elite + hit-pop
     push((float)e.pos.x, y, (float)e.pos.z, sx * sc, sy * sc, sz * sc, r, g, b);
+    epush((float)e.pos.x, y, (float)e.pos.z, sx * sc, sy * sc, sz * sc, r, g, b); // §12.2 glow mask
   }
   // enemy projectiles — arrows amber, fireball orbs violet
   for (const auto& p : skelsys.arrows())
@@ -1255,6 +1434,11 @@ bool App::init(int w, int h, const char* title, const char* fontPath) {
                          compileShader(GL_FRAGMENT_SHADER, kBlurFrag));
   progComposite = linkProgram(compileShader(GL_VERTEX_SHADER, kFullscreenVert),
                               compileShader(GL_FRAGMENT_SHADER, kCompositeFrag));
+  // §12.2 enemy-glow programs: flat-mask (lit vertex + flat frag) + separable gaussian
+  progMask = linkProgram(compileShader(GL_VERTEX_SHADER, kLitVert),
+                         compileShader(GL_FRAGMENT_SHADER, kFlatMaskFrag));
+  progEnemyBlur = linkProgram(compileShader(GL_VERTEX_SHADER, kFullscreenVert),
+                              compileShader(GL_FRAGMENT_SHADER, kEnemyBlurFrag));
 
   // ---- FBOs ----
   auto makeColorTex = [&](int tw, int th) {
@@ -1317,6 +1501,16 @@ bool App::init(int w, int h, const char* title, const char* fontPath) {
   brightTexB = makeColorTex(width, height);
   brightFboB = makeFbo(brightTexB, false);
 
+  // ---- §12.2 enemy-glow half-res RTs (sharp mask + 2 blur ping-pongs) ----
+  glowW = std::max(2, width / 2);
+  glowH = std::max(2, height / 2);
+  glowSharpTex = makeColorTex(glowW, glowH);
+  glowSharpFbo = makeFbo(glowSharpTex, false);
+  glowBlurATex = makeColorTex(glowW, glowH);
+  glowBlurAFbo = makeFbo(glowBlurATex, false);
+  glowBlurBTex = makeColorTex(glowW, glowH);
+  glowBlurBFbo = makeFbo(glowBlurBTex, false);
+
   // ---- dynamic entity VBO (boss + full roster + projectiles + props), streamed
   //      each frame. Capacity: ~120 combat (30 mobs + 24 arrows + 16 orbs +
   //      48 soul orbs + boss + sword) + 400 props (breakables/sarcophagi hard
@@ -1325,6 +1519,13 @@ bool App::init(int w, int h, const char* title, const char* fontPath) {
   glGenBuffers(1, &dynVbo);
   glBindBuffer(GL_ARRAY_BUFFER, dynVbo);
   { std::vector<float> tmp(kDynCap * 9, 0.0f);
+    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(tmp.size() * sizeof(float)), tmp.data(), GL_DYNAMIC_DRAW); }
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+  // §12.2 enemy-only VBO (skeleton roster, 9 floats/inst) for the flat glow mask
+  glGenBuffers(1, &enemVbo);
+  glBindBuffer(GL_ARRAY_BUFFER, enemVbo);
+  { std::vector<float> tmp(64 * 9, 0.0f); // <= 64 live mobs
     glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(tmp.size() * sizeof(float)), tmp.data(), GL_DYNAMIC_DRAW); }
   glBindBuffer(GL_ARRAY_BUFFER, 0);
 
@@ -1510,11 +1711,18 @@ void App::frame() {
   // ---- dynamic entities (boss + skeletons) → streamed VBO, drawn in both passes ----
   {
     std::vector<float> dyn;
-    uploadDynamic(dyn);
+    std::vector<float> enem;
+    uploadDynamic(dyn, enem);
     dynCount = (int)(dyn.size() / 9);
     if (dynCount > 0) {
       glBindBuffer(GL_ARRAY_BUFFER, dynVbo);
       glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(dyn.size() * sizeof(float)), dyn.data());
+      glBindBuffer(GL_ARRAY_BUFFER, 0);
+    }
+    enemCount = (int)(enem.size() / 9);
+    if (enemCount > 0) {
+      glBindBuffer(GL_ARRAY_BUFFER, enemVbo);
+      glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(enem.size() * sizeof(float)), enem.data());
       glBindBuffer(GL_ARRAY_BUFFER, 0);
     }
   }
@@ -1550,7 +1758,9 @@ void App::frame() {
   glUniform1f(glGetUniformLocation(progScene, "uHeadIntensity"), 1.0f);
   glUniform1f(glGetUniformLocation(progScene, "uHeadDist"), 30.0f);
   glUniform3f(glGetUniformLocation(progScene, "uAmbient"),
-              ambientCol[0], ambientCol[1], ambientCol[2]); // per-biome ambient color
+              ambientCol[0] * (state.buffEffect == 1 ? 2.0f : 1.0f), // BRIGHT: ambient ×2 (§11 effect 1)
+              ambientCol[1] * (state.buffEffect == 1 ? 2.0f : 1.0f),
+              ambientCol[2] * (state.buffEffect == 1 ? 2.0f : 1.0f));
   glUniform3f(glGetUniformLocation(progScene, "uFogColor"), fogColor[0], fogColor[1], fogColor[2]);
   glUniform1f(glGetUniformLocation(progScene, "uFogDensity"), fogDensity);
   glUniform3f(glGetUniformLocation(progScene, "uEyePos"), eye[0], eye[1], eye[2]);
@@ -1565,6 +1775,58 @@ void App::frame() {
   const int debrisDraw = degraded ? (world.nDebris / 2) : world.nDebris;
   drawGroup(world.instDebris, debrisDraw);
   drawGroup(dynVbo, dynCount, 1.0f); // boss/skeletons: unlit emissive spectral figures
+
+  // ---- 2.5) §12.2 enemy-glow: flat red-orange enemy mask → half-res → blur H/V ----
+  // JS PostProcessing: clone camera on layer 1, overrideMaterial 0xff4422, half-res RT,
+  // separable 5-tap gaussian. Depth disabled (depthBuffer:false) → flat silhouettes.
+  const bool anyEnemyGlow = enemCount > 0;
+  double nearestEnemyDist = 1e18;
+  if (anyEnemyGlow) {
+    const double px = state.player.x, pz = state.player.z;
+    for (const auto& e : skelsys.enemies()) {
+      if (e.state == dc::EnemyState::kDead) continue;
+      const double d = std::hypot(e.pos.x - px, e.pos.z - pz);
+      if (d < nearestEnemyDist) nearestEnemyDist = d;
+    }
+  }
+  double glowIntensity = 0.0;
+  if (anyEnemyGlow && !degraded) {
+    const float fade = std::min(1.0f, std::max(0.15f, (float)((nearestEnemyDist - 1.2) / 4.5)));
+    glowIntensity = 0.05f * fade; // §12.2 min(1, 1*0.05) * fade
+    // flat enemy mask → half-res sharp RT (no depth: flat silhouettes)
+    glDisable(GL_DEPTH_TEST);
+    glBindFramebuffer(GL_FRAMEBUFFER, glowSharpFbo);
+    glViewport(0, 0, glowW, glowH);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glUseProgram(progMask);
+    glUniformMatrix4fv(glGetUniformLocation(progMask, "uViewProj"), 1, GL_FALSE, viewProj.m);
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, enemVbo);
+    { void* z = nullptr;
+      glEnableVertexAttribArray(2); glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 36, z); glVertexAttribDivisor(2, 1);
+      glEnableVertexAttribArray(3); glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 36, (void*)12); glVertexAttribDivisor(3, 1);
+      glEnableVertexAttribArray(4); glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, 36, (void*)24); glVertexAttribDivisor(4, 1); }
+    glDrawElementsInstanced(GL_TRIANGLES, vertCount, GL_UNSIGNED_INT, nullptr, enemCount);
+    glBindVertexArray(0);
+    // separable gaussian: sharp → H(ping) → V(pong)
+    glUseProgram(progEnemyBlur);
+    glBindFramebuffer(GL_FRAMEBUFFER, glowBlurAFbo);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, glowSharpTex);
+    glUniform2f(glGetUniformLocation(progEnemyBlur, "uDir"), 1.0f / glowW, 0.0f);
+    glUniform1i(glGetUniformLocation(progEnemyBlur, "uTex"), 0);
+    glBindVertexArray(quadVao);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glBindVertexArray(0);
+    glBindFramebuffer(GL_FRAMEBUFFER, glowBlurBFbo);
+    glBindTexture(GL_TEXTURE_2D, glowBlurATex);
+    glUniform2f(glGetUniformLocation(progEnemyBlur, "uDir"), 0.0f, 1.0f / glowH);
+    glBindVertexArray(quadVao);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glBindVertexArray(0);
+  }
+  const double glowPulse = 0.75 + 0.25 * std::sin(state.runTime * 3.0); // 0.003/ms = 3.0/s
 
   // ---- 3) bloom (skipped in degraded mode — the single biggest GPU cost) ----
   glDisable(GL_DEPTH_TEST);
@@ -1606,6 +1868,15 @@ void App::frame() {
   glBindTexture(GL_TEXTURE_2D, brightTexA);
   glUniform1i(glGetUniformLocation(progComposite, "uBloom"), 1);
   glUniform1f(glGetUniformLocation(progComposite, "uStrength"), degraded ? 0.0f : 0.35f);
+  // §12.2 enemy-glow additive (intensity 0 when no enemies / degraded)
+  glActiveTexture(GL_TEXTURE2);
+  glBindTexture(GL_TEXTURE_2D, glowSharpTex);
+  glUniform1i(glGetUniformLocation(progComposite, "uGlowSharp"), 2);
+  glActiveTexture(GL_TEXTURE3);
+  glBindTexture(GL_TEXTURE_2D, glowBlurBTex);
+  glUniform1i(glGetUniformLocation(progComposite, "uGlowBlur"), 3);
+  glUniform1f(glGetUniformLocation(progComposite, "uGlowIntensity"), (float)glowIntensity);
+  glUniform1f(glGetUniformLocation(progComposite, "uGlowPulse"), (float)glowPulse);
   glBindVertexArray(quadVao);
   glDrawArrays(GL_TRIANGLES, 0, 3);
   glBindVertexArray(0);

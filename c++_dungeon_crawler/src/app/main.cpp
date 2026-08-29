@@ -38,6 +38,7 @@
 #include "dc/dungeon_gen.hpp"
 #include "dc/boss.hpp"
 #include "dc/skeleton_system.hpp"
+#include "dc/hunter.hpp"
 #include "dc/movement.hpp"
 #include "dc/state.hpp"
 #include "dc/world.hpp"
@@ -482,6 +483,15 @@ struct App {
   double lmbAccum = 0;
   bool prevLMB = false, prevRMB = false;
 
+  // ---- buffs (§11) ----
+  double fireballCd = 0;      // FIREBALL buff (effect 2): RMB hold cooldown
+  dc::Hunter hunter;          // HUNTER buff (effect 5) companion
+  double buffMoveMult() const { return state.buffEffect == 3 ? 1.2 : state.buffEffect == 4 ? 1.5 : 1.0; }
+  double buffAttackMult() const { return state.buffEffect == 3 ? 1.2 : state.buffEffect == 4 ? 1.5 : 1.0; }
+  // Pick a buff effect that is NOT the current one (never back-to-back).
+  int _pickBuffNotCurrent();
+  void _fireFireball();
+
   bool init(int w, int h, const char* title, const char* fontPath = nullptr);
   void buildWorldFromState();
   void placePlayerAtEntrance();
@@ -588,12 +598,13 @@ void App::spawnEntities() {
 }
 
 void App::_onBossDefeated() {
-  // JS _onBossDefeated: bossKills++, +1 max heart + full heal, soul reward,
-  // open the portal. (Buff is skipped — the app has no buff visuals yet.)
+  // JS _onBossDefeated: bossKills++, +1 max heart + full heal, 5-min buff,
+  // soul reward, open the portal.
   state.bossKills += 1;
   state.maxHealth += 1;
   state.health = state.maxHealth;
   simHealth = state.maxHealth;
+  state.applyBuff(_pickBuffNotCurrent(), dc::buff::kBossDuration);
   const int reward = state.level * std::max(1, state.ngPlus);
   state.collectedOrbs += reward;
   state.weaponTier = dc::weaponTier(state.collectedOrbs);
@@ -635,6 +646,10 @@ void App::descend() {
   state.bossKills = bk;
   state.maxHealth = mh;
   state.health = state.maxHealth; // health always starts full
+  // JS _descend builds a fresh GameState → the active buff does NOT carry.
+  state.buffEffect = 0;
+  state.buffTime = 0;
+  if (hunter.active) hunter.reset();
   // fresh per-level seed (JS Date.now()^rand) + regenerate the dungeon
   dungeonSeed = (int)(rng.next() * 2147483647.0);
   state.dungeonSeed = dungeonSeed;
@@ -651,6 +666,25 @@ void App::descend() {
 void App::updateEntities(double dt) {
   if (playerDead) return;
   const dc::Vec2 pp{state.player.x, state.player.z};
+
+  // ---- buffs (§11): tick + summon/dispose the HUNTER companion ----
+  if (state.updateBuff(dt)) { // returned true the frame the buff expired
+    if (state.buffEffect == 0 && hunter.active) hunter.reset();
+  }
+  if (state.buffEffect == 5) hunter.active = true;
+  else if (hunter.active) hunter.reset();
+  if (hunter.active) {
+    std::vector<dc::Enemy*> live;
+    for (auto& e : skelsys.enemies()) if (e.alive()) live.push_back(&e);
+    const auto& boxes = world.collision.boxes;
+    hunter.update(dt, pp, live,
+                 [&](const dc::Vec2& a, const dc::Vec2& b) {
+                   return dc::hasLineOfSight(boxes, a.x, a.z, b.x, b.z);
+                 },
+                 [&](dc::Enemy* e) { skelsys.hitEnemy(e, dc::hunter::kBeamDmg, "beam"); },
+                 state.collectedOrbs);
+  }
+
   // ---- boss (real state machine) — only on boss levels ----
   if (bossReady) {
     dc::BossCtx bctx;
@@ -716,8 +750,14 @@ void App::updateCombat(double dt) {
   if (state.safeSpawn > 0 || playerDead) { prevLMB = keyLMB; prevRMB = keyRMB; return; }
   const double souls = state.collectedOrbs;
 
-  // RMB edge → sword press
-  if (keyRMB && !prevRMB) pressSword();
+  // ---- sword combo (RMB) — suppressed while the FIREBALL buff owns RMB ----
+  if (state.buffEffect != 2 && keyRMB && !prevRMB) pressSword();
+
+  // ---- FIREBALL buff: hold RMB to hurl fireballs (no soul cost), sword hidden ----
+  if (state.buffEffect == 2 && keyRMB) {
+    fireballCd -= dt;
+    if (fireballCd <= 0) { fireballCd = dc::orbWeapon::kFireballCooldown; _fireFireball(); }
+  } else if (!keyRMB) fireballCd = 0;
 
   // ---- sword combo advance ----
   if (swordPhase) {
@@ -726,7 +766,7 @@ void App::updateCombat(double dt) {
       if (swordCooldownT <= 0) { swordPhase = nullptr; swordStep = 0; swordWindowT = 0; }
     } else {
       const auto& def = dc::kSwordCombo[std::max(0, swordStep - 1)];
-      const double speedMult = dc::attackSpeedFromSouls(souls);
+      const double speedMult = dc::attackSpeedFromSouls(souls) * buffAttackMult();
       const double wu = def.windup / speedMult;
       const double sw = def.swing / speedMult;
       const double rc = def.recover / speedMult;
@@ -780,7 +820,7 @@ void App::updateCombat(double dt) {
 void App::applySwordCone(int stepIdx) {
   const double souls = state.collectedOrbs;
   const int tier = dc::weaponTier((int)souls);
-  const double scale = dc::totalSwordScale(tier);
+  const double scale = dc::totalSwordScale(tier, state.buffEffect == 3 ? 1.5 : 1.0);
   const double range = 2.2 * scale * (1 + 0.04 * tier) * (stepIdx == 2 ? 1.25 : 1.0);
   const double arcDot = dc::kSwordCombo[stepIdx].arcDot;
   const float yaw = state.player.yaw;
@@ -829,6 +869,28 @@ void App::fireOrb(int step) {
 }
 void App::hitBoss(double dmg, const char* src) {
   if (bossReady && !boss.dead) boss.hitBoss(dmg, src);
+}
+int App::_pickBuffNotCurrent() {
+  // §11: never the same buff twice in a row — filter the current one out,
+  // then pick uniformly from the remainder.
+  int pool[5], n = 0;
+  for (int e = 1; e <= 5; e++) if (e != state.buffEffect) pool[n++] = e;
+  return pool[rng.nextInt(n)];
+}
+void App::_fireFireball() {
+  // FIREBALL buff: free (no soul cost) step-3 fireball, capped pool 6.
+  int active = 0;
+  for (const auto& o : orbs) if (o.alive && o.step == 3) active++;
+  if (active >= dc::orbWeapon::kPoolFireball) return;
+  const float yaw = state.player.yaw, pitch = state.player.pitch;
+  const double cp = std::cos(pitch);
+  const double dirx = -std::sin(yaw) * cp, dirz = -std::cos(yaw) * cp, diry = std::sin(pitch);
+  Orb o;
+  o.x = state.player.x + dirx * 0.6; o.y = camY + diry * 0.6; o.z = state.player.z + dirz * 0.6;
+  o.vx = dirx * dc::orbWeapon::kSpeed; o.vy = diry * dc::orbWeapon::kSpeed; o.vz = dirz * dc::orbWeapon::kSpeed;
+  o.life = dc::orbWeapon::kLife; o.step = 3; o.alive = true;
+  o.dmg = dc::orbExplodeDamage(state.collectedOrbs);
+  orbs.push_back(o);
 }
 void App::orbExplode(const Orb& o) {
   if (bossReady && !boss.dead && std::hypot(o.x - boss.pos.x, o.z - boss.pos.z) < 2.0) hitBoss(o.dmg, "explosion");

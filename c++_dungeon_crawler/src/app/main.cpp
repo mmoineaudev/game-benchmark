@@ -23,6 +23,7 @@
 #include <GL/glext.h>
 #include <GLFW/glfw3.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -38,6 +39,9 @@
 #include "dc/movement.hpp"
 #include "dc/state.hpp"
 #include "dc/world.hpp"
+
+#define STB_TRUETYPE_IMPLEMENTATION
+#include "third_party/stb_truetype.h"
 
 namespace {
 
@@ -197,7 +201,7 @@ void main() {
   vec3 lit = vColor * uAmbient;
   lit += pointLight(uTorchPos, uTorchColor, uTorchIntensity, uTorchDist, shadowFactor(vTorchPos));
   lit += pointLight(uHeadPos, uHeadColor, uHeadIntensity, uHeadDist, 1.0);
-  if (uEmissive > 0.5) lit = vColor * 1.4; // unlit emissive (boss / skeletons)
+  if (uEmissive > 0.5) lit = vColor * 0.9; // unlit emissive (boss / skeletons) — keep ≤1 to avoid bloom blowout
   fragColor = vec4(min(lit, vec3(1.5)), 1.0);
 }
 )";
@@ -251,6 +255,14 @@ void main() {
   fragColor = vec4(scene + bloom * uStrength, 1.0);
 }
 )";
+
+// ---------- screen-space dark overlay (death / title dim) ----------
+const char* kOverlayFrag =
+    "#version 330 core\n"
+    "in vec2 vUv;\n"
+    "uniform vec4 uTint; // rgb = tint color, a = opacity\n"
+    "out vec4 fragColor;\n"
+    "void main() { fragColor = vec4(uTint.rgb, uTint.a); }\n";
 
 // ---------- instanced world (floors / ceilings / walls) ----------
 struct World {
@@ -324,6 +336,41 @@ void World::upload(const dc::Dungeon& d, const float cellCol[3], const float wal
   instWallH = mkVbo(wallH); instWallE = mkVbo(wallE);
 }
 
+// ---------- pixel font (stb_truetype + KenPixel.ttf) + screen-space text ----------
+struct Font {
+  GLuint tex = 0;
+  int pixel = 24;
+  float uv[128][4] = {};
+  float adv[128] = {};
+  int w[128] = {}, h[128] = {};
+  bool ok = false;
+};
+
+const char* kTextVert = R"(
+#version 330 core
+layout(location=0) in vec2 aPos;
+layout(location=1) in vec2 aUv;
+layout(location=2) in vec4 aColor;
+uniform vec2 uRes;
+out vec2 vUv; out vec4 vColor;
+void main(){
+  vUv=aUv; vColor=aColor;
+  vec2 ndc = vec2(aPos.x/uRes.x*2.0-1.0, 1.0-aPos.y/uRes.y*2.0);
+  gl_Position=vec4(ndc,0,1);
+}
+)";
+
+const char* kTextFrag = R"(
+#version 330 core
+in vec2 vUv; in vec4 vColor;
+uniform sampler2D uFont;
+out vec4 fragColor;
+void main(){
+  float a=texture(uFont,vUv).a;
+  fragColor=vec4(vColor.rgb, vColor.a*a);
+}
+)";
+
 struct App {
   GLFWwindow* window = nullptr;
   int width = 0, height = 0;
@@ -353,6 +400,8 @@ struct App {
   // input (GLFW physical key codes — AZERTY-safe: bind by position)
   bool keyW = false, keyS = false, keyA = false, keyD = false, keyShift = false;
   bool keyLMB = false, keyRMB = false;
+  bool keyE = false;
+  bool keyN = false, keyY = false; // title / death bookends
   double mouseDX = 0, mouseDY = 0;
   bool pointerLocked = false;
 
@@ -369,6 +418,18 @@ struct App {
   int dynCount = 0;
   bool playerDead = false;
   bool bossKillCounted = false;
+  bool bossPortalOpen = false; // open when !bossLevel, or on boss defeat
+  bool prevE = false;
+  int  dungeonSeed = 0;        // per-level seed (JS Date.now()^rand, re-rolled per level)
+  int  seed = 1000;            // CLI --seed (title-run seed)
+
+  // ---- text / screens (title + death) ----
+  Font font;
+  GLuint progText = 0, textVbo = 0, textVao = 0;
+  GLuint progOverlay = 0;
+  enum class Screen { Title, Play, Dead };
+  Screen screen = Screen::Play;
+  bool prevN = false, prevY = false;
 
   // ---- sword combo (RMB, §9) ----
   int   swordStep = 0;          // 0 idle; 1..3 active
@@ -386,10 +447,13 @@ struct App {
   double lmbAccum = 0;
   bool prevLMB = false, prevRMB = false;
 
-  bool init(int w, int h, const char* title);
+  bool init(int w, int h, const char* title, const char* fontPath = nullptr);
   void buildWorldFromState();
   void placePlayerAtEntrance();
   void spawnEntities();
+  void _onBossDefeated();
+  void _checkExitRoom();
+  void descend();
   void updateEntities(double dt);
   void updateCombat(double dt);
   void pressSword();
@@ -405,6 +469,12 @@ struct App {
   void frame();
   void drawGroup(GLuint instVbo, int count, float emissive = 0.0f);
   void savePPM(const char* path);
+  void bakeFont(const char* path);
+  float lineW(const char* s, float size);
+  void drawTextLine(std::vector<float>& v, float x, float y, float size, const float col[3], const char* s);
+  void drawText(const std::vector<float>& v);
+  void drawOverlay(float r, float g, float b, float a);
+  void startRun(int seedToUse);
   ~App();
 };
 
@@ -437,16 +507,28 @@ void App::placePlayerAtEntrance() {
 }
 
 void App::spawnEntities() {
-  const int level = 7; // slice boss: the Spectral Lord at the exit throne
-  boss = dc::Boss::spawn(world.dungeon, level, state.ngPlus, state.collectedOrbs,
-                        state.maxHealth, "Skeleton");
-  bossReady = true;
-  bossKillCounted = false;
+  const int level = state.level;
+  const bool bossLevel = (level % dc::boss::kInterval == 0);
+  skels.clear();
   simHealth = state.maxHealth > 0 ? (double)state.maxHealth : 3.0;
   playerDead = false;
-  skels.clear();
-  // skeleton HP: ceil(def.hp * enemyHpMultiplier) — JS _spawnOne (level 7 slice)
-  const double hpMult = dc::enemyHpMultiplier(state.ngPlus, 7, state.collectedOrbs);
+  bossReady = false;
+  bossKillCounted = false;
+  bossPortalOpen = !bossLevel; // non-boss levels: exit portal open from the start
+  // reset sword/orb (fresh level)
+  swordStep = 0; swordPhase = nullptr; hitStop = 0;
+  orbSeqStep = 0; lmbAccum = 0; prevLMB = prevRMB = false;
+  orbs.clear();
+  if (bossLevel) {
+    static const char* kVariants[7] = {"Skeleton", "Armored", "Archer", "Brute", "Rough", "Rat", "Magician"};
+    const char* variant = kVariants[(level / dc::boss::kInterval - 1) % 7];
+    boss = dc::Boss::spawn(world.dungeon, level, state.ngPlus, state.collectedOrbs,
+                          state.maxHealth, variant);
+    bossReady = true;
+    bossPortalOpen = false; // sealed until the lord falls
+  }
+  // skeleton chasers (every level): HP = ceil(base * enemyHpMultiplier)
+  const double hpMult = dc::enemyHpMultiplier(state.ngPlus, level, state.collectedOrbs);
   const double skelBaseHp = 2.0; // SKELETON.hp
   const int skelDrops = 1;       // SKELETON.drops
   const double cs = world.dungeon.cellSize;
@@ -468,16 +550,78 @@ void App::spawnEntities() {
     }
 }
 
+void App::_onBossDefeated() {
+  // JS _onBossDefeated: bossKills++, +1 max heart + full heal, soul reward,
+  // open the portal. (Buff is skipped — the app has no buff visuals yet.)
+  state.bossKills += 1;
+  state.maxHealth += 1;
+  state.health = state.maxHealth;
+  simHealth = state.maxHealth;
+  const int reward = state.level * std::max(1, state.ngPlus);
+  state.collectedOrbs += reward;
+  state.weaponTier = dc::weaponTier(state.collectedOrbs);
+  bossPortalOpen = true; // the seal breaks — the exit portal opens
+}
+
+void App::_checkExitRoom() {
+  const auto& ex = world.dungeon.exitCell;
+  const double cs = world.dungeon.cellSize;
+  if (!ex) { state.inExitRoom = false; prevE = keyE; return; }
+  const double cx = ex->x * cs, cz = ex->z * cs;
+  const double dx = state.player.x - cx, dz = state.player.z - cz;
+  state.inExitRoom = (dx * dx + dz * dz) < player::kExitRoomDist2;
+  if (state.inExitRoom && bossPortalOpen && keyE && !prevE) descend();
+  prevE = keyE;
+}
+
+void App::descend() {
+  // JS _descend: level+1, carry souls/tier/ngPlus/bossKills/maxHealth, keep
+  // runTime, full heal, regenerate a fresh dungeon + biome for the new level.
+  const int level = state.level;
+  const double runTime = state.runTime;
+  const int orbs = state.collectedOrbs;
+  const int tier = state.weaponTier; // locked at the max reached in the run
+  const int ng = state.ngPlus;
+  const int bk = state.bossKills;
+  const int mh = state.maxHealth;
+  state.level = level + 1;
+  state.biome = dc::biomeForLevel(state.level);
+  state.biomeIndex = [&] {
+    auto it = std::find(dc::kBiomeSequence.begin(), dc::kBiomeSequence.end(), state.biome);
+    return (int)(it != dc::kBiomeSequence.end() ? (it - dc::kBiomeSequence.begin()) : 0);
+  }();
+  state.levelTime = 0;
+  state.runTime = runTime;
+  state.collectedOrbs = orbs;
+  state.weaponTier = tier;
+  state.ngPlus = ng;
+  state.bossKills = bk;
+  state.maxHealth = mh;
+  state.health = state.maxHealth; // health always starts full
+  // fresh per-level seed (JS Date.now()^rand) + regenerate the dungeon
+  dungeonSeed = (int)(rng.next() * 2147483647.0);
+  state.dungeonSeed = dungeonSeed;
+  dc::DungeonGenerator gen(dungeonSeed, state.biome);
+  world.dungeon = gen.generate();
+  buildWorldFromState();
+  placePlayerAtEntrance();
+  spawnEntities(); // re-seeds boss/skeletons for the new level, resets combat
+  state.safeSpawn = player::kSafeSpawnTime;
+  std::fprintf(stderr, "[dc_app] descended → level %d (%s) portalOpen=%d\n",
+               state.level, state.biome.c_str(), (int)bossPortalOpen);
+}
+
 void App::updateEntities(double dt) {
-  if (!bossReady || playerDead) return;
+  if (playerDead) return;
   const dc::Vec2 pp{state.player.x, state.player.z};
-  // ---- boss (real state machine) ----
-  dc::BossCtx bctx;
+  // ---- boss (real state machine) — only on boss levels ----
+  if (bossReady) {
+    dc::BossCtx bctx;
   bctx.dungeon = &world.dungeon;
   bctx.boxes = &world.collision.boxes;
   bctx.playerPos = pp;
   bctx.playerMaxHealth = state.maxHealth > 0 ? (double)state.maxHealth : 3.0;
-  bctx.level = 7;
+  bctx.level = state.level;
   bctx.ngPlus = state.ngPlus;
   bctx.souls = state.collectedOrbs;
   bctx.bossKills = state.bossKills;
@@ -485,8 +629,9 @@ void App::updateEntities(double dt) {
   bctx.rng = &rng;
   bctx.playerHealth = &simHealth;
   boss.update(dt, bctx);
-  if (boss.dead) state.bossKills += 1;
-  // ---- skeletons (dc_core chasers) ----
+  if (boss.dead && !bossKillCounted) { bossKillCounted = true; _onBossDefeated(); }
+  } // end if (bossReady)
+  // ---- skeletons (dc_core chasers) — run on every level ----
   for (auto& s : skels) {
     if (!s.alive) continue;
     if (s.hitCd > 0) s.hitCd -= dt;
@@ -509,7 +654,7 @@ void App::updateEntities(double dt) {
   // ---- sync to GameState + death ----
   simHealth = std::max(0.0, simHealth);
   state.health = (int)std::lround(simHealth);
-  if (simHealth <= 0.0 && !playerDead) playerDead = true;
+  if (simHealth <= 0.0 && !playerDead) { playerDead = true; if (screen == Screen::Play) screen = Screen::Dead; }
 }
 
 // ---- §9 sword combo (RMB) ----
@@ -691,7 +836,7 @@ void App::uploadDynamic(std::vector<float>& dyn) {
   }
 }
 
-bool App::init(int w, int h, const char* title) {
+bool App::init(int w, int h, const char* title, const char* fontPath) {
   if (!glfwInit()) {
     std::fprintf(stderr, "[dc_app] glfwInit failed\n");
     return false;
@@ -850,6 +995,28 @@ bool App::init(int w, int h, const char* title) {
     glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(tmp.size() * sizeof(float)), tmp.data(), GL_DYNAMIC_DRAW); }
   glBindBuffer(GL_ARRAY_BUFFER, 0);
 
+  // ---- pixel font + screen-space text (title / death screens) ----
+  if (fontPath) bakeFont(fontPath);
+  progText = linkProgram(compileShader(GL_VERTEX_SHADER, kTextVert),
+                         compileShader(GL_FRAGMENT_SHADER, kTextFrag));
+  progOverlay = linkProgram(compileShader(GL_VERTEX_SHADER, kFullscreenVert),
+                            compileShader(GL_FRAGMENT_SHADER, kOverlayFrag));
+  if (font.ok) {
+    glGenVertexArrays(1, &textVao);
+    glGenBuffers(1, &textVbo);
+    glBindVertexArray(textVao);
+    glBindBuffer(GL_ARRAY_BUFFER, textVbo);
+    glBufferData(GL_ARRAY_BUFFER, 4096, nullptr, GL_DYNAMIC_DRAW);
+    // 8 floats/vertex: pos2 | uv2 | color4
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 32, (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 32, (void*)8);
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, 32, (void*)16);
+    glBindVertexArray(0);
+  }
+
   return true;
 }
 
@@ -873,6 +1040,20 @@ void App::drawGroup(GLuint instVbo, int count, float emissive) {
 }
 
 void App::update(double dt, double rawDt) {
+  // ---- title / death bookends (sim frozen, screen keys only) ----
+  if (screen == Screen::Title) {
+    if (keyN && !prevN) startRun(seed);
+    prevN = keyN; prevY = keyY;
+    return;
+  }
+  if (screen == Screen::Dead) {
+    if (keyN && !prevN) startRun((int)(rng.next() * 2147483647));
+    else if (keyY && !prevY) { state.ngPlus += 1; startRun((int)(rng.next() * 2147483647)); }
+    prevN = keyN; prevY = keyY;
+    return;
+  }
+  prevN = keyN; prevY = keyY;
+
   // hit-stop: freeze the whole sim (movement + entities + combat) for kHitStop
   if (hitStop > 0) { hitStop -= rawDt; mouseDX = mouseDY = 0; return; }
   const float sens = (float)player::kSensitivity;
@@ -923,6 +1104,9 @@ void App::update(double dt, double rawDt) {
   state.levelTime += dt;
   state.runTime += dt;
   if (state.safeSpawn > 0) state.safeSpawn -= rawDt;
+
+  // ---- exit portal: in the exit room + portal open + E → descend ----
+  _checkExitRoom();
 }
 
 void App::frame() {
@@ -1036,6 +1220,38 @@ void App::frame() {
   glBindVertexArray(quadVao);
   glDrawArrays(GL_TRIANGLES, 0, 3);
   glBindVertexArray(0);
+
+  // ---- 4) title / death text overlay (screen-space, blended) ----
+  if (screen == Screen::Title || screen == Screen::Dead) {
+    // dim / tint the scene behind the bookend text (Dark Souls "YOU DIED" red)
+    if (screen == Screen::Dead) drawOverlay(0.10f, 0.02f, 0.02f, 0.72f);
+    else drawOverlay(0.01f, 0.01f, 0.03f, 0.55f);
+    std::vector<float> v;
+    const float gold[3] = {0.91f, 0.78f, 0.35f};
+    const float sub[3] = {0.60f, 0.54f, 0.38f};
+    const float hint[3] = {0.55f, 0.55f, 0.55f};
+    const float red[3] = {0.69f, 0.19f, 0.19f};
+    const float stat[3] = {0.85f, 0.79f, 0.63f};
+    const float cx = width / 2.0f, cy = height * 0.30f;
+    if (screen == Screen::Title) {
+      const char* t = "THE DEPTHS";
+      drawTextLine(v, cx - lineW(t, 3.0f) / 2, cy, 3.0f, gold, t);
+      const char* s = "A SOULS DESCENT";
+      drawTextLine(v, cx - lineW(s, 0.9f) / 2, cy + 110, 0.9f, sub, s);
+      const char* n = "New Game  [N]";
+      drawTextLine(v, cx - lineW(n, 1.2f) / 2, cy + 200, 1.2f, hint, n);
+    } else {
+      const char* t = "The dead claim you";
+      drawTextLine(v, cx - lineW(t, 2.4f) / 2, cy, 2.4f, red, t);
+      char buf[160];
+      std::snprintf(buf, sizeof(buf), "Level %d   Souls %d   Time %ds",
+                    state.level, state.collectedOrbs, (int)state.runTime);
+      drawTextLine(v, cx - lineW(buf, 1.0f) / 2, cy + 90, 1.0f, stat, buf);
+      const char* n = "[N] Restart   [Y] New Game+";
+      drawTextLine(v, cx - lineW(n, 1.2f) / 2, cy + 180, 1.2f, hint, n);
+    }
+    drawText(v);
+  }
 }
 
 void App::savePPM(const char* path) {
@@ -1053,6 +1269,130 @@ void App::savePPM(const char* path) {
   std::fprintf(stderr, "[dc_app] saved %s (%dx%d)\n", path, width, height);
 }
 
+void App::bakeFont(const char* path) {
+  FILE* f = fopen(path, "rb");
+  if (!f) { std::fprintf(stderr, "[dc_app] font: cannot open %s\n", path); return; }
+  fseek(f, 0, SEEK_END); long fsz = ftell(f); fseek(f, 0, SEEK_SET);
+  std::vector<unsigned char> buf((size_t)fsz);
+  fread(buf.data(), 1, (size_t)fsz, f);
+  fclose(f);
+  stbtt_fontinfo fi;
+  stbtt_InitFont(&fi, buf.data(), stbtt_GetFontOffsetForIndex(buf.data(), 0));
+  const int P = 24, AW = 512, AH = 256;
+  std::vector<unsigned char> atlas((size_t)AW * AH * 4, 0);
+  int x = 2, y = 2, rowH = 0;
+  const float scale = stbtt_ScaleForPixelHeight(&fi, P);
+  for (int c = 32; c < 128; c++) {
+    int x0, y0, x1, y1;
+    stbtt_GetCodepointBitmapBox(&fi, c, scale, scale, &x0, &y0, &x1, &y1);
+    int w = x1 - x0, h = y1 - y0;
+    int advW = 0, lsb = 0;
+    stbtt_GetCodepointHMetrics(&fi, c, &advW, &lsb);
+    font.adv[c] = advW * scale;
+    if (w <= 0 || h <= 0) { font.w[c] = 0; continue; }
+    if (x + w >= AW - 2) { x = 2; y += rowH + 2; rowH = 0; }
+    std::vector<unsigned char> bmp((size_t)w * h, 0);
+    stbtt_MakeCodepointBitmap(&fi, bmp.data(), w, h, w, scale, scale, c);
+    for (int j = 0; j < h; j++)
+      for (int i = 0; i < w; i++) {
+        unsigned char a = bmp[(size_t)j * w + i];
+        unsigned char* d = &atlas[((size_t)(y + j) * AW + (x + i)) * 4];
+        d[3] = a; // alpha
+      }
+    font.uv[c][0] = x / (float)AW;      font.uv[c][1] = y / (float)AH;
+    font.uv[c][2] = (x + w) / (float)AW; font.uv[c][3] = (y + h) / (float)AH;
+    font.w[c] = w; font.h[c] = h;
+    x += w + 1; rowH = std::max(rowH, h);
+  }
+  glGenTextures(1, &font.tex);
+  glBindTexture(GL_TEXTURE_2D, font.tex);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, AW, AH, 0, GL_RGBA, GL_UNSIGNED_BYTE, atlas.data());
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  font.ok = true;
+  std::fprintf(stderr, "[dc_app] font baked %s (%dpx)\n", path, P);
+}
+
+float App::lineW(const char* s, float size) {
+  float w = 0;
+  for (const char* p = s; *p; p++) {
+    int c = (unsigned char)*p;
+    if (c < 32 || c >= 128) continue;
+    w += font.adv[c] * size;
+  }
+  return w;
+}
+
+void App::drawTextLine(std::vector<float>& v, float x, float y, float size, const float col[3], const char* s) {
+  for (const char* p = s; *p; p++) {
+    int c = (unsigned char)*p;
+    if (c < 32 || c >= 128) continue;
+    float gw = (float)font.w[c] * size, gh = (float)font.h[c] * size;
+    float u0 = font.uv[c][0], v0 = font.uv[c][1], u1 = font.uv[c][2], v1 = font.uv[c][3];
+    float x1 = x + gw, y1 = y + gh;
+    auto P = [&](float px, float py, float u, float vv) {
+      v.insert(v.end(), {px, py, u, vv, col[0], col[1], col[2], 1.0f});
+    };
+    P(x, y, u0, v0); P(x1, y, u1, v0); P(x1, y1, u1, v1); // tri 1
+    P(x, y, u0, v0); P(x1, y1, u1, v1); P(x, y1, u0, v1); // tri 2
+    x += font.adv[c] * size;
+  }
+}
+
+void App::drawText(const std::vector<float>& v) {
+  if (v.empty() || !font.ok) return;
+  glUseProgram(progText);
+  glUniform2f(glGetUniformLocation(progText, "uRes"), (float)width, (float)height);
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, font.tex);
+  glBindBuffer(GL_ARRAY_BUFFER, textVbo);
+  glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(v.size() * 4), v.data(), GL_DYNAMIC_DRAW);
+  glBindVertexArray(textVao);
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  glDepthMask(false);
+  glDrawArrays(GL_TRIANGLES, 0, (GLsizei)(v.size() / 8));
+  glDepthMask(true);
+  glDisable(GL_BLEND);
+  glBindVertexArray(0);
+}
+
+void App::drawOverlay(float r, float g, float b, float a) {
+  if (a <= 0) return;
+  glUseProgram(progOverlay);
+  glUniform4f(glGetUniformLocation(progOverlay, "uTint"), r, g, b, a);
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, 0);
+  glBindVertexArray(quadVao);
+  glDisable(GL_DEPTH_TEST);
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  glDrawArrays(GL_TRIANGLES, 0, 3);
+  glDisable(GL_BLEND);
+  glEnable(GL_DEPTH_TEST);
+  glBindVertexArray(0);
+}
+
+void App::startRun(int seedToUse) {
+  state = dc::GameState::fromOpts();
+  state.level = 1;
+  state.biome = dc::biomeForLevel(1);
+  state.dungeonSeed = seedToUse;
+  state.health = state.maxHealth;
+  state.safeSpawn = player::kSafeSpawnTime;
+  dc::DungeonGenerator gen(seedToUse, state.biome);
+  world.dungeon = gen.generate();
+  buildWorldFromState();
+  placePlayerAtEntrance();
+  spawnEntities();
+  simHealth = state.maxHealth;
+  playerDead = false;
+  screen = Screen::Play;
+  std::fprintf(stderr, "[dc_app] run started (seed %d, level 1)\n", seedToUse);
+}
+
 // ---- GLFW callbacks (file-static because they're C-function pointers) ----
 static App* g_app = nullptr;
 static void keyCb(GLFWwindow* w, int key, int, int action, int) {
@@ -1062,6 +1402,9 @@ static void keyCb(GLFWwindow* w, int key, int, int action, int) {
   else if (key == GLFW_KEY_S) g_app->keyS = down;
   else if (key == GLFW_KEY_A) g_app->keyA = down;
   else if (key == GLFW_KEY_D) g_app->keyD = down;
+  else if (key == GLFW_KEY_E) g_app->keyE = down;
+  else if (key == GLFW_KEY_N) g_app->keyN = down;
+  else if (key == GLFW_KEY_Y) g_app->keyY = down;
   else if (key == GLFW_KEY_LEFT_SHIFT || key == GLFW_KEY_RIGHT_SHIFT) g_app->keyShift = down;
   else if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) glfwSetWindowShouldClose(w, 1);
 }
@@ -1080,9 +1423,10 @@ static void mouseButtonCb(GLFWwindow* w, int button, int action, int) {
 } // namespace
 
 int main(int argc, char** argv) {
-  int width = 1280, height = 720, frames = 0, seed = 1000, saveFrame = -1;
+  int width = 1280, height = 720, frames = 0, seed = 1000, saveFrame = -1, level = 1;
   const char* savePath = nullptr;
-  bool showFps = false, bossView = false, combatView = false;
+  bool showFps = false, bossView = false, combatView = false, descendView = false;
+  bool titleView = false, deathView = false;
   for (int i = 1; i < argc; i++) {
     if (!std::strcmp(argv[i], "--width")) width = std::atoi(argv[++i]);
     else if (!std::strcmp(argv[i], "--height")) height = std::atoi(argv[++i]);
@@ -1091,24 +1435,36 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--fps")) showFps = true;
     else if (!std::strcmp(argv[i], "--seed")) seed = std::atoi(argv[++i]);
     else if (!std::strcmp(argv[i], "--save-frame")) saveFrame = std::atoi(argv[++i]);
+    else if (!std::strcmp(argv[i], "--level")) level = std::atoi(argv[++i]);
     else if (!std::strcmp(argv[i], "--boss-view")) bossView = true;
     else if (!std::strcmp(argv[i], "--combat-view")) combatView = true;
+    else if (!std::strcmp(argv[i], "--descend-view")) descendView = true;
+    else if (!std::strcmp(argv[i], "--title")) titleView = true;
+    else if (!std::strcmp(argv[i], "--death-view")) deathView = true;
   }
 
   App app;
-  if (!app.init(width, height, "dc_app — Phase 2 playable spine (STONE)")) return 1;
+  const char* fontPath = "assets/kenpixel.ttf";
+  if (!app.init(width, height, "dc_app — Phase 2 playable spine (STONE)", fontPath)) return 1;
   g_app = &app;
+  app.seed = seed;
+  app.screen = titleView ? App::Screen::Title : App::Screen::Play;
   glfwSetKeyCallback(app.window, keyCb);
   glfwSetCursorPosCallback(app.window, cursorCb);
   glfwSetMouseButtonCallback(app.window, mouseButtonCb);
 
   // build the world from a generated STONE dungeon
   app.state = dc::GameState::fromOpts();
-  app.state.level = 1;
-  app.state.biome = "STONE";
+  app.state.level = level;
+  app.state.biome = dc::biomeForLevel(level);
+  app.state.biomeIndex = [&] {
+    auto it = std::find(dc::kBiomeSequence.begin(), dc::kBiomeSequence.end(), app.state.biome);
+    return (int)(it != dc::kBiomeSequence.end() ? (it - dc::kBiomeSequence.begin()) : 0);
+  }();
+  app.state.dungeonSeed = seed;
   app.state.safeSpawn = player::kSafeSpawnTime;
   {
-    dc::DungeonGenerator gen(seed, "STONE");
+    dc::DungeonGenerator gen(seed, app.state.biome);
     app.world.dungeon = gen.generate();
   }
   app.buildWorldFromState();
@@ -1123,6 +1479,17 @@ int main(int argc, char** argv) {
     glfwShowWindow(app.window);
     double t0 = glfwGetTime();
     const double dt = 1.0 / 60.0;
+    // boss/combat/death probes need a boss → force a level-7 dungeon if the run isn't there
+    if ((bossView || combatView || deathView) && app.state.level % dc::boss::kInterval != 0) {
+      std::fprintf(stderr, "[dc_app] view: no boss at level %d — regenerating at level 7\n", app.state.level);
+      app.state.level = 7;
+      app.state.biome = dc::biomeForLevel(7);
+      dc::DungeonGenerator gen(app.state.dungeonSeed, app.state.biome);
+      app.world.dungeon = gen.generate();
+      app.buildWorldFromState();
+      app.placePlayerAtEntrance();
+      app.spawnEntities();
+    }
     // --boss-view: stand 8u in front of the throne so the boss wakes,
     // charges/blinks and the skeletons converge — a live combat shot.
     if (bossView) {
@@ -1167,9 +1534,47 @@ int main(int argc, char** argv) {
       std::fprintf(stderr, "[dc_app] combat-view placed player %s throne (boss hp %.0f, souls %d)\n",
                    found ? "at" : "FALLBACK", app.boss.hp, app.state.collectedOrbs);
     }
+    // --descend-view: exit-portal test — stand in the exit room, hold E, and the
+    // portal should carry the player to level+1 with a freshly generated dungeon.
+    if (descendView) {
+      const dc::Dungeon& dg = app.world.dungeon;
+      const double cs = dg.cellSize;
+      const dc::Vec2 ex{dg.exitCell->x * cs, dg.exitCell->z * cs};
+      app.camX = ex.x; app.camZ = ex.z;
+      app.state.player.x = ex.x; app.state.player.z = ex.z;
+      app.state.safeSpawn = 0;
+      app.keyE = true; // held for the first frames → descend on entering the portal
+      std::fprintf(stderr, "[dc_app] descend-view: player in exit room (level %d, portalOpen=%d)\n",
+                   app.state.level, (int)app.bossPortalOpen);
+    }
+    // --death-view: stand in the boss throne room with no weapons/souls and let the
+    // boss + skeletons kill the player → the death screen (YOU DIED) appears.
+    if (deathView) {
+      const dc::Vec2 b = app.boss.pos;
+      static const double dirs[6][2] = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}, {0.7, 0.7}, {-0.7, 0.7}};
+      bool found = false;
+      for (double dist = 8.0; dist <= 14.0 && !found; dist += 1.0)
+        for (const auto& d : dirs) {
+          const double wx = b.x + d[0] * dist, wz = b.z + d[1] * dist;
+          if (dc::circleHitsBox(app.world.collision.boxes, wx, wz, player::kRadius)) continue;
+          if (!dc::hasLineOfSight(app.world.collision.boxes, b.x, b.z, wx, wz)) continue;
+          app.camX = wx; app.camZ = wz;
+          app.state.player.x = wx; app.state.player.z = wz;
+          found = true; break;
+        }
+      app.state.safeSpawn = 0;
+      app.state.collectedOrbs = 0;
+      std::fprintf(stderr, "[dc_app] death-view: player at throne, no weapons (boss %s)\n",
+                   app.boss.state.c_str());
+    }
+    // watch level transitions (descend-view) so a descent is provable headlessly
+    int prevLevel = app.state.level;
+    bool deathSeen = false;
+    int deathAt = -1;
+    bool restartSeen = false;
     for (int i = 0; i < frames; i++) {
       ctx.frame = i; ctx.phase = "render"; wd.begin();
-      if (!bossView) app.keyW = true; // interior-walk shot: drive forward
+      if (!bossView && !descendView && !deathView) app.keyW = true; // interior-walk shot: drive forward
       else { // face the live boss each frame so it stays on screen
         const double dx = app.boss.pos.x - app.state.player.x;
         const double dz = app.boss.pos.z - app.state.player.z;
@@ -1185,7 +1590,32 @@ int main(int argc, char** argv) {
         app.keyLMB = (i >= 5 && i < 65);
         app.keyRMB = (i % 30 >= 10 && i % 30 < 13);
       }
+      if (descendView) app.keyE = (i < 8); // hold E briefly → trigger the exit portal
+      if (deathView) { // face the boss each frame so the kill is on-screen; no weapons
+        const double dx = app.boss.pos.x - app.state.player.x;
+        const double dz = app.boss.pos.z - app.state.player.z;
+        app.state.player.yaw = (float)std::atan2(-dx, -dz);
+        // after death, hold N to exercise the death-screen restart (→ fresh level-1 run)
+        app.keyN = (deathSeen && (i - deathAt) >= 30);
+      }
       app.update(dt, dt);
+      if (descendView && app.state.level != prevLevel) {
+        prevLevel = app.state.level;
+        std::fprintf(stderr, "[dc_app] descend-view: LEVEL %d (biome %s) player=(%.1f,%.1f) portalOpen=%d\n",
+                     app.state.level, app.state.biome.c_str(), app.state.player.x,
+                     app.state.player.z, (int)app.bossPortalOpen);
+      }
+      if (deathView && !deathSeen && app.screen == App::Screen::Dead) {
+        deathSeen = true;
+        deathAt = i;
+        std::fprintf(stderr, "[dc_app] death-view: player DIED at frame %d (level %d, souls %d) → death screen\n",
+                     i, app.state.level, app.state.collectedOrbs);
+      }
+      if (deathView && deathSeen && !restartSeen && app.screen == App::Screen::Play) {
+        restartSeen = true;
+        std::fprintf(stderr, "[dc_app] death-view: RESTART at frame %d → level %d (biome %s), fresh dungeon\n",
+                     i, app.state.level, app.state.biome.c_str());
+      }
       app.frame();
       if (savePath && saveFrame == i) app.savePPM(savePath); // capture an in-flight frame
       glfwSwapBuffers(app.window);
@@ -1194,9 +1624,9 @@ int main(int argc, char** argv) {
     }
     double el = glfwGetTime() - t0;
     if (savePath && saveFrame < 0) app.savePPM(savePath); // final frame (or use --save-frame)
-    std::fprintf(stderr, "[dc_app] %d frames in %.3fs (%.1f fps) seed=%d level=%d biome=%s boss=%s(%.0fhp) skels=%zu\n",
+    std::fprintf(stderr, "[dc_app] %d frames in %.3fs (%.1f fps) seed=%d level=%d biome=%s boss=%s(%.0fhp) skels=%zu portalOpen=%d\n",
                  frames, el, frames / el, seed, app.state.level, app.state.biome.c_str(),
-                 app.boss.state.c_str(), app.boss.hp, app.skels.size());
+                 app.boss.state.c_str(), app.boss.hp, app.skels.size(), (int)app.bossPortalOpen);
   } else {
     double last = glfwGetTime(), acc = 0;
     int n = 0;

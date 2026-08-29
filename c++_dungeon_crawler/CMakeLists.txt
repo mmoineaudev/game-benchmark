@@ -46,6 +46,7 @@ target_link_libraries(dc_render PUBLIC ${DC_GL_LIBS})
 # ---- dc_app: the executable (GL spike / game) ---------------------------------
 file(GLOB DC_APP_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/app/*.cpp)
 add_executable(dc_app ${DC_APP_SOURCES})
+target_include_directories(dc_app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(dc_app PRIVATE dc_render dc_core ${DC_GL_LIBS})
 
 # ---- dc_repro: headless repro/replay harness (no GPU) ------------------------

@@ -140,6 +140,9 @@ public:
   std::vector<Enemy*> nearby(double x, double z, double dist);
   // Count of active projectiles (arrows + orbs) — for tests/verification.
   int liveProjectileCount() const;
+  // Pools (for rendering; inactive entries have active==false).
+  const std::vector<Projectile>& arrows() const { return arrows_; }
+  const std::vector<Projectile>& orbs() const { return orbs_; }
   // Clear all (level regen). Drops nothing.
   void clear();
 

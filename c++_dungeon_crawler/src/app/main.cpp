@@ -37,6 +37,7 @@
 #include "dc/crashdiag.hpp"
 #include "dc/dungeon_gen.hpp"
 #include "dc/boss.hpp"
+#include "dc/skeleton_system.hpp"
 #include "dc/movement.hpp"
 #include "dc/state.hpp"
 #include "dc/world.hpp"
@@ -419,12 +420,13 @@ struct App {
   // The Spectral Lord, aggro-on-sight, 25 HP at level 7, SPECTRAL_COURT.
   dc::Boss boss;
   bool bossReady = false;
-  // App-local skeleton chasers (dc_core movement: moveToward + pathStep).
-  struct Skel { dc::Vec2 pos{0, 0}; double hp = 2, maxHp = 2, hitCd = 0; int drops = 1; bool alive = true; };
-  std::vector<Skel> skels;
+  // Full enemy roster (§16): spawner + shared AI (dc_core, headless-tested).
+  dc::SkeletonSystem skelsys;
   dc::Rng rng{12345u};
-  double simHealth = 3.0;   // boss/skeleton damage mutates this; mirrors JS
-  GLuint dynVbo = 0;        // dynamic instance VBO (boss + skeletons, 9 floats)
+  double simHealth = 3.0;   // boss/enemy damage mutates this; mirrors JS
+  double invulnTimer = 0;  // i-frames (PLAYER.INVULN_TIME 0.8) — enemy damage
+  bool hasArenaNow = false; // §16.1/§16.4: current level has an ARENA room
+  GLuint dynVbo = 0;        // dynamic instance VBO (boss + enemies, 9 floats)
   int dynCount = 0;
   bool playerDead = false;
   bool bossKillCounted = false;
@@ -494,9 +496,8 @@ struct App {
   void applySwordCone(int stepIdx);
   void fireOrb(int step);
   void _fireOrbStep(bool isClick);
-  void hitBossOrSkel(int idx, double dmg, const char* src); // idx -1 = boss
+  void hitBoss(double dmg, const char* src);
   void orbExplode(const Orb& o);
-  void collectSkelDrops(int idx);
   void uploadDynamic(std::vector<float>& dyn);
   void update(double dt, double rawDt);
   void frame();
@@ -545,8 +546,9 @@ void App::placePlayerAtEntrance() {
 void App::spawnEntities() {
   const int level = state.level;
   const bool bossLevel = (level % dc::boss::kInterval == 0);
-  skels.clear();
+  skelsys.clear(); // drop previous level's mobs + projectiles
   simHealth = state.maxHealth > 0 ? (double)state.maxHealth : 3.0;
+  invulnTimer = 0;
   playerDead = false;
   bossReady = false;
   bossKillCounted = false;
@@ -563,27 +565,26 @@ void App::spawnEntities() {
     bossReady = true;
     bossPortalOpen = false; // sealed until the lord falls
   }
-  // skeleton chasers (every level): HP = ceil(base * enemyHpMultiplier)
-  const double hpMult = dc::enemyHpMultiplier(state.ngPlus, level, state.collectedOrbs);
-  const double skelBaseHp = 2.0; // SKELETON.hp
-  const int skelDrops = 1;       // SKELETON.drops
-  const double cs = world.dungeon.cellSize;
-  const int gs = world.dungeon.gridSize;
-  const int ex = world.dungeon.entranceCell ? world.dungeon.entranceCell->x : 0;
-  const int ez = world.dungeon.entranceCell ? world.dungeon.entranceCell->z : 0;
-  int spawned = 0;
-  for (int z = 1; z < gs && spawned < 2; z += 2)
-    for (int x = 1; x < gs && spawned < 2; x += 3) {
-      if (world.dungeon.grid[z][x] != dc::Cell::kEmpty) continue;
-      if (x == ex && z == ez) continue;
-      const double wx = x * cs, wz = z * cs;
-      if (std::hypot(wx - ex * cs, wz - ez * cs) < 10.0) continue; // room to run
-      if (dc::circleHitsBox(world.collision.boxes, wx, wz, player::kRadius)) continue;
-      Skel s; s.pos = dc::Vec2{wx, wz}; s.alive = true;
-      s.maxHp = s.hp = std::ceil(skelBaseHp * hpMult); s.drops = skelDrops; s.hitCd = 0;
-      skels.push_back(std::move(s));
-      spawned++;
-    }
+  // skeleton chasers (every level): full roster via the shared spawner (§16)
+  hasArenaNow = std::any_of(world.dungeon.rooms.begin(), world.dungeon.rooms.end(),
+                            [](const dc::Room& r) { return r.type == "ARENA"; });
+  if (!bossLevel) {
+    skelsys.buildSpawnPlan(world.dungeon, level, state.collectedOrbs,
+                          state.biome, {state.player.x, state.player.z},
+                          hasArenaNow, rng);
+    // drops → souls (ammo + wealth); weapon evolution only upgrades.
+    skelsys.onKill = [this](dc::Enemy* e, const char*) {
+      state.collectedOrbs += e->drops;
+      const int t = dc::weaponTier((int)state.collectedOrbs);
+      if (t > state.weaponTier) state.weaponTier = t;
+    };
+    // enemy/projectile damage (i-frames respected, mirrors JS _damagePlayer)
+    skelsys.onPlayerDamaged = [this](double dmg, dc::Enemy*) {
+      if (invulnTimer > 0 || playerDead) return;
+      simHealth -= dmg;
+      invulnTimer = player::kInvulnTime;
+    };
+  }
 }
 
 void App::_onBossDefeated() {
@@ -667,26 +668,26 @@ void App::updateEntities(double dt) {
   boss.update(dt, bctx);
   if (boss.dead && !bossKillCounted) { bossKillCounted = true; _onBossDefeated(); }
   } // end if (bossReady)
-  // ---- skeletons (dc_core chasers) — run on every level ----
-  for (auto& s : skels) {
-    if (!s.alive) continue;
-    if (s.hitCd > 0) s.hitCd -= dt;
-    const double d = std::hypot(pp.x - s.pos.x, pp.z - s.pos.z);
-    // chase: pathStep toward the player when a wall blocks, else direct
-    dc::Mover m = s.pos;
-    double tx = pp.x, tz = pp.z;
-    if (d > 1.0 && !dc::hasLineOfSight(world.collision.boxes, s.pos.x, s.pos.z, pp.x, pp.z)) {
-      if (auto step = dc::pathStep(world.dungeon, world.collision.boxes, s.pos.x, s.pos.z, pp.x, pp.z)) {
-        tx = step->x; tz = step->z;
-      }
-    }
-    const double sp = 3.2; // skeleton speed (slower than player sprint)
-    dc::moveToward(m, tx, tz, sp, dt, world.collision.boxes, 0.4);
-    s.pos = m;
-    // contact damage (1 heart, 1s cooldown per skeleton)
-    if (s.hitCd <= 0 && d < 1.0) { simHealth -= 1.0; s.hitCd = 1.0; }
-    // death (next step: on 0 hp) — clamp for now
+  // ---- enemies (dc_core shared AI, §16) — every level ----
+  if (!bossReady) {
+    skelsys.drainQueue(dt, pp, state.level, state.ngPlus, state.collectedOrbs,
+                      state.bossKills, state.safeSpawn > 0, rng);
+    dc::EnemyCtx ctx;
+    ctx.dungeon = &world.dungeon;
+    ctx.boxes = &world.collision.boxes;
+    ctx.playerPos = pp;
+    ctx.dt = dt;
+    ctx.frozenAll = false;
+    ctx.safeSpawn = state.safeSpawn > 0;
+    ctx.brightActive = false; // Phase 3 buffs: BRIGHT (state.buffEffect == 1)
+    ctx.attackSpeedMult = 1.0 + dc::kAttackPer3Levels * std::floor((state.level - 1) / 3);
+    ctx.level = state.level;
+    ctx.ngPlus = state.ngPlus;
+    ctx.souls = state.collectedOrbs;
+    ctx.bossKills = state.bossKills;
+    skelsys.update(dt, ctx);
   }
+  if (invulnTimer > 0) invulnTimer -= dt;
   // ---- sync to GameState + death ----
   simHealth = std::max(0.0, simHealth);
   state.health = (int)std::lround(simHealth);
@@ -764,14 +765,11 @@ void App::updateCombat(double dt) {
     bool hit = false;
     if (bossReady && !boss.dead) {
       const double db = std::hypot(o.x - boss.pos.x, o.z - boss.pos.z);
-      if (db < 1.5) { hitBossOrSkel(-1, o.dmg, "orb"); hit = true; }
+      if (db < 1.5) { hitBoss(o.dmg, "orb"); hit = true; }
     }
     if (!hit) {
-      for (size_t i = 0; i < skels.size(); i++) {
-        if (!skels[i].alive) continue;
-        if (std::hypot(o.x - skels[i].pos.x, o.z - skels[i].pos.z) < 0.6) {
-          hitBossOrSkel(i, o.dmg, "orb"); hit = true; break;
-        }
+      for (dc::Enemy* e : skelsys.nearby(o.x, o.z, 0.6)) {
+        skelsys.hitEnemy(e, o.dmg, "orb"); hit = true; break;
       }
     }
     if (hit) { if (o.step == 3) orbExplode(o); o.alive = false; }
@@ -800,9 +798,9 @@ void App::applySwordCone(int stepIdx) {
     tx /= d; tz /= d;
     return (dirx * tx + dirz * tz) >= arcDot;
   };
-  if (bossReady && !boss.dead && inCone(boss.pos.x, boss.pos.z)) { hitBossOrSkel(-1, dmg, "sword"); hitCount++; }
-  for (size_t i = 0; i < skels.size(); i++)
-    if (skels[i].alive && inCone(skels[i].pos.x, skels[i].pos.z)) { hitBossOrSkel(i, dmg, "sword"); hitCount++; }
+  if (bossReady && !boss.dead && inCone(boss.pos.x, boss.pos.z)) { hitBoss(dmg, "sword"); hitCount++; }
+  for (dc::Enemy* e : skelsys.nearby(ox, oz, range + 0.5))
+    if (inCone(e->pos.x, e->pos.z)) { skelsys.hitEnemy(e, dmg, "sword"); hitCount++; }
   if (hitCount > 0) { hitStop = std::max(hitStop, dc::sword::kHitStop); swordHitsLanded += hitCount; }
 }
 void App::_fireOrbStep(bool /*isClick*/) {
@@ -829,20 +827,12 @@ void App::fireOrb(int step) {
   o.dmg = step == 3 ? dc::orbExplodeDamage(soulsAmt) : dc::orbDirectDamage(soulsAmt);
   orbs.push_back(o);
 }
-void App::hitBossOrSkel(int idx, double dmg, const char* src) {
-  if (idx < 0) { if (bossReady && !boss.dead) boss.hitBoss(dmg, src); return; }
-  if (idx >= (int)skels.size() || !skels[idx].alive) return;
-  skels[idx].hp -= dmg;
-  if (skels[idx].hp <= 0) { skels[idx].alive = false; collectSkelDrops(idx); }
+void App::hitBoss(double dmg, const char* src) {
+  if (bossReady && !boss.dead) boss.hitBoss(dmg, src);
 }
 void App::orbExplode(const Orb& o) {
-  if (bossReady && !boss.dead && std::hypot(o.x - boss.pos.x, o.z - boss.pos.z) < 2.0) hitBossOrSkel(-1, o.dmg, "explosion");
-  for (size_t i = 0; i < skels.size(); i++)
-    if (skels[i].alive && std::hypot(o.x - skels[i].pos.x, o.z - skels[i].pos.z) < 2.0) hitBossOrSkel(i, o.dmg, "explosion");
-}
-void App::collectSkelDrops(int idx) {
-  if (idx < 0 || idx >= (int)skels.size()) return;
-  state.collectedOrbs += skels[idx].drops;   // souls = orbs (ammo + wealth)
+  if (bossReady && !boss.dead && std::hypot(o.x - boss.pos.x, o.z - boss.pos.z) < 2.0) hitBoss(o.dmg, "explosion");
+  for (dc::Enemy* e : skelsys.nearby(o.x, o.z, 2.0)) skelsys.hitEnemy(e, o.dmg, "explosion");
 }
 
 void App::uploadDynamic(std::vector<float>& dyn) {
@@ -858,9 +848,27 @@ void App::uploadDynamic(std::vector<float>& dyn) {
   } else if (bossReady) {
     push((float)boss.pos.x, 0.4f, (float)boss.pos.z, 1.4f, 0.2f, 1.4f, 0.4f, 0.3f, 0.5f); // corpse
   }
-  // skeletons (bone white)
-  for (const auto& s : skels)
-    if (s.alive) push((float)s.pos.x, 0.9f, (float)s.pos.z, 0.6f, 1.7f, 0.6f, 0.85f, 0.85f, 0.8f);
+  // ---- full enemy roster (cubes, emissive spectral) — by type ----
+  for (const auto& e : skelsys.enemies()) {
+    if (e.state == dc::EnemyState::kDead) continue;
+    float r = 0.85f, g = 0.85f, b = 0.8f; // SKELETON bone white (default)
+    float sx = 0.6f, sy = 1.7f, sz = 0.6f, y = 0.85f;
+    if (e.type == "MAGICIAN") { r = 0.7f; g = 0.5f; b = 0.9f; }
+    else if (e.type == "ARMORED") { r = 0.6f; g = 0.62f; b = 0.66f; sx = 0.9f; sy = 1.8f; sz = 0.9f; y = 0.9f; }
+    else if (e.type == "ARCHER") { r = 0.5f; g = 0.8f; b = 0.5f; sx = 0.55f; sz = 0.55f; }
+    else if (e.type == "RAT") { r = 0.6f; g = 0.5f; b = 0.4f; sx = 0.5f; sy = 0.5f; sz = 0.9f; y = 0.25f; }
+    else if (e.type == "BRUTE") { r = 0.7f; g = 0.3f; b = 0.3f; sx = 1.5f; sy = 2.2f; sz = 1.5f; y = 1.1f; }
+    else if (e.type == "WRAITH") { r = 0.7f; g = 0.8f; b = 0.9f; sx = 0.7f; sy = 1.8f; sz = 0.7f;
+                                   y = 1.2f + 0.15f * (float)std::sin(state.runTime * 3.0 + e.pos.x); }
+    else if (e.isBURN) { r = 1.0f; g = 0.4f; b = 0.1f; sx = 1.2f; sy = 1.4f; sz = 1.2f; y = 0.7f; }
+    const float sc = (float)(e.eliteScale * (1.0 + e.hitFlash * 0.3)); // elite + hit-pop
+    push((float)e.pos.x, y, (float)e.pos.z, sx * sc, sy * sc, sz * sc, r, g, b);
+  }
+  // enemy projectiles — arrows amber, fireball orbs violet
+  for (const auto& p : skelsys.arrows())
+    if (p.active) push((float)p.pos.x, 1.2f, (float)p.pos.z, 0.25f, 0.25f, 0.25f, 1.0f, 0.7f, 0.3f);
+  for (const auto& p : skelsys.orbs())
+    if (p.active) push((float)p.pos.x, 1.2f, (float)p.pos.z, 0.3f, 0.3f, 0.3f, 0.7f, 0.5f, 1.0f);
   // soul-fire orbs (blue-white)
   for (const auto& o : orbs)
     if (o.alive) push((float)o.x, (float)o.y, (float)o.z, 0.3f, 0.3f, 0.3f, 0.6f, 0.8f, 1.0f);
@@ -1027,10 +1035,12 @@ bool App::init(int w, int h, const char* title, const char* fontPath) {
   brightTexB = makeColorTex(width, height);
   brightFboB = makeFbo(brightTexB, false);
 
-  // ---- dynamic entity VBO (boss + skeletons), streamed each frame ----
+  // ---- dynamic entity VBO (boss + full roster + projectiles), streamed each frame ----
+  // Capacity: 30 live mobs + 24 arrows + 16 enemy orbs + 48 soul orbs + boss +
+  // sword ≈ 120 instances (worst case).
   glGenBuffers(1, &dynVbo);
   glBindBuffer(GL_ARRAY_BUFFER, dynVbo);
-  { std::vector<float> tmp(64 * 9, 0.0f);
+  { std::vector<float> tmp(128 * 9, 0.0f);
     glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(tmp.size() * sizeof(float)), tmp.data(), GL_DYNAMIC_DRAW); }
   glBindBuffer(GL_ARRAY_BUFFER, 0);
 
@@ -1653,6 +1663,7 @@ int main(int argc, char** argv) {
   const char* savePath = nullptr;
   bool showFps = false, bossView = false, combatView = false, descendView = false;
   bool titleView = false, deathView = false, hudView = false, degradedView = false;
+  bool enemyView = false;
   for (int i = 1; i < argc; i++) {
     if (!std::strcmp(argv[i], "--width")) width = std::atoi(argv[++i]);
     else if (!std::strcmp(argv[i], "--height")) height = std::atoi(argv[++i]);
@@ -1669,6 +1680,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--death-view")) deathView = true;
     else if (!std::strcmp(argv[i], "--hud-view")) hudView = true;
     else if (!std::strcmp(argv[i], "--degraded")) degradedView = true;
+    else if (!std::strcmp(argv[i], "--enemy-view")) enemyView = true;
   }
 
   App app;
@@ -1821,6 +1833,32 @@ int main(int argc, char** argv) {
                    found ? "beside" : "FALLBACK", app.state.collectedOrbs,
                    app.state.weaponTier, app.state.health, app.state.maxHealth);
     }
+    // --enemy-view: showcase the live roster — stand still, face the nearest mob.
+    if (enemyView) {
+      app.state.safeSpawn = 0;
+      // run a few frames off-screen so at least one mob reveals from the queue,
+      // then stand adjacent (LOS) to it so the cube is guaranteed on screen.
+      for (int warm = 0; warm < 45; warm++) app.update(1.0 / 60.0, 1.0 / 60.0);
+      const dc::Vec2 p2{app.state.player.x, app.state.player.z};
+      const auto near = app.skelsys.nearby(p2.x, p2.z, 60.0);
+      if (!near.empty()) {
+        const dc::Enemy* e = near.front();
+        static const double dirs[8][2] = {{1,0},{-1,0},{0,1},{0,-1},{0.7,0.7},{-0.7,0.7},{0.7,-0.7},{-0.7,-0.7}};
+        bool found = false;
+        for (const auto& d : dirs) {
+          const double wx = e->pos.x + d[0] * 3.0, wz = e->pos.z + d[1] * 3.0;
+          if (dc::circleHitsBox(app.world.collision.boxes, wx, wz, player::kRadius)) continue;
+          if (!dc::hasLineOfSight(app.world.collision.boxes, e->pos.x, e->pos.z, wx, wz)) continue;
+          app.camX = wx; app.camZ = wz;
+          app.state.player.x = wx; app.state.player.z = wz;
+          found = true; break;
+        }
+        std::fprintf(stderr, "[dc_app] enemy-view: beside %s%s\n",
+                     e->type.c_str(), found ? "" : " (FALLBACK: no LOS spot)");
+      } else {
+        std::fprintf(stderr, "[dc_app] enemy-view: no live mob yet\n");
+      }
+    }
     // --degraded: force the degraded-mode state (bloom off) for the 30 fps gate
     if (degradedView) { app.degraded = true; app.forcedDegraded = true; app.lowFpsTimer = 0; }
     // watch level transitions (descend-view) so a descent is provable headlessly
@@ -1830,7 +1868,15 @@ int main(int argc, char** argv) {
     bool restartSeen = false;
     for (int i = 0; i < frames; i++) {
       ctx.frame = i; ctx.phase = "render"; wd.begin();
-      if (!bossView && !descendView && !deathView && !hudView) app.keyW = true; // interior-walk shot: drive forward
+      if (!bossView && !descendView && !deathView && !hudView && !enemyView) app.keyW = true; // interior-walk shot: drive forward
+      else if (enemyView) { // stand still, face the nearest live mob (roster showcase)
+        const dc::Vec2 p2{app.state.player.x, app.state.player.z};
+        const auto near = app.skelsys.nearby(p2.x, p2.z, 60.0);
+        if (!near.empty()) {
+          const dc::Enemy* e = near.front();
+          app.state.player.yaw = (float)std::atan2(-(e->pos.x - p2.x), -(e->pos.z - p2.z));
+        }
+      }
       else { // face the live boss each frame so it stays on screen
         const double dx = app.boss.pos.x - app.state.player.x;
         const double dz = app.boss.pos.z - app.state.player.z;
@@ -1880,9 +1926,9 @@ int main(int argc, char** argv) {
     }
     double el = glfwGetTime() - t0;
     if (savePath && saveFrame < 0) app.savePPM(savePath); // final frame (or use --save-frame)
-    std::fprintf(stderr, "[dc_app] %d frames in %.3fs (%.1f fps) seed=%d level=%d biome=%s boss=%s(%.0fhp) skels=%zu portalOpen=%d degraded=%d\n",
+    std::fprintf(stderr, "[dc_app] %d frames in %.3fs (%.1f fps) seed=%d level=%d biome=%s boss=%s(%.0fhp) skels=%d portalOpen=%d degraded=%d\n",
                  frames, el, frames / el, seed, app.state.level, app.state.biome.c_str(),
-                 app.boss.state.c_str(), app.boss.hp, app.skels.size(), (int)app.bossPortalOpen, (int)app.degraded);
+                 app.boss.state.c_str(), app.boss.hp, app.skelsys.liveCount(), (int)app.bossPortalOpen, (int)app.degraded);
   } else {
     double last = glfwGetTime(), acc = 0;
     int n = 0;

@@ -19,9 +19,11 @@ if [ ! -x "$BIN" ]; then
 fi
 
 # One-shot smoke test: render 120 frames headless, then exit.
+# (Default boot is now the title screen; force the gameplay scene so the
+#  self-test exercises the scene pass / stone shading / sword / HUD.)
 if [ "${1:-}" = "--smoke" ]; then
   shift
-  exec ./build/dc_app --frames 120 "$@"
+  exec ./build/dc_app --frames 120 --vault-view "$@"
 fi
 
 # Interactive play: forward all args to the binary.

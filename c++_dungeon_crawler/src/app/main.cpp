@@ -206,10 +206,34 @@ vec3 pointLight(vec3 L, vec3 lcolor, float intensity, float distance, float shad
   float atten = intensity * cut / (1.0 + 0.2 * dist + 0.06 * dist * dist); // JS decay ~1.05-1.2
   return lcolor * diff * atten * shadow;
 }
+// ---- procedural stone surface (visual detail): per-block value noise +
+//      mortar lines + fine grain, in world space so it doesn't swim. ----
+float hash12(vec2 p) {
+  p = fract(p * vec2(123.34, 345.78));
+  p += dot(p, p + 34.23);
+  return fract(p.x * p.y * 34.11);
+}
+float stoneDetail(vec3 wp, vec3 n) {
+  vec2 uv;
+  if (abs(n.y) > 0.5)      uv = wp.xz;
+  else if (abs(n.x) > 0.5) uv = wp.zy;
+  else                     uv = wp.xy;
+  const float cell = 1.2;                 // ~1.2-unit stone blocks
+  vec2 gid = floor(uv / cell);
+  float blockVar = 0.82 + 0.32 * hash12(gid);            // per-block brightness
+  vec2 f = fract(uv / cell) - 0.5;
+  float edge = smoothstep(0.5, 0.42, max(abs(f.x), abs(f.y))); // 1 inside, 0 at seam
+  float mortar = mix(0.55, 1.0, edge);                  // dark mortar seam
+  float grain = 0.88 + 0.22 * hash12(uv * 7.31);       // fine speckle
+  // broad vertical AO: darker toward the floor line
+  float ao = 0.85 + 0.15 * clamp(wp.y * 0.25 + 0.5, 0.0, 1.0);
+  return blockVar * mortar * grain * ao;
+}
 void main() {
-  vec3 lit = vColor * uAmbient;
-  lit += pointLight(uTorchPos, uTorchColor, uTorchIntensity, uTorchDist, shadowFactor(vTorchPos));
-  lit += pointLight(uHeadPos, uHeadColor, uHeadIntensity, uHeadDist, 1.0);
+  vec3 albedo = vColor * stoneDetail(vWorld, vNormal);
+  vec3 lit = albedo * uAmbient;
+  lit += pointLight(uTorchPos, uTorchColor, uTorchIntensity, uTorchDist, shadowFactor(vTorchPos)) * albedo;
+  lit += pointLight(uHeadPos, uHeadColor, uHeadIntensity, uHeadDist, 1.0) * albedo;
   if (uEmissive > 0.5) lit = vColor * 0.9; // unlit emissive (boss / skeletons) — keep ≤1 to avoid bloom blowout
   // per-biome exponential fog (JS FogExp2; density pre-scaled for the C++ scene)
   float fd = length(vWorld - uEyePos);
@@ -417,7 +441,12 @@ void main() {
   vec3 sharp = texture(uGlowSharp, vUv).rgb;
   vec3 blur  = texture(uGlowBlur, vUv).rgb;
   vec3 glow = (blur * 1.6 * uGlowPulse + sharp * 0.5) * uGlowIntensity; // §12.2 EnemyGlowShader
-  fragColor = vec4(scene + bloom * uStrength + glow, 1.0);
+  vec3 c = scene + bloom * uStrength + glow;
+  // ---- visual detail: subtle radial vignette (cinematic depth, focuses the
+  //      eye; the HUD is drawn on top so it is unaffected) ----
+  vec2 q = vUv - 0.5;
+  float vig = 1.0 - dot(q, q) * 0.5; // 1.0 center → ~0.75 corners
+  fragColor = vec4(c * vig, 1.0);
 }
 )";
 
@@ -773,6 +802,7 @@ struct App {
   double orbSeqLast = -1e9;    // last fire time (s) for the sequence window
   double lmbAccum = 0;
   bool prevLMB = false, prevRMB = false;
+  bool prevTitleLMB = false; // title "New Game" edge (mouse)
 
   // ---- arc bolts (§9.3, T3–T5): pooled homing projectiles, orb dmg frozen at fire ----
   struct ArcBolt {
@@ -829,6 +859,8 @@ struct App {
   void bakeFont(const char* path);
   float lineW(const char* s, float size);
   void drawTextLine(std::vector<float>& v, float x, float y, float size, const float col[3], const char* s);
+  // Readable outlined text: dark 4-way outline + soft drop shadow behind the fill.
+  void drawTextOutline(std::vector<float>& v, float x, float y, float size, const float col[3], const char* s);
   void drawText(const std::vector<float>& v);
   void drawRects(const std::vector<float>& v);
   void drawOverlay(float r, float g, float b, float a);
@@ -1573,6 +1605,45 @@ void App::uploadDynamic(std::vector<float>& dyn, std::vector<float>& enem) {
     const double sx = state.player.x + fx * reach, sz = state.player.z + fz * reach;
     const double sy = camY - 0.15;
     push((float)sx, (float)sy, (float)sz, 0.06f, 0.9f, 0.06f, 0.85f, 0.9f, 1.0f);
+  } else {
+    // ---- idle / rest pose (JS PlayerSword._poseIdle): the blade is ALWAYS in view,
+    //      low-right of the camera, gentle bob, tier-colored. Previously this was
+    //      only drawn during a combo, so the weapon vanished when not attacking. ----
+    const float yaw = state.player.yaw, pitch = state.player.pitch;
+    const float cp = std::cos(pitch);
+    const float fwd[3] = { -std::sin(yaw)*cp, -std::sin(pitch), -std::cos(yaw)*cp };
+    // right = normalize(forward x up0); up' = right x forward (right-handed basis)
+    float r[3] = { -fwd[2], 0.0f, fwd[0] };
+    float rl = std::sqrt(r[0]*r[0]+r[1]*r[1]+r[2]*r[2]);
+    if (rl > 1e-5f) { r[0]/=rl; r[1]/=rl; r[2]/=rl; }
+    const float upv[3] = { r[1]*fwd[2]-r[2]*fwd[1], r[2]*fwd[0]-r[0]*fwd[2], r[0]*fwd[1]-r[1]*fwd[0] };
+    const float tIdle = (float)state.runTime;
+    const float bob = std::sin(tIdle * 1.7f) * 0.008f;
+    // camera-space rest offset: x right, y up, -z forward (JS 0.38,-0.42+bob,-0.75)
+    const float ox = 0.38f, oy = -0.42f + bob, oz = -0.75f;
+    const float cx = camX + r[0]*ox + upv[0]*oy + fwd[0]*(-oz);
+    const float cy = camY + r[1]*ox + upv[1]*oy + fwd[1]*(-oz);
+    const float cz = camZ + r[2]*ox + upv[2]*oy + fwd[2]*(-oz);
+    // tier blade colors (JS PlayerSword._buildForm)
+    float br, bg, bb;
+    switch (state.weaponTier) {
+      case 0:  br=0.467f; bg=0.439f; bb=0.408f; break; // 0x777068
+      case 1:  br=0.667f; bg=0.698f; bb=0.737f; break; // 0xaab2bc
+      case 2:  br=0.533f; bg=0.675f; bb=0.800f; break; // 0x88aacc
+      case 3:  br=0.690f; bg=0.549f; bb=1.000f; break; // 0xb08cff
+      case 4:  br=1.000f; bg=0.914f; bb=0.784f; break; // 0xffe9c8
+      default: br=0.624f; bg=0.937f; bb=1.000f; break; // 0x9fefff (T5)
+    }
+    // brighten so the headlight reads it clearly (JS sword is self-lit, layer 2)
+    br = std::min(1.0f, br*1.5f+0.15f); bg = std::min(1.0f, bg*1.5f+0.15f); bb = std::min(1.0f, bb*1.5f+0.15f);
+    // blade: thin tall box (JS BoxGeometry 0.055 x bladeLen x 0.012)
+    const float bladeLen = 0.76f + state.weaponTier * 0.06f * 4.0f;
+    push(cx, cy + 0.14f, cz, 0.055f, bladeLen, 0.012f, br, bg, bb);
+    // guard: short horizontal bar (JS tier>=1 BoxGeometry 0.24 x 0.045 x 0.05)
+    if (state.weaponTier >= 1)
+      push(cx, cy + 0.13f, cz, 0.24f, 0.045f, 0.05f, 0.416f, 0.353f, 0.204f); // 0x6a5a34
+    // grip: small box below the guard (JS Cylinder 0.028/0.032 x 0.26)
+    push(cx, cy, cz, 0.05f, 0.26f, 0.05f, 0.173f, 0.125f, 0.094f); // 0x2c2018
   }
   // ---- BURN ground-fire patches (visual, §16.4): grow 0.3 s, fade last 1 s ----
   for (const auto& p : firePatches) {
@@ -2056,9 +2127,24 @@ void App::update(double dt, double rawDt) {
   // ---- HUD toasts tick in real time (JS setTimeout 3.3 s) — all screens ----
   for (auto& t : toasts) t.ttl -= rawDt;
   while (!toasts.empty() && toasts.front().ttl <= 0) toasts.erase(toasts.begin());
+  // ---- pointer lock: capture the cursor in gameplay, show it on menus ----
+  // (was the dead 'mouse input' bug: pointerLocked stayed false, so look never
+  //  engaged; now it tracks the screen so mouse-look works and the title/menu
+  //  screens show a real cursor.)
+  {
+    const bool wantLock = (screen == Screen::Play);
+    if (wantLock != pointerLocked) {
+      pointerLocked = wantLock;
+      if (window)
+        glfwSetInputMode(window, GLFW_CURSOR,
+                         wantLock ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+    }
+  }
   // ---- title / death bookends (sim frozen, screen keys only) ----
   if (screen == Screen::Title) {
     if (keyN && !prevN) startRun(seed);
+    if (screen == Screen::Title && keyLMB && !prevTitleLMB) startRun(seed); // "New Game" button (mouse)
+    prevTitleLMB = keyLMB;
     prevN = keyN; prevY = keyY;
     return;
   }
@@ -2461,20 +2547,20 @@ void App::frame() {
     const float cx = width / 2.0f, cy = height * 0.30f;
     if (screen == Screen::Title) {
       const char* t = "THE DEPTHS";
-      drawTextLine(v, cx - lineW(t, 3.0f) / 2, cy, 3.0f, gold, t);
+      drawTextOutline(v, cx - lineW(t, 3.0f) / 2, cy, 3.0f, gold, t);
       const char* s = "A SOULS DESCENT";
-      drawTextLine(v, cx - lineW(s, 0.9f) / 2, cy + 110, 0.9f, sub, s);
+      drawTextOutline(v, cx - lineW(s, 0.9f) / 2, cy + 110, 0.9f, sub, s);
       const char* n = "New Game  [N]";
-      drawTextLine(v, cx - lineW(n, 1.2f) / 2, cy + 200, 1.2f, hint, n);
+      drawTextOutline(v, cx - lineW(n, 1.2f) / 2, cy + 200, 1.2f, hint, n);
     } else {
       const char* t = "The dead claim you";
-      drawTextLine(v, cx - lineW(t, 2.4f) / 2, cy, 2.4f, red, t);
+      drawTextOutline(v, cx - lineW(t, 2.4f) / 2, cy, 2.4f, red, t);
       char buf[160];
       std::snprintf(buf, sizeof(buf), "Level %d   Souls %d   Time %ds",
                     state.level, state.collectedOrbs, (int)state.runTime);
-      drawTextLine(v, cx - lineW(buf, 1.0f) / 2, cy + 90, 1.0f, stat, buf);
+      drawTextOutline(v, cx - lineW(buf, 1.0f) / 2, cy + 90, 1.0f, stat, buf);
       const char* n = "[N] Restart   [Y] New Game+";
-      drawTextLine(v, cx - lineW(n, 1.2f) / 2, cy + 180, 1.2f, hint, n);
+      drawTextOutline(v, cx - lineW(n, 1.2f) / 2, cy + 180, 1.2f, hint, n);
     }
     drawText(v);
   }
@@ -2568,6 +2654,22 @@ void App::drawTextLine(std::vector<float>& v, float x, float y, float size, cons
     P(x, y, u0, v0); P(x1, y1, u1, v1); P(x, y1, u0, v1); // tri 2
     x += font.adv[c] * size;
   }
+}
+
+void App::drawTextOutline(std::vector<float>& v, float x, float y, float size, const float col[3], const char* s) {
+  // Scale outline width with glyph size; ~0.18 * size reads as a tight dark ring.
+  const float o = std::max(1.0f, size * 0.18f);
+  const float dark[3] = {0.02f, 0.01f, 0.0f};
+  // 4-way dark outline (drawn first, behind the fill).
+  drawTextLine(v, x + o, y, size, dark, s);
+  drawTextLine(v, x - o, y, size, dark, s);
+  drawTextLine(v, x, y + o, size, dark, s);
+  drawTextLine(v, x, y - o, size, dark, s);
+  // Soft drop shadow (down-right, low alpha) for lift off bright backgrounds.
+  const float sh[3] = {0.0f, 0.0f, 0.0f};
+  drawTextLine(v, x + o * 0.7f, y + o * 0.7f, size, sh, s);
+  // Fill on top.
+  drawTextLine(v, x, y, size, col, s);
 }
 
 void App::drawText(const std::vector<float>& v) {
@@ -2710,14 +2812,14 @@ void App::drawHud() {
   {
     float pw = 196.0f;
     rect(m, m, pw, 62, panel[0], panel[1], panel[2], panel[3]);
-    drawTextLine(t, m + 10, m + 8, 0.45f, label, "VITALITY");
+    drawTextOutline(t, m + 10, m + 8, 0.45f, label, "VITALITY");
     const float bw = 178.0f, bh = 12.0f, bx = m + 10, by = m + 26;
     rect(bx, by, bw, bh, hpBg[0], hpBg[1], hpBg[2], hpBg[3]);
     const double frac = std::max(0.0, std::min(1.0, simHealth / std::max(1.0, (double)state.maxHealth)));
     rect(bx, by, (float)(bw * frac), bh, hpFill[0], hpFill[1], hpFill[2], hpFill[3]);
     char num[32];
     std::snprintf(num, sizeof(num), "%d / %d", state.health, state.maxHealth);
-    drawTextLine(t, m + 10, by + bh + 5, 0.45f, hpNum, num);
+    drawTextOutline(t, m + 10, by + bh + 5, 0.45f, hpNum, num);
   }
 
   // ---- top-right: SOULS + weapon slot + buff badge + sprint-bonus ----
@@ -2730,7 +2832,7 @@ void App::drawHud() {
     const float ph = 74.0f + (hasBuff ? 16.0f : 0.0f) + (hasSprint ? 14.0f : 0.0f);
     rect(xR - pw, m, pw, ph, panel[0], panel[1], panel[2], panel[3]);
     auto drawRight = [&](float y, float size, const float c[3], const char* s) {
-      drawTextLine(t, xR - 12 - lineW(s, size), y, size, c, s);
+      drawTextOutline(t, xR - 12 - lineW(s, size), y, size, c, s);
     };
     drawRight(m + 8, 0.45f, label, "SOULS");
     char cnt[16];
@@ -2788,9 +2890,9 @@ void App::drawHud() {
     const float lineH = 14.0f;
     const float ph = 24.0f + 7 * lineH + 6.0f;
     rect(xR - pw, y0, pw, ph, panel[0], panel[1], panel[2], panel[3]);
-    drawTextLine(t, xR - pw / 2 - lineW("COMBAT", 0.4f) / 2, y0 + 8, 0.4f, label, "COMBAT");
+    drawTextOutline(t, xR - pw / 2 - lineW("COMBAT", 0.4f) / 2, y0 + 8, 0.4f, label, "COMBAT");
     const float statC[3] = {0.85f, 0.79f, 0.63f}; // #d8c9a0
-    for (int i = 0; i < 7; i++) drawTextLine(t, xR - pw + 12, y0 + 24 + i * lineH, 0.42f, statC, lines[i]);
+    for (int i = 0; i < 7; i++) drawTextOutline(t, xR - pw + 12, y0 + 24 + i * lineH, 0.42f, statC, lines[i]);
   }
 
   // ---- top-center: LEVEL · BIOME + timer ----
@@ -2799,14 +2901,14 @@ void App::drawHud() {
     char lvl[64];
     const auto& bd = dc::kBiomes.at(state.biome);
     std::snprintf(lvl, sizeof(lvl), "LEVEL %d · %s", state.level, bd.label.c_str());
-    drawTextLine(t, cx - lineW(lvl, 0.55f) / 2, m + 6, 0.55f, biome, lvl);
+    drawTextOutline(t, cx - lineW(lvl, 0.55f) / 2, m + 6, 0.55f, biome, lvl);
     const double remain = std::max(0.0, dc::kLevelTimeLimit - state.levelTime);
     const int mm = (int)(remain / 60.0), ss = (int)(remain - 60.0 * mm);
     char tm[24];
     std::snprintf(tm, sizeof(tm), "%d:%02d%s", mm, ss,
                   state.ngPlus > 0 ? " NG+" : "");
     const float* tc = (remain < 30.0) ? timerLow : timerC;
-    drawTextLine(t, cx - lineW(tm, 0.85f) / 2, m + 26, 0.85f, tc, tm);
+    drawTextOutline(t, cx - lineW(tm, 0.85f) / 2, m + 26, 0.85f, tc, tm);
   }
 
   // ---- bottom-center: boss bar (only when a boss is live) ----
@@ -2814,7 +2916,7 @@ void App::drawHud() {
     const float cx = W / 2.0f, bw = 420.0f, bh = 10.0f;
     const float by = H - 64.0f;
     const std::string lbl = dc::kBossLabels.count(boss.variant) ? dc::kBossLabels.at(boss.variant) : std::string("BOSS");
-    drawTextLine(t, cx - lineW(lbl.c_str(), 0.5f) / 2, by - 20, 0.5f, bossLbl, lbl.c_str());
+    drawTextOutline(t, cx - lineW(lbl.c_str(), 0.5f) / 2, by - 20, 0.5f, bossLbl, lbl.c_str());
     rect(cx - bw / 2, by, bw, bh, bossBg[0], bossBg[1], bossBg[2], bossBg[3]);
     const double frac = std::max(0.0, std::min(1.0, boss.hp / std::max(1.0, boss.maxHp)));
     rect(cx - bw / 2, by, (float)(bw * frac), bh, bossFill[0], bossFill[1], bossFill[2], bossFill[3]);
@@ -2825,7 +2927,7 @@ void App::drawHud() {
   if (degraded && (curFps < 30.0 || forcedDegraded)) {
     const char* w = "DEGRADED MODE — bloom off for performance";
     const float perfWarn[4] = {0.85f, 0.63f, 0.23f, 1.0f};
-    drawTextLine(t, W - m - lineW(w, 0.4f), H - 24, 0.4f, perfWarn, w);
+    drawTextOutline(t, W - m - lineW(w, 0.4f), H - 24, 0.4f, perfWarn, w);
   }
 
   // ---- toasts (#messages): bottom-center stack, oldest on top, newest at
@@ -2835,7 +2937,7 @@ void App::drawHud() {
     const float baseY = H - 170.0f, lineH = 24.0f;
     for (size_t i = toasts.size(); i-- > 0; ) {
       const float y = baseY - (int)(toasts.size() - 1 - i) * lineH;
-      drawTextLine(t, W / 2.0f - lineW(toasts[i].text.c_str(), 0.6f) / 2, y, 0.6f, toastC, toasts[i].text.c_str());
+      drawTextOutline(t, W / 2.0f - lineW(toasts[i].text.c_str(), 0.6f) / 2, y, 0.6f, toastC, toasts[i].text.c_str());
     }
   }
 
@@ -2917,7 +3019,7 @@ static void mouseButtonCb(GLFWwindow* w, int button, int action, int) {
 } // namespace
 
 int main(int argc, char** argv) {
-  int width = 1280, height = 720, frames = 0, seed = 1000, saveFrame = -1, level = 1;
+  int width = 1024, height = 720, frames = 0, seed = 1000, saveFrame = -1, level = 1;
   const char* savePath = nullptr;
   bool showFps = false, bossView = false, combatView = false, descendView = false;
   bool titleView = false, deathView = false, hudView = false, degradedView = false;
@@ -2950,7 +3052,14 @@ int main(int argc, char** argv) {
   if (!app.init(width, height, "dc_app — Phase 2 playable spine (STONE)", fontPath)) return 1;
   g_app = &app;
   app.seed = seed;
-  app.screen = titleView ? App::Screen::Title : App::Screen::Play;
+  // Title screen is the default boot state (JS Game._titleMode = true). Any
+  // explicit scene view flag (probe/harness) keeps the old Play behavior so
+  // harnesses are unaffected.
+  {
+    const bool sceneView = bossView || combatView || descendView || vaultView ||
+                            enemyView || dropView || burnView || hudView || deathView;
+    app.screen = (titleView || !sceneView) ? App::Screen::Title : App::Screen::Play;
+  }
   glfwSetKeyCallback(app.window, keyCb);
   glfwSetCursorPosCallback(app.window, cursorCb);
   glfwSetMouseButtonCallback(app.window, mouseButtonCb);

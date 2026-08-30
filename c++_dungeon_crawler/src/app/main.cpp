@@ -148,16 +148,25 @@ layout(location=1) in vec3 aNormal;
 layout(location=2) in vec3 aOffset;
 layout(location=3) in vec3 aScale;
 layout(location=4) in vec3 aColor;
+layout(location=5) in float aYaw;
+layout(location=6) in float aPitch;
 uniform mat4 uViewProj;
 uniform mat4 uTorchVP;
 out vec3 vNormal;
 out vec3 vColor;
 out vec3 vWorld;
 out vec4 vTorchPos;
+// Per-instance orientation: yaw about world Y then pitch about the (yawed)
+// right axis — matches the first-person camera basis, so the sword and
+// enemies can face their travel / view direction.
 void main() {
-  vec3 wp = aPos * aScale + aOffset;
+  float cy = cos(aYaw), sy = sin(aYaw), cp = cos(aPitch), sp = sin(aPitch);
+  mat3 R = mat3(cy, 0.0, -sy,
+                -sy * sp, cp, -cy * sp,
+                 sy * cp, sp,  cy * cp);
+  vec3 wp = R * (aPos * aScale) + aOffset;
   vWorld = wp;
-  vNormal = aNormal;
+  vNormal = R * aNormal;
   vColor = aColor;
   vTorchPos = uTorchVP * vec4(wp, 1.0);
   gl_Position = uViewProj * vec4(wp, 1.0);
@@ -512,9 +521,9 @@ void World::buildInstanceData(const dc::Dungeon& d, std::vector<float>& floorIns
     for (int x = 0; x < d.gridSize; x++) {
       if (d.grid[z][x] == dc::Cell::kEmpty) continue;
       const float wx = (float)(x * d.cellSize), wz = (float)(z * d.cellSize);
-      // floor + ceiling (thin slabs, one instance each)
-      floorInst.insert(floorInst.end(), {wx, 0.1f, wz, cs, 0.2f, cs, 0, 0, 0});
-      ceilInst.insert(ceilInst.end(), {wx, H - 0.1f, wz, cs, 0.2f, cs, 0, 0, 0});
+      // floor + ceiling (thin slabs, one instance each) — 11 floats (yaw/pitch 0)
+      floorInst.insert(floorInst.end(), {wx, 0.1f, wz, cs, 0.2f, cs, 0, 0, 0, 0, 0});
+      ceilInst.insert(ceilInst.end(), {wx, H - 0.1f, wz, cs, 0.2f, cs, 0, 0, 0, 0, 0});
       // exposed/boundary edges → walls (same logic as WorldBuilder)
       static const int kDirX[4] = {1, -1, 0, 0};
       static const int kDirZ[4] = {0, 0, 1, -1};
@@ -525,9 +534,9 @@ void World::buildInstanceData(const dc::Dungeon& d, std::vector<float>& floorIns
         if (!oob && d.grid[nz][nx] != dc::Cell::kEmpty) continue;
         const float ex = wx + (float)(dx * d.cellSize) / 2.0f, ez = wz + (float)(dz * d.cellSize) / 2.0f;
         if (dz != 0) { // N/S wall: spans x, thin in z
-          wallH.insert(wallH.end(), {ex, H / 2.0f, ez, cs, H, wt, 0, 0, 0});
+          wallH.insert(wallH.end(), {ex, H / 2.0f, ez, cs, H, wt, 0, 0, 0, 0, 0});
         } else { // E/W wall: spans z, thin in x
-          wallE.insert(wallE.end(), {ex, H / 2.0f, ez, wt, H, cs, 0, 0, 0});
+          wallE.insert(wallE.end(), {ex, H / 2.0f, ez, wt, H, cs, 0, 0, 0, 0, 0});
         }
       }
     }
@@ -540,13 +549,13 @@ void World::upload(const dc::Dungeon& d, const float cellCol[3], const float wal
   collision = buildCollisionBoxes(d);
   std::vector<float> floorInst, ceilInst, wallH, wallE;
   buildInstanceData(d, floorInst, ceilInst, wallH, wallE);
-  // stamp colors (9-float stride: offset,scale,color)
+  // stamp colors (11-float stride: offset,scale,color,yaw,pitch)
   auto stamp = [&](std::vector<float>& v, const float c[3]) {
-    for (size_t i = 0; i < v.size(); i += 9) { v[i + 6] = c[0]; v[i + 7] = c[1]; v[i + 8] = c[2]; }
+    for (size_t i = 0; i < v.size(); i += 11) { v[i + 6] = c[0]; v[i + 7] = c[1]; v[i + 8] = c[2]; }
   };
   stamp(floorInst, cellCol); stamp(ceilInst, ceilCol); stamp(wallH, wallCol); stamp(wallE, wallCol);
-  nFloor = (int)(floorInst.size() / 9); nCeil = (int)(ceilInst.size() / 9);
-  nWallH = (int)(wallH.size() / 9); nWallE = (int)(wallE.size() / 9);
+  nFloor = (int)(floorInst.size() / 11); nCeil = (int)(ceilInst.size() / 11);
+  nWallH = (int)(wallH.size() / 11); nWallE = (int)(wallE.size() / 11);
   // Floor debris — JS WorldBuilder: ONE InstancedMesh of pebbles, floor(cells * 0.2).
   // Purely cosmetic (no shadow, own budget track); degraded mode sheds the tail
   // instances at draw time (count halved, spec §22 rule 1).
@@ -568,10 +577,10 @@ void World::upload(const dc::Dungeon& d, const float cellCol[3], const float wal
       const float wz = (float)(cz * d.cellSize) +
                        ((float)drng.next() - 0.5f) * (float)d.cellSize * 0.7f;
       const float wy = 0.2f + 0.5f * sy; // sit on the floor slab (top y=0.2)
-      debrisInst.insert(debrisInst.end(), {wx, wy, wz, s, sy, s, 0.333f, 0.314f, 0.282f}); // 0x555048
+      debrisInst.insert(debrisInst.end(), {wx, wy, wz, s, sy, s, 0.333f, 0.314f, 0.282f, 0, 0}); // 0x555048
     }
   }
-  nDebris = (int)(debrisInst.size() / 9);
+  nDebris = (int)(debrisInst.size() / 11);
   auto mkVbo = [&](const std::vector<float>& v) -> GLuint {
     GLuint b = 0;
     glGenBuffers(1, &b);
@@ -674,7 +683,7 @@ struct App {
   GLuint progBright = 0, progBlur = 0, progComposite = 0;
   // §12.2 enemy-glow pass programs (flat mask + separable gaussian + composite)
   GLuint progMask = 0, progEnemyBlur = 0;
-  GLuint sceneFbo = 0, sceneTex = 0;
+  GLuint sceneFbo = 0, sceneTex = 0, sceneDepthRb = 0;
   GLuint shadowFbo = 0, shadowTex = 0;
   GLuint brightFboA = 0, brightTexA = 0, brightFboB = 0, brightTexB = 0;
   // §12.2 enemy-glow half-res render targets (sharp mask + 2 blur ping-pongs)
@@ -796,7 +805,7 @@ struct App {
   int   swordHitsLanded = 0;   // debug: total cone hits
 
   // ---- orb weapon (LMB, §10) ----
-  struct Orb { double x=0,y=0,z=0,vx=0,vy=0,vz=0,life=-1,dmg=1; int step=1; bool alive=false; };
+  struct Orb { double x=0,y=0,z=0,vx=0,vy=0,vz=0,life=-1,dmg=1; int step=1; bool alive=false; int bounces=0; };
   std::vector<Orb> orbs;        // pooled (POOL_NORMAL 48)
   int  orbSeqStep = 0;         // 0 idle; 1..3 in a 3-step sequence
   double orbSeqLast = -1e9;    // last fire time (s) for the sequence window
@@ -829,6 +838,10 @@ struct App {
   void toast(const std::string& text);
 
   bool init(int w, int h, const char* title, const char* fontPath = nullptr);
+  void recreateWindowTargets(); // resize: realloc window-sized FBOs (scene/bright/glow)
+  void toggleFullscreen();      // F11: windowed <-> native fullscreen
+  bool fullscreen = false;
+  GLFWmonitor* monitor = nullptr;
   void buildWorldFromState();
   void placePlayerAtEntrance();
   void spawnEntities();
@@ -1313,23 +1326,67 @@ void App::updateCombat(double dt) {
     lmbAccum = dc::orbWeapon::kStepInterval;
   }
 
-  // ---- advance orb projectiles ----
-  for (auto& o : orbs) {
-    if (!o.alive) continue;
-    o.life -= dt;
-    if (o.life <= 0) { if (o.step == 3) orbExplode(o); o.alive = false; continue; }
-    o.x += o.vx * dt; o.y += o.vy * dt; o.z += o.vz * dt;
-    bool hit = false;
-    if (bossReady && !boss.dead) {
-      const double db = std::hypot(o.x - boss.pos.x, o.z - boss.pos.z);
-      if (db < 1.5) { hitBoss(o.dmg, "orb"); hit = true; }
-    }
-    if (!hit) {
-      for (dc::Enemy* e : skelsys.nearby(o.x, o.z, 0.6)) {
-        skelsys.hitEnemy(e, o.dmg, "orb"); hit = true; break;
+  // ---- advance orb projectiles (with bounce) ----
+  // World geometry: floor slab top at y=0.2, ceiling slab bottom at y=kWallHeight-0.2.
+  // Orbs bounce off floor/ceiling (vertical) and walls (horizontal, 2D circle-vs-AABB)
+  // with a restitution coefficient. After kMaxOrbBounces they stop bouncing (slide).
+  {
+    const double kRestitution = 0.78;   // energy kept per bounce
+    const double kOrbR = 0.15;          // half the 0.3 render scale
+    const double floorY = 0.2 + kOrbR;
+    const double ceilY  = (double)dc::world::kWallHeight - 0.2 - kOrbR;
+    const int kMaxOrbBounces = 3;
+    const auto& boxes = world.collision.boxes;
+    for (auto& o : orbs) {
+      if (!o.alive) continue;
+      o.life -= dt;
+      if (o.life <= 0) { if (o.step == 3) orbExplode(o); o.alive = false; continue; }
+      o.x += o.vx * dt; o.y += o.vy * dt; o.z += o.vz * dt;
+
+      // ---- vertical bounces (floor / ceiling) ----
+      if (o.y < floorY) {
+        o.y = floorY;
+        if (o.vy < 0) o.vy = -o.vy * kRestitution;
+        if (o.bounces < kMaxOrbBounces) o.bounces++;
+      } else if (o.y > ceilY) {
+        o.y = ceilY;
+        if (o.vy > 0) o.vy = -o.vy * kRestitution;
+        if (o.bounces < kMaxOrbBounces) o.bounces++;
       }
+
+      // ---- horizontal wall bounces (2D circle vs AABB) ----
+      if (o.bounces < kMaxOrbBounces) {
+        for (const auto& b : boxes) {
+          const double cx = std::max(b.minX, std::min(o.x, b.maxX));
+          const double cz = std::max(b.minZ, std::min(o.z, b.maxZ));
+          double dx = o.x - cx, dz = o.z - cz;
+          const double d2 = dx * dx + dz * dz;
+          if (d2 >= kOrbR * kOrbR) continue;
+          if (d2 < 1e-9) { dx = 1; dz = 0; } // center inside: push out on X
+          const double d = std::sqrt(d2);
+          const double nx = dx / d, nz = dz / d; // wall normal (toward orb)
+          o.x = cx + nx * kOrbR; o.z = cz + nz * kOrbR;
+          const double vdot = o.vx * nx + o.vz * nz;
+          if (vdot < 0) { o.vx -= 2 * vdot * nx; o.vz -= 2 * vdot * nz; }
+          // restitution dampen
+          o.vx *= kRestitution; o.vz *= kRestitution;
+          o.bounces++;
+          break; // one wall per frame
+        }
+      }
+
+      bool hit = false;
+      if (bossReady && !boss.dead) {
+        const double db = std::hypot(o.x - boss.pos.x, o.z - boss.pos.z);
+        if (db < 1.5) { hitBoss(o.dmg, "orb"); hit = true; }
+      }
+      if (!hit) {
+        for (dc::Enemy* e : skelsys.nearby(o.x, o.z, 0.6)) {
+          skelsys.hitEnemy(e, o.dmg, "orb"); hit = true; break;
+        }
+      }
+      if (hit) { if (o.step == 3) orbExplode(o); o.alive = false; }
     }
-    if (hit) { if (o.step == 3) orbExplode(o); o.alive = false; }
   }
 
   // ---- advance arc bolts (§9.3, T3–T5) ----
@@ -1507,7 +1564,8 @@ void App::fireOrb(int step) {
   if ((int)orbs.size() >= dc::orbWeapon::kPoolNormal) return; // pool cap
   const float yaw = state.player.yaw, pitch = state.player.pitch;
   const double cp = std::cos(pitch);
-  const double dirx = -std::sin(yaw) * cp, dirz = -std::cos(yaw) * cp, diry = std::sin(pitch);
+  // aim = camera forward: Y is -sin(pitch) (matches the look-at, item 5)
+  const double dirx = -std::sin(yaw) * cp, dirz = -std::cos(yaw) * cp, diry = -std::sin(pitch);
   Orb o;
   o.x = state.player.x + dirx * 0.6; o.y = camY + diry * 0.6; o.z = state.player.z + dirz * 0.6;
   o.vx = dirx * dc::orbWeapon::kSpeed; o.vy = diry * dc::orbWeapon::kSpeed; o.vz = dirz * dc::orbWeapon::kSpeed;
@@ -1533,7 +1591,8 @@ void App::_fireFireball() {
   if (active >= dc::orbWeapon::kPoolFireball) return;
   const float yaw = state.player.yaw, pitch = state.player.pitch;
   const double cp = std::cos(pitch);
-  const double dirx = -std::sin(yaw) * cp, dirz = -std::cos(yaw) * cp, diry = std::sin(pitch);
+  // aim = camera forward: Y is -sin(pitch) (matches the look-at, item 5)
+  const double dirx = -std::sin(yaw) * cp, dirz = -std::cos(yaw) * cp, diry = -std::sin(pitch);
   Orb o;
   o.x = state.player.x + dirx * 0.6; o.y = camY + diry * 0.6; o.z = state.player.z + dirz * 0.6;
   o.vx = dirx * dc::orbWeapon::kSpeed; o.vy = diry * dc::orbWeapon::kSpeed; o.vz = dirz * dc::orbWeapon::kSpeed;
@@ -1556,38 +1615,263 @@ void App::orbExplode(const Orb& o) {
 void App::uploadDynamic(std::vector<float>& dyn, std::vector<float>& enem) {
   dyn.clear();
   enem.clear();
+  // 11-float instance: offset(3) scale(3) color(3) yaw(1) pitch(1).
+  // yaw/pitch orient the box (see kLitVert): 0,0 = axis-aligned (world props),
+  // or the camera basis (sword) / travel direction (enemies).
   auto push = [&](float ox, float oy, float oz, float sx, float sy, float sz,
-                  float r, float g, float b) {
-    dyn.insert(dyn.end(), {ox, oy, oz, sx, sy, sz, r, g, b});
+                  float r, float g, float b, float yaw = 0.0f, float pitch = 0.0f) {
+    dyn.insert(dyn.end(), {ox, oy, oz, sx, sy, sz, r, g, b, yaw, pitch});
   };
-  // §12.2 enemy-only push: same 9-float layout, appended to enem for the glow mask
+  // §12.2 enemy-only push: same 11-float layout, appended to enem for the glow mask
   auto epush = [&](float ox, float oy, float oz, float sx, float sy, float sz,
-                   float r, float g, float b) {
-    enem.insert(enem.end(), {ox, oy, oz, sx, sy, sz, r, g, b});
+                   float r, float g, float b, float yaw = 0.0f, float pitch = 0.0f) {
+    enem.insert(enem.end(), {ox, oy, oz, sx, sy, sz, r, g, b, yaw, pitch});
   };
-  // boss (glowing SPECTRAL_COURT accent ~0xaa88ff): pulse while awake
+  // boss (glowing SPECTRAL_COURT accent ~0xaa88ff) — multi-part spectral figure:
+  //      floating crown, head, broad torso, arms, lower robe, pulsing aura ring,
+  //      facing the player. Feet at floor (y≈0.2); parts pulse while awake.
   if (bossReady && !boss.dead) {
-    const float s = 1.6f + 0.15f * (float)std::sin(state.runTime * 6.0);
-    push((float)boss.pos.x, 1.1f, (float)boss.pos.z, s, 2.2f, s, 0.66f, 0.53f, 1.0f);
+    const float bt = (float)std::sin(state.runTime * 6.0);
+    const float bs = 1.0f + 0.1f * bt; // global pulse scale
+    const float bx = (float)boss.pos.x, bz = (float)boss.pos.z;
+    const float byaw = std::atan2((float)state.player.x - bx,
+                                  (float)state.player.z - bz);
+    const float bcy = std::cos(byaw), bsy = std::sin(byaw);
+    auto BL = [&](float px, float py, float pz, float& ox, float& oy, float& oz) {
+      ox = bx + px * bcy + pz * bsy;
+      oy = 0.2f + py;
+      oz = bz - px * bsy + pz * bcy;
+    };
+    // palette (SPECTRAL_COURT ~0xaa88ff core, 0x403862 shadow)
+    const float kR = 0.66f, kG = 0.53f, kB = 1.0f;
+    const float kSR = 0.25f, kSG = 0.18f, kSB = 0.35f; // shadow
+    // aura ring (flat disc, pulsing)
+    {
+      float ox, oy, oz;
+      BL(0, 0.05f, 0, ox, oy, oz);
+      push(ox, oy, oz, 1.7f * bs, 0.08f, 1.7f * bs, kSR, kSG, kSB);
+    }
+    // lower robe (wide, tall)
+    {
+      float ox, oy, oz;
+      BL(0, 0.9f * bs, 0, ox, oy, oz);
+      push(ox, oy, oz, 1.4f * bs, 1.8f * bs, 1.4f * bs, 0.45f, 0.34f, 0.72f);
+    }
+    // torso (broad chest)
+    {
+      float ox, oy, oz;
+      BL(0, 1.9f * bs, 0, ox, oy, oz);
+      push(ox, oy, oz, 1.8f * bs, 1.1f * bs, 1.2f * bs, kR, kG, kB);
+    }
+    // arms (raised, splayed)
+    {
+      float ox, oy, oz;
+      BL(-1.1f * bs, 1.9f * bs, 0.2f, ox, oy, oz);
+      push(ox, oy, oz, 0.3f, 1.1f, 0.3f, 0.5f, 0.38f, 0.8f);
+      BL(1.1f * bs, 1.9f * bs, 0.2f, ox, oy, oz);
+      push(ox, oy, oz, 0.3f, 1.1f, 0.3f, 0.5f, 0.38f, 0.8f);
+    }
+    // head
+    {
+      float ox, oy, oz;
+      BL(0, 2.8f * bs, 0, ox, oy, oz);
+      push(ox, oy, oz, 0.7f * bs, 0.7f * bs, 0.7f * bs, 0.8f, 0.68f, 1.0f);
+    }
+    // floating crown (hovers above head, bobbing)
+    {
+      float ox, oy, oz;
+      const float crownY = 3.4f * bs + 0.15f * std::sin(state.runTime * 3.0);
+      BL(0, crownY, 0, ox, oy, oz);
+      push(ox, oy, oz, 0.9f * bs, 0.18f, 0.9f * bs, 1.0f, 0.85f, 0.4f);
+    }
   } else if (bossReady) {
     push((float)boss.pos.x, 0.4f, (float)boss.pos.z, 1.4f, 0.2f, 1.4f, 0.4f, 0.3f, 0.5f); // corpse
   }
-  // ---- full enemy roster (cubes, emissive spectral) — by type ----
+  // ---- full enemy roster — multi-part spectral figures (head/torso/limbs),
+  //      each part an instanced box; the enemy yaws to face the player.
+  //      Part offsets are given in the enemy's local frame (y up, FRONT = +Z)
+  //      and composed into world here; the per-instance yaw then rotates each
+  //      part's box about its own center. Feet sit at the floor (y≈0.2). ----
   for (const auto& e : skelsys.enemies()) {
     if (e.state == dc::EnemyState::kDead) continue;
-    float r = 0.85f, g = 0.85f, b = 0.8f; // SKELETON bone white (default)
-    float sx = 0.6f, sy = 1.7f, sz = 0.6f, y = 0.85f;
-    if (e.type == "MAGICIAN") { r = 0.7f; g = 0.5f; b = 0.9f; }
-    else if (e.type == "ARMORED") { r = 0.6f; g = 0.62f; b = 0.66f; sx = 0.9f; sy = 1.8f; sz = 0.9f; y = 0.9f; }
-    else if (e.type == "ARCHER") { r = 0.5f; g = 0.8f; b = 0.5f; sx = 0.55f; sz = 0.55f; }
-    else if (e.type == "RAT") { r = 0.6f; g = 0.5f; b = 0.4f; sx = 0.5f; sy = 0.5f; sz = 0.9f; y = 0.25f; }
-    else if (e.type == "BRUTE") { r = 0.7f; g = 0.3f; b = 0.3f; sx = 1.5f; sy = 2.2f; sz = 1.5f; y = 1.1f; }
-    else if (e.type == "WRAITH") { r = 0.7f; g = 0.8f; b = 0.9f; sx = 0.7f; sy = 1.8f; sz = 0.7f;
-                                   y = 1.2f + 0.15f * (float)std::sin(state.runTime * 3.0 + e.pos.x); }
-    else if (e.isBURN) { r = 1.0f; g = 0.4f; b = 0.1f; sx = 1.2f; sy = 1.4f; sz = 1.2f; y = 0.7f; }
-    const float sc = (float)(e.eliteScale * (1.0 + e.hitFlash * 0.3)); // elite + hit-pop
-    push((float)e.pos.x, y, (float)e.pos.z, sx * sc, sy * sc, sz * sc, r, g, b);
-    epush((float)e.pos.x, y, (float)e.pos.z, sx * sc, sy * sc, sz * sc, r, g, b); // §12.2 glow mask
+    float sx = 0.6f, sy = 1.7f, sz = 0.6f; // torso dims (per-branch)
+    const float ex = (float)e.pos.x, ez = (float)e.pos.z;
+    const float yaw = (float)e.facing;
+    const float cyaw = std::cos(yaw), syaw = std::sin(yaw);
+    // local→world (enemy space: y up, front +Z)
+    auto L = [&](float px, float py, float pz, float& ox, float& oy, float& oz) {
+      ox = ex + px * cyaw + pz * syaw;
+      oy = 0.2f + py; // floor slab top
+      oz = ez - px * syaw + pz * cyaw;
+    };
+    // walk bob: feet-driven, per-enemy phase so the pack doesn't move in lockstep
+    const float phase = e.id * 0.7f + (float)e.pos.x * 0.13f;
+    const float bob = 0.05f * std::sin(state.runTime * 7.0f + phase) *
+                      (e.state == dc::EnemyState::kChase ? 1.0f : 0.3f);
+    // attack lunge: torso leans toward the player during windup/swing
+    const float lunge = (e.attackPhase == 1) ? 0.18f : (e.attackPhase == 2 ? 0.3f : 0.0f);
+    float R2, G2, B2; // part color (hit-flash brightens everything)
+    const float hitB = 1.0f + e.hitFlash * 1.5f;
+    auto tint = [&](float cr, float cg, float cb, float& rr, float& gg, float& bb) {
+      rr = std::min(1.0f, cr * hitB); gg = std::min(1.0f, cg * hitB); bb = std::min(1.0f, cb * hitB);
+    };
+    const float sc = (float)(e.eliteScale * (1.0 + e.hitFlash * 0.3));
+    const float f2 = 0.0f; // (unused; keeps lambdas readable)
+    (void)f2;
+    if (e.type == "MAGICIAN") {
+      // robed caster: tall robe (2-part), hood, staff with a floating tip
+      float ox, oy, oz;
+      tint(0.45f, 0.32f, 0.62f, R2, G2, B2); // robe lower
+      L(-lunge * 0.3f, 0.55f, 0.0f, ox, oy, oz);
+      push(ox, oy, oz, 0.5f * sc, 1.1f * sc, 0.5f * sc, R2, G2, B2, yaw);
+      epush(ox, oy, oz, 0.5f * sc, 1.1f * sc, 0.5f * sc, R2, G2, B2, yaw);
+      tint(0.55f, 0.4f, 0.75f, R2, G2, B2); // robe upper + hood
+      L(-lunge * 0.5f, 1.45f + bob, 0.05f, ox, oy, oz);
+      push(ox, oy, oz, 0.42f * sc, 0.7f * sc, 0.42f * sc, R2, G2, B2, yaw);
+      epush(ox, oy, oz, 0.42f * sc, 0.7f * sc, 0.42f * sc, R2, G2, B2, yaw);
+      tint(0.85f, 0.8f, 1.0f, R2, G2, B2); // hood
+      L(-lunge * 0.6f, 1.95f + bob, 0.0f, ox, oy, oz);
+      push(ox, oy, oz, 0.34f * sc, 0.3f * sc, 0.34f * sc, R2, G2, B2, yaw);
+      tint(0.35f, 0.3f, 0.45f, R2, G2, B2); // staff shaft
+      L(0.28f, 1.0f, 0.12f, ox, oy, oz);
+      push(ox, oy, oz, 0.05f, 2.0f * sc, 0.05f, R2, G2, B2, yaw);
+      tint(0.9f, 0.8f, 1.0f, R2, G2, B2); // staff orb (floats, pulses)
+      L(0.28f, 2.1f + 0.05f * std::sin(state.runTime * 3.0f + phase), 0.12f, ox, oy, oz);
+      push(ox, oy, oz, 0.14f, 0.14f, 0.14f, R2, G2, B2, yaw);
+    } else if (e.type == "ARMORED") {
+      // heavy: broad shoulders, helmet with a glowing visor slit
+      sx = 0.9f; sy = 1.8f; sz = 0.9f;
+      float ox, oy, oz;
+      tint(0.45f, 0.47f, 0.52f, R2, G2, B2); // torso
+      L(-lunge * 0.4f, 0.9f, 0.0f, ox, oy, oz);
+      push(ox, oy, oz, sx * sc, 1.0f * sc, sz * sc, R2, G2, B2, yaw);
+      epush(ox, oy, oz, sx * sc, 1.0f * sc, sz * sc, R2, G2, B2, yaw);
+      tint(0.5f, 0.52f, 0.58f, R2, G2, B2); // pauldrons
+      L(-lunge * 0.5f, 1.55f, 0.3f, ox, oy, oz); push(ox, oy, oz, 0.3f * sc, 0.28f * sc, 0.34f * sc, R2, G2, B2, yaw); epush(ox, oy, oz, 0.3f * sc, 0.28f * sc, 0.34f * sc, R2, G2, B2, yaw);
+      L(-lunge * 0.5f, 1.55f, -0.3f, ox, oy, oz); push(ox, oy, oz, 0.3f * sc, 0.28f * sc, 0.34f * sc, R2, G2, B2, yaw); epush(ox, oy, oz, 0.3f * sc, 0.28f * sc, 0.34f * sc, R2, G2, B2, yaw);
+      tint(0.55f, 0.57f, 0.63f, R2, G2, B2); // helmet
+      L(-lunge * 0.55f, 1.95f + bob, 0.05f, ox, oy, oz);
+      push(ox, oy, oz, 0.4f * sc, 0.4f * sc, 0.4f * sc, R2, G2, B2, yaw);
+      epush(ox, oy, oz, 0.4f * sc, 0.4f * sc, 0.4f * sc, R2, G2, B2, yaw);
+      tint(1.0f, 0.45f, 0.2f, R2, G2, B2); // visor slit (emissive)
+      L(-lunge * 0.55f, 1.95f + bob, 0.34f, ox, oy, oz);
+      push(ox, oy, oz, 0.26f * sc, 0.07f * sc, 0.06f, R2, G2, B2, yaw);
+      tint(0.4f, 0.42f, 0.48f, R2, G2, B2); // legs (two)
+      L(-0.15f * sc, 0.35f, -0.1f, ox, oy, oz); push(ox, oy, oz, 0.26f * sc, 0.7f * sc, 0.3f * sc, R2, G2, B2, yaw); epush(ox, oy, oz, 0.26f * sc, 0.7f * sc, 0.3f * sc, R2, G2, B2, yaw);
+      L(0.15f * sc, 0.35f, -0.1f, ox, oy, oz); push(ox, oy, oz, 0.26f * sc, 0.7f * sc, 0.3f * sc, R2, G2, B2, yaw); epush(ox, oy, oz, 0.26f * sc, 0.7f * sc, 0.3f * sc, R2, G2, B2, yaw);
+    } else if (e.type == "ARCHER") {
+      // lean, hooded, a bow slung forward; aims (faces) the player
+      sx = 0.55f; sz = 0.55f;
+      float ox, oy, oz;
+      tint(0.35f, 0.55f, 0.35f, R2, G2, B2); // torso
+      L(-lunge * 0.5f, 0.85f, 0.0f, ox, oy, oz);
+      push(ox, oy, oz, sx * sc, 1.0f * sc, sz * sc, R2, G2, B2, yaw);
+      epush(ox, oy, oz, sx * sc, 1.0f * sc, sz * sc, R2, G2, B2, yaw);
+      tint(0.3f, 0.45f, 0.3f, R2, G2, B2); // hood
+      L(-lunge * 0.6f, 1.65f + bob, 0.0f, ox, oy, oz);
+      push(ox, oy, oz, 0.32f * sc, 0.3f * sc, 0.32f * sc, R2, G2, B2, yaw);
+      epush(ox, oy, oz, 0.32f * sc, 0.3f * sc, 0.32f * sc, R2, G2, B2, yaw);
+      tint(1.0f, 0.7f, 0.4f, R2, G2, B2); // bow (vertical, held forward)
+      L(0.2f, 1.1f, 0.35f, ox, oy, oz);
+      push(ox, oy, oz, 0.05f, 0.8f * sc, 0.05f, R2, G2, B2, yaw);
+      tint(0.3f, 0.4f, 0.25f, R2, G2, B2); // legs
+      L(-0.12f * sc, 0.35f, -0.05f, ox, oy, oz); push(ox, oy, oz, 0.2f * sc, 0.7f * sc, 0.24f * sc, R2, G2, B2, yaw); epush(ox, oy, oz, 0.2f * sc, 0.7f * sc, 0.24f * sc, R2, G2, B2, yaw);
+      L(0.12f * sc, 0.35f, -0.05f, ox, oy, oz); push(ox, oy, oz, 0.2f * sc, 0.7f * sc, 0.24f * sc, R2, G2, B2, yaw); epush(ox, oy, oz, 0.2f * sc, 0.7f * sc, 0.24f * sc, R2, G2, B2, yaw);
+    } else if (e.type == "RAT") {
+      // low crawler: elongated body + head + tail, scurrying (fast bob)
+      sx = 0.5f; sy = 0.5f; sz = 0.9f;
+      float ox, oy, oz;
+      const float rbob = 0.06f * std::sin(state.runTime * 12.0f + phase);
+      tint(0.5f, 0.42f, 0.33f, R2, G2, B2); // body
+      L(0.0f, 0.2f + rbob, -0.15f, ox, oy, oz);
+      push(ox, oy, oz, 0.4f * sc, 0.3f * sc, 0.7f * sc, R2, G2, B2, yaw);
+      epush(ox, oy, oz, 0.4f * sc, 0.3f * sc, 0.7f * sc, R2, G2, B2, yaw);
+      tint(0.55f, 0.47f, 0.38f, R2, G2, B2); // head
+      L(0.0f, 0.22f + rbob, 0.45f, ox, oy, oz);
+      push(ox, oy, oz, 0.26f * sc, 0.22f * sc, 0.3f * sc, R2, G2, B2, yaw);
+      tint(1.0f, 0.4f, 0.5f, R2, G2, B2); // eyes (tiny, emissive)
+      L(0.1f * sc, 0.26f + rbob, 0.58f, ox, oy, oz); push(ox, oy, oz, 0.05f, 0.05f, 0.05f, R2, G2, B2, yaw);
+      L(-0.1f * sc, 0.26f + rbob, 0.58f, ox, oy, oz); push(ox, oy, oz, 0.05f, 0.05f, 0.05f, R2, G2, B2, yaw);
+      tint(0.45f, 0.38f, 0.3f, R2, G2, B2); // tail (trailing)
+      L(0.0f, 0.15f + rbob, -0.6f, ox, oy, oz);
+      push(ox, oy, oz, 0.08f * sc, 0.08f * sc, 0.5f * sc, R2, G2, B2, yaw);
+    } else if (e.type == "BRUTE") {
+      // massive: huge shoulders, two club arms, glowing core
+      sx = 1.5f; sy = 2.2f; sz = 1.5f;
+      float ox, oy, oz;
+      tint(0.55f, 0.22f, 0.22f, R2, G2, B2); // torso
+      L(-lunge * 0.3f, 1.1f, 0.0f, ox, oy, oz);
+      push(ox, oy, oz, sx * sc, 1.4f * sc, sz * sc, R2, G2, B2, yaw);
+      epush(ox, oy, oz, sx * sc, 1.4f * sc, sz * sc, R2, G2, B2, yaw);
+      tint(0.65f, 0.28f, 0.28f, R2, G2, B2); // head (small, buried in muscle)
+      L(-lunge * 0.45f, 2.15f + bob, 0.15f, ox, oy, oz);
+      push(ox, oy, oz, 0.45f * sc, 0.4f * sc, 0.45f * sc, R2, G2, B2, yaw);
+      epush(ox, oy, oz, 0.45f * sc, 0.4f * sc, 0.45f * sc, R2, G2, B2, yaw);
+      tint(1.0f, 0.5f, 0.2f, R2, G2, B2); // eyes
+      L(0.14f * sc, 2.2f + bob, 0.5f, ox, oy, oz); push(ox, oy, oz, 0.09f, 0.09f, 0.09f, R2, G2, B2, yaw);
+      L(-0.14f * sc, 2.2f + bob, 0.5f, ox, oy, oz); push(ox, oy, oz, 0.09f, 0.09f, 0.09f, R2, G2, B2, yaw);
+      tint(0.6f, 0.25f, 0.25f, R2, G2, B2); // club arms (raised during windup)
+      const float armLift = (e.attackPhase == 1) ? 0.5f : 0.0f;
+      L(0.85f * sc, 1.4f + armLift, 0.2f, ox, oy, oz); push(ox, oy, oz, 0.35f * sc, 1.1f * sc, 0.4f * sc, R2, G2, B2, yaw); epush(ox, oy, oz, 0.35f * sc, 1.1f * sc, 0.4f * sc, R2, G2, B2, yaw);
+      L(-0.85f * sc, 1.4f + armLift, 0.2f, ox, oy, oz); push(ox, oy, oz, 0.35f * sc, 1.1f * sc, 0.4f * sc, R2, G2, B2, yaw); epush(ox, oy, oz, 0.35f * sc, 1.1f * sc, 0.4f * sc, R2, G2, B2, yaw);
+      tint(0.5f, 0.2f, 0.2f, R2, G2, B2); // legs (thick)
+      L(-0.4f * sc, 0.45f, -0.1f, ox, oy, oz); push(ox, oy, oz, 0.4f * sc, 0.9f * sc, 0.45f * sc, R2, G2, B2, yaw); epush(ox, oy, oz, 0.4f * sc, 0.9f * sc, 0.45f * sc, R2, G2, B2, yaw);
+      L(0.4f * sc, 0.45f, -0.1f, ox, oy, oz); push(ox, oy, oz, 0.4f * sc, 0.9f * sc, 0.45f * sc, R2, G2, B2, yaw); epush(ox, oy, oz, 0.4f * sc, 0.9f * sc, 0.45f * sc, R2, G2, B2, yaw);
+    } else if (e.type == "WRAITH") {
+      // spectral: no legs — a tapering wisp that hovers and sways
+      sx = 0.7f; sy = 1.8f; sz = 0.7f;
+      const float wy = 1.2f + 0.15f * (float)std::sin(state.runTime * 3.0 + e.pos.x);
+      float ox, oy, oz;
+      tint(0.65f, 0.75f, 0.9f, R2, G2, B2); // lower wisp (taper)
+      L(0.0f, wy - 0.5f, 0.0f, ox, oy, oz);
+      push(ox, oy, oz, 0.5f * sc, 0.9f * sc, 0.5f * sc, R2, G2, B2, yaw);
+      epush(ox, oy, oz, 0.5f * sc, 0.9f * sc, 0.5f * sc, R2, G2, B2, yaw);
+      tint(0.75f, 0.85f, 1.0f, R2, G2, B2); // upper body
+      L(0.0f, wy + 0.2f, 0.05f, ox, oy, oz);
+      push(ox, oy, oz, 0.55f * sc, 0.8f * sc, 0.55f * sc, R2, G2, B2, yaw);
+      epush(ox, oy, oz, 0.55f * sc, 0.8f * sc, 0.55f * sc, R2, G2, B2, yaw);
+      tint(0.9f, 0.95f, 1.0f, R2, G2, B2); // head
+      L(0.0f, wy + 0.85f, 0.1f, ox, oy, oz);
+      push(ox, oy, oz, 0.3f * sc, 0.3f * sc, 0.3f * sc, R2, G2, B2, yaw);
+      tint(1.0f, 1.0f, 1.0f, R2, G2, B2); // eyes (cold white)
+      L(0.1f * sc, wy + 0.88f, 0.32f, ox, oy, oz); push(ox, oy, oz, 0.06f, 0.06f, 0.06f, R2, G2, B2, yaw);
+      L(-0.1f * sc, wy + 0.88f, 0.32f, ox, oy, oz); push(ox, oy, oz, 0.06f, 0.06f, 0.06f, R2, G2, B2, yaw);
+    } else if (e.isBURN) {
+      // BURN: a flame-wreathed husk — body + flickering flame crown
+      sx = 1.2f; sy = 1.4f; sz = 1.2f;
+      float ox, oy, oz;
+      tint(0.7f, 0.28f, 0.12f, R2, G2, B2); // body
+      L(0.0f, 0.7f, 0.0f, ox, oy, oz);
+      push(ox, oy, oz, sx * sc, sy * sc, sz * sc, R2, G2, B2, yaw);
+      epush(ox, oy, oz, sx * sc, sy * sc, sz * sc, R2, G2, B2, yaw);
+      tint(1.0f, 0.6f, 0.15f, R2, G2, B2); // flame crown (flickers)
+      const float fl = 0.1f * std::sin(state.runTime * 9.0f + phase);
+      L(0.0f, 1.6f + fl, 0.0f, ox, oy, oz);
+      push(ox, oy, oz, 0.5f * sc, 0.5f * sc, 0.5f * sc, R2, G2, B2, yaw);
+    } else {
+      // SKELETON (default): skull + ribcage + spine + arms + legs — the classic
+      float ox, oy, oz;
+      tint(0.85f, 0.85f, 0.8f, R2, G2, B2); // ribcage/torso
+      L(-lunge * 0.4f, 0.85f, 0.0f, ox, oy, oz);
+      push(ox, oy, oz, 0.5f * sc, 0.75f * sc, 0.4f * sc, R2, G2, B2, yaw);
+      epush(ox, oy, oz, 0.5f * sc, 0.75f * sc, 0.4f * sc, R2, G2, B2, yaw);
+      tint(0.9f, 0.9f, 0.85f, R2, G2, B2); // skull
+      L(-lunge * 0.55f, 1.55f + bob, 0.05f, ox, oy, oz);
+      push(ox, oy, oz, 0.3f * sc, 0.32f * sc, 0.3f * sc, R2, G2, B2, yaw);
+      epush(ox, oy, oz, 0.3f * sc, 0.32f * sc, 0.3f * sc, R2, G2, B2, yaw);
+      tint(0.3f, 0.7f, 1.0f, R2, G2, B2); // eye sockets (spectral blue)
+      L(0.1f * sc, 1.58f + bob, 0.3f, ox, oy, oz); push(ox, oy, oz, 0.07f, 0.07f, 0.07f, R2, G2, B2, yaw);
+      L(-0.1f * sc, 1.58f + bob, 0.3f, ox, oy, oz); push(ox, oy, oz, 0.07f, 0.07f, 0.07f, R2, G2, B2, yaw);
+      tint(0.8f, 0.8f, 0.75f, R2, G2, B2); // arms (raised when attacking)
+      const float armRaise = (e.attackPhase == 1) ? 0.35f : 0.0f;
+      L(0.35f * sc, 1.15f + armRaise, 0.1f, ox, oy, oz); push(ox, oy, oz, 0.12f * sc, 0.65f * sc, 0.15f * sc, R2, G2, B2, yaw); epush(ox, oy, oz, 0.12f * sc, 0.65f * sc, 0.15f * sc, R2, G2, B2, yaw);
+      L(-0.35f * sc, 1.15f + armRaise, 0.1f, ox, oy, oz); push(ox, oy, oz, 0.12f * sc, 0.65f * sc, 0.15f * sc, R2, G2, B2, yaw); epush(ox, oy, oz, 0.12f * sc, 0.65f * sc, 0.15f * sc, R2, G2, B2, yaw);
+      tint(0.78f, 0.78f, 0.73f, R2, G2, B2); // legs (alternating stride)
+      const float stride = 0.12f * std::sin(state.runTime * 8.0f + phase) *
+                           (e.state == dc::EnemyState::kChase ? 1.0f : 0.0f);
+      L(-0.15f * sc, 0.35f, -0.1f + stride, ox, oy, oz); push(ox, oy, oz, 0.16f * sc, 0.7f * sc, 0.2f * sc, R2, G2, B2, yaw); epush(ox, oy, oz, 0.16f * sc, 0.7f * sc, 0.2f * sc, R2, G2, B2, yaw);
+      L(0.15f * sc, 0.35f, -0.1f - stride, ox, oy, oz); push(ox, oy, oz, 0.16f * sc, 0.7f * sc, 0.2f * sc, R2, G2, B2, yaw); epush(ox, oy, oz, 0.16f * sc, 0.7f * sc, 0.2f * sc, R2, G2, B2, yaw);
+    }
   }
   // enemy projectiles — arrows amber, fireball orbs violet
   for (const auto& p : skelsys.arrows())
@@ -1597,33 +1881,14 @@ void App::uploadDynamic(std::vector<float>& dyn, std::vector<float>& enem) {
   // soul-fire orbs (blue-white)
   for (const auto& o : orbs)
     if (o.alive) push((float)o.x, (float)o.y, (float)o.z, 0.3f, 0.3f, 0.3f, 0.6f, 0.8f, 1.0f);
-  // floating sword (no hands) — a pale blade in front of the camera during a combo
-  if (swordPhase && std::strcmp(swordPhase, "cooldown") != 0) {
-    const float yaw = state.player.yaw;
-    const double fx = -std::sin(yaw), fz = -std::cos(yaw);
-    const double reach = std::strcmp(swordPhase, "swing") == 0 ? 0.7 : 0.45;
-    const double sx = state.player.x + fx * reach, sz = state.player.z + fz * reach;
-    const double sy = camY - 0.15;
-    push((float)sx, (float)sy, (float)sz, 0.06f, 0.9f, 0.06f, 0.85f, 0.9f, 1.0f);
-  } else {
-    // ---- idle / rest pose (JS PlayerSword._poseIdle): the blade is ALWAYS in view,
-    //      low-right of the camera, gentle bob, tier-colored. Previously this was
-    //      only drawn during a combo, so the weapon vanished when not attacking. ----
+  // ---- floating sword (no hands, tier-colored) — ALWAYS follows the view ----
+  // Local frame: blade along −Z (forward), guard across X, grip at origin.
+  // The per-instance (yaw,pitch) = the camera basis, so the sword is rigidly
+  // attached to the player's direction (fixes "keeps its original orientation").
+  // Swing: eased arc around the blade axis (local X) with per-step flavor +
+  // motion-blur trail ghosts + an impact flash at the swing apex.
+  if (screen != Screen::Dead) {
     const float yaw = state.player.yaw, pitch = state.player.pitch;
-    const float cp = std::cos(pitch);
-    const float fwd[3] = { -std::sin(yaw)*cp, -std::sin(pitch), -std::cos(yaw)*cp };
-    // right = normalize(forward x up0); up' = right x forward (right-handed basis)
-    float r[3] = { -fwd[2], 0.0f, fwd[0] };
-    float rl = std::sqrt(r[0]*r[0]+r[1]*r[1]+r[2]*r[2]);
-    if (rl > 1e-5f) { r[0]/=rl; r[1]/=rl; r[2]/=rl; }
-    const float upv[3] = { r[1]*fwd[2]-r[2]*fwd[1], r[2]*fwd[0]-r[0]*fwd[2], r[0]*fwd[1]-r[1]*fwd[0] };
-    const float tIdle = (float)state.runTime;
-    const float bob = std::sin(tIdle * 1.7f) * 0.008f;
-    // camera-space rest offset: x right, y up, -z forward (JS 0.38,-0.42+bob,-0.75)
-    const float ox = 0.38f, oy = -0.42f + bob, oz = -0.75f;
-    const float cx = camX + r[0]*ox + upv[0]*oy + fwd[0]*(-oz);
-    const float cy = camY + r[1]*ox + upv[1]*oy + fwd[1]*(-oz);
-    const float cz = camZ + r[2]*ox + upv[2]*oy + fwd[2]*(-oz);
     // tier blade colors (JS PlayerSword._buildForm)
     float br, bg, bb;
     switch (state.weaponTier) {
@@ -1634,16 +1899,114 @@ void App::uploadDynamic(std::vector<float>& dyn, std::vector<float>& enem) {
       case 4:  br=1.000f; bg=0.914f; bb=0.784f; break; // 0xffe9c8
       default: br=0.624f; bg=0.937f; bb=1.000f; break; // 0x9fefff (T5)
     }
-    // brighten so the headlight reads it clearly (JS sword is self-lit, layer 2)
     br = std::min(1.0f, br*1.5f+0.15f); bg = std::min(1.0f, bg*1.5f+0.15f); bb = std::min(1.0f, bb*1.5f+0.15f);
-    // blade: thin tall box (JS BoxGeometry 0.055 x bladeLen x 0.012)
     const float bladeLen = 0.76f + state.weaponTier * 0.06f * 4.0f;
-    push(cx, cy + 0.14f, cz, 0.055f, bladeLen, 0.012f, br, bg, bb);
-    // guard: short horizontal bar (JS tier>=1 BoxGeometry 0.24 x 0.045 x 0.05)
+    // camera-space rest offset: x right, y up, -z forward (JS 0.38,-0.42,-0.75)
+    const float bob = std::sin((float)state.runTime * 1.7f) * 0.008f;
+    const float ox = 0.38f, oy = -0.42f + bob, oz = -0.75f;
+    // ---- swing timing (mirrors the §9 state machine; def = this step) ----
+    float phi = -0.5f;               // rest pose: blade angled low-right
+    float thrust = 0.0f;            // extra −Z lunge during the swing
+    float trailA = 0.0f;            // trail alpha
+    float flashA = 0.0f;            // impact-flash alpha
+    if (swordPhase && std::strcmp(swordPhase, "cooldown") != 0) {
+      const auto& def = dc::kSwordCombo[std::max(0, swordStep - 1)];
+      const double speedMult = dc::attackSpeedFromSouls(state.collectedOrbs) * buffAttackMult();
+      const double wu = def.windup / speedMult, sw = def.swing / speedMult, rc = def.recover / speedMult;
+      // per-step flavor: 1 = wide rising arc, 2 = low horizontal sweep, 3 = overhead slam
+      const float a0 = swordStep == 1 ? -1.35f : swordStep == 2 ? -1.70f : -1.90f;
+      const float a1 = swordStep == 3 ? 1.55f : 1.20f;
+      const float thA = swordStep == 3 ? 0.42f : swordStep == 1 ? 0.28f : 0.22f;
+      auto easeIO = [](double t) { return t * t * (3.0 - 2.0 * t); }; // smoothstep
+      if (std::strcmp(swordPhase, "windup") == 0) {
+        const float t = std::min(1.0f, (float)(swordPhaseT / wu));
+        phi = -0.5f + (a0 + 0.5f) * t * t;                 // wind back (accelerating)
+        thrust = -0.06f * t;                                // dip back
+      } else if (std::strcmp(swordPhase, "swing") == 0) {
+        const float t = std::min(1.0f, (float)(swordPhaseT / sw));
+        const float e = (float)easeIO(t);
+        phi = a0 + (a1 - a0) * e;                          // the strike
+        thrust = thA * std::sin((float)M_PI * t);         // lunge out then back
+        trailA = 0.55f * std::sin((float)M_PI * t);       // strongest mid-swing
+        if (t > 0.82f) flashA = (t - 0.82f) / 0.18f;       // impact flash at apex
+      } else { // recover
+        const float t = std::min(1.0f, (float)(swordPhaseT / rc));
+        phi = a1 + (-0.5f - a1) * t * t * (3.0f - 2.0f * t); // eased settle
+        thrust = -0.05f * t;
+      }
+    }
+    // swing rotation added to the instance pitch so the (axis-aligned) blade box
+    // visibly rotates about the camera right axis during the strike. 0 at rest.
+    const float swingDelta = phi + 0.5f;
+    // local→world with swing rotation about the blade axis (local X)
+    const float cy_ = std::cos(yaw), sy_ = std::sin(yaw), cp_ = std::cos(pitch), sp_ = std::sin(pitch);
+    const float right[3] = { cy_, 0.0f, -sy_ };
+    const float upv[3] = { -sy_*sp_, cp_, -cy_*sp_ };
+    const float fwd[3] = { -sy_*cp_, -sp_, -cy_*cp_ };
+    const float cph = std::cos(phi), sph = std::sin(phi);
+    // base tilt (three.js Euler(-0.35,-0.35→ -0.25, 0.18) → M=Rx·Ry·Rz) angles the
+    // blade forward/down into the lower-right instead of straight up, so the sword
+    // clearly follows the view (fixes "keeps its original orientation").
+    auto swordW = [&](float lx, float ly, float lz, float& wx, float& wy, float& wz) {
+      // 1) swing rotation about local X
+      const float ly2 = ly * cph - lz * sph;
+      const float lz2 = ly * sph + lz * cph;
+      // 2) base tilt (three.js group rotation) → three.js camera-space
+      const float t1x = 0.953f * lx - 0.173f * ly2 - 0.247f * lz2;
+      const float t1y = 0.252f * lx + 0.909f * ly2 + 0.332f * lz2;
+      const float t1z = 0.167f * lx - 0.379f * ly2 + 0.910f * lz2;
+      // 3) camera-space → world. three.js camera space: x=right, y=up, z=BACKWARD,
+      //    so world = cam + right*px + up*py - fwd*pz (fwd = look dir).
+      //    +thrust moves the sword forward (more -z) during the swing.
+      const float px = ox + t1x, py = oy + t1y, pz = oz + t1z - thrust;
+      wx = camX + right[0]*px + upv[0]*py - fwd[0]*pz;
+      wy = camY + right[1]*px + upv[1]*py - fwd[1]*pz;
+      wz = camZ + right[2]*px + upv[2]*py - fwd[2]*pz;
+    };
+    float hx, hy, hz;
+    swordW(0.0f, 0.0f, 0.0f, hx, hy, hz);
+    // motion-blur trail: ghost blades swept back along the swing arc (pre-swing).
+    // A ghost is the blade drawn at an earlier swing angle gp: rotate the blade
+    // midpoint (0, 0.5L, 0) by gp (NOT the current phi), then base tilt + camera
+    // basis. The ghost box keeps the camera yaw/pitch orientation (like the blade).
+    if (trailA > 0.02f) {
+      auto ghostW = [&](float ang, float& wx, float& wy, float& wz) {
+        const float ca = std::cos(ang), sa = std::sin(ang);
+        const float my = 0.5f * bladeLen;
+        const float ly2 = my * ca;          // midpoint (0, 0.5L, 0) rotated by ang
+        const float lz2 = my * sa;
+        const float t1x = 0.953f * 0.0f - 0.173f * ly2 - 0.247f * lz2;
+        const float t1y = 0.252f * 0.0f + 0.909f * ly2 + 0.332f * lz2;
+        const float t1z = 0.167f * 0.0f - 0.379f * ly2 + 0.910f * lz2;
+        const float px = ox + t1x, py = oy + t1y, pz = oz + t1z;
+        wx = camX + right[0]*px + upv[0]*py - fwd[0]*pz;
+        wy = camY + right[1]*px + upv[1]*py - fwd[1]*pz;
+        wz = camZ + right[2]*px + upv[2]*py - fwd[2]*pz;
+      };
+      for (int g = 1; g <= 3; g++) {
+        const float gp = phi - 0.30f * g;
+        ghostW(gp, hx, hy, hz);
+        const float ga = trailA * (1.0f - g * 0.28f) * 0.5f;
+        push(hx, hy, hz, 0.055f, bladeLen * (1.0f - 0.08f * g), 0.014f,
+             br * ga, bg * ga, bb * ga, yaw, pitch + (gp + 0.5f));
+      }
+    }
+    // impact flash: a bright plane blooming across the swing path (at the blade tip)
+    if (flashA > 0.02f) {
+      swordW(0.0f, 0.95f * bladeLen, 0.0f, hx, hy, hz);
+      push(hx, hy, hz, 0.42f, 0.42f, 0.03f, 1.0f * flashA, 1.0f * flashA, 1.0f * flashA, yaw, pitch + swingDelta);
+    }
+    // grip (origin) — a short handle along local Y (the blade axis)
+    swordW(0.0f, 0.0f, 0.0f, hx, hy, hz);
+    push(hx, hy, hz, 0.05f, 0.26f, 0.05f, 0.173f, 0.125f, 0.094f, yaw, pitch + swingDelta); // 0x2c2018
+    // guard: bar across the blade at the grip top (tier>=1) — a short X bar
+    swordW(0.0f, 0.13f, 0.0f, hx, hy, hz);
     if (state.weaponTier >= 1)
-      push(cx, cy + 0.13f, cz, 0.24f, 0.045f, 0.05f, 0.416f, 0.353f, 0.204f); // 0x6a5a34
-    // grip: small box below the guard (JS Cylinder 0.028/0.032 x 0.26)
-    push(cx, cy, cz, 0.05f, 0.26f, 0.05f, 0.173f, 0.125f, 0.094f); // 0x2c2018
+      push(hx, hy, hz, 0.24f, 0.045f, 0.05f, 0.416f, 0.353f, 0.204f, yaw, pitch + swingDelta); // 0x6a5a34
+    // blade: thin long box along local Y from the grip (JS: y=0.14+L/2, z=0).
+    // The base tilt maps local +Y to up-forward, so the blade points forward-ish.
+    swordW(0.0f, 0.14f + 0.5f * bladeLen, 0.0f, hx, hy, hz);
+    push(hx, hy, hz, 0.055f, bladeLen, 0.012f, br, bg, bb, yaw, pitch + swingDelta);
   }
   // ---- BURN ground-fire patches (visual, §16.4): grow 0.3 s, fade last 1 s ----
   for (const auto& p : firePatches) {
@@ -1683,6 +2046,85 @@ void App::uploadDynamic(std::vector<float>& dyn, std::vector<float>& enem) {
     }
 }
 
+// ---- window-sized render targets: (re)allocated on resize / fullscreen ----
+// The window framebuffer itself is managed by GLFW; everything we render into
+// (scene + bright ping-pong + half-res enemy-glow RTs) must match it. The
+// shadow map is fixed-size (kShadowSize) and lives outside this set.
+void App::recreateWindowTargets() {
+  auto makeColorTex = [&](int tw, int th) {
+    GLuint t = 0;
+    glGenTextures(1, &t);
+    glBindTexture(GL_TEXTURE_2D, t);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, tw, th, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    return t;
+  };
+  auto makeFbo = [&](GLuint tex, bool depth) {
+    GLuint f = 0;
+    glGenFramebuffers(1, &f);
+    glBindFramebuffer(GL_FRAMEBUFFER, f);
+    if (depth) glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, tex, 0);
+    else glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    return f;
+  };
+  const int w = std::max(2, width), h = std::max(2, height);
+
+  // dispose previous window-sized targets (first call: all zero)
+  for (GLuint t : {sceneTex, brightTexA, brightTexB, glowSharpTex, glowBlurATex, glowBlurBTex})
+    if (t) glDeleteTextures(1, &t);
+  for (GLuint f : {sceneFbo, brightFboA, brightFboB, glowSharpFbo, glowBlurAFbo, glowBlurBFbo})
+    if (f) glDeleteFramebuffers(1, &f);
+  if (sceneDepthRb) glDeleteRenderbuffers(1, &sceneDepthRb);
+
+  sceneTex = makeColorTex(w, h);
+  sceneFbo = makeFbo(sceneTex, false);
+  glGenRenderbuffers(1, &sceneDepthRb);
+  glBindRenderbuffer(GL_RENDERBUFFER, sceneDepthRb);
+  glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, w, h);
+  glBindFramebuffer(GL_FRAMEBUFFER, sceneFbo);
+  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, sceneDepthRb);
+  glDrawBuffer(GL_COLOR_ATTACHMENT0);
+  glReadBuffer(GL_COLOR_ATTACHMENT0);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+  brightTexA = makeColorTex(w, h);
+  brightFboA = makeFbo(brightTexA, false);
+  brightTexB = makeColorTex(w, h);
+  brightFboB = makeFbo(brightTexB, false);
+
+  glowW = std::max(2, w / 2);
+  glowH = std::max(2, h / 2);
+  glowSharpTex = makeColorTex(glowW, glowH);
+  glowSharpFbo = makeFbo(glowSharpTex, false);
+  glowBlurATex = makeColorTex(glowW, glowH);
+  glowBlurAFbo = makeFbo(glowBlurATex, false);
+  glowBlurBTex = makeColorTex(glowW, glowH);
+  glowBlurBFbo = makeFbo(glowBlurBTex, false);
+}
+
+// F11: windowed <-> native fullscreen on the primary monitor.
+void App::toggleFullscreen() {
+  if (!window) return;
+  int w = 0, h = 0;
+  glfwGetWindowSize(window, &w, &h);
+  if (!fullscreen) {
+    monitor = glfwGetPrimaryMonitor();
+    if (!monitor) return;
+    const GLFWvidmode* vm = glfwGetVideoMode(monitor);
+    if (!vm) return;
+    glfwSetWindowMonitor(window, monitor, 0, 0, vm->width, vm->height, vm->refreshRate);
+    fullscreen = true;
+  } else {
+    glfwSetWindowMonitor(window, nullptr, 0, 0, w, h, 0);
+    fullscreen = false;
+  }
+}
+
 bool App::init(int w, int h, const char* title, const char* fontPath) {
   if (!glfwInit()) {
     std::fprintf(stderr, "[dc_app] glfwInit failed\n");
@@ -1692,6 +2134,7 @@ bool App::init(int w, int h, const char* title, const char* fontPath) {
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
+  glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE); // resizable to full screen (item 1)
   window = glfwCreateWindow(w, h, title, nullptr, nullptr);
   if (!window) {
     std::fprintf(stderr, "[dc_app] glfw window failed (no display / no GL?)\n");
@@ -1779,42 +2222,8 @@ bool App::init(int w, int h, const char* title, const char* fontPath) {
   progEnemyBlur = linkProgram(compileShader(GL_VERTEX_SHADER, kFullscreenVert),
                               compileShader(GL_FRAGMENT_SHADER, kEnemyBlurFrag));
 
-  // ---- FBOs ----
-  auto makeColorTex = [&](int tw, int th) {
-    GLuint t;
-    glGenTextures(1, &t);
-    glBindTexture(GL_TEXTURE_2D, t);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, tw, th, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    return t;
-  };
-  auto makeFbo = [&](GLuint tex, bool depth) {
-    GLuint f;
-    glGenFramebuffers(1, &f);
-    glBindFramebuffer(GL_FRAMEBUFFER, f);
-    if (depth) glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, tex, 0);
-    else glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
-    glReadBuffer(GL_COLOR_ATTACHMENT0);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    return f;
-  };
-
-  sceneTex = makeColorTex(width, height);
-  sceneFbo = makeFbo(sceneTex, false);
-  {
-    GLuint rb;
-    glGenRenderbuffers(1, &rb);
-    glBindRenderbuffer(GL_RENDERBUFFER, rb);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, width, height);
-    glBindFramebuffer(GL_FRAMEBUFFER, sceneFbo);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rb);
-    glDrawBuffer(GL_COLOR_ATTACHMENT0);
-    glReadBuffer(GL_COLOR_ATTACHMENT0);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-  }
+  // ---- FBOs (window-sized RTs live in recreateWindowTargets so resize/fullscreen
+  //      can reallocate them; shadowTex is fixed-size and created here) ----
   {
     GLuint t;
     glGenTextures(1, &t);
@@ -1827,7 +2236,10 @@ bool App::init(int w, int h, const char* title, const char* fontPath) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     shadowTex = t;
   }
-  shadowFbo = makeFbo(shadowTex, true);
+  shadowFbo = 0;
+  glGenFramebuffers(1, &shadowFbo);
+  glBindFramebuffer(GL_FRAMEBUFFER, shadowFbo);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, shadowTex, 0);
   {
     // depth-only FBO: GL_NONE drawbuffer (a color attach would make it incomplete)
     glBindFramebuffer(GL_FRAMEBUFFER, shadowFbo);
@@ -1835,36 +2247,23 @@ bool App::init(int w, int h, const char* title, const char* fontPath) {
     glReadBuffer(GL_NONE);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
   }
-  brightTexA = makeColorTex(width, height);
-  brightFboA = makeFbo(brightTexA, false);
-  brightTexB = makeColorTex(width, height);
-  brightFboB = makeFbo(brightTexB, false);
-
-  // ---- §12.2 enemy-glow half-res RTs (sharp mask + 2 blur ping-pongs) ----
-  glowW = std::max(2, width / 2);
-  glowH = std::max(2, height / 2);
-  glowSharpTex = makeColorTex(glowW, glowH);
-  glowSharpFbo = makeFbo(glowSharpTex, false);
-  glowBlurATex = makeColorTex(glowW, glowH);
-  glowBlurAFbo = makeFbo(glowBlurATex, false);
-  glowBlurBTex = makeColorTex(glowW, glowH);
-  glowBlurBFbo = makeFbo(glowBlurBTex, false);
+  recreateWindowTargets();
 
   // ---- dynamic entity VBO (boss + full roster + projectiles + props), streamed
   //      each frame. Capacity: ~120 combat (30 mobs + 24 arrows + 16 orbs +
   //      48 soul orbs + boss + sword) + 400 props (breakables/sarcophagi hard
   //      cap) + headroom = 560 instances worst case. ----
-  constexpr int kDynCap = 560;
+  constexpr int kDynCap = 1400;
   glGenBuffers(1, &dynVbo);
   glBindBuffer(GL_ARRAY_BUFFER, dynVbo);
-  { std::vector<float> tmp(kDynCap * 9, 0.0f);
+  { std::vector<float> tmp(kDynCap * 11, 0.0f);
     glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(tmp.size() * sizeof(float)), tmp.data(), GL_DYNAMIC_DRAW); }
   glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-  // §12.2 enemy-only VBO (skeleton roster, 9 floats/inst) for the flat glow mask
+  // §12.2 enemy-only VBO (multi-part bodies, 11 floats/inst) for the flat glow mask
   glGenBuffers(1, &enemVbo);
   glBindBuffer(GL_ARRAY_BUFFER, enemVbo);
-  { std::vector<float> tmp(64 * 9, 0.0f); // <= 64 live mobs
+  { std::vector<float> tmp(320 * 11, 0.0f); // ~30 live mobs × ~10 parts + boss
     glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(tmp.size() * sizeof(float)), tmp.data(), GL_DYNAMIC_DRAW); }
   glBindBuffer(GL_ARRAY_BUFFER, 0);
 
@@ -2103,15 +2502,22 @@ void App::drawGroup(GLuint instVbo, int count, float emissive) {
   glUniform1f(glGetUniformLocation(progScene, "uEmissive"), emissive);
   glBindVertexArray(vao);
   glBindBuffer(GL_ARRAY_BUFFER, instVbo);
+  // 11-float instance: offset(3) scale(3) color(3) yaw(1) pitch(1)
   glEnableVertexAttribArray(2);
-  glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 36, (void*)0);   // offset
+  glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 44, (void*)0);   // offset
   glVertexAttribDivisor(2, 1);
   glEnableVertexAttribArray(3);
-  glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 36, (void*)12);  // scale
+  glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 44, (void*)12);  // scale
   glVertexAttribDivisor(3, 1);
   glEnableVertexAttribArray(4);
-  glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, 36, (void*)24);  // color
+  glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, 44, (void*)24);  // color
   glVertexAttribDivisor(4, 1);
+  glEnableVertexAttribArray(5);
+  glVertexAttribPointer(5, 1, GL_FLOAT, GL_FALSE, 44, (void*)36);  // yaw
+  glVertexAttribDivisor(5, 1);
+  glEnableVertexAttribArray(6);
+  glVertexAttribPointer(6, 1, GL_FLOAT, GL_FALSE, 44, (void*)40);  // pitch
+  glVertexAttribDivisor(6, 1);
   glDrawElementsInstanced(GL_TRIANGLES, vertCount, GL_UNSIGNED_INT, nullptr, count);
   glBindVertexArray(0);
 }
@@ -2162,7 +2568,9 @@ void App::update(double dt, double rawDt) {
   // ---- look (pointer-locked) ----
   if (pointerLocked) {
     state.player.yaw -= mouseDX * sens;
-    state.player.pitch -= mouseDY * sens;
+    // Mouse-up = look UP: GLFW y grows downward, so mouseDY<0 on upward moves;
+    // camera forward Y = -sin(pitch), so pitch must DECREASE to look up.
+    state.player.pitch += mouseDY * sens;
     const double cl = player::kPitchClamp;
     state.player.pitch = std::max(-cl, std::min(cl, state.player.pitch));
   }
@@ -2246,6 +2654,16 @@ void App::trackFps(double dt) {
 }
 
 void App::frame() {
+  // ---- window resize / fullscreen: track the real framebuffer and realloc the
+  //      window-sized render targets (scene/bright/glow) when it changes ----
+  {
+    int fw = 0, fh = 0;
+    glfwGetFramebufferSize(window, &fw, &fh);
+    if (fw > 0 && fh > 0 && (fw != width || fh != height)) {
+      width = fw; height = fh;
+      recreateWindowTargets();
+    }
+  }
   const float aspect = (float)width / (float)height;
   const float eye[3] = { (float)camX, (float)camY, (float)camZ };
   const float yaw = state.player.yaw, pitch = state.player.pitch;
@@ -2269,13 +2687,13 @@ void App::frame() {
     std::vector<float> dyn;
     std::vector<float> enem;
     uploadDynamic(dyn, enem);
-    dynCount = (int)(dyn.size() / 9);
+    dynCount = (int)(dyn.size() / 11);
     if (dynCount > 0) {
       glBindBuffer(GL_ARRAY_BUFFER, dynVbo);
       glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(dyn.size() * sizeof(float)), dyn.data());
       glBindBuffer(GL_ARRAY_BUFFER, 0);
     }
-    enemCount = (int)(enem.size() / 9);
+    enemCount = (int)(enem.size() / 11);
     if (enemCount > 0) {
       glBindBuffer(GL_ARRAY_BUFFER, enemVbo);
       glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(enem.size() * sizeof(float)), enem.data());
@@ -3002,6 +3420,7 @@ static void keyCb(GLFWwindow* w, int key, int, int action, int) {
   else if (key == GLFW_KEY_N) g_app->keyN = down;
   else if (key == GLFW_KEY_Y) g_app->keyY = down;
   else if (key == GLFW_KEY_LEFT_SHIFT || key == GLFW_KEY_RIGHT_SHIFT) g_app->keyShift = down;
+  else if (key == GLFW_KEY_F11 && action == GLFW_PRESS) g_app->toggleFullscreen();
   else if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) glfwSetWindowShouldClose(w, 1);
 }
 static void cursorCb(GLFWwindow*, double x, double y) {

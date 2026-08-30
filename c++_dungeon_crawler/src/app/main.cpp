@@ -148,22 +148,22 @@ layout(location=1) in vec3 aNormal;
 layout(location=2) in vec3 aOffset;
 layout(location=3) in vec3 aScale;
 layout(location=4) in vec3 aColor;
-layout(location=5) in float aYaw;
-layout(location=6) in float aPitch;
+// Per-instance rigid orientation as a full 3x3 (column-major). This is what lets
+// the sword carry its base-tilt + swing as ONE rotation so the grip/guard/blade
+// stay welded into a single rigid piece (a yaw/pitch pair cannot express the
+// roll/swing, which was why the handle and blade read as two separate pieces).
+// Non-sword instances pass the classic yaw/pitch matrix (0,0 = identity).
+layout(location=5) in vec3 aRot0;
+layout(location=6) in vec3 aRot1;
+layout(location=7) in vec3 aRot2;
 uniform mat4 uViewProj;
 uniform mat4 uTorchVP;
 out vec3 vNormal;
 out vec3 vColor;
 out vec3 vWorld;
 out vec4 vTorchPos;
-// Per-instance orientation: yaw about world Y then pitch about the (yawed)
-// right axis — matches the first-person camera basis, so the sword and
-// enemies can face their travel / view direction.
 void main() {
-  float cy = cos(aYaw), sy = sin(aYaw), cp = cos(aPitch), sp = sin(aPitch);
-  mat3 R = mat3(cy, 0.0, -sy,
-                -sy * sp, cp, -cy * sp,
-                 sy * cp, sp,  cy * cp);
+  mat3 R = mat3(aRot0, aRot1, aRot2);
   vec3 wp = R * (aPos * aScale) + aOffset;
   vWorld = wp;
   vNormal = R * aNormal;
@@ -521,9 +521,10 @@ void World::buildInstanceData(const dc::Dungeon& d, std::vector<float>& floorIns
     for (int x = 0; x < d.gridSize; x++) {
       if (d.grid[z][x] == dc::Cell::kEmpty) continue;
       const float wx = (float)(x * d.cellSize), wz = (float)(z * d.cellSize);
-      // floor + ceiling (thin slabs, one instance each) — 11 floats (yaw/pitch 0)
-      floorInst.insert(floorInst.end(), {wx, 0.1f, wz, cs, 0.2f, cs, 0, 0, 0, 0, 0});
-      ceilInst.insert(ceilInst.end(), {wx, H - 0.1f, wz, cs, 0.2f, cs, 0, 0, 0, 0, 0});
+      // floor + ceiling (thin slabs, one instance each) — 18 floats: offset(3) scale(3)
+      // color(3) + identity 3x3 (axis-aligned, no per-instance rotation).
+      floorInst.insert(floorInst.end(), {wx, 0.1f, wz, cs, 0.2f, cs, 0, 0, 0, 1,0,0, 0,1,0, 0,0,1});
+      ceilInst.insert(ceilInst.end(), {wx, H - 0.1f, wz, cs, 0.2f, cs, 0, 0, 0, 1,0,0, 0,1,0, 0,0,1});
       // exposed/boundary edges → walls (same logic as WorldBuilder)
       static const int kDirX[4] = {1, -1, 0, 0};
       static const int kDirZ[4] = {0, 0, 1, -1};
@@ -534,9 +535,9 @@ void World::buildInstanceData(const dc::Dungeon& d, std::vector<float>& floorIns
         if (!oob && d.grid[nz][nx] != dc::Cell::kEmpty) continue;
         const float ex = wx + (float)(dx * d.cellSize) / 2.0f, ez = wz + (float)(dz * d.cellSize) / 2.0f;
         if (dz != 0) { // N/S wall: spans x, thin in z
-          wallH.insert(wallH.end(), {ex, H / 2.0f, ez, cs, H, wt, 0, 0, 0, 0, 0});
+          wallH.insert(wallH.end(), {ex, H / 2.0f, ez, cs, H, wt, 0, 0, 0, 1,0,0, 0,1,0, 0,0,1});
         } else { // E/W wall: spans z, thin in x
-          wallE.insert(wallE.end(), {ex, H / 2.0f, ez, wt, H, cs, 0, 0, 0, 0, 0});
+          wallE.insert(wallE.end(), {ex, H / 2.0f, ez, wt, H, cs, 0, 0, 0, 1,0,0, 0,1,0, 0,0,1});
         }
       }
     }
@@ -549,13 +550,13 @@ void World::upload(const dc::Dungeon& d, const float cellCol[3], const float wal
   collision = buildCollisionBoxes(d);
   std::vector<float> floorInst, ceilInst, wallH, wallE;
   buildInstanceData(d, floorInst, ceilInst, wallH, wallE);
-  // stamp colors (11-float stride: offset,scale,color,yaw,pitch)
+  // stamp colors (18-float stride: offset,scale,color,rot3x3)
   auto stamp = [&](std::vector<float>& v, const float c[3]) {
-    for (size_t i = 0; i < v.size(); i += 11) { v[i + 6] = c[0]; v[i + 7] = c[1]; v[i + 8] = c[2]; }
+    for (size_t i = 0; i < v.size(); i += 18) { v[i + 6] = c[0]; v[i + 7] = c[1]; v[i + 8] = c[2]; }
   };
   stamp(floorInst, cellCol); stamp(ceilInst, ceilCol); stamp(wallH, wallCol); stamp(wallE, wallCol);
-  nFloor = (int)(floorInst.size() / 11); nCeil = (int)(ceilInst.size() / 11);
-  nWallH = (int)(wallH.size() / 11); nWallE = (int)(wallE.size() / 11);
+  nFloor = (int)(floorInst.size() / 18); nCeil = (int)(ceilInst.size() / 18);
+  nWallH = (int)(wallH.size() / 18); nWallE = (int)(wallE.size() / 18);
   // Floor debris — JS WorldBuilder: ONE InstancedMesh of pebbles, floor(cells * 0.2).
   // Purely cosmetic (no shadow, own budget track); degraded mode sheds the tail
   // instances at draw time (count halved, spec §22 rule 1).
@@ -577,10 +578,10 @@ void World::upload(const dc::Dungeon& d, const float cellCol[3], const float wal
       const float wz = (float)(cz * d.cellSize) +
                        ((float)drng.next() - 0.5f) * (float)d.cellSize * 0.7f;
       const float wy = 0.2f + 0.5f * sy; // sit on the floor slab (top y=0.2)
-      debrisInst.insert(debrisInst.end(), {wx, wy, wz, s, sy, s, 0.333f, 0.314f, 0.282f, 0, 0}); // 0x555048
+      debrisInst.insert(debrisInst.end(), {wx, wy, wz, s, sy, s, 0.333f, 0.314f, 0.282f, 1,0,0, 0,1,0, 0,0,1}); // 0x555048 + identity rot
     }
   }
-  nDebris = (int)(debrisInst.size() / 11);
+  nDebris = (int)(debrisInst.size() / 18);
   auto mkVbo = [&](const std::vector<float>& v) -> GLuint {
     GLuint b = 0;
     glGenBuffers(1, &b);
@@ -709,7 +710,7 @@ struct App {
   bool keyW = false, keyS = false, keyA = false, keyD = false, keyShift = false;
   bool keyLMB = false, keyRMB = false;
   bool keyE = false;
-  bool keyN = false, keyY = false; // title / death bookends
+  bool keyN = false, keyY = false, keyL = false; // title / death bookends + Load
   double mouseDX = 0, mouseDY = 0;
   bool pointerLocked = false;
 
@@ -777,7 +778,9 @@ struct App {
   bool saveWritten = false; // save-for-later already written at death
   enum class Screen { Title, Play, Dead };
   Screen screen = Screen::Play;
-  bool prevN = false, prevY = false;
+  bool prevN = false, prevY = false, prevL = false;
+  const char* deathReason = "dead"; // "dead" (killed) | "time" (timer ran out)
+  std::optional<dc::GameState::Save> savedRun; // save-for-later available (Load [L])
 
   // ---- adaptive performance: 30 fps floor + degraded mode (JS _trackFps) ----
   // Rolling ~3 s (90-frame) fps window. Sustained <30 fps for >6 s → degraded
@@ -879,6 +882,8 @@ struct App {
   void drawOverlay(float r, float g, float b, float a);
   void drawHud();
   void _endRun(const char* reason);
+  void loadRun();             // Load [L]: restore the save-for-later (full-health level)
+  bool _readSaveFile();       // load save.json into `savedRun` (true if present)
   void startRun(int seedToUse);
   ~App();
 };
@@ -1615,17 +1620,35 @@ void App::orbExplode(const Orb& o) {
 void App::uploadDynamic(std::vector<float>& dyn, std::vector<float>& enem) {
   dyn.clear();
   enem.clear();
-  // 11-float instance: offset(3) scale(3) color(3) yaw(1) pitch(1).
-  // yaw/pitch orient the box (see kLitVert): 0,0 = axis-aligned (world props),
-  // or the camera basis (sword) / travel direction (enemies).
+  // 18-float instance: offset(3) scale(3) color(3) rot(3x3, column-major).
+  // rot orients the box (see kLitVert). push() builds rot from the classic
+  // yaw/pitch (identical to the old shader); pushM() takes a full 3x3 so the
+  // sword can carry its base-tilt + swing as ONE rigid rotation. 0,0 = identity.
+  auto yawPitchMat = [](float yaw, float pitch) {
+    const float cy = std::cos(yaw), sy = std::sin(yaw), cp = std::cos(pitch), sp = std::sin(pitch);
+    return std::array<float, 9>{
+        cy, 0.0f, -sy,
+        -sy * sp, cp, -cy * sp,
+        sy * cp, sp, cy * cp};
+  };
   auto push = [&](float ox, float oy, float oz, float sx, float sy, float sz,
                   float r, float g, float b, float yaw = 0.0f, float pitch = 0.0f) {
-    dyn.insert(dyn.end(), {ox, oy, oz, sx, sy, sz, r, g, b, yaw, pitch});
+    const auto m = yawPitchMat(yaw, pitch);
+    dyn.insert(dyn.end(), {ox, oy, oz, sx, sy, sz, r, g, b});
+    dyn.insert(dyn.end(), m.begin(), m.end());
   };
-  // §12.2 enemy-only push: same 11-float layout, appended to enem for the glow mask
+  // full-matrix push (sword): m is a column-major 3x3 (9 floats).
+  auto pushM = [&](float ox, float oy, float oz, float sx, float sy, float sz,
+                   float r, float g, float b, const float m[9]) {
+    dyn.insert(dyn.end(), {ox, oy, oz, sx, sy, sz, r, g, b});
+    dyn.insert(dyn.end(), m, m + 9);
+  };
+  // §12.2 enemy-only push: same 18-float layout, appended to enem for the glow mask
   auto epush = [&](float ox, float oy, float oz, float sx, float sy, float sz,
                    float r, float g, float b, float yaw = 0.0f, float pitch = 0.0f) {
-    enem.insert(enem.end(), {ox, oy, oz, sx, sy, sz, r, g, b, yaw, pitch});
+    const auto m = yawPitchMat(yaw, pitch);
+    enem.insert(enem.end(), {ox, oy, oz, sx, sy, sz, r, g, b});
+    enem.insert(enem.end(), m.begin(), m.end());
   };
   // boss (glowing SPECTRAL_COURT accent ~0xaa88ff) — multi-part spectral figure:
   //      floating crown, head, broad torso, arms, lower robe, pulsing aura ring,
@@ -1935,22 +1958,23 @@ void App::uploadDynamic(std::vector<float>& dyn, std::vector<float>& enem) {
         thrust = -0.05f * t;
       }
     }
-    // swing rotation added to the instance pitch so the (axis-aligned) blade box
-    // visibly rotates about the camera right axis during the strike. 0 at rest.
-    const float swingDelta = phi + 0.5f;
     // local→world with swing rotation about the blade axis (local X)
     const float cy_ = std::cos(yaw), sy_ = std::sin(yaw), cp_ = std::cos(pitch), sp_ = std::sin(pitch);
     const float right[3] = { cy_, 0.0f, -sy_ };
     const float upv[3] = { -sy_*sp_, cp_, -cy_*sp_ };
     const float fwd[3] = { -sy_*cp_, -sp_, -cy_*cp_ };
-    const float cph = std::cos(phi), sph = std::sin(phi);
-    // base tilt (three.js Euler(-0.35,-0.35→ -0.25, 0.18) → M=Rx·Ry·Rz) angles the
+    // base tilt (three.js Euler(-0.35,-0.25, 0.18) → M=Rx·Ry·Rz) angles the
     // blade forward/down into the lower-right instead of straight up, so the sword
     // clearly follows the view (fixes "keeps its original orientation").
-    auto swordW = [&](float lx, float ly, float lz, float& wx, float& wy, float& wz) {
+    // ang = swing angle this point is rotated through (phi for the live sword,
+    // gp for a trail ghost). Every part is transformed through THIS one rigid
+    // rotation, so grip/guard/blade stay welded into a single piece.
+    auto swordW = [&](float lx, float ly, float lz, float& wx, float& wy, float& wz,
+                      float ang) {
       // 1) swing rotation about local X
-      const float ly2 = ly * cph - lz * sph;
-      const float lz2 = ly * sph + lz * cph;
+      const float ca = std::cos(ang), sa = std::sin(ang);
+      const float ly2 = ly * ca - lz * sa;
+      const float lz2 = ly * sa + lz * ca;
       // 2) base tilt (three.js group rotation) → three.js camera-space
       const float t1x = 0.953f * lx - 0.173f * ly2 - 0.247f * lz2;
       const float t1y = 0.252f * lx + 0.909f * ly2 + 0.332f * lz2;
@@ -1963,50 +1987,98 @@ void App::uploadDynamic(std::vector<float>& dyn, std::vector<float>& enem) {
       wy = camY + right[1]*px + upv[1]*py - fwd[1]*pz;
       wz = camZ + right[2]*px + upv[2]*py - fwd[2]*pz;
     };
-    float hx, hy, hz;
-    swordW(0.0f, 0.0f, 0.0f, hx, hy, hz);
-    // motion-blur trail: ghost blades swept back along the swing arc (pre-swing).
-    // A ghost is the blade drawn at an earlier swing angle gp: rotate the blade
-    // midpoint (0, 0.5L, 0) by gp (NOT the current phi), then base tilt + camera
-    // basis. The ghost box keeps the camera yaw/pitch orientation (like the blade).
-    if (trailA > 0.02f) {
-      auto ghostW = [&](float ang, float& wx, float& wy, float& wz) {
-        const float ca = std::cos(ang), sa = std::sin(ang);
-        const float my = 0.5f * bladeLen;
-        const float ly2 = my * ca;          // midpoint (0, 0.5L, 0) rotated by ang
-        const float lz2 = my * sa;
-        const float t1x = 0.953f * 0.0f - 0.173f * ly2 - 0.247f * lz2;
-        const float t1y = 0.252f * 0.0f + 0.909f * ly2 + 0.332f * lz2;
-        const float t1z = 0.167f * 0.0f - 0.379f * ly2 + 0.910f * lz2;
-        const float px = ox + t1x, py = oy + t1y, pz = oz + t1z;
-        wx = camX + right[0]*px + upv[0]*py - fwd[0]*pz;
-        wy = camY + right[1]*px + upv[1]*py - fwd[1]*pz;
-        wz = camZ + right[2]*px + upv[2]*py - fwd[2]*pz;
+    // Full rigid WORLD rotation of the sword group for swing angle ang:
+    //   R = Ccam * BaseTilt * SwingX(ang)   (column-major 3x3)
+    // Every part (grip / guard / blade, the live sword AND each trail ghost) is
+    // oriented by this SAME matrix, so the handle, guard and blade stay welded
+    // into ONE piece and the whole sword swings as a single rigid group — exactly
+    // the JS formGroup (position + rotation set once; the swing only rotates it).
+    auto swordRot = [&](float ang) -> std::array<float, 9> {
+      const float ca = std::cos(ang), sa = std::sin(ang);
+      // SwingX(ang) — MUST match swordW's (ly2,lz2)=(ly*ca-lz*sa, ly*sa+lz*ca),
+      // i.e. column-major {1,0,0 | 0,ca,sa | 0,-sa,ca}. (A {0,ca,-sa | 0,sa,ca}
+      // layout is the transpose = rotation by -ang, which desyncs the sword's
+      // orientation from its position and kinks the grip off the blade axis.)
+      float Sw[9] = {1,0,0,  0,ca,sa,  0,-sa,ca};    // SwingX(ang), col-major
+      float BT[9] = {0.953f,0.252f,0.167f,  -0.173f,0.909f,-0.379f,  -0.247f,0.332f,0.910f}; // BaseTilt
+      float CC[9] = { right[0],right[1],right[2],  upv[0],upv[1],upv[2],  -fwd[0],-fwd[1],-fwd[2] }; // Ccam
+      auto mul = [](const float A[9], const float B[9], float O[9]) {
+        for (int c = 0; c < 3; c++)
+          for (int i = 0; i < 3; i++) {
+            float s = 0; for (int k = 0; k < 3; k++) s += A[k*3+i] * B[c*3+k];
+            O[c*3+i] = s;
+          }
       };
+      float M[9], R[9];
+      mul(BT, Sw, M);   // BaseTilt * SwingX
+      mul(CC, M, R);    // Ccam * (BaseTilt * SwingX)
+      return std::array<float,9>{R[0],R[1],R[2],R[3],R[4],R[5],R[6],R[7],R[8]};
+    };
+    float hx, hy, hz;
+    swordW(0.0f, 0.0f, 0.0f, hx, hy, hz, phi);
+    // motion-blur trail: ghost blades swept back along the swing arc (pre-swing).
+    // A ghost is the blade drawn at an earlier swing angle gp (NOT the current
+    // phi): the SAME rigid swordW transform with ang=gp, so the ghost blade is
+    // exactly where the blade WAS along the arc.
+    if (trailA > 0.02f) {
       for (int g = 1; g <= 3; g++) {
         const float gp = phi - 0.30f * g;
-        ghostW(gp, hx, hy, hz);
+        swordW(0.0f, 0.14f + 0.5f * bladeLen, 0.0f, hx, hy, hz, gp);
         const float ga = trailA * (1.0f - g * 0.28f) * 0.5f;
-        push(hx, hy, hz, 0.055f, bladeLen * (1.0f - 0.08f * g), 0.014f,
-             br * ga, bg * ga, bb * ga, yaw, pitch + (gp + 0.5f));
+        pushM(hx, hy, hz, 0.055f, bladeLen * (1.0f - 0.08f * g), 0.014f,
+              br * ga, bg * ga, bb * ga, swordRot(gp).data());
       }
     }
     // impact flash: a bright plane blooming across the swing path (at the blade tip)
     if (flashA > 0.02f) {
-      swordW(0.0f, 0.95f * bladeLen, 0.0f, hx, hy, hz);
-      push(hx, hy, hz, 0.42f, 0.42f, 0.03f, 1.0f * flashA, 1.0f * flashA, 1.0f * flashA, yaw, pitch + swingDelta);
+      swordW(0.0f, 0.95f * bladeLen, 0.0f, hx, hy, hz, phi);
+      pushM(hx, hy, hz, 0.42f, 0.42f, 0.03f, 1.0f * flashA, 1.0f * flashA, 1.0f * flashA, swordRot(phi).data());
     }
     // grip (origin) — a short handle along local Y (the blade axis)
-    swordW(0.0f, 0.0f, 0.0f, hx, hy, hz);
-    push(hx, hy, hz, 0.05f, 0.26f, 0.05f, 0.173f, 0.125f, 0.094f, yaw, pitch + swingDelta); // 0x2c2018
+    swordW(0.0f, 0.0f, 0.0f, hx, hy, hz, phi);
+    pushM(hx, hy, hz, 0.05f, 0.26f, 0.05f, 0.173f, 0.125f, 0.094f, swordRot(phi).data()); // 0x2c2018 grip
     // guard: bar across the blade at the grip top (tier>=1) — a short X bar
-    swordW(0.0f, 0.13f, 0.0f, hx, hy, hz);
+    swordW(0.0f, 0.13f, 0.0f, hx, hy, hz, phi);
     if (state.weaponTier >= 1)
-      push(hx, hy, hz, 0.24f, 0.045f, 0.05f, 0.416f, 0.353f, 0.204f, yaw, pitch + swingDelta); // 0x6a5a34
+      pushM(hx, hy, hz, 0.24f, 0.045f, 0.05f, 0.416f, 0.353f, 0.204f, swordRot(phi).data()); // 0x6a5a34
     // blade: thin long box along local Y from the grip (JS: y=0.14+L/2, z=0).
     // The base tilt maps local +Y to up-forward, so the blade points forward-ish.
-    swordW(0.0f, 0.14f + 0.5f * bladeLen, 0.0f, hx, hy, hz);
-    push(hx, hy, hz, 0.055f, bladeLen, 0.012f, br, bg, bb, yaw, pitch + swingDelta);
+    swordW(0.0f, 0.14f + 0.5f * bladeLen, 0.0f, hx, hy, hz, phi);
+    pushM(hx, hy, hz, 0.055f, bladeLen, 0.012f, br, bg, bb, swordRot(phi).data());
+  }
+  // ---- start/exit markers (§12.1/§22): make the spawn + the exit portal findable ----
+  // start = green ring at the entrance; exit = golden ring + a tall beam at the exit
+  // cell. The beam is the long-range landmark (reads across the whole room); the ring
+  // is the on-ground marker. The exit pulses while the portal is OPEN (E to descend),
+  // and dims to a dim gold while SEALEd (boss level, until the lord falls) so a sealed
+  // portal is still findable but clearly distinct.
+  {
+    const double cs = world.dungeon.cellSize;
+    const float t = (float)state.runTime;
+    // START (entrance) — green ring + a short pulsing pillar. The ring sits at the
+    // player's feet at spawn (under the camera), so the pillar is the visible
+    // landmark: a short green column reads as "you started here" even from
+    // eye level, and it pulses so it catches the eye.
+    if (world.dungeon.entranceCell) {
+      const float ex_ = (float)(world.dungeon.entranceCell->x * cs);
+      const float ez_ = (float)(world.dungeon.entranceCell->z * cs);
+      const float sp = 0.6f + 0.4f * (0.5f + 0.5f * std::sin(t * 2.5f));
+      push(ex_, 0.10f, ez_, 2.0f, 0.05f, 2.0f, 0.22f * sp, 1.0f * sp, 0.40f * sp); // ring (flat)
+      push(ex_, 0.20f, ez_, 1.2f, 0.10f, 1.2f, 0.15f * sp, 0.7f * sp, 0.28f * sp);   // inner glow
+      push(ex_, 0.8f, ez_, 0.22f, 1.6f, 0.22f, 0.25f * sp, 1.0f * sp, 0.45f * sp);   // short pillar
+    }
+    // EXIT (portal) — golden ring + vertical beam. Pulse while open, dim when sealed.
+    if (world.dungeon.exitCell) {
+      const float ex_ = (float)(world.dungeon.exitCell->x * cs);
+      const float ez_ = (float)(world.dungeon.exitCell->z * cs);
+      const float open = bossPortalOpen ? 1.0f : 0.25f;
+      const float pulse = 0.6f + 0.4f * (0.5f + 0.5f * std::sin(t * 3.0f)) * open;
+      const float gr = 1.0f * pulse * open + 0.15f; // golden
+      push(ex_, 0.10f, ez_, 2.2f, 0.06f, 2.2f, gr, 0.85f * pulse, 0.1f * pulse); // ring
+      push(ex_, 0.5f, ez_, 0.28f, 0.6f, 0.28f, gr, 0.85f * pulse, 0.1f * pulse);  // hub
+      // tall beam: the landmark visible from across the room
+      push(ex_, 6.0f, ez_, 0.30f, 10.0f, 0.30f, gr * 0.9f, 0.80f * pulse, 0.12f * pulse);
+    }
   }
   // ---- BURN ground-fire patches (visual, §16.4): grow 0.3 s, fade last 1 s ----
   for (const auto& p : firePatches) {
@@ -2502,22 +2574,26 @@ void App::drawGroup(GLuint instVbo, int count, float emissive) {
   glUniform1f(glGetUniformLocation(progScene, "uEmissive"), emissive);
   glBindVertexArray(vao);
   glBindBuffer(GL_ARRAY_BUFFER, instVbo);
-  // 11-float instance: offset(3) scale(3) color(3) yaw(1) pitch(1)
+  // 18-float instance: offset(3) scale(3) color(3) rot(3x3) — stride 72 bytes
   glEnableVertexAttribArray(2);
-  glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 44, (void*)0);   // offset
+  glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 72, (void*)0);   // offset
   glVertexAttribDivisor(2, 1);
   glEnableVertexAttribArray(3);
-  glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 44, (void*)12);  // scale
+  glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 72, (void*)12);  // scale
   glVertexAttribDivisor(3, 1);
   glEnableVertexAttribArray(4);
-  glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, 44, (void*)24);  // color
+  glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, 72, (void*)24);  // color
   glVertexAttribDivisor(4, 1);
+  // rot 3x3, column-major: cols at offsets 36/48/60 (locations 5/6/7)
   glEnableVertexAttribArray(5);
-  glVertexAttribPointer(5, 1, GL_FLOAT, GL_FALSE, 44, (void*)36);  // yaw
+  glVertexAttribPointer(5, 3, GL_FLOAT, GL_FALSE, 72, (void*)36);  // rot col0
   glVertexAttribDivisor(5, 1);
   glEnableVertexAttribArray(6);
-  glVertexAttribPointer(6, 1, GL_FLOAT, GL_FALSE, 44, (void*)40);  // pitch
+  glVertexAttribPointer(6, 3, GL_FLOAT, GL_FALSE, 72, (void*)48);  // rot col1
   glVertexAttribDivisor(6, 1);
+  glEnableVertexAttribArray(7);
+  glVertexAttribPointer(7, 3, GL_FLOAT, GL_FALSE, 72, (void*)60);  // rot col2
+  glVertexAttribDivisor(7, 1);
   glDrawElementsInstanced(GL_TRIANGLES, vertCount, GL_UNSIGNED_INT, nullptr, count);
   glBindVertexArray(0);
 }
@@ -2549,18 +2625,20 @@ void App::update(double dt, double rawDt) {
   // ---- title / death bookends (sim frozen, screen keys only) ----
   if (screen == Screen::Title) {
     if (keyN && !prevN) startRun(seed);
+    if (keyL && !prevL) loadRun();
     if (screen == Screen::Title && keyLMB && !prevTitleLMB) startRun(seed); // "New Game" button (mouse)
     prevTitleLMB = keyLMB;
-    prevN = keyN; prevY = keyY;
+    prevN = keyN; prevY = keyY; prevL = keyL;
     return;
   }
   if (screen == Screen::Dead) {
     if (keyN && !prevN) startRun((int)(rng.next() * 2147483647));
     else if (keyY && !prevY) { state.ngPlus += 1; startRun((int)(rng.next() * 2147483647)); }
-    prevN = keyN; prevY = keyY;
+    else if (keyL && !prevL) loadRun();
+    prevN = keyN; prevY = keyY; prevL = keyL;
     return;
   }
-  prevN = keyN; prevY = keyY;
+  prevN = keyN; prevY = keyY; prevL = keyL;
 
   // hit-stop: freeze the whole sim (movement + entities + combat) for kHitStop
   if (hitStop > 0) { hitStop -= rawDt; mouseDX = mouseDY = 0; return; }
@@ -2630,6 +2708,13 @@ void App::update(double dt, double rawDt) {
   state.levelTime += dt;
   state.runTime += dt;
   if (state.safeSpawn > 0) state.safeSpawn -= rawDt;
+  // 180 s per level: run out → the run ends (reason "time"; §2/§24 "The
+  // darkness consumes you"). Fires once, even on the title/first frames.
+  if (state.levelTime >= dc::kLevelTimeLimit && screen == Screen::Play) {
+    screen = Screen::Dead;
+    deathReason = "time";
+    _endRun("time");
+  }
 
   // ---- exit portal: in the exit room + portal open + E → descend ----
   _checkExitRoom();
@@ -2687,13 +2772,13 @@ void App::frame() {
     std::vector<float> dyn;
     std::vector<float> enem;
     uploadDynamic(dyn, enem);
-    dynCount = (int)(dyn.size() / 11);
+    dynCount = (int)(dyn.size() / 18);
     if (dynCount > 0) {
       glBindBuffer(GL_ARRAY_BUFFER, dynVbo);
       glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(dyn.size() * sizeof(float)), dyn.data());
       glBindBuffer(GL_ARRAY_BUFFER, 0);
     }
-    enemCount = (int)(enem.size() / 11);
+    enemCount = (int)(enem.size() / 18);
     if (enemCount > 0) {
       glBindBuffer(GL_ARRAY_BUFFER, enemVbo);
       glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(enem.size() * sizeof(float)), enem.data());
@@ -2970,8 +3055,14 @@ void App::frame() {
       drawTextOutline(v, cx - lineW(s, 0.9f) / 2, cy + 110, 0.9f, sub, s);
       const char* n = "New Game  [N]";
       drawTextOutline(v, cx - lineW(n, 1.2f) / 2, cy + 200, 1.2f, hint, n);
+      if (savedRun) {
+        const char* l = "Continue  [L]";
+        drawTextOutline(v, cx - lineW(l, 1.2f) / 2, cy + 250, 1.2f, hint, l);
+      }
     } else {
-      const char* t = "The dead claim you";
+      // §24 death titles: killed vs time-out.
+      const char* t = (std::strcmp(deathReason, "time") == 0)
+                         ? "The darkness consumes you" : "The dead claim you";
       drawTextOutline(v, cx - lineW(t, 2.4f) / 2, cy, 2.4f, red, t);
       char buf[160];
       std::snprintf(buf, sizeof(buf), "Level %d   Souls %d   Time %ds",
@@ -2979,6 +3070,10 @@ void App::frame() {
       drawTextOutline(v, cx - lineW(buf, 1.0f) / 2, cy + 90, 1.0f, stat, buf);
       const char* n = "[N] Restart   [Y] New Game+";
       drawTextOutline(v, cx - lineW(n, 1.2f) / 2, cy + 180, 1.2f, hint, n);
+      if (savedRun) {
+        const char* l = "Continue  [L]";
+        drawTextOutline(v, cx - lineW(l, 1.2f) / 2, cy + 230, 1.2f, hint, l);
+      }
     }
     drawText(v);
   }
@@ -3364,17 +3459,10 @@ void App::drawHud() {
 }
 
 void App::_endRun(const char* reason) {
-  (void)reason;
-  if (!leaderboard) return;
-  dc::ScoreEntry e;
-  e.level = state.level;
-  e.time = state.runTime;
-  e.orbs = state.collectedOrbs;
-  e.ngPlus = state.ngPlus;
-  e.date = (std::int64_t)(std::time(nullptr) * 1000);
-  leaderboard->submit(e);
+  deathReason = reason ? reason : "dead";
   // save-for-later (JS writes this at death; Load restores a full-health level)
   const auto sv = state.toSave();
+  savedRun = sv; // available for Continue [L] on the death screen
   std::string j = std::string("{\"level\":") + std::to_string(sv.level) +
                  ",\"runTime\":" + std::to_string(sv.runTime) +
                  ",\"collectedOrbs\":" + std::to_string(sv.collectedOrbs) +
@@ -3385,8 +3473,72 @@ void App::_endRun(const char* reason) {
                  ",\"health\":" + std::to_string(sv.health) + "}";
   FILE* f = fopen(saveFile.c_str(), "w");
   if (f) { std::fputs(j.c_str(), f); std::fclose(f); saveWritten = true; }
-  std::fprintf(stderr, "[dc_app] run ended — leaderboard rank #%d, save written (%s)\n",
-               leaderboard->rankOf(e), saveFile.c_str());
+  if (!leaderboard) return;
+  dc::ScoreEntry e;
+  e.level = state.level;
+  e.time = state.runTime;
+  e.orbs = state.collectedOrbs;
+  e.ngPlus = state.ngPlus;
+  e.date = (std::int64_t)(std::time(nullptr) * 1000);
+  leaderboard->submit(e);
+  std::fprintf(stderr, "[dc_app] run ended (%s) — leaderboard rank #%d, save written (%s)\n",
+               deathReason, leaderboard->rankOf(e), saveFile.c_str());
+}
+
+bool App::_readSaveFile() {
+  // Minimal JSON read of the fields _endRun writes (the schema is fixed).
+  FILE* f = fopen(saveFile.c_str(), "r");
+  if (!f) { savedRun.reset(); return false; }
+  char buf[512] = {0};
+  const size_t n = std::fread(buf, 1, sizeof(buf) - 1, f);
+  std::fclose(f);
+  if (n == 0) { savedRun.reset(); return false; }
+  auto grab = [&](const char* key, long& out) -> bool {
+    const char* p = std::strstr(buf, key);
+    if (!p) return false;
+    p = std::strchr(p, ':');
+    if (!p) return false;
+    out = std::atol(p + 1);
+    return true;
+  };
+  long level = 1, runTime = 0, orbs = 0, tier = 0, maxH = 0, ng = 0, kills = 0, hp = 0;
+  grab("\"level\"", level);
+  grab("\"runTime\"", runTime);
+  grab("\"collectedOrbs\"", orbs);
+  grab("\"weaponTier\"", tier);
+  grab("\"maxHealth\"", maxH);
+  grab("\"ngPlus\"", ng);
+  grab("\"bossKills\"", kills);
+  grab("\"health\"", hp);
+  savedRun = dc::GameState::Save{
+      (int)level, (double)runTime, (int)orbs, (int)tier,
+      (int)maxH, (int)ng, (int)kills, (int)hp};
+  return true;
+}
+
+void App::loadRun() {
+  if (!savedRun) return;
+  auto gs = dc::GameState::fromSave(*savedRun);
+  if (!gs) return;
+  state = *gs;
+  state.buffEffect = 0; state.buffTime = 0; // a carried buff never survives a load
+  state.levelTime = 0;                      // the 180 s clock restarts with the level
+  state.inExitRoom = false;
+  state.dungeonSeed = (int)(rng.next() * 2147483647);
+  state.biome = dc::biomeForLevel(state.level);
+  state.biomeIndex = [&] {
+    auto it = std::find(dc::kBiomeSequence.begin(), dc::kBiomeSequence.end(), state.biome);
+    return (int)(it != dc::kBiomeSequence.end() ? (it - dc::kBiomeSequence.begin()) : 0);
+  }();
+  buildWorldFromState();
+  placePlayerAtEntrance();
+  spawnEntities();
+  simHealth = state.health;                 // fromSave: full-health restart of the level
+  playerDead = false;
+  bossKillCounted = false;
+  screen = Screen::Play;
+  std::fprintf(stderr, "[dc_app] loaded run (level %d, souls %d)\n",
+               state.level, state.collectedOrbs);
 }
 
 void App::startRun(int seedToUse) {
@@ -3419,6 +3571,7 @@ static void keyCb(GLFWwindow* w, int key, int, int action, int) {
   else if (key == GLFW_KEY_E) g_app->keyE = down;
   else if (key == GLFW_KEY_N) g_app->keyN = down;
   else if (key == GLFW_KEY_Y) g_app->keyY = down;
+  else if (key == GLFW_KEY_L) g_app->keyL = down;
   else if (key == GLFW_KEY_LEFT_SHIFT || key == GLFW_KEY_RIGHT_SHIFT) g_app->keyShift = down;
   else if (key == GLFW_KEY_F11 && action == GLFW_PRESS) g_app->toggleFullscreen();
   else if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) glfwSetWindowShouldClose(w, 1);
@@ -3443,7 +3596,7 @@ int main(int argc, char** argv) {
   bool showFps = false, bossView = false, combatView = false, descendView = false;
   bool titleView = false, deathView = false, hudView = false, degradedView = false;
   bool enemyView = false, dropView = false, burnView = false;
-  bool vaultView = false;
+  bool vaultView = false, timeoutView = false, startView = false, loadView = false;
   for (int i = 1; i < argc; i++) {
     if (!std::strcmp(argv[i], "--width")) width = std::atoi(argv[++i]);
     else if (!std::strcmp(argv[i], "--height")) height = std::atoi(argv[++i]);
@@ -3464,6 +3617,9 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--drop-view")) dropView = true;
     else if (!std::strcmp(argv[i], "--vault-view")) vaultView = true;
     else if (!std::strcmp(argv[i], "--burn-view")) burnView = true;
+    else if (!std::strcmp(argv[i], "--timeout-view")) timeoutView = true;
+    else if (!std::strcmp(argv[i], "--start-view")) startView = true;
+    else if (!std::strcmp(argv[i], "--load-view")) loadView = true;
   }
 
   App app;
@@ -3471,12 +3627,14 @@ int main(int argc, char** argv) {
   if (!app.init(width, height, "dc_app — Phase 2 playable spine (STONE)", fontPath)) return 1;
   g_app = &app;
   app.seed = seed;
+  app._readSaveFile(); // a save-for-later from a prior session → Continue [L]
   // Title screen is the default boot state (JS Game._titleMode = true). Any
   // explicit scene view flag (probe/harness) keeps the old Play behavior so
   // harnesses are unaffected.
   {
     const bool sceneView = bossView || combatView || descendView || vaultView ||
-                            enemyView || dropView || burnView || hudView || deathView;
+                            enemyView || dropView || burnView || hudView || deathView ||
+                            timeoutView || startView || loadView;
     app.screen = (titleView || !sceneView) ? App::Screen::Title : App::Screen::Play;
   }
   glfwSetKeyCallback(app.window, keyCb);
@@ -3596,6 +3754,19 @@ int main(int argc, char** argv) {
       app.state.collectedOrbs = 0;
       std::fprintf(stderr, "[dc_app] death-view: player at throne, no weapons (boss %s)\n",
                    app.boss.state.c_str());
+    }
+    // --timeout-view: prove the 180 s timer ENDS the run. Make the probe
+    // invulnerable (so only the clock can kill it), put the timer ~1 s under the
+    // limit, and arm a tier-1 sword so the death screen is the ONLY thing that
+    // can appear — it must be the time-out death ("The darkness consumes you").
+    if (timeoutView) {
+      app.state.safeSpawn = 0;
+      app.state.collectedOrbs = 10;
+      app.state.weaponTier = dc::weaponTier(app.state.collectedOrbs);
+      app.probeInvuln = true;                 // only the timer may end this run
+      app.state.levelTime = dc::kLevelTimeLimit - 1.0; // expires in ~60 frames
+      std::fprintf(stderr, "[dc_app] timeout-view: timer at %.1f s (limit %.0f s), invulnerable\n",
+                   app.state.levelTime, dc::kLevelTimeLimit);
     }
     // --hud-view: showcase every HUD element at once — level 7 (boss bar),
     // souls (weapon slot), and partial health (hearts bar) all visible.
@@ -3743,6 +3914,29 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "[dc_app] burn-view: spawnBURN failed (no walkable cell)\n");
       }
     }
+    // --start-view: showcase the START marker (green ring + pillar) and the EXIT
+    // beam together — stand ~4 cells from the entrance, facing it.
+    if (startView) {
+      if (const auto& eo = app.world.dungeon.entranceCell) {
+        const double cs = app.world.dungeon.cellSize;
+        const double wx0 = eo->x * cs, wz0 = eo->z * cs;
+        static const double dirs[8][2] = {{1,0},{-1,0},{0,1},{0,-1},{0.7,0.7},{-0.7,0.7},{0.7,-0.7},{-0.7,-0.7}};
+        bool found = false;
+        for (double dist = 6.0; dist <= 16.0 && !found; dist += 2.0) {
+          for (const auto& d : dirs) {
+            const double wx = wx0 + d[0] * dist, wz = wz0 + d[1] * dist;
+            if (dc::circleHitsBox(app.world.collision.boxes, wx, wz, player::kRadius)) continue;
+            if (!dc::hasLineOfSight(app.world.collision.boxes, wx0, wz0, wx, wz)) continue;
+            app.camX = wx; app.camZ = wz;
+            app.state.player.x = wx; app.state.player.z = wz;
+            app.state.player.yaw = (float)std::atan2(-(wx0 - wx), -(wz0 - wz));
+            found = true; break;
+          }
+        }
+        std::fprintf(stderr, "[dc_app] start-view: at (%.1f,%.1f) facing entrance (%.1f,%.1f) %s\n",
+                     app.camX, app.camZ, wx0, wz0, found ? "" : "(FALLBACK: no LOS spot)");
+      }
+    }
     // --vault-view: showcase the §13 decorative systems — teleport into the
     // first VAULT room (water pool) facing room center; dust + runes are
     // ambient around the room.
@@ -3775,6 +3969,18 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "[dc_app] vault-view: no VAULT room this level\n");
       }
     }
+    // --load-view: exercise the save-for-later → Load [L] path. A save.json must
+    // already exist (from a prior death / _endRun); Load must restore that level
+    // at full health with souls/tier/NG+ intact.
+    if (loadView) {
+      const bool had = app.savedRun.has_value();
+      app.loadRun(); // title-screen "Continue [L]"
+      const int lv = app.state.level, souls = app.state.collectedOrbs;
+      const int tier = app.state.weaponTier, hp = app.state.health;
+      std::fprintf(stderr,
+                   "[dc_app] load-view: save present=%d → restored level %d, souls %d, tier %d, hp %d/%d\n",
+                   (int)had, lv, souls, tier, hp, app.state.maxHealth);
+    }
     // --degraded: force the degraded-mode state (bloom off) for the 30 fps gate
     if (degradedView) { app.degraded = true; app.forcedDegraded = true; app.lowFpsTimer = 0; }
     // watch level transitions (descend-view) so a descent is provable headlessly
@@ -3784,7 +3990,7 @@ int main(int argc, char** argv) {
     bool restartSeen = false;
     for (int i = 0; i < frames; i++) {
       ctx.frame = i; ctx.phase = "render"; wd.begin();
-      if (!bossView && !descendView && !deathView && !hudView && !enemyView && !dropView && !burnView && !vaultView) app.keyW = true; // interior-walk shot: drive forward
+      if (!bossView && !descendView && !deathView && !hudView && !enemyView && !dropView && !burnView && !vaultView && !startView && !loadView) app.keyW = true; // interior-walk shot: drive forward
       else if (hudView) { // sprint toward the boss: keeps the SPRINT bonus line up
         // (updateSprint decays sprintTier to 0 when not moving+Shift)
         app.keyW = true; app.keyShift = true;
@@ -3803,6 +4009,8 @@ int main(int argc, char** argv) {
       else if (dropView) { /* stand still, face the prop (yaw set at placement) */ }
       else if (burnView) { /* stand still, face BURN (yaw set at placement) */ }
       else if (vaultView) { /* stand still, face room center (yaw set at placement) */ }
+      else if (startView) { /* stand still, face the entrance (yaw set at placement) */ }
+      else if (loadView) { /* stand still — we just loaded, show the restored level */ }
       else { // face the live boss each frame so it stays on screen
         const double dx = app.boss.pos.x - app.state.player.x;
         const double dz = app.boss.pos.z - app.state.player.z;
@@ -3843,6 +4051,11 @@ int main(int argc, char** argv) {
         restartSeen = true;
         std::fprintf(stderr, "[dc_app] death-view: RESTART at frame %d → level %d (biome %s), fresh dungeon\n",
                      i, app.state.level, app.state.biome.c_str());
+      }
+      if (timeoutView && !deathSeen && app.screen == App::Screen::Dead) {
+        deathSeen = true; deathAt = i;
+        std::fprintf(stderr, "[dc_app] timeout-view: RUN ENDED at frame %d reason='%s' → death screen\n",
+                     i, app.deathReason);
       }
       app.frame();
       if (savePath && saveFrame == i) app.savePPM(savePath); // capture an in-flight frame

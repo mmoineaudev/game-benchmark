@@ -1,10 +1,22 @@
 # Fix plan — c++_dungeon_crawler (8 items)
 
-Status: DRAFT for review. Each item: root cause found in code, fix, verification.
+Status: EXECUTING. Items 1/2/7 landed in commit `af2de48`. Item 4's axis
+swap was drafted in the working tree but is **buggy** (see §4 below). Items
+3/5/6/8 pending. Each item: root cause, fix, verification. Per-item commits.
+
+## Current state (verified against code, 2026-08-31)
+- **1, 2, 7 — DONE** (commit `af2de48`): death-screen `Save [S]` + title-screen
+  `Continue [L]`, `_ngPlus()` keeps `floor(souls*0.25)` + live toll preview,
+  `descend()` keeps `buffEffect` and resets `buffTime = kMaxDuration` (90 s).
+- **4 — DRAFTED, BUGGY (working tree, uncommitted)**: the swing was switched to
+  a rotation about **local Y** (the blade's own axis) so the blade tip doesn't
+  move at all; needs the **local-Z** matrix + per-step angle retune.
+- **3, 5, 6, 8 — NOT STARTED.**
+- Build is green (warnings only); `--vault-view` smoke renders (50 fps).
 
 ---
 
-## 1. No "Save" option on death
+## 1. No "Save" option on death   (DONE — af2de48)
 
 **Root cause**: The C++ port dropped the JS death-overlay button. JS `index.html` has
 `Save for later [S]` → `_saveForLater()`; the C++ death screen (`main.cpp:3062-3077`,
@@ -26,7 +38,7 @@ screen itself, and JS's `_saveForLater` (manual save anytime) has no C++ key bin
 **Verify**: die (or use `--death-view`), press S, see the hint line, confirm
 `save.json` mtime/content updates and `[L]` continues the saved level.
 
-## 2. NG+ soul toll is 100%, should be 75% (keep 25%)
+## 2. NG+ soul toll is 100%, should be 75% (keep 25%)   (DONE — af2de48)
 
 **Root cause**: `main.cpp:2636` — `[Y] New Game+` does
 `state.ngPlus += 1; startRun(...)` and `startRun` calls `GameState::fromOpts()` with
@@ -71,28 +83,35 @@ Enemies are flat-color instances in the scene pass; enemy sim lives in
 **Verify**: `--combat-view` / `--enemy-view` screenshots; damage one enemy, confirm
 bar appears at the head and shrinks; confirm no bar at full HP for normal mobs.
 
-## 4. Weapon swing is vertical — should be horizontal
+## 4. Weapon swing is vertical — should be horizontal   (IN PROGRESS)
 
-**Root cause**: `main.cpp:1961-2016` — the swing rotates the sword around local X
-(`SwingX`), which arcs the blade in the vertical (Y/Z) plane. The JS original
-(`PlayerSword.js:209-220`) animates `rotation.z` (and a little `rotation.x`), i.e.
-the blade sweeps LEFT↔RIGHT in the camera plane — horizontal.
+**Root cause**: `main.cpp` `swordW`/`swordRot` rotate the sword around local X
+(`SwingX`), arcing the +Y blade in the vertical (Y/Z) plane. The JS original
+(`PlayerSword.js:211-221`) animates `formGroup.rotation.z` (a big left↔right
+sweep: step1 z 0.18→−1.72, step2 z −1.7→+0.2, step3 z=0.18 thrust) on top of a
+base tilt `Euler(-0.35,-0.25,0.18)` — i.e. the blade sweeps **horizontally**.
+
+**Working-tree bug (must fix)**: the drafted axis swap wrote
+`Sw={ca,0,sa | 0,1,0 | -sa,0,ca}` with `lx2=lx*ca+lz*sa; lz2=-lx*sa+lz*ca` —
+that is a rotation about **local Y** (the blade's own axis). Verified numerically:
+the +Y blade tip is a fixed point, so the blade does not move at all (only the
+guard spins). The correct horizontal sweep is a rotation about **local Z**:
+`swordW`: `lx2=lx*ca-ly*sa; ly2=lx*sa+ly*ca; lz2=lz`; `swordRot`:
+`Sw={ca,sa,0 | -sa,ca,0 | 0,0,1}`. Base-tilt then Ccam unchanged.
 
 **Fix**
-- Swap the swing axis: `SwingZ(ang)` instead of `SwingX(ang)` in `swordRot()`, and
-  matching `(lx2,lz2)` rotation in `swordW()`:
-  `lx2 = lx*ca + lz*sa; lz2 = -lx*sa + lz*ca` (column-major `{ca,0,sa | 0,1,0 | -sa,0,ca}`).
-- Re-tune the per-step angles for the horizontal read:
-  - step 1: wind up right (a0 ≈ +0.6) → strike left (a1 ≈ −0.9)
-  - step 2: opposite sweep (a0 ≈ −0.9 → a1 ≈ +0.9)
-  - step 3 (thrust): small arc + keep the existing thrust lunge (already forward).
-- Rest pose `phi = −0.5` → keep (slight right angle reads natural); trail ghosts
-  and impact flash use the same `swordW/swordRot`, so they follow automatically —
-  verify the flash plane orientation after the axis swap (it currently faces the
-  old arc direction).
+- Swap to the Z-rotation (matrix above) in BOTH `swordW` and `swordRot`; run the
+  base tilt on `(lx2, ly2, lz2)` (currently `ly` is passed through unrotated).
+- Retune per-step angles for the horizontal read (positive = blade LEFT):
+  - rest `phi = −0.5` (keep, low-right via the baked base tilt)
+  - step 1: wind up LEFT `a0=+1.30` → strike RIGHT `a1=−1.50`
+  - step 2: wind up RIGHT `a0=−1.50` → strike LEFT `a1=+1.50`
+  - step 3 (thrust): `a0=+0.50 → a1=−0.50` + keep the forward lunge
+- Trail ghosts + impact flash reuse `swordW/swordRot`, so they follow
+  automatically — verify flash plane + ghost arc after the swap.
 
-**Verify**: `--combat-view`/repro sword frames; screenshot mid-swing step 1 and 2 —
-blade must be at the sides, not overhead/underfoot; trail ghosts sweep horizontally.
+**Verify**: mid-swing probe (step 1 & 2) — blade must be at the LEFT/RIGHT side
+(horizontal), never overhead/underfoot; trail ghosts sweep horizontally.
 
 ## 5. Text 2× bigger + cleaner
 
@@ -143,7 +162,7 @@ panel clips; `--title`/`--death-view` for the big text.
 player + beam flash on hit; confirm damage lands (mob hp drops without player
 action).
 
-## 7. Buffs must survive the exit portal; countdown resets
+## 7. Buffs must survive the exit portal; countdown resets   (DONE — af2de48)
 
 **Root cause**: `descend()` (`main.cpp:1165-1167`) explicitly clears
 `state.buffEffect = 0; state.buffTime = 0;` (port parity with JS, which builds a

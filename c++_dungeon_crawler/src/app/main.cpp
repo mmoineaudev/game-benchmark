@@ -1911,10 +1911,11 @@ void App::uploadDynamic(std::vector<float>& dyn, std::vector<float>& enem) {
   for (const auto& o : orbs)
     if (o.alive) push((float)o.x, (float)o.y, (float)o.z, 0.3f, 0.3f, 0.3f, 0.6f, 0.8f, 1.0f);
   // ---- floating sword (no hands, tier-colored) — ALWAYS follows the view ----
-  // Local frame: blade along −Z (forward), guard across X, grip at origin.
-  // The per-instance (yaw,pitch) = the camera basis, so the sword is rigidly
-  // attached to the player's direction (fixes "keeps its original orientation").
-  // Swing: eased arc around the blade axis (local X) with per-step flavor +
+  // Local frame: blade along +Y (the blade axis), guard across X, grip at
+  // origin. The per-instance 3x3 = camera basis * base tilt * swing, so the
+  // sword is rigidly attached to the player's direction (fixes "keeps its
+  // original orientation").
+  // Swing: eased HORIZONTAL arc (local-Z rotation) with per-step flavor +
   // motion-blur trail ghosts + an impact flash at the swing apex.
   if (screen != Screen::Dead) {
     const float yaw = state.player.yaw, pitch = state.player.pitch;
@@ -1942,9 +1943,11 @@ void App::uploadDynamic(std::vector<float>& dyn, std::vector<float>& enem) {
       const auto& def = dc::kSwordCombo[std::max(0, swordStep - 1)];
       const double speedMult = dc::attackSpeedFromSouls(state.collectedOrbs) * buffAttackMult();
       const double wu = def.windup / speedMult, sw = def.swing / speedMult, rc = def.recover / speedMult;
-      // per-step flavor: 1 = wide rising arc, 2 = low horizontal sweep, 3 = overhead slam
-      const float a0 = swordStep == 1 ? -1.35f : swordStep == 2 ? -1.70f : -1.90f;
-      const float a1 = swordStep == 3 ? 1.55f : 1.20f;
+      // per-step flavor in the HORIZONTAL (Z-rotation) domain: positive = blade
+      // to the LEFT, negative = RIGHT (verified: tip → (−L·sinφ, L·cosφ)).
+      // 1 = wide LEFT→RIGHT chop, 2 = wide RIGHT→LEFT chop, 3 = short arc + thrust.
+      const float a0 = swordStep == 1 ? 1.30f : swordStep == 2 ? -1.50f : 0.50f;
+      const float a1 = swordStep == 1 ? -1.50f : swordStep == 2 ? 1.50f : -0.50f;
       const float thA = swordStep == 3 ? 0.42f : swordStep == 1 ? 0.28f : 0.22f;
       auto easeIO = [](double t) { return t * t * (3.0 - 2.0 * t); }; // smoothstep
       if (std::strcmp(swordPhase, "windup") == 0) {
@@ -1977,14 +1980,18 @@ void App::uploadDynamic(std::vector<float>& dyn, std::vector<float>& enem) {
     // rotation, so grip/guard/blade stay welded into a single piece.
     auto swordW = [&](float lx, float ly, float lz, float& wx, float& wy, float& wz,
                       float ang) {
-      // 1) swing rotation about local X
+      // 1) swing rotation about local Z — a HORIZONTAL sweep (left<->right) of
+      //    the +Y blade in the X-Y plane (JS PlayerSword animates rotation.z).
+      //    A rotation about Y would be the blade's OWN axis (tip a fixed
+      //    point) — the old draft bug; X was the vertical arc.
       const float ca = std::cos(ang), sa = std::sin(ang);
-      const float ly2 = ly * ca - lz * sa;
-      const float lz2 = ly * sa + lz * ca;
+      const float lx2 = lx * ca - ly * sa;
+      const float ly2 = lx * sa + ly * ca;
+      const float lz2 = lz;
       // 2) base tilt (three.js group rotation) → three.js camera-space
-      const float t1x = 0.953f * lx - 0.173f * ly2 - 0.247f * lz2;
-      const float t1y = 0.252f * lx + 0.909f * ly2 + 0.332f * lz2;
-      const float t1z = 0.167f * lx - 0.379f * ly2 + 0.910f * lz2;
+      const float t1x = 0.953f * lx2 - 0.173f * ly2 - 0.247f * lz2;
+      const float t1y = 0.252f * lx2 + 0.909f * ly2 + 0.332f * lz2;
+      const float t1z = 0.167f * lx2 - 0.379f * ly2 + 0.910f * lz2;
       // 3) camera-space → world. three.js camera space: x=right, y=up, z=BACKWARD,
       //    so world = cam + right*px + up*py - fwd*pz (fwd = look dir).
       //    +thrust moves the sword forward (more -z) during the swing.
@@ -2001,11 +2008,12 @@ void App::uploadDynamic(std::vector<float>& dyn, std::vector<float>& enem) {
     // the JS formGroup (position + rotation set once; the swing only rotates it).
     auto swordRot = [&](float ang) -> std::array<float, 9> {
       const float ca = std::cos(ang), sa = std::sin(ang);
-      // SwingX(ang) — MUST match swordW's (ly2,lz2)=(ly*ca-lz*sa, ly*sa+lz*ca),
-      // i.e. column-major {1,0,0 | 0,ca,sa | 0,-sa,ca}. (A {0,ca,-sa | 0,sa,ca}
-      // layout is the transpose = rotation by -ang, which desyncs the sword's
-      // orientation from its position and kinks the grip off the blade axis.)
-      float Sw[9] = {1,0,0,  0,ca,sa,  0,-sa,ca};    // SwingX(ang), col-major
+      // SwingZ(ang) — MUST match swordW's (lx2,ly2,lz2)=(lx*ca-ly*sa, lx*sa+ly*ca, lz),
+      // i.e. column-major {ca,sa,0 | -sa,ca,0 | 0,0,1} (a horizontal sweep; the
+      // original SwingX {1,0,0 | 0,ca,sa | 0,-sa,ca} rotated the +Y blade up/down
+      // in the Y-Z plane = the vertical swing; a Y-axis rotation would be the
+      // blade's own length — tip a fixed point, no motion at all).
+      float Sw[9] = {ca,sa,0,  -sa,ca,0,  0,0,1};    // SwingZ(ang), col-major
       float BT[9] = {0.953f,0.252f,0.167f,  -0.173f,0.909f,-0.379f,  -0.247f,0.332f,0.910f}; // BaseTilt
       float CC[9] = { right[0],right[1],right[2],  upv[0],upv[1],upv[2],  -fwd[0],-fwd[1],-fwd[2] }; // Ccam
       auto mul = [](const float A[9], const float B[9], float O[9]) {
@@ -2016,8 +2024,8 @@ void App::uploadDynamic(std::vector<float>& dyn, std::vector<float>& enem) {
           }
       };
       float M[9], R[9];
-      mul(BT, Sw, M);   // BaseTilt * SwingX
-      mul(CC, M, R);    // Ccam * (BaseTilt * SwingX)
+      mul(BT, Sw, M);   // BaseTilt * SwingZ
+      mul(CC, M, R);    // Ccam * (BaseTilt * SwingZ)
       return std::array<float,9>{R[0],R[1],R[2],R[3],R[4],R[5],R[6],R[7],R[8]};
     };
     float hx, hy, hz;
@@ -3653,6 +3661,7 @@ int main(int argc, char** argv) {
   bool showFps = false, bossView = false, combatView = false, descendView = false;
   bool titleView = false, deathView = false, hudView = false, degradedView = false;
   bool enemyView = false, dropView = false, burnView = false;
+  bool swordView = false;
   bool vaultView = false, timeoutView = false, startView = false, loadView = false;
   for (int i = 1; i < argc; i++) {
     if (!std::strcmp(argv[i], "--width")) width = std::atoi(argv[++i]);
@@ -3672,6 +3681,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--degraded")) degradedView = true;
     else if (!std::strcmp(argv[i], "--enemy-view")) enemyView = true;
     else if (!std::strcmp(argv[i], "--drop-view")) dropView = true;
+    else if (!std::strcmp(argv[i], "--sword-view")) swordView = true;
     else if (!std::strcmp(argv[i], "--vault-view")) vaultView = true;
     else if (!std::strcmp(argv[i], "--burn-view")) burnView = true;
     else if (!std::strcmp(argv[i], "--timeout-view")) timeoutView = true;
@@ -3691,7 +3701,7 @@ int main(int argc, char** argv) {
   {
     const bool sceneView = bossView || combatView || descendView || vaultView ||
                             enemyView || dropView || burnView || hudView || deathView ||
-                            timeoutView || startView || loadView;
+                            timeoutView || startView || loadView || swordView;
     app.screen = (titleView || !sceneView) ? App::Screen::Title : App::Screen::Play;
   }
   glfwSetKeyCallback(app.window, keyCb);
@@ -3997,6 +4007,30 @@ int main(int argc, char** argv) {
                      app.camX, app.camZ, wx0, wz0, found ? "" : "(FALLBACK: no LOS spot)");
       }
     }
+    // --sword-view: showcase the floating sword's HORIZONTAL swing — stand at
+    // the entrance, drive a fixed step/phase (update() ticks it forward).
+    if (swordView) {
+      if (const auto& eo = app.world.dungeon.entranceCell) {
+        const double cs = app.world.dungeon.cellSize;
+        const double wx0 = eo->x * cs, wz0 = eo->z * cs;
+        static const double dirs[8][2] = {{1,0},{-1,0},{0,1},{0,-1},{0.7,0.7},{-0.7,0.7},{0.7,-0.7},{-0.7,-0.7}};
+        bool found = false;
+        for (double dist = 6.0; dist <= 14.0 && !found; dist += 2.0) {
+          for (const auto& d : dirs) {
+            const double wx = wx0 + d[0] * dist, wz = wz0 + d[1] * dist;
+            if (dc::circleHitsBox(app.world.collision.boxes, wx, wz, player::kRadius)) continue;
+            if (!dc::hasLineOfSight(app.world.collision.boxes, wx0, wz0, wx, wz)) continue;
+            app.camX = wx; app.camZ = wz;
+            app.state.player.x = wx; app.state.player.z = wz;
+            app.state.player.yaw = (float)std::atan2(-(wx0 - wx), -(wz0 - wz));
+            found = true; break;
+          }
+        }
+      }
+      app.swordStep = 2;
+      app.swordPhase = "swing";
+      app.swordPhaseT = 0.06;
+    }
     // --vault-view: showcase the §13 decorative systems — teleport into the
     // first VAULT room (water pool) facing room center; dust + runes are
     // ambient around the room.
@@ -4050,7 +4084,7 @@ int main(int argc, char** argv) {
     bool restartSeen = false;
     for (int i = 0; i < frames; i++) {
       ctx.frame = i; ctx.phase = "render"; wd.begin();
-      if (!bossView && !descendView && !deathView && !hudView && !enemyView && !dropView && !burnView && !vaultView && !startView && !loadView) app.keyW = true; // interior-walk shot: drive forward
+      if (!bossView && !descendView && !deathView && !hudView && !enemyView && !dropView && !burnView && !vaultView && !startView && !loadView && !swordView) app.keyW = true; // interior-walk shot: drive forward
       else if (hudView) { // sprint toward the boss: keeps the SPRINT bonus line up
         // (updateSprint decays sprintTier to 0 when not moving+Shift)
         app.keyW = true; app.keyShift = true;

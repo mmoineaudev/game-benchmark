@@ -778,7 +778,7 @@ struct App {
   bool saveWritten = false; // save-for-later already written at death
   enum class Screen { Title, Play, Dead };
   Screen screen = Screen::Play;
-  bool prevN = false, prevY = false, prevL = false;
+  bool prevN = false, prevY = false, prevL = false, prevS = false;
   const char* deathReason = "dead"; // "dead" (killed) | "time" (timer ran out)
   std::optional<dc::GameState::Save> savedRun; // save-for-later available (Load [L])
 
@@ -882,9 +882,14 @@ struct App {
   void drawOverlay(float r, float g, float b, float a);
   void drawHud();
   void _endRun(const char* reason);
+  // Save-for-later: write the current run to save.json (death + manual [S]).
+  void _writeSave();
   void loadRun();             // Load [L]: restore the save-for-later (full-health level)
   bool _readSaveFile();       // load save.json into `savedRun` (true if present)
   void startRun(int seedToUse);
+  // New Game+: 25% soul toll, start at max(1, floor(level/2)), carry
+  // bossKills/maxHealth/runTime, recalc weapon tier from the kept bank.
+  void _ngPlus();
   ~App();
 };
 
@@ -1162,10 +1167,11 @@ void App::descend() {
   state.bossKills = bk;
   state.maxHealth = mh;
   state.health = state.maxHealth; // health always starts full
-  // JS _descend builds a fresh GameState → the active buff does NOT carry.
-  state.buffEffect = 0;
-  state.buffTime = 0;
-  if (hunter.active) hunter.reset();
+  // Buffs carry through the exit portal and their countdown resets to full
+  // (ruling: "Buffs should be kept and their countdown reset when using an
+  // exit portal" — supersedes the JS fresh-GameState parity).
+  if (state.buffEffect > 0) state.buffTime = dc::buff::kMaxDuration;
+  // The HUNTER companion walks through the portal with the player: no reset.
   // fresh per-level seed (JS Date.now()^rand) + regenerate the dungeon
   dungeonSeed = (int)(rng.next() * 2147483647.0);
   state.dungeonSeed = dungeonSeed;
@@ -2628,17 +2634,18 @@ void App::update(double dt, double rawDt) {
     if (keyL && !prevL) loadRun();
     if (screen == Screen::Title && keyLMB && !prevTitleLMB) startRun(seed); // "New Game" button (mouse)
     prevTitleLMB = keyLMB;
-    prevN = keyN; prevY = keyY; prevL = keyL;
+    prevN = keyN; prevY = keyY; prevL = keyL; prevS = keyS;
     return;
   }
   if (screen == Screen::Dead) {
     if (keyN && !prevN) startRun((int)(rng.next() * 2147483647));
-    else if (keyY && !prevY) { state.ngPlus += 1; startRun((int)(rng.next() * 2147483647)); }
+    else if (keyY && !prevY) _ngPlus();
     else if (keyL && !prevL) loadRun();
-    prevN = keyN; prevY = keyY; prevL = keyL;
+    else if (keyS && !prevS) { _writeSave(); toast("Run saved — continue with [L]"); }
+    prevN = keyN; prevY = keyY; prevL = keyL; prevS = keyS;
     return;
   }
-  prevN = keyN; prevY = keyY; prevL = keyL;
+  prevN = keyN; prevY = keyY; prevL = keyL; prevS = keyS;
 
   // hit-stop: freeze the whole sim (movement + entities + combat) for kHitStop
   if (hitStop > 0) { hitStop -= rawDt; mouseDX = mouseDY = 0; return; }
@@ -3070,9 +3077,24 @@ void App::frame() {
       drawTextOutline(v, cx - lineW(buf, 1.0f) / 2, cy + 90, 1.0f, stat, buf);
       const char* n = "[N] Restart   [Y] New Game+";
       drawTextOutline(v, cx - lineW(n, 1.2f) / 2, cy + 180, 1.2f, hint, n);
+      // Live NG+ toll preview: the player keeps floor(souls * 0.25).
+      {
+        const int kept = (int)std::floor(state.collectedOrbs * 0.25);
+        const int keptTier = dc::weaponTier(kept);
+        char tol[160];
+        std::snprintf(tol, sizeof(tol),
+                      "[Y] keeps %d of %d Souls → T%d  (L%d)",
+                      kept, state.collectedOrbs, keptTier,
+                      std::max(1, state.level / 2));
+        const float tolC[3] = {0.62f, 0.80f, 0.88f}; // #9ecbe0 buff-blue
+        drawTextOutline(v, cx - lineW(tol, 0.9f) / 2, cy + 215, 0.9f, tolC, tol);
+      }
+      // Save-for-later [S]: persist this run so it can be continued later.
+      const char* sv = "Save for later   [S]";
+      drawTextOutline(v, cx - lineW(sv, 1.2f) / 2, cy + 250, 1.2f, hint, sv);
       if (savedRun) {
         const char* l = "Continue  [L]";
-        drawTextOutline(v, cx - lineW(l, 1.2f) / 2, cy + 230, 1.2f, hint, l);
+        drawTextOutline(v, cx - lineW(l, 1.2f) / 2, cy + 300, 1.2f, hint, l);
       }
     }
     drawText(v);
@@ -3458,11 +3480,9 @@ void App::drawHud() {
   drawText(t);
 }
 
-void App::_endRun(const char* reason) {
-  deathReason = reason ? reason : "dead";
-  // save-for-later (JS writes this at death; Load restores a full-health level)
+void App::_writeSave() {
   const auto sv = state.toSave();
-  savedRun = sv; // available for Continue [L] on the death screen
+  savedRun = sv; // available for Continue [L]
   std::string j = std::string("{\"level\":") + std::to_string(sv.level) +
                  ",\"runTime\":" + std::to_string(sv.runTime) +
                  ",\"collectedOrbs\":" + std::to_string(sv.collectedOrbs) +
@@ -3473,6 +3493,12 @@ void App::_endRun(const char* reason) {
                  ",\"health\":" + std::to_string(sv.health) + "}";
   FILE* f = fopen(saveFile.c_str(), "w");
   if (f) { std::fputs(j.c_str(), f); std::fclose(f); saveWritten = true; }
+}
+
+void App::_endRun(const char* reason) {
+  deathReason = reason ? reason : "dead";
+  // save-for-later (JS writes this at death; Load restores a full-health level)
+  _writeSave();
   if (!leaderboard) return;
   dc::ScoreEntry e;
   e.level = state.level;
@@ -3557,6 +3583,37 @@ void App::startRun(int seedToUse) {
   playerDead = false;
   screen = Screen::Play;
   std::fprintf(stderr, "[dc_app] run started (seed %d, level 1)\n", seedToUse);
+}
+
+void App::_ngPlus() {
+  // New Game+ (port of JS _ngPlus): souls take a 75% toll — the player KEEPS
+  // floor(collectedOrbs * 0.25) so advancement (weapon tier) survives the loop.
+  // bossKills/maxHealth/runTime carry; the run starts at max(1, floor(level/2)).
+  const int prevOrbs = state.collectedOrbs;
+  const int kept = (int)std::floor(state.collectedOrbs * 0.25);
+  const int nextLevel = std::max(1, state.level / 2);
+  const int ng = state.ngPlus + 1;
+  const int bk = state.bossKills;
+  const int mh = state.maxHealth;
+  const double runTime = state.runTime;
+  state = dc::GameState::fromOpts(kept, -1, ng, bk, mh, runTime, nextLevel);
+  state.health = state.maxHealth; // full-heal the new NG+ run
+  state.biome = dc::biomeForLevel(state.level);
+  state.biomeIndex = [&] {
+    auto it = std::find(dc::kBiomeSequence.begin(), dc::kBiomeSequence.end(), state.biome);
+    return (int)(it != dc::kBiomeSequence.end() ? (it - dc::kBiomeSequence.begin()) : 0);
+  }();
+  state.dungeonSeed = (int)(rng.next() * 2147483647);
+  dc::DungeonGenerator gen(state.dungeonSeed, state.biome);
+  world.dungeon = gen.generate();
+  buildWorldFromState();
+  placePlayerAtEntrance();
+  spawnEntities();
+  simHealth = state.maxHealth;
+  playerDead = false;
+  screen = Screen::Play;
+  std::fprintf(stderr, "[dc_app] NG+%d started (level %d, kept %d of %d souls → T%d)\n",
+               ng, state.level, kept, prevOrbs, state.weaponTier);
 }
 
 // ---- GLFW callbacks (file-static because they're C-function pointers) ----
@@ -3752,6 +3809,9 @@ int main(int argc, char** argv) {
         }
       app.state.safeSpawn = 0;
       app.state.collectedOrbs = 0;
+      // Deterministic death: 0 HP → the first updateEntities() trips the
+      // death check (simHealth <= 0) regardless of boss/skeleton aggro.
+      app.simHealth = 0.0;
       std::fprintf(stderr, "[dc_app] death-view: player at throne, no weapons (boss %s)\n",
                    app.boss.state.c_str());
     }

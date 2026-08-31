@@ -3136,7 +3136,10 @@ void App::bakeFont(const char* path) {
   fclose(f);
   stbtt_fontinfo fi;
   stbtt_InitFont(&fi, buf.data(), stbtt_GetFontOffsetForIndex(buf.data(), 0));
-  const int P = 24, AW = 512, AH = 256;
+  // 48px bake (was 24): HUD sizes draw glyphs at ~24-48 screen px — at/under
+  // the bake resolution, so GL_LINEAR stays crisp (24px bake was being
+  // downsampled ~2-3x → the mushy small text).
+  const int P = 48, AW = 512, AH = 256;
   std::vector<unsigned char> atlas((size_t)AW * AH * 4, 0);
   int x = 2, y = 2, rowH = 0;
   const float scale = stbtt_ScaleForPixelHeight(&fi, P);
@@ -3200,8 +3203,9 @@ void App::drawTextLine(std::vector<float>& v, float x, float y, float size, cons
 }
 
 void App::drawTextOutline(std::vector<float>& v, float x, float y, float size, const float col[3], const char* s) {
-  // Scale outline width with glyph size; ~0.18 * size reads as a tight dark ring.
-  const float o = std::max(1.0f, size * 0.18f);
+  // Outline width follows the DOUBLED glyph size (drawTextLine applies the 2x
+  // internally) — a 2px ring at HUD scale reads as a tight dark edge.
+  const float o = std::max(2.0f, size * 2.0f * 0.18f);
   const float dark[3] = {0.02f, 0.01f, 0.0f};
   // 4-way dark outline (drawn first, behind the fill).
   drawTextLine(v, x + o, y, size, dark, s);

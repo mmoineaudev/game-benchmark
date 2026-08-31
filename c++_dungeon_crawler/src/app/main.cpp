@@ -1205,6 +1205,20 @@ void App::updateEntities(double dt) {
                  },
                  [&](dc::Enemy* e) { skelsys.hitEnemy(e, dc::hunter::kBeamDmg, "beam"); },
                  state.collectedOrbs);
+    // VISIBLE ANCHOR: the sim's `pos` follows BEHIND the player (behind the
+    // camera) — that's why the buff looked like "no effect". Park the wraith to
+    // the player's LEFT, slightly AHEAD (in view), and fire the beam from there.
+    // Camera forward is (-sin y, -cos y); its left is (-cos y, sin y).
+    {
+      const float y = state.player.yaw;
+      const float fx = -std::sin(y), fz = -std::cos(y);  // forward (camera)
+      const float lx = -std::cos(y), lz = std::sin(y);   // left = -right
+      const double sx = pp.x + lx * 1.6 + fx * 1.2;
+      const double sz = pp.z + lz * 1.6 + fz * 1.2;
+      dc::Vec2 sp{sx, sz};
+      dc::resolveCircleCollisions(boxes, sp, 0.3); // don't clip a wall
+      hunter.sidePos = sp;
+    }
   }
 
   // ---- breakables / sarcophagi / drops (§16.5/§19) — even during safeSpawn ----
@@ -1907,6 +1921,53 @@ void App::uploadDynamic(std::vector<float>& dyn, std::vector<float>& enem) {
     if (p.active) push((float)p.pos.x, 1.2f, (float)p.pos.z, 0.25f, 0.25f, 0.25f, 1.0f, 0.7f, 0.3f);
   for (const auto& p : skelsys.orbs())
     if (p.active) push((float)p.pos.x, 1.2f, (float)p.pos.z, 0.3f, 0.3f, 0.3f, 0.7f, 0.5f, 1.0f);
+  // ---- HUNTER buff companion (effect 5) — a small cold-wraith that parks to
+  //      the player's left and beams its target. The beam is a run of thin
+  //      emissive segments along hunter→beamTarget (the visible effect).
+  if (hunter.active) {
+    // Render from sidePos (the visible left-side anchor), NOT pos (which
+    // follows behind the player, i.e. behind the camera — invisible).
+    const float hx = (float)hunter.sidePos.x, hz = (float)hunter.sidePos.z;
+    const float hy = 1.0f + 0.12f * std::sin(state.runTime * 3.0);
+    const float hyaw = std::atan2((float)state.player.x - hx, (float)state.player.z - hz);
+    const float hcy = std::cos(hyaw), hsy = std::sin(hyaw);
+    auto HL = [&](float px, float py, float pz, float& ox, float& oy, float& oz) {
+      ox = hx + px * hcy + pz * hsy; oy = hy + py; oz = hz - px * hsy + pz * hcy;
+    };
+    float ox, oy, oz;
+    // lower wisp
+    HL(0, -0.35f, 0, ox, oy, oz);
+    push(ox, oy, oz, 0.35f, 0.7f, 0.35f, 0.55f, 0.62f, 0.85f, hyaw);
+    // torso
+    HL(0, 0.15f, 0, ox, oy, oz);
+    push(ox, oy, oz, 0.4f, 0.55f, 0.4f, 0.65f, 0.75f, 1.0f, hyaw);
+    // head
+    HL(0, 0.62f, 0, ox, oy, oz);
+    push(ox, oy, oz, 0.22f, 0.22f, 0.22f, 0.8f, 0.9f, 1.0f, hyaw);
+    // eyes (cold white)
+    HL(0.07f, 0.64f, 0.12f, ox, oy, oz); push(ox, oy, oz, 0.05f, 0.05f, 0.05f, 1.0f, 1.0f, 1.0f, hyaw);
+    HL(-0.07f, 0.64f, 0.12f, ox, oy, oz); push(ox, oy, oz, 0.05f, 0.05f, 0.05f, 1.0f, 1.0f, 1.0f, hyaw);
+    // BEAM: hunter→target, chest height, segmented thin emissive bar.
+    if (hunter.hasBeam && hunter.beamFlash > 0) {
+      const float tx = (float)hunter.beamTarget.x, tz = (float)hunter.beamTarget.z;
+      const float dx = tx - hx, dz = tz - hz;
+      const float len = std::hypot(dx, dz);
+      if (len > 0.3f) {
+        const float by = 1.2f;
+        const int segs = 8;
+        const float segLen = len / segs;
+        const float pulse = 0.6f + 0.4f * (hunter.beamFlash / dc::hunter::kBeamFlash);
+        for (int i = 0; i < segs; i++) {
+          const float f0 = (i + 0.5f) / segs;
+          const float mx = hx + dx * f0, mz = hz + dz * f0;
+          // yaw so the box's long X axis aligns with the beam direction
+          // (matches the enemy facing convention: yaw = atan2(dx, dz))
+          const float byaw = std::atan2(dx, dz);
+          push(mx, by, mz, segLen * 0.9f, 0.05f, 0.05f, 0.7f * pulse, 0.9f * pulse, 1.0f * pulse, byaw);
+        }
+      }
+    }
+  }
   // soul-fire orbs (blue-white)
   for (const auto& o : orbs)
     if (o.alive) push((float)o.x, (float)o.y, (float)o.z, 0.3f, 0.3f, 0.3f, 0.6f, 0.8f, 1.0f);
@@ -3666,6 +3727,7 @@ int main(int argc, char** argv) {
   bool titleView = false, deathView = false, hudView = false, degradedView = false;
   bool enemyView = false, dropView = false, burnView = false;
   bool swordView = false;
+  bool hunterView = false;
   bool vaultView = false, timeoutView = false, startView = false, loadView = false;
   for (int i = 1; i < argc; i++) {
     if (!std::strcmp(argv[i], "--width")) width = std::atoi(argv[++i]);
@@ -3686,6 +3748,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--enemy-view")) enemyView = true;
     else if (!std::strcmp(argv[i], "--drop-view")) dropView = true;
     else if (!std::strcmp(argv[i], "--sword-view")) swordView = true;
+    else if (!std::strcmp(argv[i], "--hunter-view")) hunterView = true;
     else if (!std::strcmp(argv[i], "--vault-view")) vaultView = true;
     else if (!std::strcmp(argv[i], "--burn-view")) burnView = true;
     else if (!std::strcmp(argv[i], "--timeout-view")) timeoutView = true;
@@ -3705,7 +3768,7 @@ int main(int argc, char** argv) {
   {
     const bool sceneView = bossView || combatView || descendView || vaultView ||
                             enemyView || dropView || burnView || hudView || deathView ||
-                            timeoutView || startView || loadView || swordView;
+                            timeoutView || startView || loadView || swordView || hunterView;
     app.screen = (titleView || !sceneView) ? App::Screen::Title : App::Screen::Play;
   }
   glfwSetKeyCallback(app.window, keyCb);
@@ -4035,6 +4098,64 @@ int main(int argc, char** argv) {
       app.swordPhase = "swing";
       app.swordPhaseT = 0.06;
     }
+    // --hunter-view: showcase the HUNTER buff companion — activate the HUNTER
+    // buff, stand a few units in front of a live mob facing it, and let the
+    // wraith (parked to the player's left) beam it.
+    if (hunterView) {
+      // find a live mob to aim the beam at. Freeze every OTHER mob so none
+      // chases onto the probe camera during warm-up; the beam target stays
+      // attackable (unfrozen) but with speed 0 so it can be targeted without
+      // moving (hunter.update skips frozen enemies).
+      dc::Enemy* mob = nullptr;
+      for (auto& e : app.skelsys.enemies()) if (e.alive()) { mob = &e; break; }
+      if (!mob) { // no mob yet — spawn one a few units ahead (DORMANT so it
+                  // stays put and doesn't chase onto the probe camera)
+        const float yw = app.state.player.yaw;
+        const float fx = -std::sin(yw), fz = -std::cos(yw);
+        dc::Enemy sk;
+        sk.type = "BRUTE"; sk.def = &dc::kEnemyTypes.at("BRUTE");
+        sk.state = dc::EnemyState::kDormant;
+        sk.pos = {app.state.player.x + fx * 7.0, app.state.player.z + fz * 7.0};
+        sk.facing = (float)std::atan2(-fx, -fz);
+        sk.hp = sk.maxHp = sk.def->hp;
+        sk.frozen = false;
+        app.skelsys.enemies().push_back(std::move(sk));
+        mob = &app.skelsys.enemies().back();
+      }
+      for (auto& e : app.skelsys.enemies())
+        if (&e != mob) e.frozen = true; // park the rest
+      mob->frozen = false;
+      mob->speed = 0.0;          // attackable but stationary (no chase)
+      // stand 4u in front of the mob, facing it (clear LOS for the beam; the
+      // hunter follows ~2.5u behind so hunter→mob ≈ 6.5 < kAttackRange 7)
+      {
+        const double mdx = app.state.player.x - mob->pos.x;
+        const double mdz = app.state.player.z - mob->pos.z;
+        const double mdist = std::hypot(mdx, mdz);
+        if (mdist > 0.01) {
+          const double ux = mdx / mdist, uz = mdz / mdist;
+          const double wx = mob->pos.x + ux * 4.0;
+          const double wz = mob->pos.z + uz * 4.0;
+          if (!dc::circleHitsBox(app.world.collision.boxes, wx, wz, player::kRadius)) {
+            app.camX = wx; app.camZ = wz;
+            app.state.player.x = wx; app.state.player.z = wz;
+          }
+        }
+        app.state.player.yaw = (float)std::atan2(-(mob->pos.x - app.state.player.x),
+                                                  -(mob->pos.z - app.state.player.z));
+      }
+      app.state.buffEffect = 5; // HUNTER — keeps hunter.active=true every frame
+      app.state.buffTime = dc::buff::kMaxDuration;
+      app.hunter.active = true;
+      app.hunter.attackTimer = 0.0; // fire the beam immediately
+      // seed the follow pos so the first frame is already near the player
+      {
+        const float yw = app.state.player.yaw;
+        app.hunter.pos = {app.state.player.x + std::sin(yw) * 2.5,
+                          app.state.player.z + std::cos(yw) * 2.5};
+      }
+      std::fprintf(stderr, "[dc_app] hunter-view: HUNTER buff active, facing %s\n", mob->type.c_str());
+    }
     // --vault-view: showcase the §13 decorative systems — teleport into the
     // first VAULT room (water pool) facing room center; dust + runes are
     // ambient around the room.
@@ -4088,7 +4209,7 @@ int main(int argc, char** argv) {
     bool restartSeen = false;
     for (int i = 0; i < frames; i++) {
       ctx.frame = i; ctx.phase = "render"; wd.begin();
-      if (!bossView && !descendView && !deathView && !hudView && !enemyView && !dropView && !burnView && !vaultView && !startView && !loadView && !swordView) app.keyW = true; // interior-walk shot: drive forward
+      if (!bossView && !descendView && !deathView && !hudView && !enemyView && !dropView && !burnView && !vaultView && !startView && !loadView && !swordView && !hunterView) app.keyW = true; // interior-walk shot: drive forward
       else if (hudView) { // sprint toward the boss: keeps the SPRINT bonus line up
         // (updateSprint decays sprintTier to 0 when not moving+Shift)
         app.keyW = true; app.keyShift = true;
@@ -4106,6 +4227,7 @@ int main(int argc, char** argv) {
       }
       else if (dropView) { /* stand still, face the prop (yaw set at placement) */ }
       else if (burnView) { /* stand still, face BURN (yaw set at placement) */ }
+      else if (hunterView) { /* stand still; wraith parks left, beams the mob */ }
       else if (vaultView) { /* stand still, face room center (yaw set at placement) */ }
       else if (startView) { /* stand still, face the entrance (yaw set at placement) */ }
       else if (loadView) { /* stand still — we just loaded, show the restored level */ }

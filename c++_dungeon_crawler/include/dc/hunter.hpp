@@ -18,9 +18,15 @@ namespace dc {
 class Hunter {
 public:
   Vec2 pos{0, 0};
+  // Where the wraith is actually RENDERED (to the player's left, in view).
+  // `pos` keeps the classic follow-behind sim; sidePos is the visible anchor.
+  Vec2 sidePos{0, 0};
   double attackTimer = 0;
   double beamFlash = 0;   // >0 while a beam is visually flashing (app renders)
   bool active = false;    // false = not summoned (buff not active)
+  // Beam target (for the app's beam render). Valid while beamFlash > 0.
+  Vec2 beamTarget{0, 0};
+  bool hasBeam = false;
 
   // One fixed-step frame. `enemies` = the live mob pointers the hunter may
   // target (the app passes skelsys.enemies()); `los(a,b)` is the world
@@ -31,7 +37,7 @@ public:
                const std::function<void(Enemy*)>& onHit, double souls);
 
   // Reset (buff expired / level regen).
-  void reset() { pos = {0, 0}; attackTimer = 0; beamFlash = 0; active = false; }
+  void reset() { pos = {0, 0}; attackTimer = 0; beamFlash = 0; active = false; hasBeam = false; }
 };
 
 } // namespace dc

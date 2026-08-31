@@ -21,6 +21,7 @@ void Hunter::update(double dt, const Vec2& playerPos,
 
   attackTimer -= dt;
   if (beamFlash > 0) beamFlash -= dt;
+  if (beamFlash <= 0) hasBeam = false;
 
   if (attackTimer <= 0) {
     Enemy* best = nullptr;
@@ -36,6 +37,8 @@ void Hunter::update(double dt, const Vec2& playerPos,
     if (best) {
       onHit(best);  // app: skelsys.hitEnemy(e, hunter::kBeamDmg, "beam")
       beamFlash = hunter::kBeamFlash;
+      beamTarget = best->pos;
+      hasBeam = true;
       attackTimer = 1.0 / std::min(5.0, std::max(0.25, souls / 100.0));
     }
   }

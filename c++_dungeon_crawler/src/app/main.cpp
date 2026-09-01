@@ -1961,7 +1961,11 @@ void App::uploadDynamic(std::vector<float>& dyn, std::vector<float>& enem) {
       const int segs = 8;
       const float segLen = len / segs;
       const float pulse = 0.6f + 0.4f * (hunter.beamFlash / dc::hunter::kBeamFlash);
-      const float byaw = std::atan2(dz, dx); // align the long X axis with the beam
+      // Each dash is a box whose LONG AXIS IS LOCAL X; align local X with the
+      // beam direction. Local X axis in world = (cos,0,-sin) ⇒ yaw = atan2(-dz,dx).
+      // (atan2(dz,dx) tilts each dash off the beam line — the "rays not facing
+      // the beam" bug.)
+      const float byaw = std::atan2(-dz, dx);
       for (int i = 0; i < segs; i++) {
         const float f0 = (i + 0.5f) / segs;
         const float mx = hx + dx * f0, mz = hz + dz * f0;
@@ -2742,11 +2746,14 @@ void App::update(double dt, double rawDt) {
   if (keyS) { mx -= fwdX; mz -= fwdZ; }
   if (keyA) { mx -= rightX; mz -= rightZ; }
   if (keyD) { mx += rightX; mz += rightZ; }
-  const bool moving = (mx != 0 || mz != 0) && state.safeSpawn <= 0;
+  // The safeSpawn grace period no longer freezes the PLAYER — they can move
+  // (and fight) immediately at level start. It still keeps enemies passive
+  // (see ctx.safeSpawn / drainQueue) so the opening seconds aren't a brawl.
+  const bool moving = (mx != 0 || mz != 0);
   const bool sprintHeld = keyShift;
   const bool sprinting = sprintHeld && moving;
   // JS: updateSprint(rawDt, sprintHeld, moving && sprintHeld, safeSpawn>0)
-  state.updateSprint(rawDt, sprintHeld, moving && sprintHeld, state.safeSpawn > 0);
+  state.updateSprint(rawDt, sprintHeld, moving && sprintHeld, false);
   const double sprintMult = state.sprintSpeedMult();
   if (moving) {
     dc::Mover pos{camX, camZ};

@@ -1081,6 +1081,15 @@ struct App {
   struct FirePatch { double x = 0, z = 0, t = 0; bool active = false; };
   std::vector<FirePatch> firePatches;
   int firePatchIdx = 0;
+  // Electric chain visuals (§16.4): screen flash + lightning arcs
+  double flashT = 0;             // >0 = white flash fading out
+  std::array<double, 30> arcX{}; // segment start X (6 segments × 5 pairs)
+  std::array<double, 30> arcY{}; // segment start Y
+  std::array<double, 30> arcZ{}; // segment start Z
+  std::array<double, 30> arcEx{};// segment end X
+  std::array<double, 30> arcEy{};// segment end Y
+  std::array<double, 30> arcEz{};// segment end Z
+  int arcCount = 0;              // how many segments active
   GLuint dynVbo = 0;        // dynamic instance VBO (boss + enemies, 9 floats)
   int dynCount = 0;
   GLuint enemVbo = 0;       // §12.2 enemy-only instance VBO (skeleton roster, 9 floats)
@@ -1882,10 +1891,74 @@ void App::_rollSwordProcs(int tier) {
       char buf[64];
       std::snprintf(buf, sizeof(buf), "ELECTRIC CHAIN — %d foes blasted!", count);
       toast(buf);
-      if (!firePatches.empty()) { // fire patch at the player (JS firePatch)
+      flashT = 0.25; // bright white flash, lasts 0.25 s
+      // Fire multiple firePatches at hit locations (player + each target)
+      for (int i = 0; i < 3 && !firePatches.empty(); ++i) {
         FirePatch& p = firePatches[firePatchIdx];
         firePatchIdx = (firePatchIdx + 1) % (int)firePatches.size();
-        p.x = px; p.z = pz; p.t = 0; p.active = true;
+        // Spread patches: player + offsets
+        const double ox = (i - 1) * 1.5;
+        const double oz = (i % 2) * 2.0 - 1.0;
+        p.x = px + ox; p.z = pz + oz; p.t = 0; p.active = true;
+      }
+      // Build lightning arc segments from player to each nearby hit target
+      arcCount = 0;
+      // Arc to boss
+      if (bossReady && !boss.dead &&
+          std::hypot(boss.pos.x - px, boss.pos.z - pz) < dc::sword::kElectricRange) {
+        if (arcCount < (int)arcX.size()) {
+          arcX[arcCount] = px; arcY[arcCount] = 1.2; arcZ[arcCount] = pz;
+          arcEx[arcCount] = boss.pos.x; arcEy[arcCount] = 1.2; arcEz[arcCount] = boss.pos.z;
+          arcCount++;
+        }
+      }
+      for (dc::Enemy* e : skelsys.nearby(px, pz, dc::sword::kElectricRange)) {
+        if (!e->alive() || arcCount >= (int)arcX.size()) continue;
+        arcX[arcCount] = px; arcY[arcCount] = 1.2; arcZ[arcCount] = pz;
+        arcEx[arcCount] = e->pos.x; arcEy[arcCount] = 1.2; arcEz[arcCount] = e->pos.z;
+        arcCount++;
+      }
+      // Add zigzag segments for drama (split each arc into 3 jagged segments)
+      int origCount = arcCount;
+      for (int i = origCount - 1; i >= 0; i--) {
+        if (arcCount + 2 >= (int)arcX.size()) break;
+        const double sx = arcX[i], sy = arcY[i], sz = arcZ[i];
+        const double ex = arcEx[i], ey = arcEy[i], ez = arcEz[i];
+        // 2 intermediate zigzag points
+        for (int j = 1; j <= 2; ++j) {
+          const double t = (double)j / 3.0;
+          double mx = sx + (ex - sx) * t;
+          double my = 0.5 + 0.7 * (1.0 - t); // arch up
+          double mz = sz + (ez - sz) * t;
+          // Offset perpendicular to direction for jagged look
+          double dx = ex - sx, dz = ez - sz;
+          double len = std::hypot(dx, dz);
+          if (len > 0.01) {
+            double px2 = -dz / len * (0.3 + 0.5 * ((i * 7 + j * 13) % 10) / 10.0);
+            double pz2 = dx / len * (0.3 + 0.5 * ((i * 7 + j * 13) % 10) / 10.0);
+            mx += px2; mz += pz2;
+          }
+          arcX[arcCount] = mx - (ex - mx) * 0.0; // keep as start
+          arcY[arcCount] = my;
+          arcZ[arcCount] = mz;
+          arcEx[arcCount] = ex; arcEy[arcCount] = ey; arcEz[arcCount] = ez;
+          // Actually: start at intermediate, end at next intermediate
+          if (arcCount + 1 < (int)arcX.size()) {
+            double nx = sx + (ex - sx) * (j + 1) / 3.0;
+            double ny = 0.5 + 0.7 * (1.0 - (j + 1) / 3.0);
+            double nz = sz + (ez - sz) * (j + 1) / 3.0;
+            double ndx = nx - sx, ndz = nz - sz;
+            double nlen = std::hypot(ndx, ndz);
+            if (nlen > 0.01) {
+              double npx = -ndz / nlen * (0.3 + 0.5 * ((i * 7 + j * 17) % 10) / 10.0);
+              double npz = ndx / nlen * (0.3 + 0.5 * ((i * 7 + j * 17) % 10) / 10.0);
+              nx += npx; nz += npz;
+            }
+            arcX[arcCount] = mx; arcY[arcCount] = my; arcZ[arcCount] = mz;
+            arcEx[arcCount] = nx; arcEy[arcCount] = ny; arcEz[arcCount] = nz;
+            arcCount++;
+          }
+        }
       }
     }
   }
@@ -2626,6 +2699,42 @@ void App::uploadDynamic(std::vector<float>& dyn, std::vector<float>& enem) {
     if (s <= 0.001f) continue;
     push((float)p.x, 0.04f, (float)p.z, s, 0.06f, s, 1.0f, 0.45f, 0.1f);
   }
+  // ---- ELECTRIC CHAIN lightning arcs (bright blue-white, additive, thick lines) ----
+  if (arcCount > 0 && flashT > 0.1f) {
+    // Flash intensity: full at flashT=0.25, fades out by flashT=0.05
+    const float flashAlpha = (float)(flashT / 0.25);
+    const float alpha = std::max(0.0f, std::min(1.0f, flashAlpha * 2.0f));
+    if (alpha > 0.01f) {
+      // Use GL_LINES to draw bright lightning arcs
+      // Each arc segment is a line from (arcX[i],arcY[i],arcZ[i]) to (arcEx[i],arcEy[i],arcEz[i])
+      // We'll use a simple approach: draw thin bright lines via GL_LINES
+      // Since we don't have a dedicated line shader, we'll use the lit shader with emissive
+      // For simplicity: draw as small glowing cylinders (thin capsules) using push()
+      for (int i = 0; i < arcCount; i++) {
+        const float sx = (float)arcX[i], sy = (float)arcY[i], sz = (float)arcZ[i];
+        const float ex = (float)arcEx[i], ey = (float)arcEy[i], ez = (float)arcEz[i];
+        const float dx = ex - sx, dz = ez - sz;
+        const float len = std::sqrt(dx * dx + dz * dz);
+        if (len > 0.01f) {
+          // Draw a line of small glowing segments
+          const int segs = 6; // 6 segments per arc for dramatic effect
+          for (int s = 0; s < segs; s++) {
+            const float t = (float)s / (float)(segs - 1);
+            const float px = sx + dx * t;
+            const float pz = sz + dz * t;
+            const float py = sy + (ey - sy) * t + 0.15f * std::sin(t * 3.14159f);
+            // Zigzag offset
+            const float zig = 0.08f * std::sin(t * 12.0f + i * 5.0f);
+            const float nx = -dz / len * zig;
+            const float nz = dx / len * zig;
+            // Small glowing sphere at segment
+            const float sz2 = 0.08f * alpha;
+            push(px + nx, py, pz + nz, sz2, sz2 * 2.0f, sz2, 0.6f, 0.8f, 1.0f);
+          }
+        }
+      }
+    }
+  }
   // ---- breakables (barrels/crates) — warm brown, emissive ----
   for (const auto& b : drops.breakables())
     if (b.alive) push((float)b.pos.x, 0.5f, (float)b.pos.z, 0.5f, 0.7f, 0.5f, 0.55f, 0.4f, 0.25f);
@@ -3208,6 +3317,9 @@ void App::update(double dt, double rawDt) {
 
   // hit-stop: freeze the whole sim (movement + entities + combat) for kHitStop
   if (hitStop > 0) { hitStop -= rawDt; mouseDX = mouseDY = 0; return; }
+  // Electric chain visuals: advance flash + arcs
+  if (flashT > 0) flashT -= rawDt;
+  // Arcs: arch up slightly for visual effect (already baked in at spawn)
   const float sens = (float)player::kSensitivity;
   // ---- look (pointer-locked) ----
   if (pointerLocked) {
@@ -3640,6 +3752,13 @@ void App::frame() {
   glBindVertexArray(quadVao);
   glDrawArrays(GL_TRIANGLES, 0, 3);
   glBindVertexArray(0);
+
+  // ---- ELECTRIC CHAIN screen flash (bright blue-white, additive) ----
+  if (flashT > 0.01f && arcCount > 0) {
+    const float flashAlpha = (float)(flashT / 0.25);
+    const float a = std::max(0.0f, std::min(1.0f, flashAlpha * 2.0f));
+    drawOverlay(0.55f * a, 0.70f * a, 1.0f * a, a * 0.45f);
+  }
 
   // ---- 4) title / death text overlay (screen-space, blended) ----
   if (screen == Screen::Title || screen == Screen::Dead) {

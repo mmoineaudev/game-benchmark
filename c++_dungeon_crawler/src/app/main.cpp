@@ -309,7 +309,6 @@ vec3 surfaceDetail(vec3 wp, vec3 n, int regionType, int surfaceType) {
   }
 }
 
-uniform float uTime;
 void main() {
   // torch flicker: layered sin waves + noise
   float flick = 0.94 + 0.06 * sin(uTime * 3.7) * sin(uTime * 7.1) + 0.03 * sin(uTime * 13.3);

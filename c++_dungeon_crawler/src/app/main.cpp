@@ -3737,6 +3737,7 @@ int main(int argc, char** argv) {
   const char* savePath = nullptr;
   bool showFps = false, bossView = false, combatView = false, descendView = false;
   bool titleView = false, deathView = false, hudView = false, degradedView = false;
+  bool playView = false;
   bool enemyView = false, dropView = false, burnView = false;
   bool swordView = false;
   bool hunterView = false;
@@ -3754,6 +3755,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--combat-view")) combatView = true;
     else if (!std::strcmp(argv[i], "--descend-view")) descendView = true;
     else if (!std::strcmp(argv[i], "--title")) titleView = true;
+    else if (!std::strcmp(argv[i], "--play")) playView = true;
     else if (!std::strcmp(argv[i], "--death-view")) deathView = true;
     else if (!std::strcmp(argv[i], "--hud-view")) hudView = true;
     else if (!std::strcmp(argv[i], "--degraded")) degradedView = true;
@@ -3781,7 +3783,8 @@ int main(int argc, char** argv) {
     const bool sceneView = bossView || combatView || descendView || vaultView ||
                             enemyView || dropView || burnView || hudView || deathView ||
                             timeoutView || startView || loadView || swordView || hunterView;
-    app.screen = (titleView || !sceneView) ? App::Screen::Title : App::Screen::Play;
+    app.screen = playView ? App::Screen::Play
+                          : ((titleView || !sceneView) ? App::Screen::Title : App::Screen::Play);
   }
   glfwSetKeyCallback(app.window, keyCb);
   glfwSetCursorPosCallback(app.window, cursorCb);

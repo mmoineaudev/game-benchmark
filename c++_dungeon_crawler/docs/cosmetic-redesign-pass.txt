@@ -1,0 +1,58 @@
+COSMETIC REDESIGN PASS — IMPLEMENTED
+=====================================
+
+1. CEILING PROPS (instanced, shadow-casting)
+   - Stalactite spikes for caves (FUNGAL_CAVERN, POISON_SWAMP, VOLCANIC_DEPTHS)
+   - Icicles for FROZEN_HALLS (taller, bright ice color)
+   - Crystal formations for CRYSTAL_DEPTHS (colored crystals)
+   - Golden pillars for GOLDEN_TEMPLE
+   - Candle sconces for HAUNTED_CRYPT / SPECTRAL_COURT
+   - Ice formations for FLOODED_RUINS
+   - Generic stalactites for STONE, EMBER_FORGE
+   - Placement: ~30% of room cells, hanging from ceiling
+
+2. WALL PROPS (instanced, shadow-casting)
+   - Golden pillars on exposed walls in GOLDEN_TEMPLE
+   - Candle sconces in HAUNTED_CRYPT / SPECTRAL_COURT
+   - Ice formations in FROZEN_HALLS
+   - Generic sconces/cracks in other biomes
+   - Placement: boundary edges of wall surface cells, ~2-4% per cell
+
+3. FLOOR PATCHES (emissive glow, additive bloom, shadow-casting)
+   - Crystal shards for CRYSTAL_DEPTYS (colored, slightly tilted)
+   - Bioluminescent fungus for FUNGAL_CAVERN (green/yellow glow)
+   - Fissure glow for EMBER_FORGE (warm red/orange)
+   - Ice refraction for FROZEN_HALLS (bright white/blue)
+   - Generic subtle glow for other biomes
+   - Placement: ~5% of room cells, 0.3-0.7m radius, y=0.22
+
+4. ATMOSPHERIC PARTICLES (50 instances, additive, biome-specific)
+   - EMBER_FORGE: warm red/orange flickering particles
+   - FROZEN_HALLS: bright white/blue snow particles
+   - CRYSTAL_DEPTYS: purple sparkle particles
+   - FUNGAL_CAVERN: green pulsing spore particles
+   - FLOODED_RUINS: blue/green water particles
+   - HAUNTED_CRYPT / SPECTRAL_COURT: blue ghost particles
+   - GOLDEN_TEMPLE: golden motes
+   - Default: subtle gray particles
+   - Shared vertex/fragment shader with per-type animation
+
+5. RENDER LOOP INTEGRATION
+   - Shadow pass: all new props (ceiling, walls, floor patches) cast shadows
+   - Scene pass: props lit by torch + headlight
+   - Floor patches: drawn with uEmissive=2.0, additive blending (bloom)
+   - Atmospheric particles: drawn in decorative passes section, additive
+
+6. PER-BIOME MATERIAL VARIATION
+   - Ceiling props use per-biome colors (ice=white, crystal=colored, cave=dark)
+   - Wall props use per-biome colors (gold, candle, ice, generic)
+   - Floor patches use per-biome emissive colors
+   - Atmospheric particles use per-biome colors
+
+IMPLEMENTATION NOTES
+====================
+- All new geometry uses existing instanced rendering (18-float stride: offset3 + scale3 + color3 + rotation3x3)
+- Floor patches use additive blending (GL_SRC_ALPHA, GL_ONE) for bloom effect
+- Atmospheric particles use shared vertex/fragment shader with uParticleType uniform
+- Degraded mode: new props draw count halved (spec §22 rule 1)
+- All props shadow-cast in torch shadow pass

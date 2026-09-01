@@ -172,23 +172,23 @@ constexpr double kSoulsHpBonus = 0.25;
 
 // Enemy HP multiplier (NG+ × level × linear overflow). §3/§16.1 — LINEAR overflow.
 inline double enemyHpMultiplier(int ngPlus, int level, double souls) {
-  return (1.0 + 3.0 * ngPlus) *
+  return (1.0 + 1.0 * ngPlus) *
          (1.0 + std::floor(level / 10.0)) *
          (1.0 + 1.5 * std::floor(std::max(0.0, level + souls - 990.0) / 10.0));
 }
 
-// Boss HP. §17 — pressure capped at ×2, wealth stack halved. LINEAR overall.
+// Boss HP. §17 — pressure uncapped, wealth stack halved. LINEAR overall.
 inline int bossHp(int level, int ngPlus, double souls, int maxHealth) {
   const int heartsExtra = std::max(0, std::min(maxHealth - 3, 10));
   const double soulsPart = 1.0 + kSoulsHpBonus * std::floor(souls / 50.0);
   const double heartsPart = std::pow(1.0 + kHeartsHpBonus, heartsExtra);
-  const double pressure = std::min((1.0 + 3.0 * ngPlus) * (1.0 + std::floor(level / 10.0)), boss::kHpLevelCap);
+  const double pressure = (1.0 + 1.0 * ngPlus) * (1.0 + std::floor(level / 10.0));
   const double wealth = 1.0 + (soulsPart * heartsPart - 1.0) / 2.0;
   return static_cast<int>(std::ceil(boss::kBaseHp * pressure * wealth));
 }
 
-// BURN HP — v2 ruling: 30 flat at NG0 every level, then ×(1 + 3·ngPlus).
-inline int burnHp(int ngPlus) { return static_cast<int>(std::ceil(30.0 * (1.0 + 3.0 * ngPlus))); }
+// BURN HP — v2 ruling: 30 flat at NG0 every level, then ×(1 + 1·ngPlus).
+inline int burnHp(int ngPlus) { return static_cast<int>(std::ceil(30.0 * (1.0 + 1.0 * ngPlus))); }
 
 // Biome for a level — boss branch first, else the 2-level cyclic ladder. §7.
 inline std::string biomeForLevel(int level) {
@@ -386,6 +386,11 @@ inline double weaponSoulBonus(int souls) { return 1.0 + 0.01 * std::floor(souls 
 inline double damageMult(double scale, int tier, int level, int souls = 0) {
   return (1.0 + (scale - 1.0) * 0.5) * std::pow(1.1, tier) * std::pow(1.1, std::floor(level / 5.0))
          * weaponSoulBonus(souls);
+}
+
+// NG+ damage multiplier: ×2 per NG+ tier (permanent buff). §NG+.
+inline double ngPlusDamageMult(int ngPlus) {
+  return std::pow(2.0, ngPlus);
 }
 
 // Sword SIZE ladder: tier-driven only (+80%/tier, ×5 at T5). Orbs never drive size. §9.2

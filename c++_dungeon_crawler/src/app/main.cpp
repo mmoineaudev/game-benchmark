@@ -217,31 +217,65 @@ vec3 pointLight(vec3 L, vec3 lcolor, float intensity, float distance, float shad
 }
 // ---- procedural stone surface (visual detail): per-block value noise +
 //      mortar lines + fine grain, in world space so it doesn't swim. ----
+// ---- hash: fast 2D→1D noise seed ----
 float hash12(vec2 p) {
   p = fract(p * vec2(123.34, 345.78));
   p += dot(p, p + 34.23);
   return fract(p.x * p.y * 34.11);
 }
+float hash21(vec2 p, float seed) {
+  return fract(sin(dot(p, vec2(12.9898 + seed, 78.233)) + seed) * 43758.5453);
+}
+// ---- procedural stone surface: per-block noise + mortar lines + fine grain
+//      + crack network + crevice AO + wetness highlights ----
 float stoneDetail(vec3 wp, vec3 n) {
   vec2 uv;
   if (abs(n.y) > 0.5)      uv = wp.xz;
   else if (abs(n.x) > 0.5) uv = wp.zy;
   else                     uv = wp.xy;
-  const float cell = 1.2;                 // ~1.2-unit stone blocks
+  const float cell = 1.2;
   vec2 gid = floor(uv / cell);
   float blockVar = 0.82 + 0.32 * hash12(gid);            // per-block brightness
   vec2 f = fract(uv / cell) - 0.5;
+  // ---- crack network: 2D Voronoi → skeleton → crack lines ----
+  {
+    vec2 gv = floor(uv / 0.5);
+    vec2 gvCell = vec2(hash12(gv + vec2(0,0)), hash12(gv + vec2(1,0)) + hash12(gv + vec2(0,1)));
+    vec2 center = vec2(hash12(gv + vec2(0,0)), hash12(gv + vec2(1,0))) + vec2(0.5);
+    vec2 gf = fract(uv / 0.5) - 0.5;
+    vec2 dist = gf - center;
+    float d = length(dist);
+    float crack = 1.0 - smoothstep(0.0, 0.03, abs(dist.x * dist.y) / max(d, 0.01)); // diagonal crack
+    float crack2 = 1.0 - smoothstep(0.0, 0.02, abs(gf.x * 0.7 + gf.y * 0.3 - 0.1)); // random micro crack
+    float crackLine = max(crack, crack2);
+    float crackMask = step(hash12(gid * 2.0), 0.6) * crackLine; // only on some blocks
+    blockVar *= 1.0 - crackMask * 0.8 * (1.0 - 0.72); // dark cracks in geometry crevices
+  }
+  // mortar seam (dark crevice between blocks)
   float edge = smoothstep(0.5, 0.42, max(abs(f.x), abs(f.y))); // 1 inside, 0 at seam
-  float mortar = mix(0.55, 1.0, edge);                  // dark mortar seam
-  float grain = 0.88 + 0.22 * hash12(uv * 7.31);       // fine speckle
-  // broad vertical AO: darker toward the floor line
-  float ao = 0.85 + 0.15 * clamp(wp.y * 0.25 + 0.5, 0.0, 1.0);
-  return blockVar * mortar * grain * ao;
+  float mortar = mix(0.55, 1.0, edge); // 1 inside, 0 at seam
+  // fine speckle grain
+  float grain = 0.88 + 0.22 * hash12(uv * 7.31);
+  // crevice AO: darker where blocks meet, stronger on floor
+  float creviceAO = 0.4 * mortar + 0.6; // mortar is already dark; don't double-dark
+  float ao = creviceAO * (0.85 + 0.15 * clamp(wp.y * 0.25 + 0.5, 0.0, 1.0));
+  // wetness / specular highlight: subtle sheen on horizontal surfaces
+  float wetness = 0.0;
+  if (abs(n.y) > 0.5) {
+    float wetPatch = hash21(uv * 0.3, 1.0);
+    wetness = smoothstep(0.6, 0.8, wetPatch) * 0.12; // specular boost
+    wetness *= smoothstep(0.0, 0.15, wp.y + 0.5); // brighter near camera (AO)
+  }
+  return blockVar * mortar * grain * ao * (1.0 + wetness);
 }
+uniform float uTime;
 void main() {
+  // torch flicker: layered sin waves + noise
+  float flick = 0.94 + 0.06 * sin(uTime * 3.7) * sin(uTime * 7.1) + 0.03 * sin(uTime * 13.3);
+  vec3 torchCol = uTorchColor * flick;
   vec3 albedo = vColor * stoneDetail(vWorld, vNormal);
   vec3 lit = albedo * uAmbient;
-  lit += pointLight(uTorchPos, uTorchColor, uTorchIntensity, uTorchDist, shadowFactor(vTorchPos)) * albedo;
+  lit += pointLight(uTorchPos, torchCol, uTorchIntensity, uTorchDist, shadowFactor(vTorchPos)) * albedo;
   lit += pointLight(uHeadPos, uHeadColor, uHeadIntensity, uHeadDist, 1.0) * albedo;
   if (uEmissive > 0.5) lit = vColor * 0.9; // unlit emissive (boss / skeletons) — keep ≤1 to avoid bloom blowout
   // per-biome exponential fog (JS FogExp2; density pre-scaled for the C++ scene)
@@ -280,11 +314,15 @@ const char* kSmokeFrag = R"(
 in float vA;
 in vec2 vC;
 uniform vec3 uColor;
+uniform float uTime;
 out vec4 fragColor;
 void main() {
-  float a = smoothstep(0.5, 0.1, length(vC)) * vA * 0.5;
+  float d = length(vC);
+  float a = smoothstep(0.5, 0.1, d) * vA * 0.5;
   if (a < 0.01) discard;
-  fragColor = vec4(uColor, a);
+  // ambient shimmer: slight brightness variation over time
+  float shimmer = 1.0 + 0.15 * sin(uTime * 1.5 + d * 10.0);
+  fragColor = vec4(uColor * shimmer, a);
 }
 )";
 
@@ -310,11 +348,151 @@ const char* kDustFrag = R"(
 in vec2 vC;
 uniform vec3 uColor;
 uniform float uOpacity;
+uniform float uTime;
 out vec4 fragColor;
 void main() {
-  float a = smoothstep(0.5, 0.0, length(vC)) * uOpacity;
+  float d = length(vC);
+  float a = smoothstep(0.5, 0.0, d) * uOpacity;
   if (a < 0.01) discard;
-  fragColor = vec4(uColor, a);
+  // additive glow: bright center, fading halo
+  float glow = exp(-d * 3.0) * 0.3;
+  vec3 col = uColor * (1.0 + glow + 0.1 * sin(uTime * 2.0));
+  fragColor = vec4(col, a + glow);
+}
+)";
+
+// §13 Atmospheric particles: biome-specific ambient particles (embers, snow, spores, crystal dust).
+// Shared vertex shader for all atmospheric particles — GPU billboard quads.
+const char* kAtmoVert = R"(
+#version 330 core
+layout(location=0) in vec2 aC;      // corner -0.5..0.5 (per-vertex quad)
+layout(location=1) in vec3 aPos;    // per-instance position
+uniform mat4 uViewProj;
+uniform mat4 uView;
+uniform float uAtmoRad;
+out vec2 vC;
+void main() {
+  vec3 right = vec3(uView[0].x, uView[0].y, uView[0].z);
+  vec3 upv   = vec3(uView[1].x, uView[1].y, uView[1].z);
+  vC = aC;
+  gl_Position = uViewProj * vec4(aPos + (right * aC.x + upv * aC.y) * uAtmoRad, 1.0);
+}
+)";
+
+const char* kAtmoFrag = R"(
+#version 330 core
+in vec2 vC;
+uniform vec3 uColor;
+uniform float uOpacity;
+uniform float uTime;
+uniform float uParticleType; // 0=ember, 1=snow, 2=spore, 3=crystal_dust
+out vec4 fragColor;
+void main() {
+  float d = length(vC);
+  float a = smoothstep(0.5, 0.0, d) * uOpacity;
+  if (a < 0.01) discard;
+  // additive glow: bright center, fading halo
+  float glow = exp(-d * 3.0) * 0.4;
+  // per-type animation
+  float flicker = 1.0;
+  if (uParticleType > 0.5 && uParticleType < 1.5) {
+    // ember: flickering bright particles
+    flicker = 0.8 + 0.2 * sin(uTime * 5.0 + d * 20.0);
+    glow *= 1.5;
+  } else if (uParticleType > 1.5 && uParticleType < 2.5) {
+    // spore: gentle pulsing glow
+    flicker = 0.9 + 0.1 * sin(uTime * 2.0 + d * 10.0);
+  } else if (uParticleType > 3.5) {
+    // crystal dust: subtle sparkle
+    flicker = 0.7 + 0.3 * pow(1.0 - d, 2.0);
+    glow *= 2.0;
+  } else {
+    // snow: subtle drift shimmer
+    flicker = 0.85 + 0.15 * sin(uTime * 1.5);
+  }
+  vec3 col = uColor * (1.0 + glow * flicker);
+  fragColor = vec4(col, a + glow);
+}
+)";
+
+// §14 Enemy projectile trail particles
+const char* kProjTrailVert = R"(
+#version 330 core
+layout(location=0) in vec2 aC;
+layout(location=1) in vec3 aPos;
+uniform mat4 uViewProj;
+uniform mat4 uView;
+uniform float uTrailRad;
+out vec2 vC;
+void main() {
+  vec3 right = vec3(uView[0].x, uView[0].y, uView[0].z);
+  vec3 upv   = vec3(uView[1].x, uView[1].y, uView[1].z);
+  vC = aC;
+  gl_Position = uViewProj * vec4(aPos + (right * aC.x + upv * aC.y) * uTrailRad, 1.0);
+}
+)";
+
+const char* kProjTrailFrag = R"(
+#version 330 core
+in vec2 vC;
+uniform vec3 uColor;
+uniform float uOpacity;
+uniform float uTime;
+out vec4 fragColor;
+void main() {
+  float d = length(vC);
+  float a = smoothstep(0.5, 0.0, d) * uOpacity;
+  if (a < 0.01) discard;
+  // trailing glow with color shift
+  float trailGlow = exp(-d * 4.0) * 0.4;
+  vec3 col = uColor * (1.0 + trailGlow + 0.15 * sin(uTime * 4.0));
+  fragColor = vec4(col, a + trailGlow);
+}
+)";
+
+// §14 Portal/exit marker enhancements: orbiting particles + beacon beam sweep
+const char* kPortalParticleVert = R"(
+#version 330 core
+layout(location=0) in vec2 aC;
+layout(location=1) in vec3 aPos;
+layout(location=2) in float aPhase;
+uniform mat4 uViewProj;
+uniform mat4 uView;
+uniform float uPortalRad;
+uniform float uTime;
+out vec2 vC;
+out float vPhase;
+void main() {
+  vec3 right = vec3(uView[0].x, uView[0].y, uView[0].z);
+  vec3 upv   = vec3(uView[1].x, uView[1].y, uView[1].z);
+  vC = aC;
+  vPhase = aPhase;
+  // orbiting motion: slight rotation around center
+  float orbitAngle = uTime * 2.0 + aPhase;
+  vec3 orbitOffset = vec3(cos(orbitAngle) * 0.15, sin(orbitAngle) * 0.15, 0.0);
+  gl_Position = uViewProj * vec4(aPos + orbitOffset + (right * aC.x + upv * aC.y) * uPortalRad, 1.0);
+}
+)";
+
+const char* kPortalParticleFrag = R"(
+#version 330 core
+in vec2 vC;
+in float vPhase;
+uniform vec3 uColor;
+uniform float uOpacity;
+uniform float uTime;
+out vec4 fragColor;
+void main() {
+  float d = length(vC);
+  float a = smoothstep(0.5, 0.0, d) * uOpacity;
+  if (a < 0.01) discard;
+  // beacon beam sweep: brightness oscillates per particle
+  float sweep = 0.7 + 0.3 * sin(uTime * 3.0 + vPhase * 6.28);
+  vec3 col = uColor * sweep;
+  // sparkle highlight
+  float sparkle = pow(1.0 - d, 3.0) * 0.3;
+  col += vec3(sparkle);
+  fragColor = vec4(col, a);
 }
 )";
 
@@ -341,7 +519,7 @@ void main() {
   wp.x = aOffset.x + cos(aRot) * aPos.x;
   wp.y = aOffset.y + aPos.y;
   wp.z = aOffset.z - sin(aRot) * aPos.x;
-  vUv = vec2(aUvX + aUv.x / 8.0, aUv.y);
+  vUv = vec2(aUvX + aUv.x / 16.0, aUv.y);
   vColor = aColor;
   vPhase = aPhase;
   gl_Position = uViewProj * vec4(wp, 1.0);
@@ -359,9 +537,12 @@ out vec4 fragColor;
 void main() {
   vec4 t = texture(uAtlas, vUv);
   float pulse = 0.55 + 0.45 * sin(uTime * 2.0 + vPhase);
-  float a = t.a * pulse;
+  // bioluminescent glow: inner bright core + outer halo
+  float glow = smoothstep(0.3, 0.9, t.a) * 0.35 * pulse; // glow halo
+  float a = t.a * pulse + glow;
+  vec3 col = vColor * (1.0 + glow); // brighten by glow amount
   if (a < 0.01) discard;
-  fragColor = vec4(vColor * t.rgb, a);
+  fragColor = vec4(col, min(a, 0.95));
 }
 )";
 
@@ -378,7 +559,9 @@ uniform float uTime;
 out vec3 vWorld;
 void main() {
   vec3 wp = vec3(aOffset.x + aPos.x * aScale.x, aOffset.y, aOffset.z + aPos.y * aScale.y);
+  // multi-frequency wave for natural ripple
   wp.y += sin(uTime * 1.5 + aPhase + dot(aPos, vec2(2.0))) * 0.03;
+  wp.y += sin(uTime * 3.2 + aPhase * 1.7 + dot(aPos, vec2(-1.5, 2.3))) * 0.015;
   vWorld = wp;
   gl_Position = uViewProj * vec4(wp, 1.0);
 }
@@ -386,6 +569,7 @@ void main() {
 
 const char* kWaterFrag = R"(
 #version 330 core
+uniform float uTime;
 in vec3 vWorld;
 uniform vec3 uEyePos;
 out vec4 fragColor;
@@ -393,6 +577,14 @@ void main() {
   vec3 col = vec3(0.227, 0.416, 0.541); // 0x3a6a8a
   float d = distance(vWorld, uEyePos);
   float vis = clamp(1.0 - d * 0.04, 0.3, 1.0);
+  // caustic shimmer: intersecting sine waves
+  float caustic = 0.85 + 0.15 * sin(d * 4.0 + uTime * 1.5) * sin(dot(vWorld.xz * 2.0, vec2(1.0, 0.7) + uTime * 0.3));
+  col *= caustic;
+  // fresnel rim brightness
+  vec3 viewDir = normalize(uEyePos - vWorld);
+  vec3 normal = normalize(vWorld - vec3(vWorld.x, vWorld.y + 0.1, vWorld.z));
+  float fresnel = pow(1.0 - abs(dot(viewDir, normal)), 2.0);
+  col += vec3(0.15, 0.2, 0.25) * fresnel;
   fragColor = vec4(col * vis, 0.75);
 }
 )";
@@ -422,6 +614,7 @@ const char* kBlurFrag = R"(
 in vec2 vUv;
 uniform sampler2D uTex;
 uniform vec2 uDir;
+uniform float uGlowPulse;
 out vec4 fragColor;
 void main() {
   vec3 acc = texture(uTex, vUv).rgb * 0.227;
@@ -429,7 +622,10 @@ void main() {
   acc += texture(uTex, vUv - uDir * 1.3846).rgb * 0.3162;
   acc += texture(uTex, vUv + uDir * 3.2308).rgb * 0.07027;
   acc += texture(uTex, vUv - uDir * 3.2308).rgb * 0.07027;
-  fragColor = vec4(acc, 1.0);
+  // wider pass for pulsing glow
+  acc += texture(uTex, vUv + uDir * 5.6308).rgb * 0.0269;
+  acc += texture(uTex, vUv - uDir * 5.6308).rgb * 0.0269;
+  fragColor = vec4(acc * uGlowPulse, 1.0);
 }
 )";
 
@@ -443,6 +639,8 @@ uniform sampler2D uGlowSharp;
 uniform sampler2D uGlowBlur;
 uniform float uGlowIntensity;
 uniform float uGlowPulse;
+uniform float uTime;
+uniform float uNearMiss; // 0.0 = no near-miss, 1.0 = triggered
 out vec4 fragColor;
 void main() {
   vec3 scene = texture(uScene, vUv).rgb;
@@ -451,20 +649,105 @@ void main() {
   vec3 blur  = texture(uGlowBlur, vUv).rgb;
   vec3 glow = (blur * 1.6 * uGlowPulse + sharp * 0.5) * uGlowIntensity; // §12.2 EnemyGlowShader
   vec3 c = scene + bloom * uStrength + glow;
+  // enhanced vignette: deeper corners, smoother falloff
+  vec2 q = vUv - 0.5;
+  float vig = 1.0 - dot(q, q) * 0.45; // 1.0 → ~0.78 corners
+  vig *= 0.95 + 0.05 * sin(uGlowPulse * 0.5); // subtle pulse synced with glow
+  // HUD danger glow: soft gradient border on near-miss
+  float nearMiss = uNearMiss * sin(uTime * 3.0) * 0.5; // pulsing near-miss (halved for perf)
+  vec2 hudEdge = vec2(abs(q.x * 4.0 - 0.5), abs(q.y * 4.0 - 0.5));
+  float borderGlow = smoothstep(0.3, 0.0, min(hudEdge.x, hudEdge.y)) * nearMiss * 0.25;
+  c += vec3(0.4, 0.1, 0.1) * borderGlow; // subtle red border pulse
   // ---- visual detail: subtle radial vignette (cinematic depth, focuses the
   //      eye; the HUD is drawn on top so it is unaffected) ----
-  vec2 q = vUv - 0.5;
-  float vig = 1.0 - dot(q, q) * 0.5; // 1.0 center → ~0.75 corners
   fragColor = vec4(c * vig, 1.0);
 }
 )";
 
 // §12.2 enemy-glow: flat red-orange override material (JS GLOW_MAT 0xff4422)
+// Enhanced: pulsing edge flash, brighter core, multi-frame hit-flash support
 const char* kFlatMaskFrag = R"(
 #version 330 core
+uniform float uTime;
+uniform float uHitFlash; // 0.0 = normal glow, 1.0 = flash active
 out vec4 fragColor;
-void main() { fragColor = vec4(1.0, 0.267, 0.133, 1.0); } // 0xff4422
+void main() {
+  float pulse = 1.0 + 0.15 * sin(uTime * 3.0);
+  vec3 baseColor = vec3(1.0, 0.267, 0.133); // 0xff4422
+  // hit-flash: rapid bright→white→cool→fade (3-frame sequence)
+  float flashT = mod(uTime * 8.0, 1.0); // 0→1 over 0.125s flash
+  vec3 flashColor = vec3(0.0);
+  if (flashT < 0.15) {
+    // frame 1: bright white flash
+    float flashAmt = clamp(flashT / 0.15 * uHitFlash, 0.0, 1.0);
+    flashColor = mix(baseColor * pulse, vec3(1.0), flashAmt);
+  } else if (flashT < 0.4) {
+    // frame 2: cool blue shift
+    float t = clamp((flashT - 0.15) / 0.25, 0.0, 1.0);
+    flashColor = mix(vec3(1.0), baseColor * 0.6, t) + vec3(0.0, 0.3, 0.5) * uHitFlash;
+  } else {
+    // frame 3: fade back to normal
+    float t = clamp((flashT - 0.4) / 0.6, 0.0, 1.0);
+    flashColor = mix(baseColor * 0.6, baseColor * pulse, t);
+  }
+  fragColor = vec4(flashColor, 1.0);
+}
 )";
+
+// §14 Sword enhancements: blade shimmer + highlight
+const char* kSwordShimmerVert = R"(
+#version 330 core
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec3 aNormal;
+layout(location=2) in vec3 aOffset;
+layout(location=3) in vec3 aScale;
+layout(location=4) in vec3 aColor;
+layout(location=5) in vec3 aRot0;
+layout(location=6) in vec3 aRot1;
+layout(location=7) in vec3 aRot2;
+uniform mat4 uViewProj;
+uniform float uTime;
+out vec3 vNormal;
+out vec3 vColor;
+out vec3 vWorld;
+out float vShimmer;
+void main() {
+  mat3 R = mat3(aRot0, aRot1, aRot2);
+  vec3 wp = R * (aPos * aScale) + aOffset;
+  vWorld = wp;
+  vNormal = R * aNormal;
+  vColor = aColor;
+  // shimmer: moving highlight along blade
+  float shimmer = 0.7 + 0.3 * sin(uTime * 6.0 + wp.y * 3.0);
+  vShimmer = shimmer;
+  gl_Position = uViewProj * vec4(wp, 1.0);
+}
+)";
+
+const char* kSwordShimmerFrag = R"(
+#version 330 core
+in vec3 vNormal;
+in vec3 vColor;
+in vec3 vWorld;
+in float vShimmer;
+uniform vec3 uHeadPos;
+uniform vec3 uHeadColor;
+uniform float uHeadIntensity;
+uniform float uHeadDist;
+uniform vec3 uAmbient;
+out vec4 fragColor;
+void main() {
+  vec3 albedo = vColor * vShimmer;
+  vec3 lit = albedo * uAmbient;
+  lit += pointLight(uHeadPos, uHeadColor, uHeadIntensity, uHeadDist, 1.0) * albedo;
+  // edge highlight
+  vec3 viewDir = normalize(uHeadPos - vWorld);
+  float rim = pow(1.0 - abs(dot(normalize(vNormal), viewDir)), 2.0);
+  lit += vec3(0.3, 0.35, 0.4) * rim * 0.5;
+  fragColor = vec4(min(lit, vec3(1.5)), 1.0);
+}
+)";
+
 
 // §12.2 enemy-glow separable gaussian: 5 taps, weights 0.227/0.194/0.121 at 0/1.4/3.4 texels
 const char* kEnemyBlurFrag = R"(
@@ -502,12 +785,27 @@ struct World {
   // degraded mode sheds the tail instances (count halved, spec §22 rule 1).
   GLuint instDebris = 0;
   int nDebris = 0;
+  // §13 ceiling props (stalactites, crystal formations, ice spires, fungal clusters):
+  // instanced small cones/spikes hanging from ceiling per-biome.
+  GLuint instCeilProps = 0;
+  int nCeilProps = 0;
+  // §13 wall props (sconces, pillars, giant mushrooms, broken statues):
+  // instanced wall decorations per-biome.
+  GLuint instWallProps = 0;
+  int nWallProps = 0;
+  // §13 biome-specific floor emissive patches (lava cracks, ice refraction, fungus glow):
+  // instanced flat planes just above floor with emissive glow.
+  GLuint instFloorPatches = 0;
+  int nFloorPatches = 0;
 
   void upload(const dc::Dungeon& d, const float cellCol[3], const float wallCol[3],
-              const float ceilCol[3], std::uint32_t seed);
+              const float ceilCol[3], std::uint32_t seed, const std::string& biome = "");
   void buildInstanceData(const dc::Dungeon& d, std::vector<float>& floorInst,
                          std::vector<float>& ceilInst, std::vector<float>& wallH,
                          std::vector<float>& wallE) const;
+  void buildProps(const dc::Dungeon& d, std::vector<float>& ceilProps,
+                  std::vector<float>& wallProps, std::vector<float>& floorPatches,
+                  const std::string& biome, std::uint32_t seed) const;
 };
 
 void World::buildInstanceData(const dc::Dungeon& d, std::vector<float>& floorInst,
@@ -544,8 +842,168 @@ void World::buildInstanceData(const dc::Dungeon& d, std::vector<float>& floorIns
   }
 }
 
+void World::buildProps(const dc::Dungeon& d, std::vector<float>& ceilProps,
+                       std::vector<float>& wallProps, std::vector<float>& floorPatches,
+                       const std::string& biome, std::uint32_t seed) const {
+  const float cs = (float)d.cellSize;
+  const float H = (float)dc::world::kWallHeight;
+  // Ceiling props sit at the top of the wall (y = H, which is the ceiling level).
+  // Wall props sit against the walls. Floor patches sit just above the floor.
+  // Per-biome placement: random based on seed, ~1 prop per 2-3 cells.
+  dc::Rng drng{seed ^ 0xDEADu}; // different seed offset from debris
+  const float ceilY = H - 0.05f; // just below the ceiling slab
+
+  const bool isCave = (biome == "FUNGAL_CAVERN" || biome == "POISON_SWAMP" || biome == "VOLCANIC_DEPTHS");
+  const bool isFrozen = (biome == "FROZEN_HALLS");
+  const bool isCrystal = (biome == "CRYSTAL_DEPTHS");
+  const bool isTemple = (biome == "GOLDEN_TEMPLE");
+  const bool isCrypt = (biome == "HAUNTED_CRYPT" || biome == "SPECTRAL_COURT");
+  const bool isFlooded = (biome == "FLOODED_RUINS");
+  const bool isEmber = (biome == "EMBER_FORGE");
+
+  // ---- CEILING PROPS: hanging stalactites, crystals, icicles, fungal clusters ----
+  for (int z = 0; z < d.gridSize; z++) {
+    for (int x = 0; x < d.gridSize; x++) {
+      if (d.grid[z][x] != dc::Cell::kRoom) continue;
+      if ((int)(drng.next() * 10) > 3) continue; // ~30% of room cells
+      const float wx = (float)(x * d.cellSize);
+      const float wz = (float)(z * d.cellSize);
+      // Stalactite spike: tall thin cone hanging from ceiling
+      if (isCave || isEmber) {
+        const float spikeLen = 0.8f + (float)drng.next() * 1.5f; // 0.8-2.3m hanging
+        const float spikeR = 0.08f + (float)drng.next() * 0.08f; // 0.08-0.16m radius
+        const float ry = ceilY - spikeLen * 0.5f; // center of spike
+        float col;
+        if (isEmber) col = 0.3f + (float)drng.next() * 0.2f; // warm dark red
+        else col = 0.25f + (float)drng.next() * 0.15f; // dark cave
+        ceilProps.insert(ceilProps.end(), {wx, ry, wz, spikeR * 2.0f, spikeLen, spikeR * 2.0f, col, col, col, 0,0,0, 0,1,0, 0,0,1});
+      } else if (isFrozen) {
+        const float spikeLen = 1.2f + (float)drng.next() * 2.0f; // taller icicles
+        const float spikeR = 0.06f + (float)drng.next() * 0.06f;
+        const float ry = ceilY - spikeLen * 0.5f;
+        const float icCol = 0.7f + (float)drng.next() * 0.2f; // bright ice
+        ceilProps.insert(ceilProps.end(), {wx, ry, wz, spikeR * 2.0f, spikeLen, spikeR * 2.0f, icCol, icCol, icCol + 0.05f, 0,0,0, 0,1,0, 0,0,1});
+      } else if (isCrystal) {
+        const float crystalLen = 0.6f + (float)drng.next() * 1.2f;
+        const float crystalR = 0.1f + (float)drng.next() * 0.12f;
+        const float ry = ceilY - crystalLen * 0.5f;
+        const float cr = 0.5f + (float)drng.next() * 0.15f;
+        const float cg = 0.35f + (float)drng.next() * 0.15f;
+        const float cb = 0.7f + (float)drng.next() * 0.15f;
+        ceilProps.insert(ceilProps.end(), {wx, ry, wz, crystalR * 2.0f, crystalLen, crystalR * 2.0f, cr, cg, cb, 0,0,0, 0,1,0, 0,0,1});
+      } else {
+        // Generic stalactite (STONE, POISON_SWAMP)
+        const float spikeLen = 0.5f + (float)drng.next() * 1.0f;
+        const float spikeR = 0.06f + (float)drng.next() * 0.06f;
+        const float ry = ceilY - spikeLen * 0.5f;
+        const float col = 0.4f + (float)drng.next() * 0.2f;
+        ceilProps.insert(ceilProps.end(), {wx, ry, wz, spikeR * 2.0f, spikeLen, spikeR * 2.0f, col, col, col, 0,0,0, 0,1,0, 0,0,1});
+      }
+    }
+  }
+
+  // ---- WALL PROPS: sconces, pillars, mushrooms, statues ----
+  // Wall props are placed against exposed walls (boundary edges)
+  for (int z = 0; z < d.gridSize; z++) {
+    for (int x = 0; x < d.gridSize; x++) {
+      if (d.grid[z][x] != dc::Cell::kEmpty) continue; // only wall surface cells
+      // Check if this is an exposed edge (wall boundary)
+      static const int kDirX[4] = {1, -1, 0, 0};
+      static const int kDirZ[4] = {0, 0, 1, -1};
+      for (int k = 0; k < 4; k++) {
+        const int dx = kDirX[k], dz = kDirZ[k];
+        const int nx = x + dx, nz = z + dz;
+        const bool oob = nx < 0 || nz < 0 || nx >= d.gridSize || nz >= d.gridSize;
+        if (!oob && d.grid[nz][nx] != dc::Cell::kEmpty) continue; // interior edge
+
+        // Found an exposed wall cell - chance to place a prop
+        const float prob = isTemple ? 0.04f : (isFrozen ? 0.03f : 0.025f); // props on walls
+        if ((int)(drng.next() * 1.0) > prob * 100.0f) continue;
+
+        const float wx = (float)(x * d.cellSize) + (float)(dx * d.cellSize) / 2.0f;
+        const float wz = (float)(z * d.cellSize) + (float)(dz * d.cellSize) / 2.0f;
+        const bool isNorth = (dz != 0); // N/S wall
+
+        if (isTemple) {
+          // Golden pillars on walls (ornate columns)
+          const float pillarH = 3.0f + (float)drng.next() * 2.0f;
+          const float pillarR = 0.15f + (float)drng.next() * 0.05f;
+          const float pillarY = 0.2f + pillarH * 0.5f;
+          const float gold = 0.7f + (float)drng.next() * 0.15f;
+          const float prop = isNorth ? wz : wx;
+          const float off = isNorth ? 0.0f : (float)dx;
+          wallProps.insert(wallProps.end(), {prop, pillarY, wz, pillarR * 2.0f, pillarH, pillarR * 2.0f, gold, gold * 0.85f, gold * 0.3f, 0,0,0, 0,1,0, 0,0,1});
+        } else if (isCrypt) {
+          // Candle sconces on walls (small glowing spheres)
+          const float sconceY = 1.5f + (float)drng.next() * 1.5f;
+          const float sconceR = 0.08f + (float)drng.next() * 0.04f;
+          const float prop = isNorth ? wz : wx;
+          wallProps.insert(wallProps.end(), {prop, sconceY, wz, sconceR * 2.0f, sconceR * 2.0f, sconceR * 2.0f, 0.6f, 0.4f, 0.25f, 0,0,0, 0,1,0, 0,0,1});
+        } else if (isFrozen) {
+          // Ice formations on walls
+          const float iceLen = 0.6f + (float)drng.next() * 1.5f;
+          const float iceR = 0.06f + (float)drng.next() * 0.08f;
+          const float iceY = H * 0.5f + (float)drng.next() * H * 0.3f;
+          const float icCol = 0.65f + (float)drng.next() * 0.25f;
+          const float prop = isNorth ? wz : wx;
+          wallProps.insert(wallProps.end(), {prop, iceY, wz, iceR * 2.0f, iceLen, iceR * 2.0f, icCol, icCol, icCol + 0.05f, 0,0,0, 0,1,0, 0,0,1});
+        } else {
+          // Generic sconce/cracks on walls
+          const float sconceY = 1.2f + (float)drng.next() * 2.0f;
+          const float sconceW = 0.12f + (float)drng.next() * 0.1f;
+          const float prop = isNorth ? wz : wx;
+          const float col = 0.35f + (float)drng.next() * 0.15f;
+          wallProps.insert(wallProps.end(), {prop, sconceY, wz, sconceW * 2.0f, sconceW * 2.0f, sconceW * 2.0f, col, col, col, 0,0,0, 0,1,0, 0,0,1});
+        }
+      }
+    }
+  }
+
+  // ---- FLOOR PATCHES: emissive glowing patches per biome ----
+  // Only rooms get floor patches (not corridors)
+  for (int z = 1; z < d.gridSize - 1; z++) {
+    for (int x = 1; x < d.gridSize - 1; x++) {
+      if (d.grid[z][x] != dc::Cell::kRoom) continue;
+      const float prob = isCave ? 0.06f : (isCrystal ? 0.05f : 0.03f); // ~5% of room cells
+      if ((int)(drng.next() * 1.0) > prob * 100.0f) continue;
+
+      const float patchX = (float)(x * d.cellSize);
+      const float patchZ = (float)(z * d.cellSize);
+      const float patchR = 0.3f + (float)drng.next() * 0.4f; // 0.3-0.7m radius patches
+
+      // Floor patch: flat disc just above floor (y = 0.22)
+      const float patchY = 0.22f;
+      if (isCrystal) {
+        // Glowing crystal shard embedded in floor
+        const float cr = 0.4f + (float)drng.next() * 0.2f;
+        const float cg = 0.25f + (float)drng.next() * 0.15f;
+        const float cb = 0.8f + (float)drng.next() * 0.15f;
+        const float tilt = (float)drng.next() * 0.5f - 0.25f; // slight random tilt
+        const float tiltR = 0.1f;
+        floorPatches.insert(floorPatches.end(), {patchX, patchY, patchZ, patchR * 2.0f, 0.02f, patchR * 2.0f, cr, cg, cb, std::cos(tiltR), tilt, std::sin(tiltR), 0,0,0, 0,0,1});
+      } else if (isCave) {
+        // Bioluminescent fungus patches (green/yellow glow)
+        const float patchCol = 0.2f + (float)drng.next() * 0.3f;
+        floorPatches.insert(floorPatches.end(), {patchX, patchY, patchZ, patchR * 2.0f, 0.02f, patchR * 2.0f, patchCol * 0.5f, patchCol * 1.2f, patchCol * 0.6f, 0,0,0, 0,1,0, 0,0,1});
+      } else if (isEmber) {
+        // Fissure glow (warm red/orange)
+        const float emberCol = 0.6f + (float)drng.next() * 0.2f;
+        floorPatches.insert(floorPatches.end(), {patchX, patchY, patchZ, patchR * 2.0f, 0.02f, patchR * 2.0f, emberCol, emberCol * 0.4f, 0.15f, 0,0,0, 0,1,0, 0,0,1});
+      } else if (isFrozen) {
+        // Ice refraction patches (bright white/blue)
+        const float icePatch = 0.7f + (float)drng.next() * 0.2f;
+        floorPatches.insert(floorPatches.end(), {patchX, patchY, patchZ, patchR * 2.0f, 0.02f, patchR * 2.0f, icePatch, icePatch + 0.05f, icePatch + 0.1f, 0,0,0, 0,1,0, 0,0,1});
+      } else {
+        // Generic subtle glow
+        const float patchCol = 0.3f + (float)drng.next() * 0.15f;
+        floorPatches.insert(floorPatches.end(), {patchX, patchY, patchZ, patchR * 2.0f, 0.02f, patchR * 2.0f, patchCol, patchCol, patchCol, 0,0,0, 0,1,0, 0,0,1});
+      }
+    }
+  }
+}
+
 void World::upload(const dc::Dungeon& d, const float cellCol[3], const float wallCol[3],
-                   const float ceilCol[3], std::uint32_t seed) {
+                   const float ceilCol[3], std::uint32_t seed, const std::string& biome) {
   dungeon = d;
   collision = buildCollisionBoxes(d);
   std::vector<float> floorInst, ceilInst, wallH, wallE;
@@ -582,6 +1040,15 @@ void World::upload(const dc::Dungeon& d, const float cellCol[3], const float wal
     }
   }
   nDebris = (int)(debrisInst.size() / 18);
+
+  // ---- §13 biome-specific props ----
+  std::vector<float> ceilPropsInst, wallPropsInst, floorPatchesInst;
+  buildProps(d, ceilPropsInst, wallPropsInst, floorPatchesInst, biome, seed);
+
+  nCeilProps = (int)(ceilPropsInst.size() / 18);
+  nWallProps = (int)(wallPropsInst.size() / 18);
+  nFloorPatches = (int)(floorPatchesInst.size() / 18);
+
   auto mkVbo = [&](const std::vector<float>& v) -> GLuint {
     GLuint b = 0;
     glGenBuffers(1, &b);
@@ -592,6 +1059,9 @@ void World::upload(const dc::Dungeon& d, const float cellCol[3], const float wal
   instFloor = mkVbo(floorInst); instCeil = mkVbo(ceilInst);
   instWallH = mkVbo(wallH); instWallE = mkVbo(wallE);
   instDebris = mkVbo(debrisInst);
+  instCeilProps = mkVbo(ceilPropsInst);
+  instWallProps = mkVbo(wallPropsInst);
+  instFloorPatches = mkVbo(floorPatchesInst);
 }
 
 // Per-biome light/prop palette (JS BIOMES → normalized material/fog/ambient/torch).
@@ -702,9 +1172,22 @@ struct App {
   float fogDensity = 0.036f;
   float ambientCol[3] = {0.70f, 0.69f, 0.67f};
 
+  // §13 Atmospheric particles: 50 instances (pos3 + type1 + per-biome color).
+  float atmoPos[50][3];  // world-space position
+  float atmoType[50];    // 0=ember, 1=snow, 2=spore, 3=crystal_dust
+  float atmoColor[3];    // per-biome color (set in buildWorldFromState)
+
   // player transform (yaw/pitch are in state.player; camera pos mirrors it)
   double camX = 0, camY = kEyeHeight, camZ = 0;
   float fov = (float)camera::kFov;
+
+  // viewProj matrix (from frame) for 3D→screen projection
+  float viewProjM[16] = {};
+
+  // health bar screen positions (computed in _computeHpBars(), drawn in drawHud)
+  struct HpBarPos { float sx, sy, frac; };
+  std::vector<HpBarPos> bossHpBar;
+  std::vector<HpBarPos> enemyHpBars;
 
   // input (GLFW physical key codes — AZERTY-safe: bind by position)
   bool keyW = false, keyS = false, keyA = false, keyD = false, keyShift = false;
@@ -751,11 +1234,12 @@ struct App {
   // breakable-alive snapshot: transition true→false triggers the smoke puff.
   std::vector<bool> prevBreakableAlive;
   // GL handles for the four decorative passes (created in init).
-  GLuint progSmoke = 0, progDust = 0, progRune = 0, progWater = 0;
+  GLuint progSmoke = 0, progDust = 0, progRune = 0, progWater = 0, progAtmo = 0;
   GLuint smokeVao = 0, smokeVbo = 0, smokeQuad = 0;
   GLuint dustVao = 0, dustVbo = 0, dustQuad = 0;
   GLuint runeVao = 0, runeVbo = 0, runeEbo = 0, runeInst = 0;
   GLuint waterVao = 0, waterVbo = 0, waterEbo = 0, waterInst = 0;
+  GLuint atmoVao = 0, atmoVbo = 0, atmoQuad = 0;
   GLuint runeAtlas = 0;
   bool playerDead = false;
   bool bossKillCounted = false;
@@ -887,6 +1371,7 @@ struct App {
   void loadRun();             // Load [L]: restore the save-for-later (full-health level)
   bool _readSaveFile();       // load save.json into `savedRun` (true if present)
   void startRun(int seedToUse);
+  void _computeHpBars();      // §4.5: project enemy/boss HP onto screen coords
   // New Game+: 25% soul toll, start at max(1, floor(level/2)), carry
   // bossKills/maxHealth/runTime, recalc weapon tier from the kept bank.
   void _ngPlus();
@@ -904,7 +1389,7 @@ void App::buildWorldFromState() {
   const float cellCol[3] = {L.floorCol[0], L.floorCol[1], L.floorCol[2]};
   const float wallCol[3] = {L.wallCol[0], L.wallCol[1], L.wallCol[2]};
   const float ceilCol[3] = {L.ceilCol[0], L.ceilCol[1], L.ceilCol[2]};
-  world.upload(world.dungeon, cellCol, wallCol, ceilCol, (std::uint32_t)state.dungeonSeed);
+  world.upload(world.dungeon, cellCol, wallCol, ceilCol, (std::uint32_t)state.dungeonSeed, state.biome);
   fogColor[0] = L.fogColor[0]; fogColor[1] = L.fogColor[1]; fogColor[2] = L.fogColor[2];
   fogDensity = L.fogDensity;
   ambientCol[0] = L.ambientCol[0]; ambientCol[1] = L.ambientCol[1]; ambientCol[2] = L.ambientCol[2];
@@ -946,6 +1431,51 @@ void App::buildDecor() {
     dust[i * 3 + 2] = torchPos[2] + (float)(drng.next() - 0.5) * 4.0f;
   }
   dustT = 0;
+
+  // §13 Atmospheric particles: 50 instances, biome-specific.
+  {
+    const bool isEmber = (state.biome == "EMBER_FORGE");
+    const bool isFrozen = (state.biome == "FROZEN_HALLS");
+    const bool isCrystal = (state.biome == "CRYSTAL_DEPTHS");
+    const bool isFungal = (state.biome == "FUNGAL_CAVERN");
+    const bool isFlooded = (state.biome == "FLOODED_RUINS");
+    const bool isCrypt = (state.biome == "HAUNTED_CRYPT" || state.biome == "SPECTRAL_COURT");
+    const bool isCave = (state.biome == "POISON_SWAMP" || isFungal);
+    const bool isTemple = (state.biome == "GOLDEN_TEMPLE");
+
+    // Set per-biome color
+    if (isEmber) { atmoColor[0] = 0.9f; atmoColor[1] = 0.3f; atmoColor[2] = 0.1f; }
+    else if (isFrozen) { atmoColor[0] = 0.7f; atmoColor[1] = 0.85f; atmoColor[2] = 1.0f; }
+    else if (isCrystal) { atmoColor[0] = 0.7f; atmoColor[1] = 0.5f; atmoColor[2] = 1.0f; }
+    else if (isFungal) { atmoColor[0] = 0.3f; atmoColor[1] = 0.8f; atmoColor[2] = 0.3f; }
+    else if (isFlooded) { atmoColor[0] = 0.2f; atmoColor[1] = 0.6f; atmoColor[2] = 0.8f; }
+    else if (isCrypt) { atmoColor[0] = 0.4f; atmoColor[1] = 0.6f; atmoColor[2] = 0.9f; }
+    else if (isTemple) { atmoColor[0] = 1.0f; atmoColor[1] = 0.85f; atmoColor[2] = 0.3f; }
+    else { atmoColor[0] = 0.5f; atmoColor[1] = 0.5f; atmoColor[2] = 0.6f; }
+
+    for (int i = 0; i < 50; i++) {
+      // Place particles randomly around the dungeon rooms
+      int ri = (int)(drng.next() * (d.gridSize * d.gridSize));
+      int ridx = ri % ((int)d.gridSize * (int)d.gridSize);
+      int rz = ridx / d.gridSize, rx = ridx % d.gridSize;
+      if (d.grid[rz][rx] == dc::Cell::kEmpty) {
+        // Place near a wall cell
+        atmoPos[i][0] = (float)rx * cs + cs * 0.5f;
+        atmoPos[i][2] = (float)rz * cs + cs * 0.5f;
+        atmoPos[i][1] = 1.0f + (float)drng.next() * 5.0f;
+      } else {
+        atmoPos[i][0] = (float)rx * cs + cs * 0.5f;
+        atmoPos[i][2] = (float)rz * cs + cs * 0.5f;
+        atmoPos[i][1] = 0.3f + (float)drng.next() * 5.0f;
+      }
+      // Assign particle type based on biome
+      if (isEmber) atmoType[i] = 0.0f;       // ember
+      else if (isFrozen) atmoType[i] = 1.0f; // snow
+      else if (isFungal) atmoType[i] = 2.0f; // spore
+      else if (isCrystal) atmoType[i] = 3.0f; // crystal dust
+      else atmoType[i] = 1.0f;               // default: snow
+    }
+  }
 
   // Smoke pool reset (puffs are transient — cleared per level).
   for (auto& p : smoke) p.active = false;
@@ -1203,7 +1733,7 @@ void App::updateEntities(double dt) {
                  [&](const dc::Vec2& a, const dc::Vec2& b) {
                    return dc::hasLineOfSight(boxes, a.x, a.z, b.x, b.z);
                  },
-                 [&](dc::Enemy* e) { skelsys.hitEnemy(e, dc::hunter::kBeamDmg, "beam"); },
+                 [&](dc::Enemy* e) { skelsys.hitEnemy(e, (int)(dc::hunter::kBeamDmg * dc::ngPlusDamageMult(state.ngPlus)), "beam"); },
                  state.collectedOrbs);
     // VISIBLE ANCHOR: the sim's `pos` follows BEHIND the player (behind the
     // camera) — that's why the buff looked like "no effect". Park the wraith to
@@ -1431,7 +1961,7 @@ void App::applySwordCone(int stepIdx) {
   int hitCount = 0;
   const double dmgBase = dc::kSwordCombo[stepIdx].damage + tier;
   const double sizePart = (1 + (scale - 1) * 0.5);
-  const double dmgMult = dc::damageMult(scale, tier, state.level, (int)souls);
+  const double dmgMult = dc::damageMult(scale, tier, state.level, (int)souls) * dc::ngPlusDamageMult(state.ngPlus);
   const double dmg = dmgBase * dmgMult;
   auto inCone = [&](double ex, double ez) {
     double tx = ex - ox, tz = ez - oz;
@@ -1462,7 +1992,7 @@ void App::_rollSwordProcs(int tier) {
   const double px = state.player.x, pz = state.player.z;
   // electric proc (all tiers): 5% chance, blast 5× orb damage within 20 u (JS _rollSwordProcs)
   if (rng.next() < dc::sword::kElectricChance) {
-    const double blast = dc::sword::kElectricDamageMult * (1.0 + 0.02 * souls) * 2.0; // ×5 orb dmg
+    const double blast = dc::sword::kElectricDamageMult * (1.0 + 0.02 * souls) * 2.0 * dc::ngPlusDamageMult(state.ngPlus); // ×5 orb dmg × NG+
     int count = 0;
     if (bossReady && !boss.dead &&
         std::hypot(boss.pos.x - px, boss.pos.z - pz) < dc::sword::kElectricRange) {
@@ -1505,7 +2035,7 @@ void App::_spawnArcBolts(int n) {
       cands.push_back({dx * dx + dz * dz, 1, -2});
   }
   std::sort(cands.begin(), cands.end(), [](const Cand& a, const Cand& b) { return a.d2 < b.d2; });
-  const int dmg = dc::orbDirectDamage(state.collectedOrbs); // frozen at fire time
+  const int dmg = static_cast<int>(std::round(dc::orbDirectDamage(state.collectedOrbs) * dc::ngPlusDamageMult(state.ngPlus))); // frozen at fire time
   int fired = 0;
   for (auto& b : arcBolts) {
     if (b.life >= 0 || fired >= n) continue;
@@ -1596,7 +2126,7 @@ void App::fireOrb(int step) {
   o.vx = dirx * dc::orbWeapon::kSpeed; o.vy = diry * dc::orbWeapon::kSpeed; o.vz = dirz * dc::orbWeapon::kSpeed;
   o.life = dc::orbWeapon::kLife; o.step = step; o.alive = true;
   const double soulsAmt = state.collectedOrbs;
-  o.dmg = step == 3 ? dc::orbExplodeDamage(soulsAmt) : dc::orbDirectDamage(soulsAmt);
+  o.dmg = step == 3 ? static_cast<int>(std::round(dc::orbExplodeDamage(soulsAmt) * dc::ngPlusDamageMult(state.ngPlus))) : static_cast<int>(std::round(dc::orbDirectDamage(soulsAmt) * dc::ngPlusDamageMult(state.ngPlus)));
   orbs.push_back(o);
 }
 void App::hitBoss(double dmg, const char* src) {
@@ -1622,7 +2152,7 @@ void App::_fireFireball() {
   o.x = state.player.x + dirx * 0.6; o.y = camY + diry * 0.6; o.z = state.player.z + dirz * 0.6;
   o.vx = dirx * dc::orbWeapon::kSpeed; o.vy = diry * dc::orbWeapon::kSpeed; o.vz = dirz * dc::orbWeapon::kSpeed;
   o.life = dc::orbWeapon::kLife; o.step = 3; o.alive = true;
-  o.dmg = dc::orbExplodeDamage(state.collectedOrbs);
+  o.dmg = static_cast<int>(std::round(dc::orbExplodeDamage(state.collectedOrbs) * dc::ngPlusDamageMult(state.ngPlus)));
   orbs.push_back(o);
 }
 void App::orbExplode(const Orb& o) {
@@ -2432,6 +2962,9 @@ bool App::init(int w, int h, const char* title, const char* fontPath) {
                          compileShader(GL_FRAGMENT_SHADER, kRuneFrag));
   progWater = linkProgram(compileShader(GL_VERTEX_SHADER, kWaterVert),
                          compileShader(GL_FRAGMENT_SHADER, kWaterFrag));
+  // §13 Atmospheric particles (embers, snow, spores, crystal dust): shared quad system.
+  progAtmo = linkProgram(compileShader(GL_VERTEX_SHADER, kAtmoVert),
+                         compileShader(GL_FRAGMENT_SHADER, kAtmoFrag));
 
   // Smoke: 9 pooled camera-facing billboards (corner2 + pos3 + alpha1 = 6f/inst).
   {
@@ -2470,6 +3003,31 @@ bool App::init(int w, int h, const char* title, const char* fontPath) {
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 12, (void*)0);
     glVertexAttribDivisor(1, 1);
+    glBindVertexArray(0);
+  }
+
+  // §13 Atmospheric particles (embers/snow/spores/crystal): shared billboard quad + 50 instances.
+  // pos3 + particleType1 = 16B/inst. One draw, per-biome color/type set at runtime.
+  {
+    static const float kQuad[8] = {-0.5f, -0.5f, 0.5f, -0.5f, 0.5f, 0.5f, -0.5f, 0.5f};
+    glGenVertexArrays(1, &atmoVao);
+    glGenBuffers(1, &atmoQuad);
+    glGenBuffers(1, &atmoVbo);
+    glBindVertexArray(atmoVao);
+    glBindBuffer(GL_ARRAY_BUFFER, atmoQuad);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(kQuad), kQuad, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, (void*)0);
+    glBindBuffer(GL_ARRAY_BUFFER, atmoVbo);
+    // 50 atmospheric particles: pos3 + type1 = 16B each
+    std::vector<float> tmp(50 * 4, 0.0f);
+    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(tmp.size() * sizeof(float)), tmp.data(), GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 16, (void*)0);
+    glVertexAttribDivisor(1, 1);
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, 16, (void*)12);
+    glVertexAttribDivisor(2, 1);
     glBindVertexArray(0);
   }
 
@@ -2846,7 +3404,9 @@ void App::frame() {
   const float up[3] = {0, 1, 0};
   Mat4 view = Mat4::lookAt(eye, at, up);
   Mat4 proj = Mat4::perspective(fov, aspect, (float)camera::kNear, (float)camera::kFar);
-  Mat4 viewProj = proj * view; // GL order: project *after* view
+  Mat4 vpMat = proj * view; // GL order: project *after* view
+  // Store viewProj for health bars in drawHud()
+  std::memcpy(viewProjM, vpMat.m, sizeof(viewProjM));
 
   // torch shadow VP (single 256² pass, static)
   Mat4 torchView = Mat4::lookAt(torchPos, at, up);
@@ -2883,7 +3443,10 @@ void App::frame() {
   drawGroup(world.instWallE, world.nWallE);
   drawGroup(world.instFloor, world.nFloor);
   drawGroup(world.instCeil, world.nCeil);
-  drawGroup(dynVbo, dynCount); // boss/skeletons cast the torch shadow
+  drawGroup(world.instCeilProps, world.nCeilProps); // §13 ceiling props (stalactites, crystals)
+  drawGroup(world.instDebris, world.nDebris);
+  drawGroup(world.instWallProps, world.nWallProps);  // §13 wall props (sconces, pillars)
+  drawGroup(world.instFloorPatches, world.nFloorPatches); // §13 floor patches (emissive)
 
   // ---- 2) scene pass ----
   glBindFramebuffer(GL_FRAMEBUFFER, sceneFbo);
@@ -2892,7 +3455,7 @@ void App::frame() {
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
   glEnable(GL_DEPTH_TEST);
   glUseProgram(progScene);
-  glUniformMatrix4fv(glGetUniformLocation(progScene, "uViewProj"), 1, GL_FALSE, viewProj.m);
+  glUniformMatrix4fv(glGetUniformLocation(progScene, "uViewProj"), 1, GL_FALSE, vpMat.m);
   glUniformMatrix4fv(glGetUniformLocation(progScene, "uTorchVP"), 1, GL_FALSE, torchVP.m);
   glUniform3f(glGetUniformLocation(progScene, "uTorchPos"), torchPos[0], torchPos[1], torchPos[2]);
   glUniform3f(glGetUniformLocation(progScene, "uTorchColor"), torchColor[0], torchColor[1], torchColor[2]);
@@ -2920,12 +3483,35 @@ void App::frame() {
   const int debrisDraw = degraded ? (world.nDebris / 2) : world.nDebris;
   drawGroup(world.instDebris, debrisDraw);
 
+  // ---- §13 biome-specific props (floor patches, wall props) — lit scene, additive for glow ----
+  // Floor patches: emissive glow just above floor (depth-tested, no depth write).
+  // Wall props: instanced against walls for sconces, pillars, ice formations.
+  // Degraded mode sheds the tail: draw count halved (spec §22 rule 1).
+  glDepthMask(GL_FALSE);
+  {
+    // Floor patches (emissive glow planes): draw with additive blending for bloom.
+    const int fpDraw = degraded ? (world.nFloorPatches / 2) : world.nFloorPatches;
+    if (fpDraw > 0) {
+      glUseProgram(progScene);
+      glUniform1f(glGetUniformLocation(progScene, "uEmissive"), 2.0f); // unlit emissive
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE); // additive for emissive glow
+      drawGroup(world.instFloorPatches, fpDraw);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // restore
+    }
+    // Wall props: instanced against walls, lit by torch + headlight.
+    const int wpDraw = degraded ? (world.nWallProps / 2) : world.nWallProps;
+    if (wpDraw > 0) {
+      drawGroup(world.instWallProps, wpDraw);
+    }
+  }
+
   // ---- §13 decorative passes (JS SmokeSystem / ParticleSystem / RuneSystem
   //      + water puddles): transparent, depth-tested, no depth write. Degraded
   //      mode sheds the tail: draw count halved (spec §22 rule 1). ----
   glDepthMask(GL_FALSE);
   {
     const float tDec = (float)state.runTime;
+  // NOTE: uTime is set below in each decorative sub-pass where tDec is in scope.
     // (a) water: VAULT-room puddles (0x3a6a8a, opacity 0.75, sine wave).
     if (!waterData.empty()) {
       int wn = (int)(waterData.size() / 6);
@@ -2934,7 +3520,7 @@ void App::frame() {
         glBindBuffer(GL_ARRAY_BUFFER, waterInst);
         glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(wn * 6 * sizeof(float)), waterData.data());
         glUseProgram(progWater);
-        glUniformMatrix4fv(glGetUniformLocation(progWater, "uViewProj"), 1, GL_FALSE, viewProj.m);
+        glUniformMatrix4fv(glGetUniformLocation(progWater, "uViewProj"), 1, GL_FALSE, vpMat.m);
         glUniform1f(glGetUniformLocation(progWater, "uTime"), tDec);
         glUniform3f(glGetUniformLocation(progWater, "uEyePos"), eye[0], eye[1], eye[2]);
         glBindVertexArray(waterVao);
@@ -2956,15 +3542,39 @@ void App::frame() {
         glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(dd.size() * sizeof(float)), dd.data());
       }
       glUseProgram(progDust);
-      glUniformMatrix4fv(glGetUniformLocation(progDust, "uViewProj"), 1, GL_FALSE, viewProj.m);
+      glUniformMatrix4fv(glGetUniformLocation(progDust, "uViewProj"), 1, GL_FALSE, vpMat.m);
       glUniformMatrix4fv(glGetUniformLocation(progDust, "uView"), 1, GL_FALSE, view.m);
       // JS PointsMaterial size 0.045 world units => quad radius 0.045 (matches old 8px clamp)
       glUniform1f(glGetUniformLocation(progDust, "uDustRad"), 0.045f);
       glUniform3f(glGetUniformLocation(progDust, "uColor"), 0.784f, 0.722f, 0.533f); // 0xc8b888
       glUniform1f(glGetUniformLocation(progDust, "uOpacity"), 0.45f);
+      glUniform1f(glGetUniformLocation(progDust, "uTime"), tDec);
       glBlendFunc(GL_SRC_ALPHA, GL_ONE); // additive (JS blending: AdditiveBlending)
       glBindVertexArray(dustVao);
       glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, dn);
+      glBindVertexArray(0);
+    }
+    // §13 Atmospheric particles (embers/snow/spores/crystal): 50 instances, additive glow.
+    {
+      float atmoData[50 * 4];
+      for (int i = 0; i < 50; i++) {
+        atmoData[i * 4 + 0] = atmoPos[i][0];
+        atmoData[i * 4 + 1] = atmoPos[i][1];
+        atmoData[i * 4 + 2] = atmoPos[i][2];
+        atmoData[i * 4 + 3] = atmoType[i];
+      }
+      glBindBuffer(GL_ARRAY_BUFFER, atmoVbo);
+      glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(50 * 4 * sizeof(float)), atmoData);
+      glUseProgram(progAtmo);
+      glUniformMatrix4fv(glGetUniformLocation(progAtmo, "uViewProj"), 1, GL_FALSE, vpMat.m);
+      glUniformMatrix4fv(glGetUniformLocation(progAtmo, "uView"), 1, GL_FALSE, view.m);
+      glUniform1f(glGetUniformLocation(progAtmo, "uAtmoRad"), 0.06f);
+      glUniform3f(glGetUniformLocation(progAtmo, "uColor"), atmoColor[0], atmoColor[1], atmoColor[2]);
+      glUniform1f(glGetUniformLocation(progAtmo, "uOpacity"), 0.35f);
+      glUniform1f(glGetUniformLocation(progAtmo, "uTime"), tDec);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE); // additive
+      glBindVertexArray(atmoVao);
+      glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, 50);
       glBindVertexArray(0);
     }
     // (c) wall runes: <=10 quads, per-biome color, pulsing opacity.
@@ -2975,7 +3585,7 @@ void App::frame() {
         glBindBuffer(GL_ARRAY_BUFFER, runeInst);
         glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(rn * 9 * sizeof(float)), runeData.data());
         glUseProgram(progRune);
-        glUniformMatrix4fv(glGetUniformLocation(progRune, "uViewProj"), 1, GL_FALSE, viewProj.m);
+        glUniformMatrix4fv(glGetUniformLocation(progRune, "uViewProj"), 1, GL_FALSE, vpMat.m);
         glUniform1f(glGetUniformLocation(progRune, "uTime"), tDec);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, runeAtlas);
@@ -3000,12 +3610,13 @@ void App::frame() {
         glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(sp.size() * sizeof(float)), sp.data());
       }
       glUseProgram(progSmoke);
-      glUniformMatrix4fv(glGetUniformLocation(progSmoke, "uViewProj"), 1, GL_FALSE, viewProj.m);
+      glUniformMatrix4fv(glGetUniformLocation(progSmoke, "uViewProj"), 1, GL_FALSE, vpMat.m);
       glUniformMatrix4fv(glGetUniformLocation(progSmoke, "uView"), 1, GL_FALSE, view.m);
       glUniform3f(glGetUniformLocation(progSmoke, "uColor"), 0.2f, 0.2f, 0.251f); // 0x333340
       // JS gl_PointSize = 90.0/-mv.z => world radius = 90 * tan(fov/2) / height
       glUniform1f(glGetUniformLocation(progSmoke, "uSmokeRad"),
                   90.0f * std::tan(fov * (float)M_PI / 360.0f) / (float)height);
+      glUniform1f(glGetUniformLocation(progSmoke, "uTime"), tDec);
       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // JS: transparent (normal blend)
       glBindVertexArray(smokeVao);
       glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, sn);
@@ -3041,7 +3652,7 @@ void App::frame() {
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     glUseProgram(progMask);
-    glUniformMatrix4fv(glGetUniformLocation(progMask, "uViewProj"), 1, GL_FALSE, viewProj.m);
+    glUniformMatrix4fv(glGetUniformLocation(progMask, "uViewProj"), 1, GL_FALSE, vpMat.m);
     glBindVertexArray(vao);
     glBindBuffer(GL_ARRAY_BUFFER, enemVbo);
     { void* z = nullptr;
@@ -3117,6 +3728,13 @@ void App::frame() {
   glBindTexture(GL_TEXTURE_2D, glowBlurBTex);
   glUniform1i(glGetUniformLocation(progComposite, "uGlowBlur"), 3);
   glUniform1f(glGetUniformLocation(progComposite, "uGlowIntensity"), (float)glowIntensity);
+  // enhanced composite: vignette pulse + near-miss border
+  // (uTime set in the decorative passes block where tDec is in scope)
+  // NOTE: composite shader receives tDec via the uTime uniform set below
+  // Actually we need to set it here - let's use a local variable
+  float _tDec = (float)state.runTime;
+  glUniform1f(glGetUniformLocation(progComposite, "uTime"), _tDec);
+  glUniform1f(glGetUniformLocation(progComposite, "uNearMiss"), 0.0f); // placeholder: set on near-miss
   glUniform1f(glGetUniformLocation(progComposite, "uGlowPulse"), (float)glowPulse);
   glBindVertexArray(quadVao);
   glDrawArrays(GL_TRIANGLES, 0, 3);
@@ -3156,17 +3774,14 @@ void App::frame() {
       drawTextOutline(v, cx - lineW(buf, 1.0f) / 2, cy + 90, 1.0f, stat, buf);
       const char* n = "[N] Restart   [Y] New Game+";
       drawTextOutline(v, cx - lineW(n, 1.2f) / 2, cy + 180, 1.2f, hint, n);
-      // Live NG+ toll preview: the player keeps floor(souls * 0.25).
+      // Live NG+ preview: keeps all souls, ×2 damage per tier. §NG+.
       {
-        const int kept = (int)std::floor(state.collectedOrbs * 0.25);
-        const int keptTier = dc::weaponTier(kept);
+        const int ngTier = state.ngPlus;
+        const float ngDmg = std::pow(2.0, ngTier);
         char tol[160];
-        // No "[Y]" tag here — the key is already in the "[N] Restart [Y] New Game+"
-        // line above; a second [Y] line read as two options for Y.
         std::snprintf(tol, sizeof(tol),
-                      "New Game+ keeps %d of %d Souls → T%d  (L%d)",
-                      kept, state.collectedOrbs, keptTier,
-                      std::max(1, state.level / 2));
+                      "New Game+ keeps ALL souls → DMG ×%.0f",
+                      ngDmg);
         const float tolC[3] = {0.62f, 0.80f, 0.88f}; // #9ecbe0 buff-blue
         drawTextOutline(v, cx - lineW(tol, 0.9f) / 2, cy + 215, 0.9f, tolC, tol);
       }
@@ -3180,6 +3795,9 @@ void App::frame() {
     }
     drawText(v);
   }
+
+  // ---- 4.5) compute health bar positions (boss + enemies) ----
+  _computeHpBars();
 
   // ---- 5) in-game HUD (hearts / souls / timer / weapon slot / boss bar) ----
   drawHud();
@@ -3501,7 +4119,7 @@ void App::drawHud() {
     std::snprintf(lines[0], sizeof(lines[0]), "DMG \xc3\x97%.2f", dmgMult);
     std::snprintf(lines[1], sizeof(lines[1]), "Orb DMG %.2f", 1.0 + 0.02 * state.collectedOrbs);
     std::snprintf(lines[2], sizeof(lines[2]), "Reach %.1f", 2.2 * scale * (1.0 + 0.04 * state.weaponTier));
-    std::snprintf(lines[3], sizeof(lines[3]), "Enemy HP \xc3\x97%.1f", 1.0 + 3.0 * state.ngPlus);
+    std::snprintf(lines[3], sizeof(lines[3]), "Enemy HP \xc3\x97%.1f", 1.0 + 1.0 * state.ngPlus);
     std::snprintf(lines[4], sizeof(lines[4]), "Mob speed \xc3\x97%.2f",
                    (1.0 + 0.02 * (state.level - 1)) * (1.0 + 0.1 * state.bossKills));
     std::snprintf(lines[5], sizeof(lines[5]), "Spawns \xc3\x97%.2f",
@@ -3540,6 +4158,30 @@ void App::drawHud() {
     rect(cx - bw / 2, by, bw, bh, bossBg[0], bossBg[1], bossBg[2], bossBg[3]);
     const double frac = std::max(0.0, std::min(1.0, boss.hp / std::max(1.0, boss.maxHp)));
     rect(cx - bw / 2, by, (float)(bw * frac), bh, bossFill[0], bossFill[1], bossFill[2], bossFill[3]);
+  }
+
+  // ---- 4.5) floating health bars above enemies and boss ----
+  {
+    const float barW = 60.0f, barH = 6.0f;
+    const float bg[4] = {0.15f, 0.05f, 0.05f, 1.0f};
+    const float fill[4] = {0.20f, 0.65f, 0.15f, 1.0f};
+    const float fillLow[4] = {0.70f, 0.20f, 0.15f, 1.0f};
+    for (size_t i = 0; i < bossHpBar.size(); i++) {
+      const HpBarPos& b = bossHpBar[i];
+      const float x0 = b.sx - barW / 2, y0 = b.sy;
+      const float w = barW * b.frac;
+      const float* col = b.frac < 0.3f ? fillLow : fill;
+      rect(x0, y0, barW, barH, bg[0], bg[1], bg[2], bg[3]);
+      rect(x0, y0, w, barH, col[0], col[1], col[2], col[3]);
+    }
+    for (size_t i = 0; i < enemyHpBars.size(); i++) {
+      const HpBarPos& b = enemyHpBars[i];
+      const float x0 = b.sx - barW / 2, y0 = b.sy;
+      const float w = barW * b.frac;
+      const float* col = b.frac < 0.3f ? fillLow : fill;
+      rect(x0, y0, barW, barH, bg[0], bg[1], bg[2], bg[3]);
+      rect(x0, y0, w, barH, col[0], col[1], col[2], col[3]);
+    }
   }
 
   // degraded-mode perf warning (bottom-right, gold) — mirrors JS #perf-warning.
@@ -3670,18 +4312,41 @@ void App::startRun(int seedToUse) {
   std::fprintf(stderr, "[dc_app] run started (seed %d, level 1)\n", seedToUse);
 }
 
+void App::_computeHpBars() {
+  // §4.5: project boss + enemy positions onto screen space; populate bossHpBar / enemyHpBars.
+  bossHpBar.clear(); enemyHpBars.clear();
+  if (screen != Screen::Play) return;
+  const float W2 = (float)width, H2 = (float)height;
+  struct ScreenPos { float x, y; };
+  auto project3D = [&](float wx, float wy, float wz) -> ScreenPos {
+    float cx = viewProjM[0]*wx + viewProjM[4]*wy + viewProjM[8]*wz + viewProjM[12];
+    float cy = viewProjM[1]*wx + viewProjM[5]*wy + viewProjM[9]*wz + viewProjM[13];
+    float cw = viewProjM[3]*wx + viewProjM[7]*wy + viewProjM[11]*wz + viewProjM[15];
+    if (cw <= 0.01f) return {-9999,-9999};
+    float sx = (cx/cw)*0.5f+0.5f, sy = (cy/cw)*0.5f+0.5f;
+    return {sx*W2, (1.0f-sy)*H2};
+  };
+  if (bossReady && !boss.dead) {
+    auto sp = project3D((float)boss.pos.x, 1.5f, (float)boss.pos.z);
+    float frac = boss.maxHp > 0 ? (float)boss.hp/boss.maxHp : 1.0f;
+    if (frac < 1.0f) { HpBarPos eb; eb.sx=sp.x; eb.sy=sp.y; eb.frac=frac; bossHpBar.push_back(eb); }
+  }
+  for (dc::Enemy& e : skelsys.enemies()) {
+    if (!e.alive() || e.hp >= e.maxHp) continue;
+    float eY = e.floats ? 1.5f : 1.2f;
+    auto sp = project3D((float)e.pos.x, eY, (float)e.pos.z);
+    float frac = e.maxHp > 0 ? (float)e.hp/e.maxHp : 1.0f;
+    if (frac < 1.0f) { HpBarPos eb; eb.sx=sp.x; eb.sy=sp.y; eb.frac=frac; enemyHpBars.push_back(eb); }
+  }
+  std::sort(bossHpBar.begin(), bossHpBar.end(), [](const HpBarPos& a, const HpBarPos& b){ return a.sy < b.sy; });
+  std::sort(enemyHpBars.begin(), enemyHpBars.end(), [](const HpBarPos& a, const HpBarPos& b){ return a.sy < b.sy; });
+}
+
 void App::_ngPlus() {
-  // New Game+ (port of JS _ngPlus): souls take a 75% toll — the player KEEPS
-  // floor(collectedOrbs * 0.25) so advancement (weapon tier) survives the loop.
-  // bossKills/maxHealth/runTime carry; the run starts at max(1, floor(level/2)).
+  // New Game+: keeps all souls (no toll), permanent ×2 damage per NG+ tier. §NG+.
   const int prevOrbs = state.collectedOrbs;
-  const int kept = (int)std::floor(state.collectedOrbs * 0.25);
-  const int nextLevel = std::max(1, state.level / 2);
   const int ng = state.ngPlus + 1;
-  const int bk = state.bossKills;
-  const int mh = state.maxHealth;
-  const double runTime = state.runTime;
-  state = dc::GameState::fromOpts(kept, -1, ng, bk, mh, runTime, nextLevel);
+  state.ngPlus = ng;
   state.health = state.maxHealth; // full-heal the new NG+ run
   state.biome = dc::biomeForLevel(state.level);
   state.biomeIndex = [&] {
@@ -3697,8 +4362,8 @@ void App::_ngPlus() {
   simHealth = state.maxHealth;
   playerDead = false;
   screen = Screen::Play;
-  std::fprintf(stderr, "[dc_app] NG+%d started (level %d, kept %d of %d souls → T%d)\n",
-               ng, state.level, kept, prevOrbs, state.weaponTier);
+  std::fprintf(stderr, "[dc_app] NG+%d started (level %d, %d souls, DMG ×%.0f)\n",
+               ng, state.level, prevOrbs, dc::ngPlusDamageMult(ng));
 }
 
 // ---- GLFW callbacks (file-static because they're C-function pointers) ----

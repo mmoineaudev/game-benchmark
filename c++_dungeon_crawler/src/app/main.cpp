@@ -942,13 +942,13 @@ void World::buildProps(const dc::Dungeon& d, std::vector<float>& wallProps,
           const float gold = 0.7f + (float)drng.next() * 0.15f;
           const float prop = isNorth ? wz : wx;
           const float off = isNorth ? 0.0f : (float)dx;
-          wallProps.insert(wallProps.end(), {prop, pillarY, wz, pillarR * 2.0f, pillarH, pillarR * 2.0f, gold, gold * 0.85f, gold * 0.3f, 0,0,0, 0,1,0, 0,0,1});
+          wallProps.insert(wallProps.end(), {prop, pillarY, wz, pillarR * 2.0f, pillarH, pillarR * 2.0f, gold, gold * 0.85f, gold * 0.3f, 0,0,0, 0,1,0, 0,0,1, 0.0f, 1.0f, 1.0f, 0.0f});
         } else if (isCrypt) {
           // Candle sconces on walls (small glowing spheres)
           const float sconceY = 1.5f + (float)drng.next() * 1.5f;
           const float sconceR = 0.08f + (float)drng.next() * 0.04f;
           const float prop = isNorth ? wz : wx;
-          wallProps.insert(wallProps.end(), {prop, sconceY, wz, sconceR * 2.0f, sconceR * 2.0f, sconceR * 2.0f, 0.6f, 0.4f, 0.25f, 0,0,0, 0,1,0, 0,0,1});
+          wallProps.insert(wallProps.end(), {prop, sconceY, wz, sconceR * 2.0f, sconceR * 2.0f, sconceR * 2.0f, 0.6f, 0.4f, 0.25f, 0,0,0, 0,1,0, 0,0,1, 0.0f, 1.0f, 1.0f, 0.0f});
         } else if (isFrozen) {
           // Ice formations on walls
           const float iceLen = 0.6f + (float)drng.next() * 1.5f;
@@ -956,14 +956,14 @@ void World::buildProps(const dc::Dungeon& d, std::vector<float>& wallProps,
           const float iceY = H * 0.5f + (float)drng.next() * H * 0.3f;
           const float icCol = 0.65f + (float)drng.next() * 0.25f;
           const float prop = isNorth ? wz : wx;
-          wallProps.insert(wallProps.end(), {prop, iceY, wz, iceR * 2.0f, iceLen, iceR * 2.0f, icCol, icCol, icCol + 0.05f, 0,0,0, 0,1,0, 0,0,1});
+          wallProps.insert(wallProps.end(), {prop, iceY, wz, iceR * 2.0f, iceLen, iceR * 2.0f, icCol, icCol, icCol + 0.05f, 0,0,0, 0,1,0, 0,0,1, 0.0f, 1.0f, 1.0f, 0.0f});
         } else {
           // Generic sconce/cracks on walls
           const float sconceY = 1.2f + (float)drng.next() * 2.0f;
           const float sconceW = 0.12f + (float)drng.next() * 0.1f;
           const float prop = isNorth ? wz : wx;
           const float col = 0.35f + (float)drng.next() * 0.15f;
-          wallProps.insert(wallProps.end(), {prop, sconceY, wz, sconceW * 2.0f, sconceW * 2.0f, sconceW * 2.0f, col, col, col, 0,0,0, 0,1,0, 0,0,1});
+          wallProps.insert(wallProps.end(), {prop, sconceY, wz, sconceW * 2.0f, sconceW * 2.0f, sconceW * 2.0f, col, col, col, 0,0,0, 0,1,0, 0,0,1, 0.0f, 1.0f, 1.0f, 0.0f});
         }
       }
     }
@@ -987,7 +987,7 @@ void World::upload(const dc::Dungeon& d, const float cellCol[3], const float wal
   std::vector<float> wallPropsInst;
   buildProps(d, wallPropsInst, biome, seed);
 
-  nWallProps = (int)(wallPropsInst.size() / 18);
+  nWallProps = (int)(wallPropsInst.size() / 22);
 
   auto mkVbo = [&](const std::vector<float>& v) -> GLuint {
     GLuint b = 0;
@@ -3380,7 +3380,6 @@ void App::update(double dt, double rawDt) {
     if (screen == Screen::Title && keyLMB && !prevTitleLMB) startRun(seed); // "New Game" button (mouse)
     prevTitleLMB = keyLMB;
     prevN = keyN; prevY = keyY; prevL = keyL; prevS = keyS;
-    return;
   }
   if (screen == Screen::Dead) {
     if (keyN && !prevN) startRun((int)(rng.next() * 2147483647));
@@ -3388,7 +3387,6 @@ void App::update(double dt, double rawDt) {
     else if (keyL && !prevL) loadRun();
     else if (keyS && !prevS) { _writeSave(); toast("Run saved — continue with [L]"); }
     prevN = keyN; prevY = keyY; prevL = keyL; prevS = keyS;
-    return;
   }
   prevN = keyN; prevY = keyY; prevL = keyL; prevS = keyS;
 

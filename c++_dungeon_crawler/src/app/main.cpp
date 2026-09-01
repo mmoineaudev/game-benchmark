@@ -781,30 +781,17 @@ struct World {
   // GL instance VBOs: 9 floats/instance = offset(3) + scale(3) + color(3).
   GLuint instFloor = 0, instCeil = 0, instWallH = 0, instWallE = 0;
   int nFloor = 0, nCeil = 0, nWallH = 0, nWallE = 0;
-  // floor debris (JS WorldBuilder): ONE InstancedMesh of pebbles, purely cosmetic;
-  // degraded mode sheds the tail instances (count halved, spec §22 rule 1).
-  GLuint instDebris = 0;
-  int nDebris = 0;
-  // §13 ceiling props (stalactites, crystal formations, ice spires, fungal clusters):
-  // instanced small cones/spikes hanging from ceiling per-biome.
-  GLuint instCeilProps = 0;
-  int nCeilProps = 0;
   // §13 wall props (sconces, pillars, giant mushrooms, broken statues):
   // instanced wall decorations per-biome.
   GLuint instWallProps = 0;
   int nWallProps = 0;
-  // §13 biome-specific floor emissive patches (lava cracks, ice refraction, fungus glow):
-  // instanced flat planes just above floor with emissive glow.
-  GLuint instFloorPatches = 0;
-  int nFloorPatches = 0;
 
   void upload(const dc::Dungeon& d, const float cellCol[3], const float wallCol[3],
               const float ceilCol[3], std::uint32_t seed, const std::string& biome = "");
   void buildInstanceData(const dc::Dungeon& d, std::vector<float>& floorInst,
                          std::vector<float>& ceilInst, std::vector<float>& wallH,
                          std::vector<float>& wallE) const;
-  void buildProps(const dc::Dungeon& d, std::vector<float>& ceilProps,
-                  std::vector<float>& wallProps, std::vector<float>& floorPatches,
+  void buildProps(const dc::Dungeon& d, std::vector<float>& wallProps,
                   const std::string& biome, std::uint32_t seed) const;
 };
 
@@ -842,65 +829,18 @@ void World::buildInstanceData(const dc::Dungeon& d, std::vector<float>& floorIns
   }
 }
 
-void World::buildProps(const dc::Dungeon& d, std::vector<float>& ceilProps,
-                       std::vector<float>& wallProps, std::vector<float>& floorPatches,
+void World::buildProps(const dc::Dungeon& d, std::vector<float>& wallProps,
                        const std::string& biome, std::uint32_t seed) const {
   const float cs = (float)d.cellSize;
   const float H = (float)dc::world::kWallHeight;
-  // Ceiling props sit at the top of the wall (y = H, which is the ceiling level).
-  // Wall props sit against the walls. Floor patches sit just above the floor.
-  // Per-biome placement: random based on seed, ~1 prop per 2-3 cells.
-  dc::Rng drng{seed ^ 0xDEADu}; // different seed offset from debris
-  const float ceilY = H - 0.05f; // just below the ceiling slab
+  // Wall props sit against exposed wall edges.
+  // Ceiling props, floor patches, and debris have been removed (floating/static cosmetics).
+  dc::Rng drng{seed ^ 0xDEADu};
 
   const bool isCave = (biome == "FUNGAL_CAVERN" || biome == "POISON_SWAMP" || biome == "VOLCANIC_DEPTHS");
   const bool isFrozen = (biome == "FROZEN_HALLS");
-  const bool isCrystal = (biome == "CRYSTAL_DEPTHS");
   const bool isTemple = (biome == "GOLDEN_TEMPLE");
   const bool isCrypt = (biome == "HAUNTED_CRYPT" || biome == "SPECTRAL_COURT");
-  const bool isFlooded = (biome == "FLOODED_RUINS");
-  const bool isEmber = (biome == "EMBER_FORGE");
-
-  // ---- CEILING PROPS: hanging stalactites, crystals, icicles, fungal clusters ----
-  for (int z = 0; z < d.gridSize; z++) {
-    for (int x = 0; x < d.gridSize; x++) {
-      if (d.grid[z][x] != dc::Cell::kRoom) continue;
-      if ((int)(drng.next() * 10) > 3) continue; // ~30% of room cells
-      const float wx = (float)(x * d.cellSize);
-      const float wz = (float)(z * d.cellSize);
-      // Stalactite spike: tall thin cone hanging from ceiling
-      if (isCave || isEmber) {
-        const float spikeLen = 0.8f + (float)drng.next() * 1.5f; // 0.8-2.3m hanging
-        const float spikeR = 0.08f + (float)drng.next() * 0.08f; // 0.08-0.16m radius
-        const float ry = ceilY - spikeLen * 0.5f; // center of spike
-        float col;
-        if (isEmber) col = 0.3f + (float)drng.next() * 0.2f; // warm dark red
-        else col = 0.25f + (float)drng.next() * 0.15f; // dark cave
-        ceilProps.insert(ceilProps.end(), {wx, ry, wz, spikeR * 2.0f, spikeLen, spikeR * 2.0f, col, col, col, 0,0,0, 0,1,0, 0,0,1});
-      } else if (isFrozen) {
-        const float spikeLen = 1.2f + (float)drng.next() * 2.0f; // taller icicles
-        const float spikeR = 0.06f + (float)drng.next() * 0.06f;
-        const float ry = ceilY - spikeLen * 0.5f;
-        const float icCol = 0.7f + (float)drng.next() * 0.2f; // bright ice
-        ceilProps.insert(ceilProps.end(), {wx, ry, wz, spikeR * 2.0f, spikeLen, spikeR * 2.0f, icCol, icCol, icCol + 0.05f, 0,0,0, 0,1,0, 0,0,1});
-      } else if (isCrystal) {
-        const float crystalLen = 0.6f + (float)drng.next() * 1.2f;
-        const float crystalR = 0.1f + (float)drng.next() * 0.12f;
-        const float ry = ceilY - crystalLen * 0.5f;
-        const float cr = 0.5f + (float)drng.next() * 0.15f;
-        const float cg = 0.35f + (float)drng.next() * 0.15f;
-        const float cb = 0.7f + (float)drng.next() * 0.15f;
-        ceilProps.insert(ceilProps.end(), {wx, ry, wz, crystalR * 2.0f, crystalLen, crystalR * 2.0f, cr, cg, cb, 0,0,0, 0,1,0, 0,0,1});
-      } else {
-        // Generic stalactite (STONE, POISON_SWAMP)
-        const float spikeLen = 0.5f + (float)drng.next() * 1.0f;
-        const float spikeR = 0.06f + (float)drng.next() * 0.06f;
-        const float ry = ceilY - spikeLen * 0.5f;
-        const float col = 0.4f + (float)drng.next() * 0.2f;
-        ceilProps.insert(ceilProps.end(), {wx, ry, wz, spikeR * 2.0f, spikeLen, spikeR * 2.0f, col, col, col, 0,0,0, 0,1,0, 0,0,1});
-      }
-    }
-  }
 
   // ---- WALL PROPS: sconces, pillars, mushrooms, statues ----
   // Wall props are placed against exposed walls (boundary edges)
@@ -958,48 +898,6 @@ void World::buildProps(const dc::Dungeon& d, std::vector<float>& ceilProps,
       }
     }
   }
-
-  // ---- FLOOR PATCHES: emissive glowing patches per biome ----
-  // Only rooms get floor patches (not corridors)
-  for (int z = 1; z < d.gridSize - 1; z++) {
-    for (int x = 1; x < d.gridSize - 1; x++) {
-      if (d.grid[z][x] != dc::Cell::kRoom) continue;
-      const float prob = isCave ? 0.06f : (isCrystal ? 0.05f : 0.03f); // ~5% of room cells
-      if ((int)(drng.next() * 1.0) > prob * 100.0f) continue;
-
-      const float patchX = (float)(x * d.cellSize);
-      const float patchZ = (float)(z * d.cellSize);
-      const float patchR = 0.3f + (float)drng.next() * 0.4f; // 0.3-0.7m radius patches
-
-      // Floor patch: flat disc just above floor (y = 0.22)
-      const float patchY = 0.22f;
-      if (isCrystal) {
-        // Glowing crystal shard embedded in floor
-        const float cr = 0.4f + (float)drng.next() * 0.2f;
-        const float cg = 0.25f + (float)drng.next() * 0.15f;
-        const float cb = 0.8f + (float)drng.next() * 0.15f;
-        const float tilt = (float)drng.next() * 0.5f - 0.25f; // slight random tilt
-        const float tiltR = 0.1f;
-        floorPatches.insert(floorPatches.end(), {patchX, patchY, patchZ, patchR * 2.0f, 0.02f, patchR * 2.0f, cr, cg, cb, std::cos(tiltR), tilt, std::sin(tiltR), 0,0,0, 0,0,1});
-      } else if (isCave) {
-        // Bioluminescent fungus patches (green/yellow glow)
-        const float patchCol = 0.2f + (float)drng.next() * 0.3f;
-        floorPatches.insert(floorPatches.end(), {patchX, patchY, patchZ, patchR * 2.0f, 0.02f, patchR * 2.0f, patchCol * 0.5f, patchCol * 1.2f, patchCol * 0.6f, 0,0,0, 0,1,0, 0,0,1});
-      } else if (isEmber) {
-        // Fissure glow (warm red/orange)
-        const float emberCol = 0.6f + (float)drng.next() * 0.2f;
-        floorPatches.insert(floorPatches.end(), {patchX, patchY, patchZ, patchR * 2.0f, 0.02f, patchR * 2.0f, emberCol, emberCol * 0.4f, 0.15f, 0,0,0, 0,1,0, 0,0,1});
-      } else if (isFrozen) {
-        // Ice refraction patches (bright white/blue)
-        const float icePatch = 0.7f + (float)drng.next() * 0.2f;
-        floorPatches.insert(floorPatches.end(), {patchX, patchY, patchZ, patchR * 2.0f, 0.02f, patchR * 2.0f, icePatch, icePatch + 0.05f, icePatch + 0.1f, 0,0,0, 0,1,0, 0,0,1});
-      } else {
-        // Generic subtle glow
-        const float patchCol = 0.3f + (float)drng.next() * 0.15f;
-        floorPatches.insert(floorPatches.end(), {patchX, patchY, patchZ, patchR * 2.0f, 0.02f, patchR * 2.0f, patchCol, patchCol, patchCol, 0,0,0, 0,1,0, 0,0,1});
-      }
-    }
-  }
 }
 
 void World::upload(const dc::Dungeon& d, const float cellCol[3], const float wallCol[3],
@@ -1015,39 +913,11 @@ void World::upload(const dc::Dungeon& d, const float cellCol[3], const float wal
   stamp(floorInst, cellCol); stamp(ceilInst, ceilCol); stamp(wallH, wallCol); stamp(wallE, wallCol);
   nFloor = (int)(floorInst.size() / 18); nCeil = (int)(ceilInst.size() / 18);
   nWallH = (int)(wallH.size() / 18); nWallE = (int)(wallE.size() / 18);
-  // Floor debris — JS WorldBuilder: ONE InstancedMesh of pebbles, floor(cells * 0.2).
-  // Purely cosmetic (no shadow, own budget track); degraded mode sheds the tail
-  // instances at draw time (count halved, spec §22 rule 1).
-  std::vector<float> debrisInst;
-  {
-    std::vector<int> cells; // flat z*gridSize+x of non-empty cells
-    for (int z = 0; z < d.gridSize; z++)
-      for (int x = 0; x < d.gridSize; x++)
-        if (d.grid[z][x] != dc::Cell::kEmpty) cells.push_back(z * d.gridSize + x);
-    const int nDeb = (int)std::floor((double)cells.size() * dc::props::kDebrisPerCell);
-    dc::Rng drng{seed ^ 0x5EEDu}; // deterministic-by-design (JS used unseeded Math.random)
-    for (int i = 0; i < nDeb && !cells.empty(); i++) {
-      const int c = cells[drng.nextInt((int)cells.size())];
-      const int cx = c % d.gridSize, cz = c / d.gridSize;
-      const float s = 0.2f + 0.2f * (float)drng.next(); // small pebble (JS dodeca r=0.12)
-      const float sy = s * 0.6f; // flattened
-      const float wx = (float)(cx * d.cellSize) +
-                       ((float)drng.next() - 0.5f) * (float)d.cellSize * 0.7f;
-      const float wz = (float)(cz * d.cellSize) +
-                       ((float)drng.next() - 0.5f) * (float)d.cellSize * 0.7f;
-      const float wy = 0.2f + 0.5f * sy; // sit on the floor slab (top y=0.2)
-      debrisInst.insert(debrisInst.end(), {wx, wy, wz, s, sy, s, 0.333f, 0.314f, 0.282f, 1,0,0, 0,1,0, 0,0,1}); // 0x555048 + identity rot
-    }
-  }
-  nDebris = (int)(debrisInst.size() / 18);
+  // ---- §13 biome-specific props (wall props only; ceiling props/floor patches/debris removed) ----
+  std::vector<float> wallPropsInst;
+  buildProps(d, wallPropsInst, biome, seed);
 
-  // ---- §13 biome-specific props ----
-  std::vector<float> ceilPropsInst, wallPropsInst, floorPatchesInst;
-  buildProps(d, ceilPropsInst, wallPropsInst, floorPatchesInst, biome, seed);
-
-  nCeilProps = (int)(ceilPropsInst.size() / 18);
   nWallProps = (int)(wallPropsInst.size() / 18);
-  nFloorPatches = (int)(floorPatchesInst.size() / 18);
 
   auto mkVbo = [&](const std::vector<float>& v) -> GLuint {
     GLuint b = 0;
@@ -1058,10 +928,7 @@ void World::upload(const dc::Dungeon& d, const float cellCol[3], const float wal
   };
   instFloor = mkVbo(floorInst); instCeil = mkVbo(ceilInst);
   instWallH = mkVbo(wallH); instWallE = mkVbo(wallE);
-  instDebris = mkVbo(debrisInst);
-  instCeilProps = mkVbo(ceilPropsInst);
   instWallProps = mkVbo(wallPropsInst);
-  instFloorPatches = mkVbo(floorPatchesInst);
 }
 
 // Per-biome light/prop palette (JS BIOMES → normalized material/fog/ambient/torch).
@@ -1938,6 +1805,14 @@ void App::updateCombat(double dt) {
       if (!hit) {
         for (dc::Enemy* e : skelsys.nearby(o.x, o.z, 0.6)) {
           skelsys.hitEnemy(e, o.dmg, "orb", {state.player.x, state.player.z}); hit = true; break;
+        }
+      }
+      // Destroy breakables (crates/barrels) on hit — fireballs use same pool
+      if (!hit) {
+        for (auto& br : drops.breakables()) {
+          if (!br.alive) continue;
+          const double dx = o.x - br.pos.x, dz = o.z - br.pos.z;
+          if (dx * dx + dz * dz < 1.0 * 1.0) { drops.breakProp(br, state.collectedOrbs, rng); hit = true; break; }
         }
       }
       if (hit) { if (o.step == 3) orbExplode(o); o.alive = false; }
@@ -3493,10 +3368,7 @@ void App::frame() {
   drawGroup(world.instWallE, world.nWallE);
   drawGroup(world.instFloor, world.nFloor);
   drawGroup(world.instCeil, world.nCeil);
-  drawGroup(world.instCeilProps, world.nCeilProps); // §13 ceiling props (stalactites, crystals)
-  drawGroup(world.instDebris, world.nDebris);
   drawGroup(world.instWallProps, world.nWallProps);  // §13 wall props (sconces, pillars)
-  drawGroup(world.instFloorPatches, world.nFloorPatches); // §13 floor patches (emissive)
 
   // ---- 2) scene pass ----
   glBindFramebuffer(GL_FRAMEBUFFER, sceneFbo);
@@ -3528,32 +3400,9 @@ void App::frame() {
   drawGroup(world.instWallE, world.nWallE);
   drawGroup(world.instFloor, world.nFloor);
   drawGroup(world.instCeil, world.nCeil);
-  // floor debris (cosmetic pebbles, no shadow) — degraded mode sheds the tail
-  // instances: draw count halved (spec §22 rule 1, JS WorldBuilder.setDegraded).
-  const int debrisDraw = degraded ? (world.nDebris / 2) : world.nDebris;
-  drawGroup(world.instDebris, debrisDraw);
 
-  // ---- §13 biome-specific props (floor patches, wall props) — lit scene, additive for glow ----
-  // Floor patches: emissive glow just above floor (depth-tested, no depth write).
-  // Wall props: instanced against walls for sconces, pillars, ice formations.
-  // Degraded mode sheds the tail: draw count halved (spec §22 rule 1).
-  glDepthMask(GL_FALSE);
-  {
-    // Floor patches (emissive glow planes): draw with additive blending for bloom.
-    const int fpDraw = degraded ? (world.nFloorPatches / 2) : world.nFloorPatches;
-    if (fpDraw > 0) {
-      glUseProgram(progScene);
-      glUniform1f(glGetUniformLocation(progScene, "uEmissive"), 2.0f); // unlit emissive
-      glBlendFunc(GL_SRC_ALPHA, GL_ONE); // additive for emissive glow
-      drawGroup(world.instFloorPatches, fpDraw);
-      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // restore
-    }
-    // Wall props: instanced against walls, lit by torch + headlight.
-    const int wpDraw = degraded ? (world.nWallProps / 2) : world.nWallProps;
-    if (wpDraw > 0) {
-      drawGroup(world.instWallProps, wpDraw);
-    }
-  }
+  // Wall props: instanced against walls, lit by torch + headlight.
+  drawGroup(world.instWallProps, world.nWallProps);
 
   // ---- §13 decorative passes (JS SmokeSystem / ParticleSystem / RuneSystem
   //      + water puddles): transparent, depth-tested, no depth write. Degraded

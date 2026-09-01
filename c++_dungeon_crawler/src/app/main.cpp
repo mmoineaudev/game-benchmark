@@ -3364,7 +3364,7 @@ void App::update(double dt, double rawDt) {
   state.updateSprint(rawDt, sprintHeld, moving && sprintHeld, false);
   const double sprintMult = state.sprintSpeedMult();
   if (moving) {
-    dc::Mover pos;
+    dc::Mover pos{state.player.x, state.player.z};
     dc::movePlayer(pos, mx, mz, sprinting, sprintMult, state.buffEffect, dt, world.collision.boxes);
     camX = pos.x; camZ = pos.z;
   }

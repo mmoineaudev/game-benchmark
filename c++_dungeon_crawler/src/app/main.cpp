@@ -256,15 +256,11 @@ vec3 surfaceDetail(vec3 wp, vec3 n, int regionType, int surfaceType) {
     float pool = hash12(gid);
     float soot = smoothstep(0.4, 0.7, pool); // soot pools
     float drip = smoothstep(0.7, 0.8, hash12(gid * 1.3)) * step(0.3, fract(uv.y * 0.2));
-    float wetness = hash21(uv * 0.4, 3.0) * 0.15; // slight specular on ceilings
-    // Torch reflection gradient: brighter near torch position
-    float torchDist = length(wp.xz - vec2(10.0, 10.0)); // approximate torch pos
-    float torchGlow = 1.0 - 0.3 * smoothstep(0.0, 20.0, torchDist);
-    return vec3(
-      0.75 + 0.2 * hash12(gid),          // base block variation
-      (1.0 - soot * 0.4) * (1.0 - drip * 0.2), // soot + drips darken
-      torchGlow                            // torch reflection
-    );
+    float blockVar = 0.80 + 0.20 * hash12(gid);
+    // Uniform brightness (all channels equal) so the biome albedo hue is
+    // preserved — per-channel detail would tint the ceiling.
+    float d = blockVar * (1.0 - soot * 0.3) * (1.0 - drip * 0.15);
+    return vec3(d);
   } else if (surfaceType == 0) { // floor
     uv = wp.xz;
     // Floor: worn/smooth with foot-trail patterns + stair tread marks
@@ -274,17 +270,16 @@ vec3 surfaceDetail(vec3 wp, vec3 n, int regionType, int surfaceType) {
     // Mortar lines (wider on floors)
     float edge = smoothstep(0.5, 0.38, max(abs(f.x), abs(f.y)));
     float mortar = mix(0.5, 1.0, edge);
-    // Foot-trail wear: streaks along corridor direction
+    // Foot-trail wear: streaks along corridor direction (subtle brightness)
     float trail = hash12(floor(uv * vec2(0.5, 2.0)));
     float wear = smoothstep(0.3, 0.7, trail); // worn paths
     float tread = smoothstep(0.15, 0.3, abs(f.y)) * step(0.4, hash12(gid + vec2(0, 1)));
     // Crevice AO
-    float ao = mortar * (0.85 + 0.15 * clamp(wp.y * 0.25 + 0.5, 0.0, 1.0));
-    return vec3(
-      blockVar,
-      mortar * wear * (1.0 + tread * 0.1), // wear patterns
-      ao
-    );
+    float ao = 0.85 + 0.15 * clamp(wp.y * 0.25 + 0.5, 0.0, 1.0);
+    // Uniform brightness (all channels equal) so the biome albedo hue is
+    // preserved — per-channel detail would tint the tan floor magenta.
+    float d = blockVar * mortar * (0.85 + 0.15 * wear) * (1.0 + tread * 0.05) * ao;
+    return vec3(d);
   } else { // walls
     uv = wp.xy; // walls are vertical
     // Walls: varied block sizes + mortar density + crack networks
@@ -301,11 +296,10 @@ vec3 surfaceDetail(vec3 wp, vec3 n, int regionType, int surfaceType) {
     float crack = max(crack1, crack2) * crackMask * 0.3;
     // Vertical streaks (water/age stains)
     float streak = smoothstep(0.6, 0.8, hash21(uv * 0.3, 2.0)) * 0.15;
-    return vec3(
-      blockVar * mortar,
-      1.0 - crack - streak,
-      0.6 + 0.4 * hash12(gid + vec2(1, 1)) // varied brightness
-    );
+    // Uniform brightness (all channels equal) so the biome albedo hue is
+    // preserved — per-channel detail would tint the walls with colored stripes.
+    float d = blockVar * mortar * (1.0 - crack) * (1.0 - streak);
+    return vec3(d);
   }
 }
 

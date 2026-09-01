@@ -1515,7 +1515,7 @@ void App::buildDecor() {
     const float cx = (float)(r.cx + (r.w - 1) / 2) * cs;
     const float cz = (float)(r.cz + (r.h - 1) / 2) * cs;
     waterData.insert(waterData.end(), {
-        cx, 0.22f, cz,                         // floor slab top (0.2) + 0.02 (JS y=0.02)
+        cx, 0.25f, cz,                        // just above floor (avoids z-fight with ground at y=0.2)
         (float)(r.w * cs * 0.45), (float)(r.h * cs * 0.45),
         (float)drng.next() * 6.28318f});
   }
@@ -3564,6 +3564,9 @@ void App::frame() {
   // NOTE: uTime is set below in each decorative sub-pass where tDec is in scope.
     // (a) water: VAULT-room puddles (0x3a6a8a, opacity 0.75, sine wave).
     if (!waterData.empty()) {
+      glDisable(GL_CULL_FACE);
+      glEnable(GL_DEPTH_TEST);
+      glDepthFunc(GL_LEQUAL);
       int wn = (int)(waterData.size() / 6);
       if (degraded) wn /= 2;
       if (wn > 0) {

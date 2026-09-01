@@ -32,7 +32,7 @@ constexpr int kMaxHealthBase = 3;
 constexpr double kRegenDelay = 8.0; // regen starts 8 s after last damage
 constexpr double kRegenInterval = 6.0; // +1 heart / 6 s after the delay
 constexpr double kInvulnTime = 0.8;
-constexpr double kSafeSpawnTime = 5.0;
+constexpr double kSafeSpawnTime = 0.0; // 0 = instant combat start (no grace period)
 constexpr double kShakeTime = 0.25;
 constexpr double kExitRoomDist2 = 4.0; // within 2 u of exit cell center
 } // namespace player

@@ -141,6 +141,11 @@ GLuint linkProgram(GLuint vs, GLuint fs) {
 
 // Lit cube shader: per-instance offset/scale/color, ONE shadow point light
 // (the torch) + ONE headlight (camera, no shadow) + ambient.
+// Instance layout: offset(3) + scale(3) + color(3) + regionData(4)
+// regionData: regionType(0=dead-end,1=corridor,2=intersection,3=room,4=stair),
+//             faceDir(-1=floor/ceil,0=horizontal wall,1=vertical wall),
+//             surfaceType(0=floor,1=wall,2=ceil),
+//             edgeCount(0-4 neighbors)
 const char* kLitVert = R"(
 #version 330 core
 layout(location=0) in vec3 aPos;
@@ -148,27 +153,25 @@ layout(location=1) in vec3 aNormal;
 layout(location=2) in vec3 aOffset;
 layout(location=3) in vec3 aScale;
 layout(location=4) in vec3 aColor;
-// Per-instance rigid orientation as a full 3x3 (column-major). This is what lets
-// the sword carry its base-tilt + swing as ONE rotation so the grip/guard/blade
-// stay welded into a single rigid piece (a yaw/pitch pair cannot express the
-// roll/swing, which was why the handle and blade read as two separate pieces).
-// Non-sword instances pass the classic yaw/pitch matrix (0,0 = identity).
 layout(location=5) in vec3 aRot0;
 layout(location=6) in vec3 aRot1;
 layout(location=7) in vec3 aRot2;
+layout(location=8) in vec4 aRegion;
 uniform mat4 uViewProj;
 uniform mat4 uTorchVP;
 out vec3 vNormal;
 out vec3 vColor;
 out vec3 vWorld;
 out vec4 vTorchPos;
+out vec3 vRegionData; // regionType, faceDir, surfaceType
 void main() {
   mat3 R = mat3(aRot0, aRot1, aRot2);
   vec3 wp = R * (aPos * aScale) + aOffset;
   vWorld = wp;
   vNormal = R * aNormal;
-  vColor = aColor;
+  vColor = aColor; // pass through instance color
   vTorchPos = uTorchVP * vec4(wp, 1.0);
+  vRegionData = vec3(aRegion.xyz);
   gl_Position = uViewProj * vec4(wp, 1.0);
 }
 )";
@@ -179,6 +182,7 @@ in vec3 vNormal;
 in vec3 vColor;
 in vec3 vWorld;
 in vec4 vTorchPos;
+in vec3 vRegionData;
 uniform vec3 uTorchPos;
 uniform vec3 uTorchColor;
 uniform float uTorchIntensity;
@@ -187,12 +191,13 @@ uniform vec3 uHeadPos;
 uniform vec3 uHeadColor;
 uniform float uHeadIntensity;
 uniform float uHeadDist;
-uniform vec3 uAmbient;   // per-biome AmbientLight color (JS BIOMES.ambient lerp white 0.6)
+uniform vec3 uAmbient;
 uniform float uEmissive;
-uniform vec3 uFogColor;  // per-biome fog color (JS BIOMES.fog lerp gray 0.55)
+uniform vec3 uFogColor;
 uniform float uFogDensity;
 uniform vec3 uEyePos;
 uniform sampler2D uShadowMap;
+uniform float uTime;
 out vec4 fragColor;
 float shadowFactor(vec4 lpos) {
   if (lpos.w <= 0.0) return 1.0;
@@ -211,13 +216,13 @@ vec3 pointLight(vec3 L, vec3 lcolor, float intensity, float distance, float shad
   vec3 ld = L - vWorld;
   float dist = length(ld);
   float diff = max(dot(normalize(vNormal), ld / max(dist, 1e-4)), 0.0);
-  float cut = 1.0 - smoothstep(distance * 0.5, distance, dist); // JS-style cutoff
-  float atten = intensity * cut / (1.0 + 0.2 * dist + 0.06 * dist * dist); // JS decay ~1.05-1.2
+  float cut = 1.0 - smoothstep(distance * 0.5, distance, dist);
+  float atten = intensity * cut / (1.0 + 0.2 * dist + 0.06 * dist * dist);
   return lcolor * diff * atten * shadow;
 }
-// ---- procedural stone surface (visual detail): per-block value noise +
-//      mortar lines + fine grain, in world space so it doesn't swim. ----
-// ---- hash: fast 2D→1D noise seed ----
+
+// ---- Procedural stone surface: per-surface variation + biome branching ----
+// hash: fast 2D→1D noise seed
 float hash12(vec2 p) {
   p = fract(p * vec2(123.34, 345.78));
   p += dot(p, p + 34.23);
@@ -226,58 +231,100 @@ float hash12(vec2 p) {
 float hash21(vec2 p, float seed) {
   return fract(sin(dot(p, vec2(12.9898 + seed, 78.233)) + seed) * 43758.5453);
 }
-// ---- procedural stone surface: per-block noise + mortar lines + fine grain
-//      + crack network + crevice AO + wetness highlights ----
-float stoneDetail(vec3 wp, vec3 n) {
-  vec2 uv;
-  if (abs(n.y) > 0.5)      uv = wp.xz;
-  else if (abs(n.x) > 0.5) uv = wp.zy;
-  else                     uv = wp.xy;
-  const float cell = 1.2;
-  vec2 gid = floor(uv / cell);
-  float blockVar = 0.82 + 0.32 * hash12(gid);            // per-block brightness
-  vec2 f = fract(uv / cell) - 0.5;
-  // ---- crack network: 2D Voronoi → skeleton → crack lines ----
-  {
-    vec2 gv = floor(uv / 0.5);
-    vec2 gvCell = vec2(hash12(gv + vec2(0,0)), hash12(gv + vec2(1,0)) + hash12(gv + vec2(0,1)));
-    vec2 center = vec2(hash12(gv + vec2(0,0)), hash12(gv + vec2(1,0))) + vec2(0.5);
-    vec2 gf = fract(uv / 0.5) - 0.5;
-    vec2 dist = gf - center;
-    float d = length(dist);
-    float crack = 1.0 - smoothstep(0.0, 0.03, abs(dist.x * dist.y) / max(d, 0.01)); // diagonal crack
-    float crack2 = 1.0 - smoothstep(0.0, 0.02, abs(gf.x * 0.7 + gf.y * 0.3 - 0.1)); // random micro crack
-    float crackLine = max(crack, crack2);
-    float crackMask = step(hash12(gid * 2.0), 0.6) * crackLine; // only on some blocks
-    blockVar *= 1.0 - crackMask * 0.8 * (1.0 - 0.72); // dark cracks in geometry crevices
-  }
-  // mortar seam (dark crevice between blocks)
-  float edge = smoothstep(0.5, 0.42, max(abs(f.x), abs(f.y))); // 1 inside, 0 at seam
-  float mortar = mix(0.55, 1.0, edge); // 1 inside, 0 at seam
-  // fine speckle grain
-  float grain = 0.88 + 0.22 * hash12(uv * 7.31);
-  // crevice AO: darker where blocks meet, stronger on floor
-  float creviceAO = 0.4 * mortar + 0.6; // mortar is already dark; don't double-dark
-  float ao = creviceAO * (0.85 + 0.15 * clamp(wp.y * 0.25 + 0.5, 0.0, 1.0));
-  // wetness / specular highlight: subtle sheen on horizontal surfaces
-  float wetness = 0.0;
-  if (abs(n.y) > 0.5) {
-    float wetPatch = hash21(uv * 0.3, 1.0);
-    wetness = smoothstep(0.6, 0.8, wetPatch) * 0.12; // specular boost
-    wetness *= smoothstep(0.0, 0.15, wp.y + 0.5); // brighter near camera (AO)
-  }
-  return blockVar * mortar * grain * ao * (1.0 + wetness);
+
+// Per-surface surface normal variation (subtle bumps for detail)
+float bumpHash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
 }
+vec3 bumpNormal(vec3 wp, vec3 n, float scale) {
+  float eps = 0.02;
+  vec2 p = vec2(wp.x, wp.z);
+  float h = bumpHash(p * scale);
+  float dx = bumpHash((p + vec2(eps, 0.0)) * scale) - h;
+  float dz = bumpHash((p + vec2(0.0, eps)) * scale) - h;
+  return n + vec3(dx, 0.0, dz) * 0.5;
+}
+
+// ---- Per-surface procedural detail based on regionType ----
+// regionType: 0=dead-end, 1=corridor, 2=intersection, 3=room
+vec3 surfaceDetail(vec3 wp, vec3 n, int regionType, int surfaceType) {
+  vec2 uv;
+  if (surfaceType == 2) { // ceiling
+    uv = wp.xz;
+    // Ceiling: dark-sooty pools + drips + torch-reflection gradient
+    vec2 gid = floor(uv / 1.5);
+    float pool = hash12(gid);
+    float soot = smoothstep(0.4, 0.7, pool); // soot pools
+    float drip = smoothstep(0.7, 0.8, hash12(gid * 1.3)) * step(0.3, fract(uv.y * 0.2));
+    float wetness = hash21(uv * 0.4, 3.0) * 0.15; // slight specular on ceilings
+    // Torch reflection gradient: brighter near torch position
+    float torchDist = length(wp.xz - vec2(10.0, 10.0)); // approximate torch pos
+    float torchGlow = 1.0 - 0.3 * smoothstep(0.0, 20.0, torchDist);
+    return vec3(
+      0.75 + 0.2 * hash12(gid),          // base block variation
+      (1.0 - soot * 0.4) * (1.0 - drip * 0.2), // soot + drips darken
+      torchGlow                            // torch reflection
+    );
+  } else if (surfaceType == 0) { // floor
+    uv = wp.xz;
+    // Floor: worn/smooth with foot-trail patterns + stair tread marks
+    vec2 gid = floor(uv / 1.2);
+    float blockVar = 0.82 + 0.32 * hash12(gid);
+    vec2 f = fract(uv / 1.2) - 0.5;
+    // Mortar lines (wider on floors)
+    float edge = smoothstep(0.5, 0.38, max(abs(f.x), abs(f.y)));
+    float mortar = mix(0.5, 1.0, edge);
+    // Foot-trail wear: streaks along corridor direction
+    float trail = hash12(floor(uv * vec2(0.5, 2.0)));
+    float wear = smoothstep(0.3, 0.7, trail); // worn paths
+    float tread = smoothstep(0.15, 0.3, abs(f.y)) * step(0.4, hash12(gid + vec2(0, 1)));
+    // Crevice AO
+    float ao = mortar * (0.85 + 0.15 * clamp(wp.y * 0.25 + 0.5, 0.0, 1.0));
+    return vec3(
+      blockVar,
+      mortar * wear * (1.0 + tread * 0.1), // wear patterns
+      ao
+    );
+  } else { // walls
+    uv = wp.xy; // walls are vertical
+    // Walls: varied block sizes + mortar density + crack networks
+    vec2 gid = floor(uv / 1.0);
+    float blockVar = 0.80 + 0.35 * hash12(gid);
+    vec2 f = fract(uv / 1.0) - 0.5;
+    // Mortar seam (tighter on walls)
+    float edge = smoothstep(0.5, 0.42, max(abs(f.x), abs(f.y)));
+    float mortar = mix(0.55, 1.0, edge);
+    // Crack network (more on intersection/corridor walls)
+    float crackMask = step(0.5, hash12(gid * 2.0));
+    float crack1 = 1.0 - smoothstep(0.0, 0.03, abs(f.x * f.y) / max(length(f), 0.01));
+    float crack2 = 1.0 - smoothstep(0.0, 0.02, abs(f.x * 0.7 + f.y * 0.3 - 0.1));
+    float crack = max(crack1, crack2) * crackMask * 0.3;
+    // Vertical streaks (water/age stains)
+    float streak = smoothstep(0.6, 0.8, hash21(uv * 0.3, 2.0)) * 0.15;
+    return vec3(
+      blockVar * mortar,
+      1.0 - crack - streak,
+      0.6 + 0.4 * hash12(gid + vec2(1, 1)) // varied brightness
+    );
+  }
+}
+
 uniform float uTime;
 void main() {
   // torch flicker: layered sin waves + noise
   float flick = 0.94 + 0.06 * sin(uTime * 3.7) * sin(uTime * 7.1) + 0.03 * sin(uTime * 13.3);
   vec3 torchCol = uTorchColor * flick;
-  vec3 albedo = vColor * stoneDetail(vWorld, vNormal);
+
+  // Surface-specific albedo based on regionData
+  int regionType = int(vRegionData.x);
+  int surfaceType = int(vRegionData.z);
+  vec3 detail = surfaceDetail(vWorld, vNormal, regionType, surfaceType);
+
+  vec3 albedo = vColor * detail;
   vec3 lit = albedo * uAmbient;
   lit += pointLight(uTorchPos, torchCol, uTorchIntensity, uTorchDist, shadowFactor(vTorchPos)) * albedo;
   lit += pointLight(uHeadPos, uHeadColor, uHeadIntensity, uHeadDist, 1.0) * albedo;
-  if (uEmissive > 0.5) lit = vColor * 0.9; // unlit emissive (boss / skeletons) — keep ≤1 to avoid bloom blowout
+  if (uEmissive > 0.5) lit = vColor * 0.9;
   // per-biome exponential fog (JS FogExp2; density pre-scaled for the C++ scene)
   float fd = length(vWorld - uEyePos);
   float fogF = 1.0 - exp(-uFogDensity * fd);
@@ -802,14 +849,36 @@ void World::buildInstanceData(const dc::Dungeon& d, std::vector<float>& floorIns
   const float H = (float)dc::world::kWallHeight;
   const float wt = (float)dc::kWallThickness;
   floorInst.clear(); ceilInst.clear(); wallH.clear(); wallE.clear();
+
+  // Pre-compute region types based on neighbor count (dead-end=0, corridor=1-2, intersection=3, room=4)
+  std::vector<int> cellRegion(d.gridSize * d.gridSize, 0);
+  for (int z = 0; z < d.gridSize; z++) {
+    for (int x = 0; x < d.gridSize; x++) {
+      if (d.grid[z][x] == dc::Cell::kEmpty) continue;
+      int nc = 0;
+      static const int kDirX[4] = {1, -1, 0, 0};
+      static const int kDirZ[4] = {0, 0, 1, -1};
+      for (int k = 0; k < 4; k++) {
+        const int nx = x + kDirX[k], nz = z + kDirZ[k];
+        const bool oob = nx < 0 || nz < 0 || nx >= d.gridSize || nz >= d.gridSize;
+        if (!oob && d.grid[nz][nx] != dc::Cell::kEmpty) nc++;
+      }
+      cellRegion[z * d.gridSize + x] = (nc < 2) ? 0 : (nc < 3) ? 1 : (nc < 4) ? 2 : 3;
+    }
+  }
+
   for (int z = 0; z < d.gridSize; z++) {
     for (int x = 0; x < d.gridSize; x++) {
       if (d.grid[z][x] == dc::Cell::kEmpty) continue;
       const float wx = (float)(x * d.cellSize), wz = (float)(z * d.cellSize);
-      // floor + ceiling (thin slabs, one instance each) — 18 floats: offset(3) scale(3)
-      // color(3) + identity 3x3 (axis-aligned, no per-instance rotation).
-      floorInst.insert(floorInst.end(), {wx, 0.1f, wz, cs, 0.2f, cs, 0, 0, 0, 1,0,0, 0,1,0, 0,0,1});
-      ceilInst.insert(ceilInst.end(), {wx, H - 0.1f, wz, cs, 0.2f, cs, 0, 0, 0, 1,0,0, 0,1,0, 0,0,1});
+      const int regType = cellRegion[z * d.gridSize + x];
+      const int edgeCount = (d.gridSize * d.gridSize > 0) ? (4 - ((regType < 3) ? regType + 1 : 4)) : 4;
+      // floor: 22 floats — offset(3) + scale(3) + color(3) + rot3x3(9) + regionData(4)
+      // regionData: regionType, faceDir(-1=floor/ceil), surfaceType(0=floor/1/2), edgeCount
+      floorInst.insert(floorInst.end(), {wx, 0.1f, wz, cs, 0.2f, cs, 0, 0, 0,
+        1,0,0, 0,1,0, 0,0,1, (float)regType, -1.0f, 0.0f, 0.0f});
+      ceilInst.insert(ceilInst.end(), {wx, H - 0.1f, wz, cs, 0.2f, cs, 0, 0, 0,
+        1,0,0, 0,1,0, 0,0,1, (float)regType, -1.0f, 2.0f, 0.0f});
       // exposed/boundary edges → walls (same logic as WorldBuilder)
       static const int kDirX[4] = {1, -1, 0, 0};
       static const int kDirZ[4] = {0, 0, 1, -1};
@@ -819,10 +888,12 @@ void World::buildInstanceData(const dc::Dungeon& d, std::vector<float>& floorIns
         const bool oob = nx < 0 || nz < 0 || nx >= d.gridSize || nz >= d.gridSize;
         if (!oob && d.grid[nz][nx] != dc::Cell::kEmpty) continue;
         const float ex = wx + (float)(dx * d.cellSize) / 2.0f, ez = wz + (float)(dz * d.cellSize) / 2.0f;
-        if (dz != 0) { // N/S wall: spans x, thin in z
-          wallH.insert(wallH.end(), {ex, H / 2.0f, ez, cs, H, wt, 0, 0, 0, 1,0,0, 0,1,0, 0,0,1});
-        } else { // E/W wall: spans z, thin in x
-          wallE.insert(wallE.end(), {ex, H / 2.0f, ez, wt, H, cs, 0, 0, 0, 1,0,0, 0,1,0, 0,0,1});
+        if (dz != 0) { // N/S wall: spans x, thin in z (horizontal wall)
+          wallH.insert(wallH.end(), {ex, H / 2.0f, ez, cs, H, wt, 0, 0, 0,
+            1,0,0, 0,1,0, 0,0,1, (float)regType, 0.0f, 1.0f, (float)edgeCount});
+        } else { // E/W wall: spans z, thin in x (vertical wall)
+          wallE.insert(wallE.end(), {ex, H / 2.0f, ez, wt, H, cs, 0, 0, 0,
+            1,0,0, 0,1,0, 0,0,1, (float)regType, 1.0f, 1.0f, (float)edgeCount});
         }
       }
     }
@@ -906,13 +977,13 @@ void World::upload(const dc::Dungeon& d, const float cellCol[3], const float wal
   collision = buildCollisionBoxes(d);
   std::vector<float> floorInst, ceilInst, wallH, wallE;
   buildInstanceData(d, floorInst, ceilInst, wallH, wallE);
-  // stamp colors (18-float stride: offset,scale,color,rot3x3)
+  // stamp colors (22-float stride: offset,scale,color,rot3x3,regionData)
   auto stamp = [&](std::vector<float>& v, const float c[3]) {
-    for (size_t i = 0; i < v.size(); i += 18) { v[i + 6] = c[0]; v[i + 7] = c[1]; v[i + 8] = c[2]; }
+    for (size_t i = 0; i < v.size(); i += 22) { v[i + 6] = c[0]; v[i + 7] = c[1]; v[i + 8] = c[2]; }
   };
   stamp(floorInst, cellCol); stamp(ceilInst, ceilCol); stamp(wallH, wallCol); stamp(wallE, wallCol);
-  nFloor = (int)(floorInst.size() / 18); nCeil = (int)(ceilInst.size() / 18);
-  nWallH = (int)(wallH.size() / 18); nWallE = (int)(wallE.size() / 18);
+  nFloor = (int)(floorInst.size() / 22); nCeil = (int)(ceilInst.size() / 22);
+  nWallH = (int)(wallH.size() / 22); nWallE = (int)(wallE.size() / 22);
   // ---- §13 biome-specific props (wall props only; ceiling props/floor patches/debris removed) ----
   std::vector<float> wallPropsInst;
   buildProps(d, wallPropsInst, biome, seed);
@@ -1038,6 +1109,9 @@ struct App {
   float fogColor[3] = {0.05f, 0.05f, 0.04f};
   float fogDensity = 0.036f;
   float ambientCol[3] = {0.70f, 0.69f, 0.67f};
+
+  // surface color uniforms for lit shader (set before drawGroup)
+  float uSurfaceColorR = -1.0f, uSurfaceColorG = -1.0f, uSurfaceColorB = -1.0f;
 
   // §13 Atmospheric particles: 50 instances (pos3 + type1 + per-biome color).
   float atmoPos[50][3];  // world-space position
@@ -3248,26 +3322,30 @@ void App::drawGroup(GLuint instVbo, int count, float emissive) {
   glUniform1f(glGetUniformLocation(progScene, "uEmissive"), emissive);
   glBindVertexArray(vao);
   glBindBuffer(GL_ARRAY_BUFFER, instVbo);
-  // 18-float instance: offset(3) scale(3) color(3) rot(3x3) — stride 72 bytes
+  // 22-float instance: offset(3) scale(3) color(3) rot(3x3) regionData(4) — stride 88 bytes
   glEnableVertexAttribArray(2);
-  glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 72, (void*)0);   // offset
+  glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 88, (void*)0);   // offset
   glVertexAttribDivisor(2, 1);
   glEnableVertexAttribArray(3);
-  glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 72, (void*)12);  // scale
+  glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 88, (void*)12);  // scale
   glVertexAttribDivisor(3, 1);
   glEnableVertexAttribArray(4);
-  glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, 72, (void*)24);  // color
+  glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, 88, (void*)24);  // color
   glVertexAttribDivisor(4, 1);
   // rot 3x3, column-major: cols at offsets 36/48/60 (locations 5/6/7)
   glEnableVertexAttribArray(5);
-  glVertexAttribPointer(5, 3, GL_FLOAT, GL_FALSE, 72, (void*)36);  // rot col0
+  glVertexAttribPointer(5, 3, GL_FLOAT, GL_FALSE, 88, (void*)36);  // rot col0
   glVertexAttribDivisor(5, 1);
   glEnableVertexAttribArray(6);
-  glVertexAttribPointer(6, 3, GL_FLOAT, GL_FALSE, 72, (void*)48);  // rot col1
+  glVertexAttribPointer(6, 3, GL_FLOAT, GL_FALSE, 88, (void*)48);  // rot col1
   glVertexAttribDivisor(6, 1);
   glEnableVertexAttribArray(7);
-  glVertexAttribPointer(7, 3, GL_FLOAT, GL_FALSE, 72, (void*)60);  // rot col2
+  glVertexAttribPointer(7, 3, GL_FLOAT, GL_FALSE, 88, (void*)60);  // rot col2
   glVertexAttribDivisor(7, 1);
+  // regionData: regionType(1), faceDir(1), surfaceType(1), edgeCount(1) at offset 72
+  glEnableVertexAttribArray(8);
+  glVertexAttribPointer(8, 4, GL_FLOAT, GL_FALSE, 88, (void*)72);  // region data
+  glVertexAttribDivisor(8, 1);
   glDrawElementsInstanced(GL_TRIANGLES, vertCount, GL_UNSIGNED_INT, nullptr, count);
   glBindVertexArray(0);
 }

@@ -1297,7 +1297,7 @@ struct App {
   void smokePuff(float x, float y, float z);
   void update(double dt, double rawDt);
   void frame();
-  void drawGroup(GLuint instVbo, int count, float emissive = 0.0f);
+  void drawGroup(GLuint instVbo, int count, float emissive = 0.0f, int strideBytes = 88);
   void savePPM(const char* path);
   void bakeFont(const char* path);
   float lineW(const char* s, float size);
@@ -3309,36 +3309,44 @@ bool App::init(int w, int h, const char* title, const char* fontPath) {
   return true;
 }
 
-void App::drawGroup(GLuint instVbo, int count, float emissive) {
+void App::drawGroup(GLuint instVbo, int count, float emissive, int strideBytes) {
   if (count <= 0 || instVbo == 0) return;
   glUseProgram(progScene);
   glUniform1f(glGetUniformLocation(progScene, "uEmissive"), emissive);
   glBindVertexArray(vao);
   glBindBuffer(GL_ARRAY_BUFFER, instVbo);
-  // 22-float instance: offset(3) scale(3) color(3) rot(3x3) regionData(4) — stride 88 bytes
+  const GLsizei stride = (GLsizei)strideBytes;
+  // offset(3) scale(3) color(3) rot(3x3) [regionData(4)]
   glEnableVertexAttribArray(2);
-  glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 88, (void*)0);   // offset
+  glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, stride, (void*)0);   // offset
   glVertexAttribDivisor(2, 1);
   glEnableVertexAttribArray(3);
-  glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 88, (void*)12);  // scale
+  glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, stride, (void*)12);  // scale
   glVertexAttribDivisor(3, 1);
   glEnableVertexAttribArray(4);
-  glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, 88, (void*)24);  // color
+  glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, stride, (void*)24);  // color
   glVertexAttribDivisor(4, 1);
   // rot 3x3, column-major: cols at offsets 36/48/60 (locations 5/6/7)
   glEnableVertexAttribArray(5);
-  glVertexAttribPointer(5, 3, GL_FLOAT, GL_FALSE, 88, (void*)36);  // rot col0
+  glVertexAttribPointer(5, 3, GL_FLOAT, GL_FALSE, stride, (void*)36);  // rot col0
   glVertexAttribDivisor(5, 1);
   glEnableVertexAttribArray(6);
-  glVertexAttribPointer(6, 3, GL_FLOAT, GL_FALSE, 88, (void*)48);  // rot col1
+  glVertexAttribPointer(6, 3, GL_FLOAT, GL_FALSE, stride, (void*)48);  // rot col1
   glVertexAttribDivisor(6, 1);
   glEnableVertexAttribArray(7);
-  glVertexAttribPointer(7, 3, GL_FLOAT, GL_FALSE, 88, (void*)60);  // rot col2
+  glVertexAttribPointer(7, 3, GL_FLOAT, GL_FALSE, stride, (void*)60);  // rot col2
   glVertexAttribDivisor(7, 1);
-  // regionData: regionType(1), faceDir(1), surfaceType(1), edgeCount(1) at offset 72
-  glEnableVertexAttribArray(8);
-  glVertexAttribPointer(8, 4, GL_FLOAT, GL_FALSE, 88, (void*)72);  // region data
-  glVertexAttribDivisor(8, 1);
+  if (strideBytes >= 88) {
+    // 22-float dungeon instances: regionData(4) at offset 72
+    glEnableVertexAttribArray(8);
+    glVertexAttribPointer(8, 4, GL_FLOAT, GL_FALSE, stride, (void*)72);
+    glVertexAttribDivisor(8, 1);
+  } else {
+    // 18-float dynamic instances (boss/enemies/sword): no region data —
+    // feed a clean default so the shader's floor branch uses neutral values.
+    glDisableVertexAttribArray(8);
+    glVertexAttrib4f(8, 0.0f, 0.0f, 0.0f, 1.0f);
+  }
   glDrawElementsInstanced(GL_TRIANGLES, vertCount, GL_UNSIGNED_INT, nullptr, count);
   glBindVertexArray(0);
 }
@@ -3708,7 +3716,7 @@ void App::frame() {
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
   glDepthMask(GL_TRUE);
 
-  drawGroup(dynVbo, dynCount, 1.0f); // boss/skeletons: unlit emissive spectral figures
+  drawGroup(dynVbo, dynCount, 1.0f, 72); // boss/skeletons: 18-float instances, emissive
 
   // ---- 2.5) §12.2 enemy-glow: flat red-orange enemy mask → half-res → blur H/V ----
   // JS PostProcessing: clone camera on layer 1, overrideMaterial 0xff4422, half-res RT,
@@ -3737,10 +3745,15 @@ void App::frame() {
     glUniformMatrix4fv(glGetUniformLocation(progMask, "uViewProj"), 1, GL_FALSE, vpMat.m);
     glBindVertexArray(vao);
     glBindBuffer(GL_ARRAY_BUFFER, enemVbo);
-    { void* z = nullptr;
-      glEnableVertexAttribArray(2); glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 36, z); glVertexAttribDivisor(2, 1);
-      glEnableVertexAttribArray(3); glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 36, (void*)12); glVertexAttribDivisor(3, 1);
-      glEnableVertexAttribArray(4); glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, 36, (void*)24); glVertexAttribDivisor(4, 1); }
+    { void* z = nullptr; const int st = 72; // 18-float instance = 72 bytes
+      glEnableVertexAttribArray(2); glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, st, z); glVertexAttribDivisor(2, 1);
+      glEnableVertexAttribArray(3); glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, st, (void*)12); glVertexAttribDivisor(3, 1);
+      glEnableVertexAttribArray(4); glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, st, (void*)24); glVertexAttribDivisor(4, 1);
+      // kLitVert also reads aRot0/1/2 + aRegion: bind from the 18-float stream
+      glEnableVertexAttribArray(5); glVertexAttribPointer(5, 3, GL_FLOAT, GL_FALSE, st, (void*)36); glVertexAttribDivisor(5, 1);
+      glEnableVertexAttribArray(6); glVertexAttribPointer(6, 3, GL_FLOAT, GL_FALSE, st, (void*)48); glVertexAttribDivisor(6, 1);
+      glEnableVertexAttribArray(7); glVertexAttribPointer(7, 3, GL_FLOAT, GL_FALSE, st, (void*)60); glVertexAttribDivisor(7, 1);
+      glDisableVertexAttribArray(8); glVertexAttrib4f(8, 0.0f, 0.0f, 0.0f, 1.0f); }
     glDrawElementsInstanced(GL_TRIANGLES, vertCount, GL_UNSIGNED_INT, nullptr, enemCount);
     glBindVertexArray(0);
     // separable gaussian: sharp → H(ping) → V(pong)

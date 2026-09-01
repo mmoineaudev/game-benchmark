@@ -1345,7 +1345,7 @@ struct App {
   void _updateArcBolts(double dt);  // 24 u/s homing, retarget on target death
   void fireOrb(int step);
   void _fireOrbStep(bool isClick);
-  void hitBoss(double dmg, const char* src);
+  void hitBoss(double dmg, const char* src, const dc::Vec2& playerPos);
   void orbExplode(const Orb& o);
   void uploadDynamic(std::vector<float>& dyn, std::vector<float>& enem);
   // §13 decorative systems
@@ -1733,7 +1733,7 @@ void App::updateEntities(double dt) {
                  [&](const dc::Vec2& a, const dc::Vec2& b) {
                    return dc::hasLineOfSight(boxes, a.x, a.z, b.x, b.z);
                  },
-                 [&](dc::Enemy* e) { skelsys.hitEnemy(e, (int)(dc::hunter::kBeamDmg * dc::ngPlusDamageMult(state.ngPlus)), "beam"); },
+                 [&](dc::Enemy* e) { skelsys.hitEnemy(e, (int)(dc::hunter::kBeamDmg * dc::ngPlusDamageMult(state.ngPlus)), "beam", {state.player.x, state.player.z}); },
                  state.collectedOrbs);
     // VISIBLE ANCHOR: the sim's `pos` follows BEHIND the player (behind the
     // camera) — that's why the buff looked like "no effect". Park the wraith to
@@ -1933,11 +1933,11 @@ void App::updateCombat(double dt) {
       bool hit = false;
       if (bossReady && !boss.dead) {
         const double db = std::hypot(o.x - boss.pos.x, o.z - boss.pos.z);
-        if (db < 1.5) { hitBoss(o.dmg, "orb"); hit = true; }
+        if (db < 1.5) { hitBoss(o.dmg, "orb", {state.player.x, state.player.z}); hit = true; }
       }
       if (!hit) {
         for (dc::Enemy* e : skelsys.nearby(o.x, o.z, 0.6)) {
-          skelsys.hitEnemy(e, o.dmg, "orb"); hit = true; break;
+          skelsys.hitEnemy(e, o.dmg, "orb", {state.player.x, state.player.z}); hit = true; break;
         }
       }
       if (hit) { if (o.step == 3) orbExplode(o); o.alive = false; }
@@ -1970,9 +1970,9 @@ void App::applySwordCone(int stepIdx) {
     tx /= d; tz /= d;
     return (dirx * tx + dirz * tz) >= arcDot;
   };
-  if (bossReady && !boss.dead && inCone(boss.pos.x, boss.pos.z)) { hitBoss(dmg, "sword"); hitCount++; }
+  if (bossReady && !boss.dead && inCone(boss.pos.x, boss.pos.z)) { hitBoss(dmg, "sword", {state.player.x, state.player.z}); hitCount++; }
   for (dc::Enemy* e : skelsys.nearby(ox, oz, range + 0.5))
-    if (inCone(e->pos.x, e->pos.z)) { skelsys.hitEnemy(e, dmg, "sword"); hitCount++; }
+    if (inCone(e->pos.x, e->pos.z)) { skelsys.hitEnemy(e, dmg, "sword", {state.player.x, state.player.z}); hitCount++; }
   // breakables: slightly looser cone over full reach (arcDot - 0.12)
   for (auto& br : drops.breakables()) {
     if (!br.alive) continue;
@@ -1996,11 +1996,11 @@ void App::_rollSwordProcs(int tier) {
     int count = 0;
     if (bossReady && !boss.dead &&
         std::hypot(boss.pos.x - px, boss.pos.z - pz) < dc::sword::kElectricRange) {
-      hitBoss(blast, "electric"); count++;
+      hitBoss(blast, "electric", {state.player.x, state.player.z}); count++;
     }
     for (dc::Enemy* e : skelsys.nearby(px, pz, dc::sword::kElectricRange)) {
       if (!e->alive()) continue;
-      skelsys.hitEnemy(e, blast, "electric"); count++;
+      skelsys.hitEnemy(e, blast, "electric", {state.player.x, state.player.z}); count++;
     }
     if (count > 0) {
       hitStop = dc::hitStop::electricChain; // 0.12 s (JS sets, not max)
@@ -2085,10 +2085,10 @@ void App::_updateArcBolts(double dt) {
     double dx = tx - b.x, dy = ty - b.y, dz = tz - b.z;
     double d = std::hypot(dx, dy, dz);
     if (d < 0.6) {
-      if (kind == 1) hitBoss(b.dmg, "arcBolt");
+      if (kind == 1) hitBoss(b.dmg, "arcBolt", {state.player.x, state.player.z});
       else {
         if (idx < (int)skelsys.enemies().size())
-          skelsys.hitEnemy(&skelsys.enemies()[idx], b.dmg, "arcBolt");
+          skelsys.hitEnemy(&skelsys.enemies()[idx], b.dmg, "arcBolt", {state.player.x, state.player.z});
       }
       b.life = -1;
       continue;
@@ -2129,8 +2129,8 @@ void App::fireOrb(int step) {
   o.dmg = step == 3 ? static_cast<int>(std::round(dc::orbExplodeDamage(soulsAmt) * dc::ngPlusDamageMult(state.ngPlus))) : static_cast<int>(std::round(dc::orbDirectDamage(soulsAmt) * dc::ngPlusDamageMult(state.ngPlus)));
   orbs.push_back(o);
 }
-void App::hitBoss(double dmg, const char* src) {
-  if (bossReady && !boss.dead) boss.hitBoss(dmg, src);
+void App::hitBoss(double dmg, const char* src, const dc::Vec2& playerPos) {
+  if (bossReady && !boss.dead) boss.hitBoss(dmg, src, playerPos);
 }
 int App::_pickBuffNotCurrent() {
   // §11: never the same buff twice in a row — filter the current one out,
@@ -2156,8 +2156,8 @@ void App::_fireFireball() {
   orbs.push_back(o);
 }
 void App::orbExplode(const Orb& o) {
-  if (bossReady && !boss.dead && std::hypot(o.x - boss.pos.x, o.z - boss.pos.z) < 2.0) hitBoss(o.dmg, "explosion");
-  for (dc::Enemy* e : skelsys.nearby(o.x, o.z, 2.0)) skelsys.hitEnemy(e, o.dmg, "explosion");
+  if (bossReady && !boss.dead && std::hypot(o.x - boss.pos.x, o.z - boss.pos.z) < 2.0) hitBoss(o.dmg, "explosion", {state.player.x, state.player.z});
+  for (dc::Enemy* e : skelsys.nearby(o.x, o.z, 2.0)) skelsys.hitEnemy(e, o.dmg, "explosion", {state.player.x, state.player.z});
   // breakables in the blast radius too
   const double souls = state.collectedOrbs;
   for (auto& br : drops.breakables()) {
@@ -3364,7 +3364,7 @@ void App::update(double dt, double rawDt) {
   state.updateSprint(rawDt, sprintHeld, moving && sprintHeld, false);
   const double sprintMult = state.sprintSpeedMult();
   if (moving) {
-    dc::Mover pos{camX, camZ};
+    dc::Mover pos;
     dc::movePlayer(pos, mx, mz, sprinting, sprintMult, state.buffEffect, dt, world.collision.boxes);
     camX = pos.x; camZ = pos.z;
   }

@@ -403,10 +403,15 @@ void SkeletonSystem::damagePlayer(double dmg, Enemy* e) {
   if (onPlayerDamaged) onPlayerDamaged(dmg, e);
 }
 
-bool SkeletonSystem::hitEnemy(Enemy* e, double damage, const char* sourceKind) {
+bool SkeletonSystem::hitEnemy(Enemy* e, double damage, const char* sourceKind, const Vec2& playerPos) {
   if (!e || e->state == EnemyState::kDead) return false;
   e->hp -= damage;
   e->hitFlash = 0.08;
+  // Small push-back on hit (0.15u away from player)
+  const double dx = e->pos.x - playerPos.x, dz = e->pos.z - playerPos.z;
+  const double d = std::max(0.01, std::hypot(dx, dz));
+  e->hitBump.x = (dx / d) * 0.15;
+  e->hitBump.z = (dz / d) * 0.15;
   if (e->hp <= 0 && e->state != EnemyState::kDead) {
     e->state = EnemyState::kDead;
     e->deadTimer = 0;
@@ -444,6 +449,9 @@ void SkeletonSystem::update(double dt, const EnemyCtx& ctx) {
     }
     if (e.frozen) continue;
     if (e.cooldown > 0) e.cooldown -= dt;
+    // Decay knockback velocity (smoothing so bumps don't linger)
+    e.hitBump.x *= 0.88;
+    e.hitBump.z *= 0.88;
 
     const bool seesLOS = e.def->phases ? true
                                         : hasLineOfSight(*ctx.boxes, e.pos.x, e.pos.z, P.x, P.z);
@@ -549,6 +557,12 @@ void SkeletonSystem::update(double dt, const EnemyCtx& ctx) {
         e.fireAcc = 0;
         if (onFirePatch) onFirePatch(e.pos.x, e.pos.z);
       }
+    }
+    // Velocity drift from knockback (applied after AI movement)
+    if (e.hitBump.x != 0.0 || e.hitBump.z != 0.0) {
+      const double vx = e.hitBump.x * dt, vz = e.hitBump.z * dt;
+      e.pos.x += vx;
+      e.pos.z += vz;
     }
   }
   updateProjectiles(dt, ctx);

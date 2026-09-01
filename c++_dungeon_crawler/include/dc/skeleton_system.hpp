@@ -58,6 +58,7 @@ struct Enemy {
   bool rangedFiring = false; // summoned wraiths fire projectiles
   double fireAcc = 0;        // BURN ground-fire accumulator
   bool hitApplied = false;
+  Vec2 hitBump{0, 0};       // small push-back from player on hit (auto-decays)
   bool waveDone = false;
   double baseScale = 1.0;    // BRUTE 1.5 / elite scale (for hit-pop, app-side)
   bool alive() const { return state != EnemyState::kDead; }
@@ -126,7 +127,8 @@ public:
 
   // Player → mob damage (sword cone / orb direct / explosion / hunter beam).
   // Returns true if the mob died this call (so the caller can do drop-credit).
-  bool hitEnemy(Enemy* e, double damage, const char* sourceKind);
+  // playerPos defaults to zero (unused in tests).
+  bool hitEnemy(Enemy* e, double damage, const char* sourceKind, const Vec2& playerPos = Vec2{0, 0});
 
   // Break enemy projectiles that land inside a check (sword arc clears arrows).
   void breakProjectilesInCone(const std::function<bool(const Vec2&)>& check);

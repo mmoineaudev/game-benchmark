@@ -137,9 +137,14 @@ void Boss::summonMinions(const BossCtx& ctx) {
   }
 }
 
-bool Boss::hitBoss(double damage, const char* /*sourceKind*/) {
+bool Boss::hitBoss(double damage, const char* /*sourceKind*/, const Vec2& playerPos) {
   if (dead) return false;
   hp -= damage;
+  // Small push-back on boss hit (0.20u away)
+  const double dx = pos.x - playerPos.x, dz = pos.z - playerPos.z;
+  const double d = std::max(0.01, std::hypot(dx, dz));
+  pos.x += (dx / d) * 0.20;
+  pos.z += (dz / d) * 0.20;
   if (hp <= 0) {
     hp = 0;
     state = "DEAD";

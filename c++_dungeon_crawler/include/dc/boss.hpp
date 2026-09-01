@@ -70,7 +70,8 @@ public:
 
   // Player → boss damage (sword/proc/shot/explosion). Returns true if the
   // boss died this call (so the caller can increment bossKills / descend).
-  bool hitBoss(double damage, const char* sourceKind);
+  // playerPos defaults to zero (unused in tests).
+  bool hitBoss(double damage, const char* sourceKind, const Vec2& playerPos = Vec2{0, 0});
 
   // ---- state ----
   std::string variant;

@@ -2649,14 +2649,64 @@ void App::uploadDynamic(std::vector<float>& dyn, std::vector<float>& enem) {
     // grip (origin) — a short handle along local Y (the blade axis)
     swordW(0.0f, 0.0f, 0.0f, hx, hy, hz, phi);
     pushM(hx, hy, hz, 0.05f, 0.26f, 0.05f, 0.173f, 0.125f, 0.094f, swordRot(phi).data()); // 0x2c2018 grip
-    // guard: bar across the blade at the grip top (tier>=1) — a short X bar
+    // ---- guard (tier-specific detail) ----
+    const int tier = state.weaponTier;
     swordW(0.0f, 0.13f, 0.0f, hx, hy, hz, phi);
-    if (state.weaponTier >= 1)
-      pushM(hx, hy, hz, 0.24f, 0.045f, 0.05f, 0.416f, 0.353f, 0.204f, swordRot(phi).data()); // 0x6a5a34
-    // blade: thin long box along local Y from the grip (JS: y=0.14+L/2, z=0).
-    // The base tilt maps local +Y to up-forward, so the blade points forward-ish.
+    if (tier == 0) {
+      // T0: plain leather wrap
+      pushM(hx, hy, hz, 0.07f, 0.06f, 0.05f, 0.173f, 0.125f, 0.094f, swordRot(phi).data());
+    } else if (tier == 1) {
+      // T1: simple iron bar guard
+      pushM(hx, hy, hz, 0.28f, 0.05f, 0.05f, 0.416f, 0.353f, 0.204f, swordRot(phi).data()); // 0x6a5a34
+    } else if (tier == 2) {
+      // T2: reinforced guard + 2 small studs
+      pushM(hx, hy, hz, 0.32f, 0.06f, 0.06f, 0.500f, 0.420f, 0.250f, swordRot(phi).data()); // 0x806c40
+      // left stud
+      swordW(-0.14f, 0.13f, 0.0f, hx, hy, hz, phi);
+      pushM(hx, hy, hz, 0.035f, 0.035f, 0.035f, 0.550f, 0.470f, 0.280f, swordRot(phi).data());
+      // right stud
+      swordW(0.14f, 0.13f, 0.0f, hx, hy, hz, phi);
+      pushM(hx, hy, hz, 0.035f, 0.035f, 0.035f, 0.550f, 0.470f, 0.280f, swordRot(phi).data());
+    } else if (tier == 3) {
+      // T3: crossguard with ornamental center piece
+      pushM(hx, hy, hz, 0.36f, 0.07f, 0.07f, 0.600f, 0.500f, 0.300f, swordRot(phi).data()); // 0x99804d
+      // center ornament
+      swordW(0.0f, 0.13f, 0.0f, hx, hy, hz, phi);
+      pushM(hx, hy, hz, 0.06f, 0.06f, 0.06f, 0.700f, 0.580f, 0.350f, swordRot(phi).data());
+    } else if (tier == 4) {
+      // T4: elaborate guard with 4 corner studs
+      pushM(hx, hy, hz, 0.40f, 0.08f, 0.08f, 0.700f, 0.600f, 0.400f, swordRot(phi).data()); // 0xb39966
+      // 4 corner studs
+      swordW(-0.15f, 0.13f, 0.0f, hx, hy, hz, phi);
+      pushM(hx, hy, hz, 0.04f, 0.04f, 0.04f, 0.750f, 0.650f, 0.450f, swordRot(phi).data());
+      swordW(0.15f, 0.13f, 0.0f, hx, hy, hz, phi);
+      pushM(hx, hy, hz, 0.04f, 0.04f, 0.04f, 0.750f, 0.650f, 0.450f, swordRot(phi).data());
+      swordW(0.0f, 0.13f, 0.0f, hx, hy, hz, phi);
+      pushM(hx, hy, hz, 0.05f, 0.05f, 0.05f, 0.800f, 0.700f, 0.500f, swordRot(phi).data());
+    } else {
+      // T5+: legendary guard with star pattern
+      pushM(hx, hy, hz, 0.45f, 0.09f, 0.09f, 0.800f, 0.700f, 0.550f, swordRot(phi).data()); // 0xccb38a
+      // center star ornament
+      swordW(0.0f, 0.13f, 0.0f, hx, hy, hz, phi);
+      pushM(hx, hy, hz, 0.07f, 0.07f, 0.07f, 0.850f, 0.750f, 0.600f, swordRot(phi).data());
+      // 4 corner studs + diamond
+      swordW(-0.16f, 0.13f, 0.0f, hx, hy, hz, phi);
+      pushM(hx, hy, hz, 0.045f, 0.045f, 0.045f, 0.850f, 0.750f, 0.600f, swordRot(phi).data());
+      swordW(0.16f, 0.13f, 0.0f, hx, hy, hz, phi);
+      pushM(hx, hy, hz, 0.045f, 0.045f, 0.045f, 0.850f, 0.750f, 0.600f, swordRot(phi).data());
+    }
+    // ---- blade glow (emissive at higher tiers) ----
+    const float glowIntensity = std::max(0.0f, (tier - 1) * 0.18f); // T0=0, T1=0.18, ... T5+=0.90
+    const float glowR = br * glowIntensity, glowG = bg * glowIntensity, glowB = bb * glowIntensity;
+    // Blade core (base)
     swordW(0.0f, 0.14f + 0.5f * bladeLen, 0.0f, hx, hy, hz, phi);
     pushM(hx, hy, hz, 0.055f, bladeLen, 0.012f, br, bg, bb, swordRot(phi).data());
+    // Blade glow (additive, thicker at higher tiers)
+    if (glowIntensity > 0.02f) {
+      // glow outer
+      swordW(0.0f, 0.14f + 0.5f * bladeLen, 0.0f, hx, hy, hz, phi);
+      pushM(hx, hy, hz, 0.080f, bladeLen * 1.1f, 0.020f, glowR, glowG, glowB, swordRot(phi).data());
+    }
   }
   // ---- start/exit markers (§12.1/§22): make the spawn + the exit portal findable ----
   // start = green ring at the entrance; exit = golden ring + a tall beam at the exit

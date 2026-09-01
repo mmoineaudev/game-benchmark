@@ -1507,7 +1507,7 @@ void App::buildDecor() {
     }
   }
 
-  // Water (VAULT rooms only, 80% room size, cap kWaterPools=24).
+  // Water (VAULT rooms only, 45% room size, cap kWaterPools=24).
   waterData.clear();
   for (const dc::Room& r : d.rooms) {
     if (r.type != "VAULT") continue;
@@ -1516,7 +1516,7 @@ void App::buildDecor() {
     const float cz = (float)(r.cz + (r.h - 1) / 2) * cs;
     waterData.insert(waterData.end(), {
         cx, 0.22f, cz,                         // floor slab top (0.2) + 0.02 (JS y=0.02)
-        (float)(r.w * cs * 0.8), (float)(r.h * cs * 0.8),
+        (float)(r.w * cs * 0.45), (float)(r.h * cs * 0.45),
         (float)drng.next() * 6.28318f});
   }
 

@@ -21,26 +21,29 @@ void Hunter::update(double dt, const Vec2& playerPos,
 
   attackTimer -= dt;
   if (beamFlash > 0) beamFlash -= dt;
-  if (beamFlash <= 0) hasBeam = false;
+  if (beamFlash <= 0) { hasBeam = false; beamTargets.clear(); }
 
   if (attackTimer <= 0) {
-    Enemy* best = nullptr;
-    double bestD = hunter::kAttackRange;
+    // Nearest-eligible first, up to kMaxBeamTargets (multi-target volley).
+    // Each target must be within ATTACK_RANGE and have clear LOS.
+    struct Cand { Enemy* e; double d; };
+    std::vector<Cand> cands;
     for (Enemy* e : enemies) {
       if (!e->alive() || e->frozen) continue;
       const double dd = std::hypot(e->pos.x - pos.x, e->pos.z - pos.z);
-      if (dd < bestD && los(pos, e->pos)) {
-        bestD = dd;
-        best = e;
-      }
+      if (dd < hunter::kAttackRange && los(pos, e->pos)) cands.push_back({e, dd});
     }
-    if (best) {
-      onHit(best);  // app: skelsys.hitEnemy(e, hunter::kBeamDmg, "beam")
-      beamFlash = hunter::kBeamFlash;
-      beamTarget = best->pos;
-      hasBeam = true;
-      attackTimer = 1.0 / std::min(5.0, std::max(0.25, souls / 100.0));
+    if (cands.empty()) return;
+    std::sort(cands.begin(), cands.end(),
+              [](const Cand& a, const Cand& b) { return a.d < b.d; });
+    beamTargets.clear();
+    hasBeam = true;
+    beamFlash = hunter::kBeamFlash;
+    for (size_t i = 0; i < cands.size() && i < (size_t)hunter::kMaxBeamTargets; i++) {
+      beamTargets.push_back(cands[i].e->pos);
+      onHit(cands[i].e);  // app: skelsys.hitEnemy(e, hunter::kBeamDmg, "beam")
     }
+    attackTimer = 1.0 / std::min(5.0, std::max(0.25, souls / 100.0));
   }
 }
 

@@ -1947,26 +1947,29 @@ void App::uploadDynamic(std::vector<float>& dyn, std::vector<float>& enem) {
     // eyes (cold white)
     HL(0.07f, 0.64f, 0.12f, ox, oy, oz); push(ox, oy, oz, 0.05f, 0.05f, 0.05f, 1.0f, 1.0f, 1.0f, hyaw);
     HL(-0.07f, 0.64f, 0.12f, ox, oy, oz); push(ox, oy, oz, 0.05f, 0.05f, 0.05f, 1.0f, 1.0f, 1.0f, hyaw);
-    // BEAM: hunter→target, chest height, segmented thin emissive bar.
-    if (hunter.hasBeam && hunter.beamFlash > 0) {
-      const float tx = (float)hunter.beamTarget.x, tz = (float)hunter.beamTarget.z;
+    // BEAM: hunter→target, chest height, segmented thin emissive bar. The beam
+    // is a box whose LONG AXIS IS LOCAL X (scales = segLen, 0.05, 0.05), so its
+    // yaw must ALIGN local X with the beam direction. Local X axis in world =
+    // (cos, 0, sin) [column 0 of the yaw matrix, pitch 0], so the alignment
+    // yaw is atan2(dz, dx). The old facing yaw atan2(dx, dz) pointed the box
+    // 90° off — perpendicular to the beam direction (the reported bug).
+    auto drawBeam = [&](float tx, float tz) {
       const float dx = tx - hx, dz = tz - hz;
       const float len = std::hypot(dx, dz);
-      if (len > 0.3f) {
-        const float by = 1.2f;
-        const int segs = 8;
-        const float segLen = len / segs;
-        const float pulse = 0.6f + 0.4f * (hunter.beamFlash / dc::hunter::kBeamFlash);
-        for (int i = 0; i < segs; i++) {
-          const float f0 = (i + 0.5f) / segs;
-          const float mx = hx + dx * f0, mz = hz + dz * f0;
-          // yaw so the box's long X axis aligns with the beam direction
-          // (matches the enemy facing convention: yaw = atan2(dx, dz))
-          const float byaw = std::atan2(dx, dz);
-          push(mx, by, mz, segLen * 0.9f, 0.05f, 0.05f, 0.7f * pulse, 0.9f * pulse, 1.0f * pulse, byaw);
-        }
+      if (len < 0.3f) return;
+      const float by = 1.2f;
+      const int segs = 8;
+      const float segLen = len / segs;
+      const float pulse = 0.6f + 0.4f * (hunter.beamFlash / dc::hunter::kBeamFlash);
+      const float byaw = std::atan2(dz, dx); // align the long X axis with the beam
+      for (int i = 0; i < segs; i++) {
+        const float f0 = (i + 0.5f) / segs;
+        const float mx = hx + dx * f0, mz = hz + dz * f0;
+        push(mx, by, mz, segLen * 0.9f, 0.05f, 0.05f, 0.7f * pulse, 0.9f * pulse, 1.0f * pulse, byaw);
       }
-    }
+    };
+    if (hunter.hasBeam && hunter.beamFlash > 0)
+      for (const auto& bt : hunter.beamTargets) drawBeam((float)bt.x, (float)bt.z);
   }
   // soul-fire orbs (blue-white)
   for (const auto& o : orbs)
@@ -4104,15 +4107,18 @@ int main(int argc, char** argv) {
     // buff, stand a few units in front of a live mob facing it, and let the
     // wraith (parked to the player's left) beam it.
     if (hunterView) {
-      // find a live mob to aim the beam at. Freeze every OTHER mob so none
-      // chases onto the probe camera during warm-up; the beam target stays
-      // attackable (unfrozen) but with speed 0 so it can be targeted without
-      // moving (hunter.update skips frozen enemies).
-      dc::Enemy* mob = nullptr;
-      for (auto& e : app.skelsys.enemies()) if (e.alive()) { mob = &e; break; }
-      if (!mob) { // no mob yet — spawn one a few units ahead (DORMANT so it
-                  // stays put and doesn't chase onto the probe camera)
-        const float yw = app.state.player.yaw;
+      // Find up to kMaxBeamTargets live mobs (spawn if needed) so the probe
+      // showcases the multi-target beam. Freeze every OTHER mob so none
+      // chases onto the probe camera; the beam targets stay attackable
+      // (unfrozen) but with speed 0 so they can be targeted without moving
+      // (hunter.update skips frozen enemies).
+      auto& es = app.skelsys.enemies();
+      es.reserve(es.size() + 8); // headroom so the pointer captures below stay valid
+      std::vector<dc::Enemy*> mobs;
+      for (auto& e : es)
+        if (e.alive()) { mobs.push_back(&e); if (mobs.size() >= 5) break; }
+      while (mobs.size() < 5) { // no mob yet — spawn one a few units ahead
+        const float yw = app.state.player.yaw + (mobs.size() - 2) * 0.7f; // fan out
         const float fx = -std::sin(yw), fz = -std::cos(yw);
         dc::Enemy sk;
         sk.type = "BRUTE"; sk.def = &dc::kEnemyTypes.at("BRUTE");
@@ -4121,30 +4127,34 @@ int main(int argc, char** argv) {
         sk.facing = (float)std::atan2(-fx, -fz);
         sk.hp = sk.maxHp = sk.def->hp;
         sk.frozen = false;
-        app.skelsys.enemies().push_back(std::move(sk));
-        mob = &app.skelsys.enemies().back();
+        es.push_back(std::move(sk));
+        mobs.push_back(&es.back());
       }
-      for (auto& e : app.skelsys.enemies())
-        if (&e != mob) e.frozen = true; // park the rest
-      mob->frozen = false;
-      mob->speed = 0.0;          // attackable but stationary (no chase)
-      // stand 4u in front of the mob, facing it (clear LOS for the beam; the
-      // hunter follows ~2.5u behind so hunter→mob ≈ 6.5 < kAttackRange 7)
+      for (auto& e : es)
+        if (std::find(mobs.begin(), mobs.end(), &e) == mobs.end()) e.frozen = true; // park the rest
+      for (auto* m : mobs) { m->frozen = false; m->speed = 0.0; } // attackable, stationary
+      // stand 4u in front of the NEAREST mob, facing it (clear LOS for the beam;
+      // the hunter follows ~2.5u behind so hunter→mob ≈ 6.5 < kAttackRange 7)
       {
-        const double mdx = app.state.player.x - mob->pos.x;
-        const double mdz = app.state.player.z - mob->pos.z;
+        dc::Enemy* near = mobs.front();
+        for (auto* m : mobs)
+          if (std::hypot(m->pos.x - app.state.player.x, m->pos.z - app.state.player.z) <
+              std::hypot(near->pos.x - app.state.player.x, near->pos.z - app.state.player.z))
+            near = m;
+        const double mdx = app.state.player.x - near->pos.x;
+        const double mdz = app.state.player.z - near->pos.z;
         const double mdist = std::hypot(mdx, mdz);
         if (mdist > 0.01) {
           const double ux = mdx / mdist, uz = mdz / mdist;
-          const double wx = mob->pos.x + ux * 4.0;
-          const double wz = mob->pos.z + uz * 4.0;
+          const double wx = near->pos.x + ux * 4.0;
+          const double wz = near->pos.z + uz * 4.0;
           if (!dc::circleHitsBox(app.world.collision.boxes, wx, wz, player::kRadius)) {
             app.camX = wx; app.camZ = wz;
             app.state.player.x = wx; app.state.player.z = wz;
           }
         }
-        app.state.player.yaw = (float)std::atan2(-(mob->pos.x - app.state.player.x),
-                                                  -(mob->pos.z - app.state.player.z));
+        app.state.player.yaw = (float)std::atan2(-(near->pos.x - app.state.player.x),
+                                                  -(near->pos.z - app.state.player.z));
       }
       app.state.buffEffect = 5; // HUNTER — keeps hunter.active=true every frame
       app.state.buffTime = dc::buff::kMaxDuration;
@@ -4156,7 +4166,8 @@ int main(int argc, char** argv) {
         app.hunter.pos = {app.state.player.x + std::sin(yw) * 2.5,
                           app.state.player.z + std::cos(yw) * 2.5};
       }
-      std::fprintf(stderr, "[dc_app] hunter-view: HUNTER buff active, facing %s\n", mob->type.c_str());
+      std::fprintf(stderr, "[dc_app] hunter-view: HUNTER buff active, facing %s (%zu targets)\n",
+                   mobs.front()->type.c_str(), mobs.size());
     }
     // --vault-view: showcase the §13 decorative systems — teleport into the
     // first VAULT room (water pool) facing room center; dust + runes are

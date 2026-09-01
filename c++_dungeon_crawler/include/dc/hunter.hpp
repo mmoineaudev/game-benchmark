@@ -24,8 +24,9 @@ public:
   double attackTimer = 0;
   double beamFlash = 0;   // >0 while a beam is visually flashing (app renders)
   bool active = false;    // false = not summoned (buff not active)
-  // Beam target (for the app's beam render). Valid while beamFlash > 0.
-  Vec2 beamTarget{0, 0};
+  // Beam targets: up to kMaxBeamTargets, fired together on each volley.
+  // beamTarget[0] is the primary (nearest) target. Valid while beamFlash > 0.
+  std::vector<Vec2> beamTargets;
   bool hasBeam = false;
 
   // One fixed-step frame. `enemies` = the live mob pointers the hunter may
@@ -37,7 +38,7 @@ public:
                const std::function<void(Enemy*)>& onHit, double souls);
 
   // Reset (buff expired / level regen).
-  void reset() { pos = {0, 0}; attackTimer = 0; beamFlash = 0; active = false; hasBeam = false; }
+  void reset() { pos = {0, 0}; attackTimer = 0; beamFlash = 0; active = false; hasBeam = false; beamTargets.clear(); }
 };
 
 } // namespace dc

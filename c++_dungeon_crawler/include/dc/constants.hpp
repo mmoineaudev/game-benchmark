@@ -446,7 +446,8 @@ constexpr int kHp = 9999;
 constexpr double kFollowSpeed = 6.5;
 constexpr double kKeepDist = 2.5;
 constexpr double kAttackRange = 7.0;
-constexpr int kBeamDmg = 2;
+constexpr int kBeamDmg = 3;          // per-target per volley (was 2 — beefier hunter)
+constexpr int kMaxBeamTargets = 5;    // multi-target: beam up to 5 enemies at once
 constexpr double kBeamFlash = 0.35;
 } // namespace hunter
 

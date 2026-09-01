@@ -256,7 +256,8 @@ TEST_CASE("boss variants + labels", "[formula]") {
 TEST_CASE("hunter + drop + hazard + timed run", "[formula]") {
   CHECK(hunter::kHp == 9999);
   CHECK(hunter::kFollowSpeed == Catch::Approx(6.5));
-  CHECK(hunter::kBeamDmg == 2);
+  CHECK(hunter::kBeamDmg == 3);
+  CHECK(hunter::kMaxBeamTargets == 5);
   CHECK(drop::kHealthChance == Catch::Approx(0.15));
   CHECK(drop::kHealthRestore == 3);
   CHECK(drop::kPickupRadius == Catch::Approx(1.4));

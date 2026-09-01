@@ -92,15 +92,49 @@ TEST_CASE("Hunter skips dead and frozen enemies", "[hunter]") {
   CHECK(onLive >= 1); // only the live enemy gets beamed
 }
 
+TEST_CASE("Hunter fires a volley at up to 5 targets (nearest first)", "[hunter]") {
+  Hunter h;
+  h.active = true;
+  std::vector<Enemy*> t;
+  std::vector<Enemy> pool;
+  // 7 live enemies fanned out in range (dist < 7).
+  for (int i = 0; i < 7; i++) {
+    Enemy e;
+    e.state = EnemyState::kChase;
+    e.pos = {3.0, i * 1.0}; // all within kAttackRange 7, distinct distances
+    pool.push_back(e);
+    t.push_back(&pool.back());
+  }
+  int volleys = 0, hits = 0;
+  std::vector<Enemy*> lastVolley;
+  auto onHit = [&](Enemy* e) { hits++; lastVolley.push_back(e); volleys++; };
+  // Run a few frames; the first volley must hit exactly 5 targets.
+  h.update(kDt, {0, 0}, t, kLosClear, onHit, 0);
+  CHECK(hits == 5);
+  CHECK(h.beamTargets.size() == 5);
+  CHECK(h.hasBeam);
+  // Nearest (smallest index = smallest z... actually smallest hypot) first.
+  // Distances: hypot(3, i) → i=0 is nearest (3.0), then i=1 (3.16)... so the
+  // 5 nearest = indices 0..4.
+  for (int i = 0; i < 5; i++) {
+    CHECK(h.beamTargets[i].x == Catch::Approx(pool[i].pos.x));
+    CHECK(h.beamTargets[i].z == Catch::Approx(pool[i].pos.z));
+  }
+}
+
 TEST_CASE("Hunter resets on reset()", "[hunter]") {
   Hunter h;
   h.active = true;
   h.pos = {5, 5};
   h.beamFlash = 0.2;
   h.attackTimer = 0.5;
+  h.hasBeam = true;
+  h.beamTargets = {{1, 2}, {3, 4}};
   h.reset();
   CHECK(h.active == false);
   CHECK(h.pos.x == 0.0);
   CHECK(h.pos.z == 0.0);
   CHECK(h.beamFlash == 0.0);
+  CHECK(h.hasBeam == false);
+  CHECK(h.beamTargets.empty());
 }

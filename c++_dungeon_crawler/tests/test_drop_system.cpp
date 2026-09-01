@@ -98,6 +98,28 @@ TEST_CASE("breakProp: 6% buff roll first, then 20% 1-5 orbs; deterministic per s
   CHECK(sa == sb);
 }
 
+TEST_CASE("breakProp: soul bank raises the orb drop rate (+10% per 50 souls)", "[drop]") {
+  // The orb-drop roll is the second branch; a high bank must credit strictly
+  // more souls per break than an empty bank, at a scaled rate (0.24/0.20 = 1.2).
+  DropSystem low, high;
+  Rng rl{13u}, rh{13u};
+  int lowSouls = 0, highSouls = 0;
+  low.onOrbCollected = [&] { lowSouls++; };
+  high.onOrbCollected = [&] { highSouls++; };
+  const int N = 8000;
+  for (int i = 0; i < N; i++) {
+    low.breakables().push_back({{0, 0}, true});
+    high.breakables().push_back({{0, 0}, true});
+    low.breakProp(low.breakables().back(), 0, rl);
+    high.breakProp(high.breakables().back(), 100, rh);
+  }
+  // 100 souls → drop chance 0.24 vs 0.20 → ~+20% orb drop events.
+  CHECK(highSouls > lowSouls);
+  const double ratio = (highSouls / (double)N) / (lowSouls / (double)N);
+  CHECK(ratio > 1.05);
+  CHECK(ratio < 1.45); // ~1.2 with statistical slack
+}
+
 TEST_CASE("breakProp excess-soul bonus raises the buff chance", "[drop]") {
   // 500 souls → bonus = (500-100)*0.0005 = 0.20 → buff chance 0.26 vs 0.06.
   DropSystem low, high;

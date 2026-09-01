@@ -380,9 +380,12 @@ constexpr int kMaxTier = 5;
 // Damage ladder: base per step + tier. Pure.
 inline int swordHitDamage(int step, int tier) { return kSwordCombo[step].damage + tier; }
 
-// damageMult composition: size part × tier part × level part. §9.2
-inline double damageMult(double scale, int tier, int level) {
-  return (1.0 + (scale - 1.0) * 0.5) * std::pow(1.1, tier) * std::pow(1.1, std::floor(level / 5.0));
+// damageMult composition: size part × tier part × level part × soul part. §9.2
+// Soul part: +1% weapon damage per 10 souls held (stepped, like the tier ladder).
+inline double weaponSoulBonus(int souls) { return 1.0 + 0.01 * std::floor(souls / 10.0); }
+inline double damageMult(double scale, int tier, int level, int souls = 0) {
+  return (1.0 + (scale - 1.0) * 0.5) * std::pow(1.1, tier) * std::pow(1.1, std::floor(level / 5.0))
+         * weaponSoulBonus(souls);
 }
 
 // Sword SIZE ladder: tier-driven only (+80%/tier, ×5 at T5). Orbs never drive size. §9.2
@@ -425,6 +428,12 @@ constexpr double kChance = 0.06;
 constexpr double kExcessOrbBonus = 0.0005; // +0.05% per orb above 100
 constexpr int kExcessOrbThreshold = 100;
 constexpr double kOrbDropChance = 0.20;
+// Soul-drop rate scales with the soul bank: +10% drop rate per 50 souls held.
+constexpr int kDropRateSoulsPerStep = 50;
+constexpr double kDropRatePerStep = 0.10;
+inline double orbDropChance(int souls) {
+  return kOrbDropChance * (1.0 + kDropRatePerStep * std::floor(souls / kDropRateSoulsPerStep));
+}
 constexpr int kOrbDropMin = 1;
 constexpr int kOrbDropMax = 5;
 constexpr double kMaxDuration = 90.0;

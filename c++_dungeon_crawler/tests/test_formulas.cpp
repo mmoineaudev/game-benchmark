@@ -47,6 +47,21 @@ TEST_CASE("sword: attackSpeedFromSouls", "[formula]") {
   CHECK(attackSpeedFromSouls(1000) == Catch::Approx(2.0));
 }
 
+TEST_CASE("sword: soul weapon-damage bonus (+1% per 10 souls, stepped)", "[formula]") {
+  // Stepped: 9 souls → +0%, 10 → +1%, 99 → +9%, 100 → +10%.
+  CHECK(weaponSoulBonus(0) == Catch::Approx(1.0));
+  CHECK(weaponSoulBonus(9) == Catch::Approx(1.0));
+  CHECK(weaponSoulBonus(10) == Catch::Approx(1.01));
+  CHECK(weaponSoulBonus(99) == Catch::Approx(1.09));
+  CHECK(weaponSoulBonus(100) == Catch::Approx(1.10));
+  CHECK(weaponSoulBonus(1000) == Catch::Approx(2.0));
+  // damageMult composes the soul part on top of size × tier × level.
+  CHECK(damageMult(1.0, 0, 0) == Catch::Approx(1.0)); // default souls = 0
+  CHECK(damageMult(1.0, 0, 0, 100) == Catch::Approx(1.10));
+  CHECK(damageMult(2.0, 1, 10, 100) == Catch::Approx(1.5 * 1.1 * 1.21 * 1.1));
+  CHECK(damageMult(2.0, 1, 10, 5) == Catch::Approx(1.5 * 1.1 * 1.21)); // 5 < 10 → no step
+}
+
 TEST_CASE("orb: damage multiplier + direct/explode", "[formula]") {
   CHECK(orbDamageMultiplier(0) == Catch::Approx(1.0));
   CHECK(orbDamageMultiplier(100) == Catch::Approx(3.0)); // 1 + 0.02*100
@@ -250,4 +265,19 @@ TEST_CASE("hunter + drop + hazard + timed run", "[formula]") {
   CHECK(hazard::kExitClearance == Catch::Approx(3.0));
   CHECK(kLevelTimeLimit == Catch::Approx(180.0));
   CHECK(kLeaderboardSize == 10);
+}
+
+TEST_CASE("drop: soul-drop rate scales with the soul bank (+10% per 50 souls)", "[formula]") {
+  CHECK(buff::kOrbDropChance == Catch::Approx(0.20));
+  CHECK(buff::kDropRateSoulsPerStep == 50);
+  CHECK(buff::kDropRatePerStep == Catch::Approx(0.10));
+  // Stepped: 0-49 → ×1.0, 50-99 → ×1.1, 100-149 → ×1.2, 200-249 → ×1.4.
+  CHECK(buff::orbDropChance(0) == Catch::Approx(0.20));
+  CHECK(buff::orbDropChance(49) == Catch::Approx(0.20));
+  CHECK(buff::orbDropChance(50) == Catch::Approx(0.22));
+  CHECK(buff::orbDropChance(99) == Catch::Approx(0.22));
+  CHECK(buff::orbDropChance(100) == Catch::Approx(0.24));
+  CHECK(buff::orbDropChance(200) == Catch::Approx(0.28));
+  CHECK(buff::kOrbDropMin == 1);
+  CHECK(buff::kOrbDropMax == 5);
 }

@@ -1431,7 +1431,7 @@ void App::applySwordCone(int stepIdx) {
   int hitCount = 0;
   const double dmgBase = dc::kSwordCombo[stepIdx].damage + tier;
   const double sizePart = (1 + (scale - 1) * 0.5);
-  const double dmgMult = sizePart * std::pow(1.1, tier) * std::pow(1.1, std::floor(state.level / 5));
+  const double dmgMult = dc::damageMult(scale, tier, state.level, (int)souls);
   const double dmg = dmgBase * dmgMult;
   auto inCone = [&](double ex, double ez) {
     double tx = ex - ox, tz = ez - oz;
@@ -3151,8 +3151,10 @@ void App::frame() {
         const int kept = (int)std::floor(state.collectedOrbs * 0.25);
         const int keptTier = dc::weaponTier(kept);
         char tol[160];
+        // No "[Y]" tag here — the key is already in the "[N] Restart [Y] New Game+"
+        // line above; a second [Y] line read as two options for Y.
         std::snprintf(tol, sizeof(tol),
-                      "[Y] keeps %d of %d Souls → T%d  (L%d)",
+                      "New Game+ keeps %d of %d Souls → T%d  (L%d)",
                       kept, state.collectedOrbs, keptTier,
                       std::max(1, state.level / 2));
         const float tolC[3] = {0.62f, 0.80f, 0.88f}; // #9ecbe0 buff-blue
@@ -3485,7 +3487,7 @@ void App::drawHud() {
     const float pw = 172.0f, xR = W - m, y0 = 128.0f;
     char lines[7][48];
     const double scale = dc::totalSwordScale(state.weaponTier, state.buffEffect == 3 ? 1.5 : 1.0);
-    const double dmgMult = dc::damageMult(scale, state.weaponTier, state.level);
+    const double dmgMult = dc::damageMult(scale, state.weaponTier, state.level, state.collectedOrbs);
     std::snprintf(lines[0], sizeof(lines[0]), "DMG \xc3\x97%.2f", dmgMult);
     std::snprintf(lines[1], sizeof(lines[1]), "Orb DMG %.2f", 1.0 + 0.02 * state.collectedOrbs);
     std::snprintf(lines[2], sizeof(lines[2]), "Reach %.1f", 2.2 * scale * (1.0 + 0.04 * state.weaponTier));

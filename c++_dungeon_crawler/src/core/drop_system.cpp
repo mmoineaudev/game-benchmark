@@ -105,7 +105,7 @@ void DropSystem::breakProp(Breakable& br, double souls, Rng& rng) {
                            : 0.0;
   if (rng.next() < buff::kChance + bonus) {
     spawnBuff(br.pos.x, br.pos.z, rng);
-  } else if (rng.next() < buff::kOrbDropChance) {
+  } else if (rng.next() < buff::orbDropChance((int)souls)) {
     const int n = buff::kOrbDropMin +
                   (int)std::floor(rng.next() * (buff::kOrbDropMax - buff::kOrbDropMin + 1));
     for (int i = 0; i < n; i++) {

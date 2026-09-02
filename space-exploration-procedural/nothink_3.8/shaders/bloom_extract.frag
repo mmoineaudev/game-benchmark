@@ -2,10 +2,10 @@
 in vec2 vUV;
 out vec4 fragColor;
 uniform sampler2D uScene;
-uniform float uThreshold;
-
 void main() {
     vec3 c = texture(uScene, vUV).rgb;
-    float l = max(max(c.r, c.g), c.b);
-    fragColor = vec4(vec3(l - uThreshold) * (l > uThreshold ? 1.0 : 0.0), 1.0);
+    // Soft threshold: only bright areas contribute
+    float luma = dot(c, vec3(0.299, 0.587, 0.114));
+    float soft = smoothstep(0.6, 1.0, luma);
+    fragColor = vec4(c * soft, 1.0);
 }

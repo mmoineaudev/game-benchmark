@@ -1,18 +1,33 @@
-#pragma once
-#include <GL/glew.h>
 #include "PostProcessingSystem.hpp"
 #include "Shader.hpp"
+#include <GL/glew.h>
 
-void PostProcessingSystem::init(int w, int h) {
-    resize(w, h);
+// Shared fullscreen quad
+static GLuint g_fsVao = 0, g_fsVbo = 0;
+static void ensureFsQuad() {
+    if (g_fsVao) return;
+    glGenVertexArrays(1, &g_fsVao);
+    glGenBuffers(1, &g_fsVbo);
+    float corners[8] = {-1,-1, 1,-1, 1,1, -1,1};
+    glBindVertexArray(g_fsVao);
+    glBindBuffer(GL_ARRAY_BUFFER, g_fsVbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(corners), corners, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, 0);
+    glBindVertexArray(0);
 }
+static void drawQuad() {
+    ensureFsQuad();
+    glBindVertexArray(g_fsVao);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glBindVertexArray(0);
+}
+
+void PostProcessingSystem::init(int w, int h) { resize(w, h); }
 
 void PostProcessingSystem::resize(int w, int h) {
     m_w = w; m_h = h;
-    destroyFBO(m_scene);
-    destroyFBO(m_bloomA);
-    destroyFBO(m_bloomB);
-    destroyFBO(m_final);
+    destroyFBO(m_scene); destroyFBO(m_bloomA); destroyFBO(m_bloomB); destroyFBO(m_final);
     createFBO(m_scene, w, h);
     createFBO(m_bloomA, w/2, h/2);
     createFBO(m_bloomB, w/2, h/2);
@@ -27,6 +42,8 @@ void PostProcessingSystem::createFBO(FBO& f, int w, int h) {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glGenFramebuffers(1, &f.fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, f.fbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, f.tex, 0);
@@ -51,83 +68,56 @@ void PostProcessingSystem::endScene() {
 }
 
 void PostProcessingSystem::present() {
-    // Bloom extract
+    // 1. Bloom extract: scene -> bloomA (half res)
     {
         Shader* s = Shader::get("bloom_extract");
         if (s) {
             glBindFramebuffer(GL_FRAMEBUFFER, m_bloomA.fbo);
             glViewport(0, 0, m_bloomA.w, m_bloomA.h);
             s->use();
-            int uScene = Shader::u(s, "uScene");
-            glUniform1i(uScene, 0);
-            // Draw fullscreen quad
-            static GLuint vao = 0, vbo = 0;
-            if (!vao) {
-                glGenVertexArrays(1, &vao);
-                glGenBuffers(1, &vbo);
-                float corners[8] = {-1,-1, 1,-1, 1,1, -1,1};
-                glBindVertexArray(vao);
-                glBindBuffer(GL_ARRAY_BUFFER, vbo);
-                glBufferData(GL_ARRAY_BUFFER, sizeof(corners), corners, GL_STATIC_DRAW);
-                glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, 0);
-                glEnableVertexAttribArray(0);
-            }
-            glBindVertexArray(vao);
+            glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, m_scene.tex);
-            glDrawArrays(GL_TRIANGLES, 3, 4); // wrong: should be 4 verts
-            glBindVertexArray(0);
+            glUniform1i(Shader::u(s, "uScene"), 0);
+            drawQuad();
         }
     }
-    // Bloom blur A->B
+    // 2. Bloom blur: bloomA -> bloomB (horizontal)
     {
         Shader* s = Shader::get("bloom_blur");
         if (s) {
             glBindFramebuffer(GL_FRAMEBUFFER, m_bloomB.fbo);
             glViewport(0, 0, m_bloomB.w, m_bloomB.h);
             s->use();
-            int uTex = Shader::u(s, "uTexture");
-            glUniform1i(uTex, 0);
-            glUniform1f(Shader::u(s, "uRadius"), 0.4f);
-            glUniform2f(Shader::u(s, "uDir"), 1.0f / m_bloomB.w, 0);
-            static GLuint vao = 0;
-            glBindVertexArray(vao);
+            glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, m_bloomA.tex);
-            glDrawArrays(GL_TRIANGLES, 0, 3);
-            glBindVertexArray(0);
+            glUniform1i(Shader::u(s, "uTexture"), 0);
+            glUniform2f(Shader::u(s, "uDir"), 1.0f / m_bloomB.w, 0);
+            glUniform1f(Shader::u(s, "uRadius"), 1.0f);
+            drawQuad();
         }
     }
-    // Composite
+    // 3. Composite: scene + bloom -> final
     {
         Shader* s = Shader::get("composite");
         if (s) {
             glBindFramebuffer(GL_FRAMEBUFFER, m_final.fbo);
             glViewport(0, 0, m_final.w, m_final.h);
             s->use();
-            int uScene = Shader::u(s, "uScene");
-            int uBloom = Shader::u(s, "uBloom");
-            int uBloomStr = Shader::u(s, "uBloomStrength");
-            int uVignette = Shader::u(s, "uVignette");
-            int uCA = Shader::u(s, "uCA");
-            int uGrain = Shader::u(s, "uGrain");
-            int uWormhole = Shader::u(s, "uWormhole");
-            glUniform1i(uScene, 0);
-            glUniform1i(uBloom, 1);
-            glUniform1f(uBloomStr, m_bloom);
-            glUniform1f(uVignette, m_vignette);
-            glUniform1f(uCA, m_ca);
-            glUniform1f(uGrain, m_grain);
-            glUniform1f(uWormhole, m_wormhole);
-            static GLuint vao = 0;
-            glBindVertexArray(vao);
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, m_scene.tex);
             glActiveTexture(GL_TEXTURE1);
             glBindTexture(GL_TEXTURE_2D, m_bloomB.tex);
-            glDrawArrays(GL_TRIANGLES, 0, 3);
-            glBindVertexArray(0);
+            glUniform1i(Shader::u(s, "uScene"), 0);
+            glUniform1i(Shader::u(s, "uBloom"), 1);
+            glUniform1f(Shader::u(s, "uBloomStrength"), m_bloom);
+            glUniform1f(Shader::u(s, "uVignette"), m_vignette);
+            glUniform1f(Shader::u(s, "uCA"), m_ca);
+            glUniform1f(Shader::u(s, "uGrain"), m_grain);
+            glUniform1f(Shader::u(s, "uWormhole"), m_wormhole);
+            drawQuad();
         }
     }
-    // Blit to screen
+    // 4. Blit final -> screen
     glBindFramebuffer(GL_READ_FRAMEBUFFER, m_final.fbo);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
     glBlitFramebuffer(0, 0, m_final.w, m_final.h, 0, 0, m_w, m_h, GL_COLOR_BUFFER_BIT, GL_NEAREST);

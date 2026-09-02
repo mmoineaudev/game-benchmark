@@ -25,7 +25,7 @@ void main() {
 
     vec3 lit = uColor2;
     if (uEmissive < 0.5) {
-        vec3 ambient = uColor2 * (0.35 + 0.25 * N.y);
+        vec3 ambient = uColor2 * (0.8 + 0.4 * N.y);
         vec3 col = ambient;
         for (int i = 0; i < uLightCount; i++) {
             vec3 lp = uLightPos[i].xyz;

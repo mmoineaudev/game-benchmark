@@ -1,16 +1,16 @@
 #version 460 core
 in vec2 vUV;
 out vec4 fragColor;
-uniform sampler2D uTex;
-uniform vec2 uDir;      // (dx, dy) in texels * spread
-
+uniform sampler2D uTexture;
+uniform vec2 uDir;
+uniform float uRadius;
 void main() {
-    vec3 sum = texture(uTex, vUV).rgb * 0.227027;
-    vec2 o1 = uDir * 1.3846153846;
-    vec2 o2 = uDir * 3.2307692308;
-    sum += texture(uTex, vUV + o1).rgb * 0.3162162162;
-    sum += texture(uTex, vUV - o1).rgb * 0.3162162162;
-    sum += texture(uTex, vUV + o2).rgb * 0.0702702703;
-    sum += texture(uTex, vUV - o2).rgb * 0.0702702703;
+    // 9-tap Gaussian-like blur
+    vec3 sum = texture(uTexture, vUV).rgb;
+    for (int i = 1; i <= 4; i++) {
+        float t = float(i) * uRadius;
+        sum += texture(uTexture, vUV + uDir * t).rgb * 0.25;
+        sum += texture(uTexture, vUV - uDir * t).rgb * 0.25;
+    }
     fragColor = vec4(sum, 1.0);
 }

@@ -1,4 +1,5 @@
 #include "ChunkManager.hpp"
+#include <GL/glew.h>
 #include "BiomeGenerator.hpp"
 #include <cstdio>
 
@@ -70,8 +71,13 @@ void ChunkManager::update(float dt, const VD::Vec3& shipPos, float distance) {
 }
 
 void ChunkManager::render(const VD::Mat4& viewProj, const VD::Vec3& camPos) {
-    for (auto* s : sysList)
+    for (auto* s : sysList) {
         s->render(viewProj, camPos);
+        GLenum err = glGetError();
+        if (err != GL_NO_ERROR && !m_warned) {
+            m_warned = true;
+        }
+    }
 }
 
 void ChunkManager::reset() {

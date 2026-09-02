@@ -86,7 +86,7 @@ void CitySystem::render(const VD::Mat4& vp, const VD::Vec3& cam) {    // Fragmen
             glUniform3f(uCam,cam.x,cam.y,cam.z);
             glUniform1i(uLC,0);
         }
-        glDrawElementsInstanced(GL_TRIANGLES,m.indices,GL_UNSIGNED_INT,0,n);
+        glDrawElementsInstanced(GL_TRIANGLES,m.indices,GL_FLOAT,0,n);
         glBindVertexArray(0);
     }
 
@@ -117,7 +117,7 @@ void CitySystem::render(const VD::Mat4& vp, const VD::Vec3& cam) {    // Fragmen
             glUniform3f(uCam,cam.x,cam.y,cam.z);
             glUniform1i(uLC,0);
         }
-        glDrawElementsInstanced(GL_TRIANGLES,mw.indices,GL_UNSIGNED_INT,0,n);
+        glDrawElementsInstanced(GL_TRIANGLES,mw.indices,GL_FLOAT,0,n);
         glBindVertexArray(0);
     }
 }

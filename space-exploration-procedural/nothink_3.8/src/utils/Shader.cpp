@@ -19,7 +19,9 @@ static GLuint compileShader(GLenum type, const std::string& src, const char* fna
     glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
     if (!ok) {
         char log[4096];
-        glGetShaderInfoLog(sh, sizeof(log), nullptr, log);    }
+        glGetShaderInfoLog(sh, sizeof(log), nullptr, log);
+        fprintf(stderr, "[shader error] %s: %s\n", fname, log);
+    }
     return sh;
 }
 
@@ -32,7 +34,9 @@ static GLuint linkProgram(GLuint vs, GLuint fs, const char* name) {
     glGetProgramiv(p, GL_LINK_STATUS, &ok);
     if (!ok) {
         char log[4096];
-        glGetProgramInfoLog(p, sizeof(log), nullptr, log);    }
+        glGetProgramInfoLog(p, sizeof(log), nullptr, log);
+        fprintf(stderr, "[link error] %s: %s\n", name, log);
+    }
     glDeleteShader(vs);
     glDeleteShader(fs);
     return p;
@@ -53,7 +57,9 @@ bool Shader::init(const std::string& shaderDir) {
     for (const char* n : pairs) {
         std::string vsrc = readFile(shaderDir + "/" + n + ".vert");
         std::string fsrc = readFile(shaderDir + "/" + n + ".frag");
-        if (vsrc.empty() || fsrc.empty()) {            return false;
+        if (vsrc.empty() || fsrc.empty()) {
+            fprintf(stderr, "[shader] missing file: %s\n", n);
+            return false;
         }
         auto* s = new Shader();
         s->name = n;

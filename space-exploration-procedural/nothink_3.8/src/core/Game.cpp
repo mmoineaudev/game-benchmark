@@ -79,6 +79,7 @@ int Game::run(int argc, char** argv) {
     };
     chunkMgr.init(systems);
     ship.teleport(teleportDist);
+    camera.teleport(ship.pos());
 
     // ImGui init
     ImGui::CreateContext();
@@ -183,20 +184,20 @@ int Game::run(int argc, char** argv) {
         postprocess.beginScene();
         starfield.update(dt, ship.pos());
         starfield.render(camera.viewProj(), ship.pos());
-        chunkMgr.render(camera.viewProj(), ship.pos());
-        asteroids.render(camera.viewProj(), ship.pos());
-        comets.render(camera.viewProj(), ship.pos());
-        blackHoles.render(camera.viewProj(), ship.pos());
-        deadStars.render(camera.viewProj(), ship.pos());
-        nebulae.render(camera.viewProj(), ship.pos());
-        stations.render(camera.viewProj(), ship.pos());
-        debris.render(camera.viewProj(), ship.pos());
-        crystals.render(camera.viewProj(), ship.pos());
-        pulsars.render(camera.viewProj(), ship.pos());
-        storms.render(camera.viewProj(), ship.pos());
-        hulks.render(camera.viewProj(), ship.pos());
-        city.render(camera.viewProj(), ship.pos());
-        weapons.render(camera.viewProj(), ship.pos());
+        chunkMgr.render(camera.viewProj(), camera.position());
+        asteroids.render(camera.viewProj(), camera.position());
+        comets.render(camera.viewProj(), camera.position());
+        blackHoles.render(camera.viewProj(), camera.position());
+        deadStars.render(camera.viewProj(), camera.position());
+        nebulae.render(camera.viewProj(), camera.position());
+        stations.render(camera.viewProj(), camera.position());
+        debris.render(camera.viewProj(), camera.position());
+        crystals.render(camera.viewProj(), camera.position());
+        pulsars.render(camera.viewProj(), camera.position());
+        storms.render(camera.viewProj(), camera.position());
+        hulks.render(camera.viewProj(), camera.position());
+        city.render(camera.viewProj(), camera.position());
+        weapons.render(camera.viewProj(), camera.position());
         postprocess.endScene();
         postprocess.present();
 

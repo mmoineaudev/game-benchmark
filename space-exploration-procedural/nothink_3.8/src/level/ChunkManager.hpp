@@ -37,6 +37,7 @@ public:
     }
 
 private:
+    bool m_warned = false;
     static std::string chunkKey(int x, int y, int z) {
         return std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z);
     }

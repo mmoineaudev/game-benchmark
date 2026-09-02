@@ -34,7 +34,7 @@ constexpr float CHUNK_SIZE = 200.0f;
 constexpr int   CHUNKS_RADIUS = 1;
 constexpr float CHUNKS_CLEANUP_RADIUS = 1.6f;
 constexpr int   CHUNKS_SPAWN_PER_FRAME = 3;
-constexpr float CONTENT_Y_BAND = 100.0f;
+constexpr float CONTENT_Y_BAND = 40.0f;
 constexpr float DENSITY_REDUCTION = 0.55f;
 constexpr float INSTANCE_CULL_RADIUS = 460.0f;
 
@@ -101,7 +101,7 @@ constexpr float VIGNETTE_OFFSET = 0.2f;
 constexpr float FILM_GRAIN_INTENSITY = 0.03f;
 constexpr float CA_MAX = 0.003f;
 constexpr Vec3  FOG_COLOR = Vec3(0.0f, 0.0f, 0.067f);
-constexpr float FOG_DENSITY = 0.008f;
+constexpr float FOG_DENSITY = 0.004f;
 
 // ---- Light manager (§2.8) ----
 constexpr int LIGHT_CAP_AUTO = 16;

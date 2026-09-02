@@ -1,0 +1,66 @@
+{
+  "economy": {
+    "pricingTable": {
+      "trade_hub": {
+        "food": {"sell": 90, "buy": 110},
+        "ore": {"sell": 80, "buy": 120},
+        "tech": {"sell": 150, "buy": 80},
+        "medicine": {"sell": 110, "buy": 95},
+        "weapons": {"sell": 100, "buy": 100},
+        "artifacts": {"sell": 130, "buy": 70}
+      },
+      "mining_outpost": {
+        "food": {"sell": 110, "buy": 90},
+        "ore": {"sell": 50, "buy": 200},
+        "tech": {"sell": 200, "buy": 50},
+        "medicine": {"sell": 105, "buy": 95},
+        "weapons": {"sell": 80, "buy": 120},
+        "artifacts": {"sell": 100, "buy": 100}
+      },
+      "pirate_den": {
+        "food": {"sell": 120, "buy": 80},
+        "ore": {"sell": 90, "buy": 110},
+        "tech": {"sell": 110, "buy": 90},
+        "medicine": {"sell": 130, "buy": 70},
+        "weapons": {"sell": 180, "buy": 50},
+        "artifacts": {"sell": 150, "buy": 60}
+      },
+      "research_station": {
+        "food": {"sell": 100, "buy": 100},
+        "ore": {"sell": 100, "buy": 100},
+        "tech": {"sell": 180, "buy": 60},
+        "medicine": {"sell": 120, "buy": 80},
+        "weapons": {"sell": 70, "buy": 130},
+        "artifacts": {"sell": 200, "buy": 40}
+      },
+      "refugee_colony": {
+        "food": {"sell": 80, "buy": 130},
+        "ore": {"sell": 120, "buy": 80},
+        "tech": {"sell": 90, "buy": 110},
+        "medicine": {"sell": 160, "buy": 70},
+        "weapons": {"sell": 60, "buy": 140},
+        "artifacts": {"sell": 90, "buy": 110}
+      },
+      "black_market": {
+        "food": {"sell": 140, "buy": 70},
+        "ore": {"sell": 130, "buy": 80},
+        "tech": {"sell": 160, "buy": 60},
+        "medicine": {"sell": 140, "buy": 70},
+        "weapons": {"sell": 200, "buy": 40},
+        "artifacts": {"sell": 250, "buy": 30}
+      }
+    },
+    "supplyDemand": {
+      "baseSupply": {
+        "food": [30, 50],
+        "ore": [20, 40],
+        "tech": [15, 30],
+        "medicine": [25, 45],
+        "weapons": [10, 25],
+        "artifacts": [1, 5]
+      },
+      "priceSensitivity": 0.05,
+      "supplyResetDistance": 500
+    }
+  }
+}

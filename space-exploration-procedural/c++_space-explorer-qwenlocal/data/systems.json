@@ -1,0 +1,10 @@
+{
+  "systemTypes": [
+    {"id": "trade_hub", "name": "Trade Hub", "services": ["refuel", "repair"], "dangerBase": 1},
+    {"id": "mining_outpost", "name": "Mining Outpost", "services": ["refuel", "repair"], "dangerBase": 2},
+    {"id": "pirate_den", "name": "Pirate Den", "services": ["refuel"], "dangerBase": 4},
+    {"id": "research_station", "name": "Research Station", "services": ["refuel", "repair"], "dangerBase": 2},
+    {"id": "refugee_colony", "name": "Refugee Colony", "services": ["refuel", "repair"], "dangerBase": 3},
+    {"id": "black_market", "name": "Black Market", "services": ["refuel"], "dangerBase": 5}
+  ]
+}

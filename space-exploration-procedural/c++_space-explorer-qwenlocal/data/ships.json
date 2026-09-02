@@ -1,0 +1,64 @@
+{
+  "ships": [
+    {
+      "id": "hauler_mk1",
+      "name": "Hauler Mk I",
+      "cargo": 20,
+      "fuel": 600,
+      "hull": 100,
+      "shield": 50,
+      "speed": 1.0,
+      "weapon": "none",
+      "ecm": false,
+      "modelPath": "models/ship_hauler.obj"
+    },
+    {
+      "id": "fast_courier",
+      "name": "Fast Courier",
+      "cargo": 10,
+      "fuel": 480,
+      "hull": 70,
+      "shield": 30,
+      "speed": 1.8,
+      "weapon": "none",
+      "ecm": false,
+      "modelPath": "models/ship_courier.obj"
+    },
+    {
+      "id": "bulk_transporter",
+      "name": "Bulk Transporter",
+      "cargo": 50,
+      "fuel": 900,
+      "hull": 200,
+      "shield": 80,
+      "speed": 0.6,
+      "weapon": "none",
+      "ecm": false,
+      "modelPath": "models/ship_bulk.obj"
+    },
+    {
+      "id": "armed_escort",
+      "name": "Armed Escort",
+      "cargo": 15,
+      "fuel": 600,
+      "hull": 150,
+      "shield": 60,
+      "speed": 1.2,
+      "weapon": "twin_turret",
+      "ecm": false,
+      "modelPath": "models/ship_escort.obj"
+    },
+    {
+      "id": "smuggler_run",
+      "name": "Smuggler's Run",
+      "cargo": 20,
+      "fuel": 600,
+      "hull": 100,
+      "shield": 50,
+      "speed": 1.3,
+      "weapon": "turret",
+      "ecm": true,
+      "modelPath": "models/ship_smuggler.obj"
+    }
+  ]
+}

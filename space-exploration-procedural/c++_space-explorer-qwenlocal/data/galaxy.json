@@ -1,0 +1,15 @@
+{
+  "galaxy": {
+    "syllables": ["Ke", "pa", "Vor", "ath", "Nex", "us", "Or", "ion", "Ly", "ra", "Zen", "ith", "A", "nax", "Pro", "xi", "Tau", "Vel", "E", "psilon", "D", "eimos", "A", "cheron"],
+    "nodeCountMin": 8,
+    "nodeCountMax": 15,
+    "edgePruneDist": 1.5,
+    "homeSystem": {
+      "id": "home",
+      "name": "Home Port",
+      "type": "trade_hub",
+      "faction": "federation",
+      "services": ["refuel", "repair"]
+    }
+  }
+}

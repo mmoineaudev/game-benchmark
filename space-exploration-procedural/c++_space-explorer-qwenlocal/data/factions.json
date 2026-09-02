@@ -1,0 +1,9 @@
+{
+  "factions": [
+    {"id": "federation", "name": "Federation", "color": [0.3, 0.6, 1.0], "priceMultiplier": 1.0},
+    {"id": "merchants", "name": "Merchants Guild", "color": [1.0, 0.8, 0.2], "priceMultiplier": 1.0},
+    {"id": "pirates", "name": "Pirate Syndicate", "color": [1.0, 0.3, 0.3], "priceMultiplier": 0.8},
+    {"id": "scientists", "name": "Scientists", "color": [0.4, 1.0, 0.4], "priceMultiplier": 1.1},
+    {"id": "neutral", "name": "Neutral", "color": [0.7, 0.7, 0.7], "priceMultiplier": 1.0}
+  ]
+}

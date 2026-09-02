@@ -6,7 +6,7 @@
 //   C: after aggro the boss ATTACKS (charge/blink observed) and its attacks
 //      damage the player
 //   D: player damage reaches the boss; a boss kill flows to bossKills++
-// Plus the boss HP contract: live HP == bossHp(level, ng, souls, hearts).
+// Plus the boss HP contract: live HP == bossHp(level, ng, souls).
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
@@ -82,18 +82,17 @@ struct Sim {
 } // namespace
 
 TEST_CASE("boss HP matches bossHp() contract (L7 NG0)", "[boss_aggro]") {
-  const int souls = 0, maxHealth = 3;
-  const int expected = bossHp(kLevel, 0, souls, maxHealth);
+  const int souls = 0;
+  constexpr double excessHpMult = 1.0; // baseline (no excess)
+  const int expected = bossHp(kLevel, 0, souls, excessHpMult);
   SECTION("base boss HP at L7 NG0 is 25") {
     CHECK(expected == 25);
   }
-  SECTION("deep-level HP stays capped (≤ ×2 base, never the old ×11)") {
-    // max wealth at L7: souls 0, maxHealth 3 → wealth 1 → 25. A loaded run:
-    // souls 200, maxHealth 8 → soulsPart 1+0.25*4=2, heartsPart 1.1^5≈1.61,
-    // wealth=1+(2*1.61-1)/2=1.61 → 25*2*1.61≈80.6→ceil 81 ≤ 88 (×2 cap×wealth).
-    const int loaded = bossHp(kLevel, 0, 200, 8);
-    CHECK(loaded <= 88);
-    CHECK(loaded >= 25);
+  SECTION("boss HP scales with excessHpMult just like mobs") {
+    // With excessHpMult=1.0, souls<990 → no bonus → bossHp=25.
+    CHECK(bossHp(7, 0, 200, 1.0) == 25);
+    // With excessHpMult=4.0 (simulating heavy mob pressure), boss = 25×4=100.
+    CHECK(bossHp(7, 0, 0, 4.0) == 100);
   }
 }
 
@@ -103,7 +102,7 @@ TEST_CASE("boss_aggro: PHASE A — dormant, no spawn aggro", "[boss_aggro]") {
   Sim sim;
   sim.dungeon = gen.generate();
   sim.boxes = buildCollisionBoxes(sim.dungeon).boxes;
-  sim.boss = Boss::spawn(sim.dungeon, kLevel, 0, 0, 3, "Skeleton");
+  sim.boss = Boss::spawn(sim.dungeon, kLevel, 0, 0, 1.0, "Skeleton");
   const double cs = sim.dungeon.cellSize;
   sim.player = {static_cast<double>(sim.dungeon.entranceCell->x) * cs,
                 static_cast<double>(sim.dungeon.entranceCell->z) * cs};
@@ -133,7 +132,7 @@ TEST_CASE("boss_aggro: PHASE B — wakes on sight, then chases", "[boss_aggro]")
   Sim sim;
   sim.dungeon = gen.generate();
   sim.boxes = buildCollisionBoxes(sim.dungeon).boxes;
-  sim.boss = Boss::spawn(sim.dungeon, kLevel, 0, 0, 3, "Skeleton");
+  sim.boss = Boss::spawn(sim.dungeon, kLevel, 0, 0, 1.0, "Skeleton");
   sim.playerMaxHealth = 3;
   sim.playerHealth = 3;
 
@@ -168,7 +167,7 @@ TEST_CASE("boss_aggro: PHASE C — attacks after aggro, damages the player",
   Sim sim;
   sim.dungeon = gen.generate();
   sim.boxes = buildCollisionBoxes(sim.dungeon).boxes;
-  sim.boss = Boss::spawn(sim.dungeon, kLevel, 0, 0, 3, "Skeleton");
+  sim.boss = Boss::spawn(sim.dungeon, kLevel, 0, 0, 1.0, "Skeleton");
   // Deep pool so a single nova/charge is survivable — observe, don't end.
   sim.playerMaxHealth = 99;
   sim.playerHealth = 99;
@@ -206,7 +205,7 @@ TEST_CASE("boss_aggro: PHASE D — player damages the boss; kill flows to bossKi
   Sim sim;
   sim.dungeon = gen.generate();
   sim.boxes = buildCollisionBoxes(sim.dungeon).boxes;
-  sim.boss = Boss::spawn(sim.dungeon, kLevel, 0, 0, 3, "Skeleton");
+  sim.boss = Boss::spawn(sim.dungeon, kLevel, 0, 0, 1.0, "Skeleton");
   sim.playerMaxHealth = 999;
   sim.playerHealth = 999;
   sim.bossKills = 0;
@@ -233,8 +232,7 @@ TEST_CASE("boss: SUMMON hook spawns real wraiths at random walkable cells",
   Sim sim;
   sim.dungeon = gen.generate();
   sim.boxes = buildCollisionBoxes(sim.dungeon).boxes;
-  sim.boss = Boss::spawn(sim.dungeon, kLevel, 0, 0, 3, "Wraith");
-  // maxHealth 3 → heartsExtra 0 → n = floor(3 * 1.5^0) = 3 wraiths.
+  sim.boss = Boss::spawn(sim.dungeon, kLevel, 0, 0, 1.0, "Wraith");
   sim.playerMaxHealth = 3;
   sim.playerHealth = 3;
 
@@ -278,7 +276,7 @@ TEST_CASE("boss: 7 variants — same AI contract, distinct flavor labels",
       "BONE LORD", "IRON GHOUL", "SPECTRAL HUNTER", "ASH TITAN",
       "SPECTRAL LORD", "VERMIN KING", "LICH ARCHMAGE"};
   for (size_t i = 0; i < variants.size(); i++) {
-    Boss b = Boss::spawn(d, kLevel, 0, 0, 3, variants[i]);
+    Boss b = Boss::spawn(d, kLevel, 0, 0, 1.0, variants[i]);
     CHECK(b.variant == variants[i]);
     CHECK(b.label == labels[i]);
     CHECK(b.maxHp == 25); // HP contract identical across all 7 variants

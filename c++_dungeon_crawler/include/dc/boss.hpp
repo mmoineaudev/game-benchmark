@@ -63,15 +63,21 @@ class Boss {
 public:
   // Spawn the lord at `cell` (the exit cell) with the level-7 HP contract.
   static Boss spawn(const Dungeon& dungeon, int level, int ngPlus, double souls,
-                    int maxHealth, const std::string& variant);
+                    double excessHpMult, const std::string& variant);
 
   // One fixed-step frame of _updateBoss.
   void update(double dt, const BossCtx& ctx);
 
-  // Player → boss damage (sword/proc/shot/explosion). Returns true if the
-  // boss died this call (so the caller can increment bossKills / descend).
+  // Player → boss damage (sword/proc/shot/explosion).
+  // Returns true if the boss died (or entered phase 2) this call.
+  // When phase 1 dies, sets dead=true and prepares phase 2 state.
   // playerPos defaults to zero (unused in tests).
   bool hitBoss(double damage, const char* sourceKind, const Vec2& playerPos = Vec2{0, 0});
+
+  // Spawn phase 2 boss: reset HP to 2x, reset attacks, re-awake.
+  // Call after 5s delay from phase 1 death. Returns true when ready.
+  bool spawnPhase2(const Dungeon& dungeon, int level, int ngPlus, double souls,
+                   double excessHpMult, const std::string& variant);
 
   // ---- state ----
   std::string variant;
@@ -87,8 +93,11 @@ public:
   bool chargeHitDone = false;
   double blinkT = 0;
   bool dead = false;
-  bool frozen = false;
+  double frozen = false;
+  int phase = 1;
   double deadTimer = 0;
+  double phase2Timer = 0; // countdown to phase 2 spawn after phase 1 death
+  bool phase2Spawned = false; // phase 2 boss has been spawned
   double pathTimer = 0;
   std::optional<Vec2> pathStepPos;
 

@@ -10,13 +10,13 @@
 namespace dc {
 
 Boss Boss::spawn(const Dungeon& dungeon, int level, int ngPlus, double souls,
-                 int maxHealth, const std::string& variant) {
+                 double excessHpMult, const std::string& variant) {
   Boss b;
   b.variant = variant;
   // 7 variant flavor labels (Skeleton/Armored/Archer/Brute/Wraith/Rat/
   // Magician → BONE LORD/IRON GHOUL/…). AI is identical across variants.
   b.label = kBossLabels.count(variant) ? kBossLabels.at(variant) : "SPECTRAL LORD";
-  const double hp = static_cast<double>(bossHp(level, ngPlus, souls, maxHealth));
+  const double hp = static_cast<double>(bossHp(level, ngPlus, souls, excessHpMult));
   b.hp = hp;
   b.maxHp = hp;
   b.state = "SLEEPING";
@@ -150,9 +150,48 @@ bool Boss::hitBoss(double damage, const char* /*sourceKind*/, const Vec2& player
     state = "DEAD";
     dead = true;
     deadTimer = 0;
+    // Phase 1 death: trigger phase 2 transition (phase2Timer starts in main)
+    // The caller (main.cpp) handles the actual phase 2 spawn after 5s delay.
     return true;
   }
   return false;
+}
+
+bool Boss::spawnPhase2(const Dungeon& dungeon, int level, int ngPlus, double souls,
+                       double excessHpMult, const std::string& variant) {
+  phase = 2;
+  phase2Spawned = false;  // mark that we're about to spawn
+  dead = false;
+  phase2Timer = 0;
+
+  // Phase 2 label with suffix
+  label = label + " [PHASE II]";
+
+  // Phase 2 HP: exactly 2x the base HP (not scaled by excessHpMult again —
+  // the 2x multiplier is applied on top of the original maxHp).
+  hp = maxHp * 2.0;
+  maxHp = hp;
+
+  // Reset at the throne position (exit cell)
+  const double cs = dungeon.cellSize > 0 ? dungeon.cellSize : world::kCellSize;
+  pos = {static_cast<double>(dungeon.exitCell->x) * cs,
+         static_cast<double>(dungeon.exitCell->z) * cs};
+  radius = boss::kRadius;
+
+  // Reset attack cooldowns (first attack comes sooner in phase 2)
+  chargeCooldown = boss::kChargeCooldown * boss::kChargeFirstMult;
+  blinkCooldown = boss::kBlinkCooldown * boss::kBlinkFirstMult;
+  smokeCooldown = boss::kSmokeCooldown * boss::kSmokeFirstMult;
+  summonTimer = boss::kSummonInterval;
+  chargeT = 0;
+  chargeHitDone = false;
+  blinkT = 0;
+  state = "CHASE";
+  awake = true;
+
+  phase2Spawned = true;
+  smoke_.clear();  // clear old smoke clouds
+  return true;
 }
 
 void Boss::update(double dt, const BossCtx& ctx) {

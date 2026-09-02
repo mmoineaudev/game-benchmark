@@ -88,29 +88,30 @@ TEST_CASE("arc: chance/bolts per tier", "[formula]") {
   CHECK(kArcBolts == std::array<int, 6>{0, 0, 0, 1, 1, 2});
 }
 
-TEST_CASE("boss: base HP 25 + level cap + halved wealth/hearts stack", "[formula]") {
-  // Level 7, NG0, empty bank, base health → base 25.
-  CHECK(bossHp(7, 0, 0, 3) == 25);
-  // Deep level caps pressure at ×2 (level-100 boss = 2× a level-7 boss, not 11×).
-  CHECK(bossHp(100, 0, 0, 3) == 50);
-  // NG+ pressure also caps at ×2 combined.
-  CHECK(bossHp(7, 1, 0, 3) == 50); // (1+3)*... capped → 2
-  // Wealth: souls stack, halved.
-  // souls=50 → soulsPart=1.25 → wealth=(1.25-1)/2+1=1.125 → ceil(25*1.125)=29
-  CHECK(bossHp(7, 0, 50, 3) == 29);
-  // Hearts: maxHealth 13 → heartsExtra=10 → heartsPart=1.1^10≈2.5937 →
-  // wealth=(1*2.5937-1)/2+1≈1.7968 → ceil(25*1.7968)=45
-  CHECK(bossHp(7, 0, 0, 13) == 45);
-  // burnHp: 30 flat NG0, ×(1+3·ngPlus)
-  CHECK(burnHp(0) == 30);
-  CHECK(burnHp(1) == 120);
-  CHECK(burnHp(2) == 210);
+TEST_CASE("boss: base HP 25 + linear mob scaling (same formula as mobs)", "[formula]") {
+  // With excessHpMult=1.0 (baseline), bossHp matches pure enemyHpMultiplier.
+  // L7 NG0 souls=0 → (1) × (1) × (0) = 0 → ceil(25×0) = 25.
+  CHECK(bossHp(7, 0, 0, 1.0) == 25);
+  // L100 NG0 → souls < 990 → no soul bonus; (1) × (1+10) × (1) = 11 → ceil(25×11) = 275.
+  CHECK(bossHp(100, 0, 0, 1.0) == 275);
+  // L7 NG1 → (2) × (1) × (0) = 2 → ceil(25×2) = 50.
+  CHECK(bossHp(7, 1, 0, 1.0) == 50);
+  // Souls 50 at L7: (1) × (1) × (0) = 0 → ceil(25×0) = 25 (souls < 990 → no bonus).
+  CHECK(bossHp(7, 0, 50, 1.0) == 25);
+  // Souls 1000 at L7: (1) × (1) × (1+1.5×floor(10/10)) = 2.5 → ceil(25×2.5)=63.
+  CHECK(bossHp(7, 0, 1000, 1.0) == 63);
+  // With excessHpMult=4.0 (simulating mob excess scaling), boss scales identically.
+  CHECK(bossHp(7, 0, 0, 4.0) == 100); // 25 × 4.0
+  // burnHp: 30 flat at NG0, scales ×(1+1·ngPlus) per v2 ruling
+  CHECK(burnHp(0) == 30);     // 30 * 1
+  CHECK(burnHp(1) == 60);     // 30 * 2
+  CHECK(burnHp(2) == 90);     // 30 * 3
 }
 
 TEST_CASE("enemy: HP multiplier linear overflow", "[formula]") {
   CHECK(enemyHpMultiplier(0, 7, 0) == Catch::Approx(1.0));
   CHECK(enemyHpMultiplier(0, 10, 0) == Catch::Approx(2.0)); // 1 + floor(10/10)
-  CHECK(enemyHpMultiplier(1, 10, 0) == Catch::Approx(8.0)); // 4 * 2
+  CHECK(enemyHpMultiplier(1, 10, 0) == Catch::Approx(4.0)); // (1+1) * (1+1) * (1+0) = 2*2*1
   // Linear overflow past 990:
   CHECK(enemyHpMultiplier(0, 1000, 0) == Catch::Approx((1.0) * (1 + 100) * (1 + 1.5 * floor((1000 - 990) / 10.0))));
   CHECK(enemyHpMultiplier(0, 1100, 0) == Catch::Approx(111.0 * (1 + 1.5 * 11.0))); // 1942.5

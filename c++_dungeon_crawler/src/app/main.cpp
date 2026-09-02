@@ -1186,6 +1186,10 @@ struct App {
   GLuint runeAtlas = 0;
   bool playerDead = false;
   bool bossKillCounted = false;
+  bool phase1Defeated = false; // phase 1 boss has been killed, awaiting phase 2
+  double phase2Timer = 0;    // countdown timer to spawn phase 2
+  int bossPhase = 1;         // current boss phase (1 or 2)
+  bool phase1BossDead = false; // phase 1 boss is actually dead (for dimming)
   bool probeInvuln = false; // --hud-view probe: keep the play screen (not death)
   bool bossPortalOpen = false; // open when !bossLevel, or on boss defeat
   bool prevE = false;
@@ -1194,7 +1198,9 @@ struct App {
 
   // ---- text / screens (title + death) ----
   Font font;
+  Font menuFont;  // URW Bookman Blackletter: old-style serif for menu/leaderboard (Dark Souls vibe)
   GLuint progText = 0, textVbo = 0, textVao = 0;
+  GLuint progTextMenu = 0, textMenuVbo = 0, textMenuVao = 0;
   GLuint progOverlay = 0;
   GLuint progRect = 0, rectVbo = 0, rectVao = 0;
 
@@ -1208,6 +1214,7 @@ struct App {
   bool prevN = false, prevY = false, prevL = false, prevS = false;
   const char* deathReason = "dead"; // "dead" (killed) | "time" (timer ran out)
   std::optional<dc::GameState::Save> savedRun; // save-for-later available (Load [L])
+  std::optional<std::int64_t> lastRunDate; // ms epoch from last _endRun (for rankOf lookup)
 
   // ---- adaptive performance: 30 fps floor + degraded mode (JS _trackFps) ----
   // Rolling ~3 s (90-frame) fps window. Sustained <30 fps for >6 s → degraded
@@ -1305,9 +1312,14 @@ struct App {
   // Readable outlined text: dark 4-way outline + soft drop shadow behind the fill.
   void drawTextOutline(std::vector<float>& v, float x, float y, float size, const float col[3], const char* s);
   void drawText(const std::vector<float>& v);
+  float menuLineW(const char* s, float size);
+  void drawTextLineMenu(std::vector<float>& v, float x, float y, float size, const float col[3], const char* s);
+  void drawTextOutlineMenu(std::vector<float>& v, float x, float y, float size, const float col[3], const char* s);
+  void drawTextMenu(const std::vector<float>& v);
   void drawRects(const std::vector<float>& v);
   void drawOverlay(float r, float g, float b, float a);
   void drawHud();
+  void drawLeaderboard(double cyOffset, int topN, const float col[3], std::vector<float>& v, std::vector<float>& vMenu, float cx);
   void _endRun(const char* reason);
   // Save-for-later: write the current run to save.json (death + manual [S]).
   void _writeSave();
@@ -1336,8 +1348,13 @@ void App::buildWorldFromState() {
   fogColor[0] = L.fogColor[0]; fogColor[1] = L.fogColor[1]; fogColor[2] = L.fogColor[2];
   fogDensity = L.fogDensity;
   ambientCol[0] = L.ambientCol[0]; ambientCol[1] = L.ambientCol[1]; ambientCol[2] = L.ambientCol[2];
+  // Phase 1 death: dim the dungeon by 60% for dramatic effect
+  if (phase1BossDead) {
+    ambientCol[0] *= 0.4f; ambientCol[1] *= 0.4f; ambientCol[2] *= 0.4f;
+  }
   torchColor[0] = L.torchCol[0]; torchColor[1] = L.torchCol[1]; torchColor[2] = L.torchCol[2];
   torchIntensity = L.torchIntensity;
+  if (phase1BossDead) torchIntensity *= 0.4f;
   // static-assigned torch: above the entrance room, casting the 1 shadow map
   if (world.dungeon.entranceCell) {
     torchPos[0] = (float)(world.dungeon.entranceCell->x * world.dungeon.cellSize);
@@ -1519,6 +1536,11 @@ void App::spawnEntities() {
   bossReady = false;
   bossKillCounted = false;
   bossPortalOpen = !bossLevel; // non-boss levels: exit portal open from the start
+  // Phase 2 reset
+  bossPhase = 1;
+  phase1Defeated = false;
+  phase2Timer = 0;
+  phase1BossDead = false;
   // reset sword/orb (fresh level)
   swordStep = 0; swordPhase = nullptr; hitStop = 0;
   orbSeqStep = 0; lmbAccum = 0; prevLMB = prevRMB = false;
@@ -1557,8 +1579,8 @@ void App::spawnEntities() {
   if (bossLevel) {
     static const char* kVariants[7] = {"Skeleton", "Armored", "Archer", "Brute", "Wraith", "Rat", "Magician"};
     const char* variant = kVariants[(level / dc::boss::kInterval - 1) % 7];
-    boss = dc::Boss::spawn(world.dungeon, level, state.ngPlus, state.collectedOrbs,
-                          state.maxHealth, variant);
+    boss = dc::Boss::spawn(world.dungeon, level, state.ngPlus,
+                           state.collectedOrbs, skelsys.excessHpMult(), variant);
     // boss summons → real projectile-firing wraiths (§17)
     boss.onBossSummon = [this](const dc::CellRef& c) {
       return skelsys.summonMinion(c, state.level, state.ngPlus,
@@ -1667,31 +1689,24 @@ void App::updateEntities(double dt) {
     if (state.buffEffect == 0 && hunter.active) hunter.reset();
   }
   if (state.buffEffect == 5) hunter.active = true;
+  else if (hunter.active && state.buffEffect != 0) hunter.reset(); // replace hunter with other buffs
   else if (hunter.active) hunter.reset();
   if (hunter.active) {
     std::vector<dc::Enemy*> live;
     for (auto& e : skelsys.enemies()) if (e.alive()) live.push_back(&e);
+    // Collect live breakables for the hunter to target
+    std::vector<dc::Breakable*> liveBr;
+    for (auto& br : drops.breakables()) if (br.alive) liveBr.push_back(&br);
     const auto& boxes = world.collision.boxes;
-    hunter.update(dt, pp, live,
+    hunter.update(dt, pp, live, liveBr,
                  [&](const dc::Vec2& a, const dc::Vec2& b) {
                    return dc::hasLineOfSight(boxes, a.x, a.z, b.x, b.z);
                  },
                  [&](dc::Enemy* e) { skelsys.hitEnemy(e, (int)(dc::hunter::kBeamDmg * dc::ngPlusDamageMult(state.ngPlus)), "beam", {state.player.x, state.player.z}); },
+                 [&](dc::Breakable* br) { drops.breakProp(*br, state.collectedOrbs, rng); },
                  state.collectedOrbs);
-    // VISIBLE ANCHOR: the sim's `pos` follows BEHIND the player (behind the
-    // camera) — that's why the buff looked like "no effect". Park the wraith to
-    // the player's LEFT, slightly AHEAD (in view), and fire the beam from there.
-    // Camera forward is (-sin y, -cos y); its left is (-cos y, sin y).
-    {
-      const float y = state.player.yaw;
-      const float fx = -std::sin(y), fz = -std::cos(y);  // forward (camera)
-      const float lx = -std::cos(y), lz = std::sin(y);   // left = -right
-      const double sx = pp.x + lx * 1.6 + fx * 1.2;
-      const double sz = pp.z + lz * 1.6 + fz * 1.2;
-      dc::Vec2 sp{sx, sz};
-      dc::resolveCircleCollisions(boxes, sp, 0.3); // don't clip a wall
-      hunter.sidePos = sp;
-    }
+    // VISIBLE ANCHOR: use `pos` directly — the sim already follows the player.
+    // No longer park to a fixed side offset; the hunter tracks behind the player.
   }
 
   // ---- breakables / sarcophagi / drops (§16.5/§19) — even during safeSpawn ----
@@ -1722,7 +1737,43 @@ void App::updateEntities(double dt) {
   // probe-invulnerable: boss damage no-ops (keep the play screen, not death)
   bctx.playerHealth = probeInvuln ? nullptr : &simHealth;
   boss.update(dt, bctx);
-  if (boss.dead && !bossKillCounted) { bossKillCounted = true; _onBossDefeated(); }
+  // Phase 1 death: trigger phase 2 transition (dim dungeon, 5s delay)
+  if (boss.dead && !bossKillCounted) {
+    bossKillCounted = true;
+    if (bossPhase == 1 && !phase1Defeated) {
+      // Phase 1 defeated: dim dungeon, start 5s countdown for phase 2
+      phase1Defeated = true;
+      phase1BossDead = true;
+      phase2Timer = 5.0; // 5 second delay
+    }
+  }
+  // Phase 2 spawn countdown
+  if (phase1Defeated && !boss.dead) {
+    phase2Timer -= dt;
+    if (phase2Timer <= 0 && !phase1BossDead) {
+      // Spawn phase 2 boss after delay
+      static const char* kVariants[7] = {"Skeleton", "Armored", "Archer", "Brute", "Wraith", "Rat", "Magician"};
+      const char* variant = kVariants[(state.level / dc::boss::kInterval - 1) % 7];
+      boss.spawnPhase2(world.dungeon, state.level, state.ngPlus, state.collectedOrbs,
+                       skelsys.excessHpMult(), variant);
+      bossPhase = 2;
+      phase1Defeated = false;
+      phase1BossDead = false;
+    }
+  }
+  // Phase 2 death: only grant power upgrade + heart, no buff/souls/portal
+  if (boss.dead && bossKillCounted && bossPhase == 2 && !phase1Defeated) {
+    phase1Defeated = true; // mark as defeated (phase 2 final)
+    // Grant power upgrade + heart only (no buff, no souls, no portal)
+    state.maxHealth += 1;
+    state.health = state.maxHealth;
+    simHealth = state.maxHealth;
+    const int reward = state.level * std::max(1, state.ngPlus);
+    state.collectedOrbs += reward;
+    state.weaponTier = dc::weaponTier(state.collectedOrbs);
+    // Phase 2 final: still open portal so player can descend
+    bossPortalOpen = true;
+  }
   } // end if (bossReady)
   // ---- enemies (dc_core shared AI, §16) — every level ----
   if (!bossReady) {
@@ -2469,10 +2520,12 @@ void App::uploadDynamic(std::vector<float>& dyn, std::vector<float>& enem) {
   // ---- HUNTER buff companion (effect 5) — a small cold-wraith that parks to
   //      the player's left and beams its target. The beam is a run of thin
   //      emissive segments along hunter→beamTarget (the visible effect).
+  // ---- HUNTER buff companion (effect 5) — a small cold-wraith that follows
+  //      the player and beams its target. The beam is a run of thin
+  //      emissive segments along hunter→beamTarget (the visible effect).
   if (hunter.active) {
-    // Render from sidePos (the visible left-side anchor), NOT pos (which
-    // follows behind the player, i.e. behind the camera — invisible).
-    const float hx = (float)hunter.sidePos.x, hz = (float)hunter.sidePos.z;
+    // Render from pos (the sim tracks behind the player, no fixed side offset).
+    const float hx = (float)hunter.pos.x, hz = (float)hunter.pos.z;
     const float hy = 1.0f + 0.12f * std::sin(state.runTime * 3.0);
     const float hyaw = std::atan2((float)state.player.x - hx, (float)state.player.z - hz);
     const float hcy = std::cos(hyaw), hsy = std::sin(hyaw);
@@ -2539,8 +2592,8 @@ void App::uploadDynamic(std::vector<float>& dyn, std::vector<float>& enem) {
       case 1:  br=0.667f; bg=0.698f; bb=0.737f; break; // 0xaab2bc
       case 2:  br=0.533f; bg=0.675f; bb=0.800f; break; // 0x88aacc
       case 3:  br=0.690f; bg=0.549f; bb=1.000f; break; // 0xb08cff
-      case 4:  br=1.000f; bg=0.914f; bb=0.784f; break; // 0xffe9c8
-      default: br=0.624f; bg=0.937f; bb=1.000f; break; // 0x9fefff (T5)
+      case 5:  br=0.0f; bg=0.706f; bb=1.0f; break; // #00b3ff (lightsaber blue)
+    default: br=0.0f; bg=0.706f; bb=1.0f; break; // #00b3ff (T5+ lightsaber blue)
     }
     br = std::min(1.0f, br*1.5f+0.15f); bg = std::min(1.0f, bg*1.5f+0.15f); bb = std::min(1.0f, bb*1.5f+0.15f);
     const float bladeLen = 0.76f + state.weaponTier * 0.06f * 4.0f;
@@ -2699,16 +2752,9 @@ void App::uploadDynamic(std::vector<float>& dyn, std::vector<float>& enem) {
       swordW(0.0f, 0.13f, 0.0f, hx, hy, hz, phi);
       pushM(hx, hy, hz, 0.05f, 0.05f, 0.05f, 0.800f, 0.700f, 0.500f, swordRot(phi).data());
     } else {
-      // T5+: legendary guard with star pattern
-      pushM(hx, hy, hz, 0.45f, 0.09f, 0.09f, 0.800f, 0.700f, 0.550f, swordRot(phi).data()); // 0xccb38a
-      // center star ornament
+      // T5+: guardless emitter — no crossguard, just a glowing blue ring
       swordW(0.0f, 0.13f, 0.0f, hx, hy, hz, phi);
-      pushM(hx, hy, hz, 0.07f, 0.07f, 0.07f, 0.850f, 0.750f, 0.600f, swordRot(phi).data());
-      // 4 corner studs + diamond
-      swordW(-0.16f, 0.13f, 0.0f, hx, hy, hz, phi);
-      pushM(hx, hy, hz, 0.045f, 0.045f, 0.045f, 0.850f, 0.750f, 0.600f, swordRot(phi).data());
-      swordW(0.16f, 0.13f, 0.0f, hx, hy, hz, phi);
-      pushM(hx, hy, hz, 0.045f, 0.045f, 0.045f, 0.850f, 0.750f, 0.600f, swordRot(phi).data());
+      pushM(hx, hy, hz, 0.12f, 0.025f, 0.025f, 0.0f, 0.45f, 0.85f, swordRot(phi).data()); // small blue ring
     }
     // ---- blade glow (emissive at higher tiers) ----
     const float glowIntensity = std::max(0.0f, (tier - 1) * 0.18f); // T0=0, T1=0.18, ... T5+=0.90
@@ -2721,6 +2767,20 @@ void App::uploadDynamic(std::vector<float>& dyn, std::vector<float>& enem) {
       // glow outer
       swordW(0.0f, 0.14f + 0.5f * bladeLen, 0.0f, hx, hy, hz, phi);
       pushM(hx, hy, hz, 0.080f, bladeLen * 1.1f, 0.020f, glowR, glowG, glowB, swordRot(phi).data());
+    }
+    // T5+ lightsaber: bright inner plasma core + wider outer halo
+    if (tier >= 5) {
+      const float plasmaR = 0.0f * 3.0f, plasmaG = 0.706f * 3.0f, plasmaB = 1.0f * 3.0f;
+      // inner plasma core — bright white-blue center
+      swordW(0.0f, 0.14f + 0.5f * bladeLen, 0.0f, hx, hy, hz, phi);
+      pushM(hx, hy, hz, 0.030f, bladeLen * 0.95f, 0.006f,
+            std::min(1.0f, plasmaR + 0.5f), std::min(1.0f, plasmaG + 0.5f), std::min(1.0f, plasmaB + 0.5f),
+            swordRot(phi).data());
+      // outer plasma halo — wide blue glow
+      swordW(0.0f, 0.14f + 0.5f * bladeLen, 0.0f, hx, hy, hz, phi);
+      pushM(hx, hy, hz, 0.14f, bladeLen * 1.3f, 0.035f,
+            0.0f * 2.0f, 0.50f * 2.0f, 0.80f * 2.0f,
+            swordRot(phi).data());
     }
   }
   // ---- start/exit markers (§12.1/§22): make the spawn + the exit portal findable ----
@@ -3268,6 +3328,56 @@ bool App::init(int w, int h, const char* title, const char* fontPath) {
 
   // ---- pixel font + screen-space text (title / death screens) ----
   if (fontPath) bakeFont(fontPath);
+  // Menu font: URW Bookman (old-style serif, Dark Souls vibe)
+  const char* menuFontPath = "/usr/share/fonts/opentype/urw-base35/URWBookman-Demi.otf";
+  FILE* mf = fopen(menuFontPath, "rb");
+  if (mf) {
+    std::vector<unsigned char> mbuf;
+    fseek(mf, 0, SEEK_END); long mlen = ftell(mf); fseek(mf, 0, SEEK_SET);
+    mbuf.resize((size_t)mlen);
+    fread(mbuf.data(), 1, (size_t)mlen, mf);
+    fclose(mf);
+    stbtt_fontinfo mfi;
+    stbtt_InitFont(&mfi, mbuf.data(), stbtt_GetFontOffsetForIndex(mbuf.data(), 0));
+    const int mP = 36, mAW = 1024, mAH = 512;
+    std::vector<unsigned char> matlas((size_t)mAW * mAH * 4, 0);
+    int mx = 2, my = 2, mrowH = 0;
+    const float mscale = stbtt_ScaleForPixelHeight(&mfi, mP);
+    for (int mc = 32; mc < 128; mc++) {
+      int mx0, my0, mx1, my1;
+      stbtt_GetCodepointBitmapBox(&mfi, mc, mscale, mscale, &mx0, &my0, &mx1, &my1);
+      int mw = mx1 - mx0, mh = my1 - my0;
+      int madvW = 0, mlsb = 0;
+      stbtt_GetCodepointHMetrics(&mfi, mc, &madvW, &mlsb);
+      menuFont.adv[mc] = madvW * mscale;
+      if (mw <= 0 || mh <= 0) { menuFont.w[mc] = 0; continue; }
+      if (mx + mw >= mAW - 2) { mx = 2; my += mrowH + 2; mrowH = 0; }
+      std::vector<unsigned char> mbmp((size_t)mw * mh, 0);
+      stbtt_MakeCodepointBitmap(&mfi, mbmp.data(), mw, mh, mw, mscale, mscale, mc);
+      for (int j = 0; j < mh; j++)
+        for (int i = 0; i < mw; i++) {
+          unsigned char ma = mbmp[(size_t)j * mw + i];
+          unsigned char* md = &matlas[((size_t)(my + j) * mAW + (mx + i)) * 4];
+          md[3] = ma;
+        }
+      menuFont.uv[mc][0] = mx / (float)mAW;      menuFont.uv[mc][1] = my / (float)mAH;
+      menuFont.uv[mc][2] = (mx + mw) / (float)mAW; menuFont.uv[mc][3] = (my + mh) / (float)mAH;
+      menuFont.w[mc] = mw; menuFont.h[mc] = mh;
+      mx += mw + 1; mrowH = std::max(mrowH, mh);
+    }
+    glGenTextures(1, &menuFont.tex);
+    glBindTexture(GL_TEXTURE_2D, menuFont.tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mAW, mAH, 0, GL_RGBA, GL_UNSIGNED_BYTE, matlas.data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    menuFont.ok = true;
+    menuFont.pixel = mP;
+    std::fprintf(stderr, "[dc_app] menu font baked %s (%dpx) — %s\n", menuFontPath, mP, menuFont.ok ? "OK" : "FAIL");
+  } else {
+    std::fprintf(stderr, "[dc_app] menu font: cannot open %s, falling back to pixel font\n", menuFontPath);
+  }
   progText = linkProgram(compileShader(GL_VERTEX_SHADER, kTextVert),
                          compileShader(GL_FRAGMENT_SHADER, kTextFrag));
   progOverlay = linkProgram(compileShader(GL_VERTEX_SHADER, kFullscreenVert),
@@ -3296,6 +3406,23 @@ bool App::init(int w, int h, const char* title, const char* fontPath) {
     glGenBuffers(1, &rectVbo);
     glBindVertexArray(rectVao);
     glBindBuffer(GL_ARRAY_BUFFER, rectVbo);
+    glBufferData(GL_ARRAY_BUFFER, 4096, nullptr, GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 32, (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 32, (void*)8);
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, 32, (void*)16);
+    glBindVertexArray(0);
+  }
+
+  // ---- menu font VAO (same layout as text VAO) ----
+  if (menuFont.ok) {
+    progTextMenu = progText;  // same shaders; we swap texture at draw time
+    glGenVertexArrays(1, &textMenuVao);
+    glGenBuffers(1, &textMenuVbo);
+    glBindVertexArray(textMenuVao);
+    glBindBuffer(GL_ARRAY_BUFFER, textMenuVbo);
     glBufferData(GL_ARRAY_BUFFER, 4096, nullptr, GL_DYNAMIC_DRAW);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 32, (void*)0);
@@ -3848,6 +3975,7 @@ void App::frame() {
     if (screen == Screen::Dead) drawOverlay(0.10f, 0.02f, 0.02f, 0.72f);
     else drawOverlay(0.01f, 0.01f, 0.03f, 0.55f);
     std::vector<float> v;
+    std::vector<float> vMenu; // separate buffer for menu font (URW Bookman)
     const float gold[3] = {0.91f, 0.78f, 0.35f};
     const float sub[3] = {0.60f, 0.54f, 0.38f};
     const float hint[3] = {0.55f, 0.55f, 0.55f};
@@ -3859,11 +3987,14 @@ void App::frame() {
       drawTextOutline(v, cx - lineW(t, 3.0f) / 2, cy, 3.0f, gold, t);
       const char* s = "A SOULS DESCENT";
       drawTextOutline(v, cx - lineW(s, 0.9f) / 2, cy + 110, 0.9f, sub, s);
+      // Top-5 leaderboard (renders with menu font into vMenu).
+      if (leaderboard)
+        drawLeaderboard(cy + 170, 5, hint, v, vMenu, cx);
       const char* n = "New Game  [N]";
-      drawTextOutline(v, cx - lineW(n, 1.2f) / 2, cy + 200, 1.2f, hint, n);
+      drawTextOutline(v, cx - lineW(n, 1.2f) / 2, cy + 290, 1.2f, hint, n);
       if (savedRun) {
         const char* l = "Continue  [L]";
-        drawTextOutline(v, cx - lineW(l, 1.2f) / 2, cy + 250, 1.2f, hint, l);
+        drawTextOutline(v, cx - lineW(l, 1.2f) / 2, cy + 340, 1.2f, hint, l);
       }
     } else {
       // §24 death titles: killed vs time-out.
@@ -3874,6 +4005,19 @@ void App::frame() {
       std::snprintf(buf, sizeof(buf), "Level %d   Souls %d   Time %ds",
                     state.level, state.collectedOrbs, (int)state.runTime);
       drawTextOutline(v, cx - lineW(buf, 1.0f) / 2, cy + 90, 1.0f, stat, buf);
+      // Top-5 leaderboard below stats (renders with menu font into vMenu).
+      if (leaderboard) {
+        drawLeaderboard(cy + 130, 5, stat, v, vMenu, cx);
+        // Player rank: use the submission date from _endRun for proper lookup.
+        char rankBuf[160];
+        int rank = -1;
+        if (lastRunDate.has_value()) {
+          dc::ScoreEntry lookup{state.ngPlus, state.level, state.runTime, state.collectedOrbs, *lastRunDate};
+          rank = leaderboard->rankOf(lookup);
+        }
+        std::snprintf(rankBuf, sizeof(rankBuf), "Your rank: #%d", rank > 0 ? rank : -1);
+        drawTextOutline(v, cx - lineW(rankBuf, 0.9f) / 2, cy + 270, 0.9f, hint, rankBuf);
+      }
       const char* n = "[N] Restart   [Y] New Game+";
       drawTextOutline(v, cx - lineW(n, 1.2f) / 2, cy + 180, 1.2f, hint, n);
       // Live NG+ preview: keeps all souls, ×2 damage per tier. §NG+.
@@ -3889,13 +4033,14 @@ void App::frame() {
       }
       // Save-for-later [S]: persist this run so it can be continued later.
       const char* sv = "Save for later   [S]";
-      drawTextOutline(v, cx - lineW(sv, 1.2f) / 2, cy + 250, 1.2f, hint, sv);
+      drawTextOutline(v, cx - lineW(sv, 1.2f) / 2, cy + 300, 1.2f, hint, sv);
       if (savedRun) {
         const char* l = "Continue  [L]";
-        drawTextOutline(v, cx - lineW(l, 1.2f) / 2, cy + 300, 1.2f, hint, l);
+        drawTextOutline(v, cx - lineW(l, 1.2f) / 2, cy + 350, 1.2f, hint, l);
       }
     }
     drawText(v);
+    drawTextMenu(vMenu);
   }
 
   // ---- 4.5) compute health bar positions (boss + enemies) ----
@@ -3929,10 +4074,9 @@ void App::bakeFont(const char* path) {
   fclose(f);
   stbtt_fontinfo fi;
   stbtt_InitFont(&fi, buf.data(), stbtt_GetFontOffsetForIndex(buf.data(), 0));
-  // 48px bake (was 24): HUD sizes draw glyphs at ~24-48 screen px — at/under
-  // the bake resolution, so GL_LINEAR stays crisp (24px bake was being
-  // downsampled ~2-3x → the mushy small text).
-  const int P = 48, AW = 512, AH = 256;
+  // 48px bake — HUD sizes draw glyphs at ~24-48 screen px; bump atlas to
+  // 1024×512 so GL_LINEAR stays crisp at size 1.0f+ (was 512×256 → mushy).
+  const int P = 48, AW = 1024, AH = 512;
   std::vector<unsigned char> atlas((size_t)AW * AH * 4, 0);
   int x = 2, y = 2, rowH = 0;
   const float scale = stbtt_ScaleForPixelHeight(&fi, P);
@@ -4021,6 +4165,63 @@ void App::drawText(const std::vector<float>& v) {
   glBindBuffer(GL_ARRAY_BUFFER, textVbo);
   glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(v.size() * 4), v.data(), GL_DYNAMIC_DRAW);
   glBindVertexArray(textVao);
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  glDepthMask(false);
+  glDrawArrays(GL_TRIANGLES, 0, (GLsizei)(v.size() / 8));
+  glDepthMask(true);
+  glDisable(GL_BLEND);
+  glBindVertexArray(0);
+}
+
+// ---- menu text helpers (use menuFont — URW Bookman Blackletter) ----
+float App::menuLineW(const char* s, float size) {
+  float w = 0;
+  for (const char* p = s; *p; p++) {
+    int c = (unsigned char)*p;
+    if (c < 32 || c >= 128) continue;
+    w += menuFont.adv[c] * size;
+  }
+  return w;
+}
+
+void App::drawTextLineMenu(std::vector<float>& v, float x, float y, float size, const float col[3], const char* s) {
+  for (const char* p = s; *p; p++) {
+    int c = (unsigned char)*p;
+    if (c < 32 || c >= 128) continue;
+    float gw = (float)menuFont.w[c] * size, gh = (float)menuFont.h[c] * size;
+    float u0 = menuFont.uv[c][0], v0 = menuFont.uv[c][1], u1 = menuFont.uv[c][2], v1 = menuFont.uv[c][3];
+    float x1 = x + gw, y1 = y + gh;
+    auto P = [&](float px, float py, float u, float vv) {
+      v.insert(v.end(), {px, py, u, vv, col[0], col[1], col[2], 1.0f});
+    };
+    P(x, y, u0, v0); P(x1, y, u1, v0); P(x1, y1, u1, v1); // tri 1
+    P(x, y, u0, v0); P(x1, y1, u1, v1); P(x, y1, u0, v1); // tri 2
+    x += menuFont.adv[c] * size;
+  }
+}
+
+void App::drawTextOutlineMenu(std::vector<float>& v, float x, float y, float size, const float col[3], const char* s) {
+  const float o = std::max(3.0f, size * 2.0f * 0.2f);
+  const float dark[3] = {0.02f, 0.01f, 0.0f};
+  drawTextLineMenu(v, x + o, y, size, dark, s);
+  drawTextLineMenu(v, x - o, y, size, dark, s);
+  drawTextLineMenu(v, x, y + o, size, dark, s);
+  drawTextLineMenu(v, x, y - o, size, dark, s);
+  const float sh[3] = {0.0f, 0.0f, 0.0f};
+  drawTextLineMenu(v, x + o * 0.7f, y + o * 0.7f, size, sh, s);
+  drawTextLineMenu(v, x, y, size, col, s);
+}
+
+void App::drawTextMenu(const std::vector<float>& v) {
+  if (v.empty() || !menuFont.ok) return;
+  glUseProgram(progTextMenu);
+  glUniform2f(glGetUniformLocation(progTextMenu, "uRes"), (float)width, (float)height);
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, menuFont.tex);
+  glBindBuffer(GL_ARRAY_BUFFER, textMenuVbo);
+  glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(v.size() * 4), v.data(), GL_DYNAMIC_DRAW);
+  glBindVertexArray(textMenuVao);
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
   glDepthMask(false);
@@ -4235,20 +4436,32 @@ void App::drawHud() {
     for (int i = 0; i < 7; i++) drawTextOutline(t, xR - pw + 12, y0 + 24 + i * lineH, 0.42f, statC, lines[i]);
   }
 
-  // ---- top-center: LEVEL · BIOME + timer ----
+  // ---- top-center: LEVEL · BIOME + timer + NG+ badge ----
   {
     const float cx = W / 2.0f;
     char lvl[64];
     const auto& bd = dc::kBiomes.at(state.biome);
     std::snprintf(lvl, sizeof(lvl), "LEVEL %d · %s", state.level, bd.label.c_str());
     drawTextOutline(t, cx - lineW(lvl, 0.55f) / 2, m + 6, 0.55f, biome, lvl);
+
+    // NG+ badge — bold, bright gold, only when active
+    if (state.ngPlus > 0) {
+      char ngText[16];
+      std::snprintf(ngText, sizeof(ngText), "NG+%d", state.ngPlus);
+      const float ngBadge[3] = {1.0f, 0.85f, 0.1f}; // bright gold #ffdb1a
+      const float badgeW = lineW(ngText, 0.75f);
+      // background panel
+      const float pad = 6.0f;
+      rect(cx - badgeW / 2 - pad, m + 22, badgeW + 2 * pad, 22, 0.15f, 0.1f, 0.02f, 0.9f);
+      drawTextOutline(t, cx - lineW(ngText, 0.75f) / 2, m + 26, 0.75f, ngBadge, ngText);
+    }
+
     const double remain = std::max(0.0, dc::kLevelTimeLimit - state.levelTime);
     const int mm = (int)(remain / 60.0), ss = (int)(remain - 60.0 * mm);
     char tm[24];
-    std::snprintf(tm, sizeof(tm), "%d:%02d%s", mm, ss,
-                  state.ngPlus > 0 ? " NG+" : "");
+    std::snprintf(tm, sizeof(tm), "%d:%02d", mm, ss);
     const float* tc = (remain < 30.0) ? timerLow : timerC;
-    drawTextOutline(t, cx - lineW(tm, 0.85f) / 2, m + 26, 0.85f, tc, tm);
+    drawTextOutline(t, cx - lineW(tm, 0.85f) / 2, m + 50, 0.85f, tc, tm);
   }
 
   // ---- bottom-center: boss bar (only when a boss is live) ----
@@ -4309,6 +4522,35 @@ void App::drawHud() {
   drawText(t);
 }
 
+void App::drawLeaderboard(double cyOffset, int topN, const float col[3],
+                          std::vector<float>& v, std::vector<float>& vMenu, float cx) {
+  if (!leaderboard || leaderboard->top().empty()) return;
+
+  const float cy = (float)height * 0.30f + (float)cyOffset;
+  const float rowH = 22.0f;
+
+  const auto entries = leaderboard->top();
+  const int n = std::min(topN, static_cast<int>(entries.size()));
+
+  // Header
+  const float hdrCol[3] = {0.55f, 0.50f, 0.38f};
+  const char* hdr = "#    NG+   Level    Souls    Time";
+  float hdrW = menuLineW(hdr, 0.85f);
+  drawTextOutlineMenu(vMenu, cx - hdrW / 2, cy - 18, 0.85f, hdrCol, hdr);
+
+  for (int i = 0; i < n; i++) {
+    const auto& e = entries[i];
+    char entryStr[128];
+    std::snprintf(entryStr, sizeof(entryStr), "%d    NG+%d    L%d    %d    %ds",
+                  i + 1, e.ngPlus, e.level, e.orbs, (int)e.time);
+
+    const float y = cy + i * rowH;
+    float rowCol[3];
+    for (int k = 0; k < 3; k++) rowCol[k] = col[k];
+    drawTextOutlineMenu(vMenu, cx - menuLineW(entryStr, 0.8f) / 2, y, 0.8f, rowCol, entryStr);
+  }
+}
+
 void App::_writeSave() {
   const auto sv = state.toSave();
   savedRun = sv; // available for Continue [L]
@@ -4335,6 +4577,7 @@ void App::_endRun(const char* reason) {
   e.orbs = state.collectedOrbs;
   e.ngPlus = state.ngPlus;
   e.date = (std::int64_t)(std::time(nullptr) * 1000);
+  lastRunDate = e.date;
   leaderboard->submit(e);
   std::fprintf(stderr, "[dc_app] run ended (%s) — leaderboard rank #%d, save written (%s)\n",
                deathReason, leaderboard->rankOf(e), saveFile.c_str());

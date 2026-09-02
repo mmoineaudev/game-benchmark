@@ -11,6 +11,7 @@
 
 #include "dc/collision.hpp"
 #include "dc/constants.hpp"
+#include "dc/drop_system.hpp"
 #include "dc/skeleton_system.hpp"
 
 namespace dc {
@@ -29,15 +30,16 @@ public:
   std::vector<Vec2> beamTargets;
   bool hasBeam = false;
 
-  // One fixed-step frame. `enemies` = the live mob pointers the hunter may
-  // target (the app passes skelsys.enemies()); `los(a,b)` is the world
-  // line-of-sight test; `onHit(e)` is called with the beam damage applied
-  // (app routes to skelsys.hitEnemy(e, hunter::kBeamDmg, "beam")).
+  // One fixed-step frame. `enemies` = live mob pointers; `breakables` = alive
+  // breakable pointers; `los(a,b)` = world line-of-sight; `onHitEnemy` and
+  // `onHitBreakable` are the app's callbacks for applying damage.
   void update(double dt, const Vec2& playerPos, const std::vector<Enemy*>& enemies,
+               const std::vector<Breakable*>& breakables,
                const std::function<bool(const Vec2&, const Vec2&)>& los,
-               const std::function<void(Enemy*)>& onHit, double souls);
+               const std::function<void(Enemy*)>& onHitEnemy,
+               const std::function<void(Breakable*)>& onHitBreakable, double souls);
 
-  // Reset (buff expired / level regen).
+  // Reset (level regen / buff expired).
   void reset() { pos = {0, 0}; attackTimer = 0; beamFlash = 0; active = false; hasBeam = false; beamTargets.clear(); }
 };
 

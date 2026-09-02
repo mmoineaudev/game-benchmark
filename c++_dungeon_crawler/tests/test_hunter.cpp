@@ -20,7 +20,7 @@ TEST_CASE("Hunter follows the player at the keep distance", "[hunter]") {
   h.active = true;
   h.pos = {10, 0}; // start 10u away
   std::vector<Enemy*> none;
-  for (int i = 0; i < 120; i++) h.update(kDt, {0, 0}, none, kLosClear, [](Enemy*) {}, 0);
+  for (int i = 0; i < 120; i++) h.update(kDt, {0, 0}, none, {}, kLosClear, [](Enemy*) {}, [](Breakable*) {}, 0);
   const double d = std::hypot(h.pos.x, h.pos.z);
   CHECK(d < 3.0);                 // closed in on the player
   CHECK(d > 0.0);                 // and held back before stacking on the player
@@ -35,14 +35,14 @@ TEST_CASE("Hunter beams the nearest visible enemy; rate scales with souls", "[hu
   e.pos = {2, 0};
   std::vector<Enemy*> t{&e};
   int hits0 = 0;
-  for (int i = 0; i < 300; i++) h0.update(kDt, {0, 0}, t, kLosClear, [&](Enemy*) { hits0++; }, 0);
+  for (int i = 0; i < 300; i++) h0.update(kDt, {0, 0}, t, {}, kLosClear, [&](Enemy*) { hits0++; }, [](Breakable*) {}, 0);
   CHECK(hits0 >= 1);
 
   // 200 souls → interval 1/2 = 0.5s → far more hits in the same 5s
   Hunter h2;
   h2.active = true;
   int hits2 = 0;
-  for (int i = 0; i < 300; i++) h2.update(kDt, {0, 0}, t, kLosClear, [&](Enemy*) { hits2++; }, 200);
+  for (int i = 0; i < 300; i++) h2.update(kDt, {0, 0}, t, {}, kLosClear, [&](Enemy*) { hits2++; }, [](Breakable*) {}, 200);
   CHECK(hits2 > hits0);
 }
 
@@ -55,12 +55,13 @@ TEST_CASE("Hunter does not fire through walls (LOS gate)", "[hunter]") {
   std::vector<Enemy*> t{&e};
   int hits = 0;
   for (int i = 0; i < 300; i++)
-    h.update(kDt, {0, 0}, t,
+    h.update(kDt, {0, 0}, t, {},
              [](const Vec2& a, const Vec2& b) {
                // wall at x=1.0: any segment crossing it is blocked
                return (a.x < 1.0 && b.x < 1.0) || (a.x > 1.0 && b.x > 1.0);
              },
-             [&](Enemy*) { hits++; }, 0);
+             [&](Enemy*) { hits++; },
+             [](Breakable*) {}, 0);
   CHECK(hits == 0);
 }
 
@@ -80,13 +81,13 @@ TEST_CASE("Hunter skips dead and frozen enemies", "[hunter]") {
   std::vector<Enemy*> t{&dead, &frozen, &live};
   int onDead = 0, onFrozen = 0, onLive = 0;
   for (int i = 0; i < 120; i++)
-    h.update(kDt, {0, 0}, t, kLosClear,
+    h.update(kDt, {0, 0}, t, {}, kLosClear,
              [&](Enemy* e) {
                if (e == &dead) onDead++;
                if (e == &frozen) onFrozen++;
                if (e == &live) onLive++;
              },
-             0);
+             [](Breakable*) {}, 0);
   CHECK(onDead == 0);
   CHECK(onFrozen == 0);
   CHECK(onLive >= 1); // only the live enemy gets beamed
@@ -108,8 +109,9 @@ TEST_CASE("Hunter fires a volley at up to 5 targets (nearest first)", "[hunter]"
   int volleys = 0, hits = 0;
   std::vector<Enemy*> lastVolley;
   auto onHit = [&](Enemy* e) { hits++; lastVolley.push_back(e); volleys++; };
+  auto onHitBr = [&](Breakable* br) {};
   // Run a few frames; the first volley must hit exactly 5 targets.
-  h.update(kDt, {0, 0}, t, kLosClear, onHit, 0);
+  h.update(kDt, {0, 0}, t, {}, kLosClear, onHit, onHitBr, 0);
   CHECK(hits == 5);
   CHECK(h.beamTargets.size() == 5);
   CHECK(h.hasBeam);
@@ -131,7 +133,7 @@ TEST_CASE("Hunter resets on reset()", "[hunter]") {
   h.hasBeam = true;
   h.beamTargets = {{1, 2}, {3, 4}};
   h.reset();
-  CHECK(h.active == false);
+  CHECK(h.active == false);   // hunter deactivates when reset
   CHECK(h.pos.x == 0.0);
   CHECK(h.pos.z == 0.0);
   CHECK(h.beamFlash == 0.0);

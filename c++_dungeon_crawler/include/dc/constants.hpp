@@ -177,14 +177,11 @@ inline double enemyHpMultiplier(int ngPlus, int level, double souls) {
          (1.0 + 1.5 * std::floor(std::max(0.0, level + souls - 990.0) / 10.0));
 }
 
-// Boss HP. §17 — pressure uncapped, wealth stack halved. LINEAR overall.
-inline int bossHp(int level, int ngPlus, double souls, int maxHealth) {
-  const int heartsExtra = std::max(0, std::min(maxHealth - 3, 10));
-  const double soulsPart = 1.0 + kSoulsHpBonus * std::floor(souls / 50.0);
-  const double heartsPart = std::pow(1.0 + kHeartsHpBonus, heartsExtra);
-  const double pressure = (1.0 + 1.0 * ngPlus) * (1.0 + std::floor(level / 10.0));
-  const double wealth = 1.0 + (soulsPart * heartsPart - 1.0) / 2.0;
-  return static_cast<int>(std::ceil(boss::kBaseHp * pressure * wealth));
+// Boss HP. §17 — uses the same linear multiplier as mobs (× excessHpMult),
+// so the boss scales in line with the mob health curve. LINEAR overall.
+inline int bossHp(int level, int ngPlus, double souls, double excessHpMult) {
+  const double hpMult = enemyHpMultiplier(ngPlus, level, souls) * excessHpMult;
+  return static_cast<int>(std::ceil(boss::kBaseHp * hpMult));
 }
 
 // BURN HP — v2 ruling: 30 flat at NG0 every level, then ×(1 + 1·ngPlus).

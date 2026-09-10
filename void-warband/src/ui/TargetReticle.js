@@ -77,6 +77,7 @@ class _TargetReticle {
       el.style.width = `${size}px`;
       el.style.height = `${size}px`;
       el.style.borderColor = t.color;
+      el.style.color = t.color; // distance readout inherits the marker color
       // Distance readout.
       el.dataset.dist = `${Math.round(dist)}u`;
     }
@@ -144,7 +145,7 @@ class _TargetReticle {
     border-right: 1.5px solid; border-bottom: 1.5px solid; }
   #vw-reticle .vw-reticle-dist { position: absolute; left: 50%;
     transform: translateX(-50%); bottom: -16px; font-size: 9.5px;
-    letter-spacing: .08em; color: rgba(226,232,240,.75);
+    letter-spacing: .08em; color: inherit;
     text-shadow: 0 0 4px rgba(0,0,0,.9); }
   #vw-reticle .vw-reticle-label { position: absolute; left: 14px;
     bottom: 64px; display: none; padding: 6px 12px 6px 9px;

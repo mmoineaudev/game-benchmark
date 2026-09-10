@@ -31,6 +31,7 @@
 import * as THREE from 'three';
 import { HAZARDS, WORLD_SAFE_RADIUS } from '../core/Constants.js';
 import { EventBus } from '../core/EventBus.js';
+import { isDestroyed, markDestroyed } from './ChunkDiffs.js';
 
 // ---------------------------------------------------------------------------
 // Shared module-level singletons (SPEC §8: no per-hazard allocation)
@@ -250,13 +251,13 @@ class _HazardSystem {
       const world = this._p.copy(d.position).add(chunkCenter).clone();
       switch (d.type) {
         case 'crystal-cluster':
-          this._spawnCrystalCluster(world, d.rng, d.count, chunkKey);
+          this._spawnCrystalCluster(world, d.rng, d.count, chunkKey, d.localId);
           break;
         case 'pulsar':
           this._spawnPulsar(world, chunkKey);
           break;
         case 'mine-field':
-          this._spawnMineField(world, d.rng, d.count, chunkKey);
+          this._spawnMineField(world, d.rng, d.count, chunkKey, d.localId);
           break;
         case 'storm-cloud':
           this._spawnStorm(world, d.rng, d.count, chunkKey);
@@ -374,14 +375,18 @@ class _HazardSystem {
    * @param {Function} rng seeded PRNG [0,1).
    * @param {number} count 4–8.
    */
-  _spawnCrystalCluster(worldPos, rng, count, chunkKey) {
+  _spawnCrystalCluster(worldPos, rng, count, chunkKey, localId) {
     const n = Math.max(
       HAZARDS.crystalClusterMin,
       Math.min(HAZARDS.crystalClusterMax, Math.floor(count) || HAZARDS.crystalClusterMin),
     );
     const matColor = Math.floor(rng() * _crystalMats.length);
+    // Chunk-diff persistence: prune individual crystals the player destroyed
+    // (id = cluster localId + instance index, deterministic across regens).
+    const dead = (i) => isDestroyed(chunkKey, `${localId}:${i}`);
     const inst = new THREE.InstancedMesh(_crystalGeo, _crystalMats[matColor], n);
     inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    let aliveCount = 0;
     for (let i = 0; i < n; i++) {
       const position = new THREE.Vector3(
         (rng() * 2 - 1) * 14,
@@ -394,9 +399,19 @@ class _HazardSystem {
       const scale = 2 + rng() * 4; // 2–6 u
       this._m.compose(position, rot, this._s.setScalar(scale));
       inst.setMatrixAt(i, this._m);
+      const wasDead = dead(i);
+      if (wasDead) {
+        // Destroyed in a previous visit: hide the instance (zero scale).
+        this._s.setScalar(0);
+        this._m.compose(position, rot, this._s);
+        inst.setMatrixAt(i, this._m);
+        this._s.setScalar(scale);
+      } else {
+        aliveCount++;
+      }
       this.crystals.push({
-        mesh: inst, index: i, alive: true, hp: HAZARDS.crystalHp,
-        position, scale, chunkKey,
+        mesh: inst, index: i, alive: !wasDead, hp: HAZARDS.crystalHp,
+        position, scale, chunkKey, localId: `${localId}:${i}`,
         rotAxis: new THREE.Vector3(rng() - 0.5, rng() - 0.5, rng() - 0.5).normalize(),
         rotSpeed: 0.3 + rng() * 0.7,
         drift: new THREE.Vector3(rng() - 0.5, rng() - 0.5, rng() - 0.5).multiplyScalar(1.5),
@@ -406,7 +421,12 @@ class _HazardSystem {
     }
     inst.instanceMatrix.needsUpdate = true;
     inst.computeBoundingSphere();
-    this._scene.add(inst);
+    if (aliveCount > 0) {
+      this._scene.add(inst);
+    } else {
+      // Every crystal already destroyed: keep no GPU buffer alive.
+      inst.dispose();
+    }
   }
 
   /**
@@ -418,6 +438,10 @@ class _HazardSystem {
   takeDamageCrystal(c, dmg) {
     if (!c || !c.alive) return;
     c.alive = false;
+    // Chunk-diff persistence: this crystal stays destroyed across regens.
+    if (c.chunkKey !== undefined && c.localId !== undefined) {
+      markDestroyed(c.chunkKey, c.localId);
+    }
 
     // Compact: copy the LAST instance's transform into c's slot, shrink count.
     const mesh = c.mesh;
@@ -493,13 +517,14 @@ class _HazardSystem {
    * @param {Function} rng seeded PRNG [0,1).
    * @param {number} count mines in the field.
    */
-  _spawnMineField(worldPos, rng, count, chunkKey) {
+  _spawnMineField(worldPos, rng, count, chunkKey, localId) {
     const n = Math.max(1, Math.floor(count) || 1);
     const spikePerMine = 6;
     const inst = new THREE.InstancedMesh(_mineGeo, _mineMat, n * (1 + spikePerMine));
     inst.instanceMatrix.setUsage(THREE.StaticDrawUsage);
 
     const mines = [];
+    let anyAlive = false;
     for (let i = 0; i < n; i++) {
       const position = new THREE.Vector3(
         (rng() * 2 - 1) * 400,
@@ -511,9 +536,16 @@ class _HazardSystem {
       );
       const scale = 1.0 + rng() * 0.6;
 
+      // Chunk-diff persistence: mines destroyed in a previous visit stay
+      // destroyed (all 7 slots zero-scaled).
+      const wasDead = isDestroyed(chunkKey, `${localId}:${i}`);
+      if (!wasDead) anyAlive = true;
+
       // Body instance.
-      this._m.compose(position, rot, this._s.setScalar(scale));
+      if (wasDead) this._s.setScalar(0);
+      this._m.compose(position, rot, this._s.setScalar(wasDead ? 0 : scale));
       inst.setMatrixAt(i * (1 + spikePerMine), this._m);
+      this._s.setScalar(1);
 
       // 6 spike instances around the body.
       for (let k = 0; k < spikePerMine; k++) {
@@ -526,15 +558,19 @@ class _HazardSystem {
         );
         this._m.compose(
           spikePos, spikeRot,
-          this._s.set(0.4 * scale, 1.0 * scale, 0.4 * scale),
+          this._s.set(wasDead ? 0 : 0.4 * scale, wasDead ? 0 : 1.0 * scale, wasDead ? 0 : 0.4 * scale),
         );
         inst.setMatrixAt(i * (1 + spikePerMine) + 1 + k, this._m);
       }
-      mines.push({ index: i, position, alive: true });
+      mines.push({ index: i, position, alive: !wasDead, localId: `${localId}:${i}` });
     }
     inst.instanceMatrix.needsUpdate = true;
     inst.computeBoundingSphere();
-    this._scene.add(inst);
+    if (anyAlive) {
+      this._scene.add(inst);
+    } else {
+      inst.dispose();
+    }
 
     this.mines.push({
       mesh: inst,
@@ -720,6 +756,10 @@ class _HazardSystem {
    */
   _explodeMine(field, m) {
     m.alive = false;
+    // Chunk-diff persistence: destroyed mines stay destroyed across regens.
+    if (field.chunkKey !== undefined && m.localId !== undefined) {
+      markDestroyed(field.chunkKey, m.localId);
+    }
     const inst = field.mesh;
     const spikes = 6;
     const per = 1 + spikes;
@@ -1225,8 +1265,10 @@ class _HazardSystem {
       }
       headPos.addScaledVector(worm.vel, dt);
       // PERF (FIX #10): reuse worm-local scratch instead of headPos.clone().
+      // The head is a Mesh child of worm.group — convert via the GROUP's
+      // worldToLocal, not a nonexistent head.group.
       const headLocal = worm._scratch2 ?? (worm._scratch2 = new THREE.Vector3());
-      head.position.copy(head.group.worldToLocal(headLocal.copy(headPos)));
+      head.position.copy(worm.group.worldToLocal(headLocal.copy(headPos)));
 
       // Orient the head along its velocity (maw opens toward travel).
       if (worm.vel.lengthSq() > 1) {

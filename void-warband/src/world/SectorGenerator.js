@@ -262,6 +262,7 @@ class _SectorGenerator {
             (rng() * 2 - 1) * _HALF * 0.8,
           ),
           rng: mulberry32((seed ^ 0x8b3a7 ^ i) | 0),
+          localId: `bk${i}`,
         });
       }
       // -- Landmark: 25% chance, big station-ish composite -------------------
@@ -281,6 +282,7 @@ class _SectorGenerator {
             (rng() * 2 - 1) * _HALF * 0.5,
           ),
           rng: mulberry32((seed ^ 0x8b3a9) | 0),
+          localId: 'bkV',
         });
       }
     }
@@ -301,6 +303,7 @@ class _SectorGenerator {
             position: pos,
             count: 4 + Math.floor(rng() * 5), // 4–8 octahedra
             rng: mulberry32((seed ^ 0x9c11a1 ^ i) | 0),
+            localId: `ccl${i}`,
           });
         }
         // 15% chance a pulsar in the chunk (SPEC §5 sector-3 hazard).
@@ -318,6 +321,7 @@ class _SectorGenerator {
           position: new THREE.Vector3(0, 0, 0),
           count: 3 + Math.floor(rng() * 4), // 3–6 mines
           rng: mulberry32((seed ^ 0x7745e1) | 0),
+          localId: 'mf0',
         });
       } else if (sectorDef.key === 'plasma-storm') {
         const clusters = 1 + Math.floor(rng() * 2); // 1–2 storm clusters
@@ -340,6 +344,7 @@ class _SectorGenerator {
           position: new THREE.Vector3(0, 0, 0),
           count: n,
           rng: mulberry32((seed ^ 0x7745e1) | 0),
+          localId: 'mf0',
         });
       }
 
@@ -521,6 +526,7 @@ class _SectorGenerator {
               (rng() * 2 - 1) * _HALF * 0.8,
             ),
             rng: mulberry32((seed ^ 0x116501 ^ i) | 0),
+            localId: `hk${i}`,
           });
         }
       }

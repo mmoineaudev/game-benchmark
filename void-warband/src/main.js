@@ -47,6 +47,14 @@ import { CollectionLog } from './ui/CollectionLog.js';
 import { TradeUI } from './ui/TradeUI.js';
 import { PLAYER, FEEDBACK, ENEMIES, WARDEN_ARENA, HAZARDS } from './core/Constants.js';
 import { saveMeta } from './core/Save.js';
+import { isDestroyed, markDestroyed, flush as flushChunkDiffs } from './world/ChunkDiffs.js';
+
+// Chunk-diff persistence: flush debounced writes when the tab is hidden or
+// closed so destruction survives a crash/quit.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushChunkDiffs();
+});
+window.addEventListener('beforeunload', () => flushChunkDiffs());
 
 // P8: Derelict Graveyard hulk (destructible wreck) stats, u / HP / dmg.
 /** Hulk collision radius, u (big composite wreck). */
@@ -168,7 +176,10 @@ function _buildHulkMesh(rng) {
  * @param {THREE.Vector3} worldPos
  * @param {Function} rng seeded PRNG [0,1).
  */
-function _spawnHulk(worldPos, rng, chunkKey) {
+function _spawnHulk(worldPos, rng, chunkKey, localId) {
+  // Chunk-diff persistence (Minecraft-style): a hulk the player destroyed
+  // stays destroyed when its chunk regenerates.
+  if (isDestroyed(chunkKey, localId)) return null;
   const group = _buildHulkMesh(rng);
   group.position.copy(worldPos);
   Game.scene.add(group);
@@ -179,6 +190,7 @@ function _spawnHulk(worldPos, rng, chunkKey) {
     alive: true,
     isHulk: true,
     chunkKey,
+    localId,
   };
   _hulks.push(hulk);
   return hulk;
@@ -193,6 +205,7 @@ function _spawnHulk(worldPos, rng, chunkKey) {
 function _destroyHulk(h) {
   if (!h.alive) return;
   h.alive = false;
+  if (h.chunkKey !== undefined) markDestroyed(h.chunkKey, h.localId);
   fx.shake(8, 0.2);
   fx.spawn(h.position, 24, '#663300');
   for (let i = 0; i < _HULK_DROP_COUNT; i++) {
@@ -212,6 +225,7 @@ function _destroyHulk(h) {
 function _destroyBreakable(b) {
   if (!b.alive) return;
   b.alive = false;
+  if (b.chunkKey !== undefined) markDestroyed(b.chunkKey, b.localId);
   fx.shake(4, 0.15);
   fx.spawn(b.position, 18, '#fbbf24');
   if (Math.random() < _BREAKABLE_LOOT_CHANCE) {
@@ -655,7 +669,7 @@ Game.systems = [
         for (const e of spawned) e.state = 'active'; // hatch hot, already aggro
       });
       banking.update(dt, ship.group.position, GameState, stations);
-      for (const s of stations) s.update(dt);
+      for (const s of stations) s.update(dt, _flightTime);
       // P9: boss HP bar — set from the live warden (null when none active).
       {
         const w = _liveWarden();
@@ -1034,7 +1048,7 @@ function _materializeNewChunkHazards() {
         _spawnForgeStructure(worldPos, d.rng, key);
       } else if (d.type === 'hulk') {
         const worldPos = _hulkScratch.copy(d.position).add(center);
-        _spawnHulk(worldPos, d.rng, key);
+        _spawnHulk(worldPos, d.rng, key, d.localId);
       } else if (d.type === 'enemy-spawn-points') {
         // SPEC §5 interaction density: EVERY spawn point gets an enemy group.
         // Deep sectors (4+) sometimes get a Golden Drone cameo (fleeing
@@ -1068,6 +1082,8 @@ function _materializeNewChunkHazards() {
         }
       } else if (d.type === 'breakable') {
         // Breakable prop (user feedback: 4 distinct models w/ loot bias).
+        // Chunk-diff persistence: skip props the player already destroyed.
+        if (isDestroyed(key, d.localId)) continue;
         const stats = BREAKABLE_TYPES[d.breakableType];
         const worldPos = _hulkScratch.copy(d.position).add(center).clone();
         const obj = buildBreakable(d.breakableType, d.rng);
@@ -1085,6 +1101,7 @@ function _materializeNewChunkHazards() {
           alive: true,
           isBreakable: true,
           chunkKey: key,
+          localId: d.localId,
         });
       } else if (d.type === 'station') {
         const worldPos = _hulkScratch.copy(d.position).add(center).clone();

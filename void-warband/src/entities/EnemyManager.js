@@ -35,7 +35,7 @@ const _EXPLODE_COLOR = '#ff9a3c';
 /** Min on-screen glow size, px (distance floor — the whole point). */
 const _MIN_GLOW_PX = 7;
 /** Despawn distance, u — enemies beyond this are removed (dead weight). */
-const _DESPAWN_DIST = 4000;
+const _DESPAWN_DIST = 6000;
 const _DESPAWN_DIST2 = _DESPAWN_DIST * _DESPAWN_DIST;
 /** PERF (FIX #5): hard cap on live enemies (oldest non-boss despawned). */
 const _MAX_ENEMIES = 220;
@@ -230,7 +230,10 @@ class _EnemyManager {
    */
   spawnChromeFleet(centerPosition, sectorIndex) {
     const out = [];
-    for (let i = 0; i < 5; i++) {
+    // PERF (FIX #5): the chrome budget shares the same _MAX_ENEMIES cap as
+    // spawnGroup (chrome fleets spawn per spawn point in THE ABYSS and
+    // otherwise accumulate unbounded).
+    for (let i = 0; i < 5 && this.enemies.length < _MAX_ENEMIES; i++) {
       // V-wing: leader front, 2 pairs flanking behind in a V.
       const slot = i === 0 ? [0, 0, 0] : [
         (i % 2 ? -1 : 1) * Math.ceil(i / 2) * 14, // x spread
